@@ -1,8 +1,7 @@
 import Batteries.Data.List.Basic
 
-/-! Defines the syntax and semantics of operator sets. -/
-
-namespace Wavelet.Op
+/-! A formulation of partial commutative monoids. -/
+namespace Wavelet.PCM
 
 class PCM (C : Type u) where
   add : C → C → C
@@ -37,6 +36,13 @@ class LawfulPCM (R : Type u) [inst : PCM R] where
   eq_symm : ∀ a b : R, a ≡ b → b ≡ a
   eq_trans : ∀ a b c : R, a ≡ b → b ≡ c → a ≡ c
 
+end Wavelet.PCM
+
+/-! Semantics of operators that our source and target languages are parametric in. -/
+namespace Wavelet.Op
+
+open Wavelet.PCM
+
 structure OpSpec (T : Type u) (R : Type w) where
   inTys : List T
   outTys : List T
@@ -48,7 +54,7 @@ structure OpSet where
   T : Type u
   /-- Base values -/
   V : Type v
-  /-- Ghost resource algebra -/
+  /-- Ghost resource types -/
   R : Type w
   /-- Operators -/
   Op : Type
@@ -91,9 +97,10 @@ class OpSemantics (os : OpSet) [PCM os.R] where
 
 end Wavelet.Op
 
+/-! Syntax and typing rules of L0, a first-order sequential language with affine resources. -/
 namespace Wavelet.L0
 
-open Wavelet.Op
+open Wavelet.Op Wavelet.PCM
 
 abbrev Var := String
 abbrev Vars := List Var
@@ -104,6 +111,13 @@ structure TypedVar (os : OpSet) where
   ty : os.T
 
 abbrev TypedVars os := List (TypedVar os)
+
+def TypedVars.fromLists {os : OpSet}
+  (vars : List Var) (tys : List os.T) : Option (TypedVars os) :=
+  if vars.length = tys.length then
+    some ((vars.zip tys).map (λ (v, t) => TypedVar.mk v t))
+  else
+    none
 
 inductive Callee (os : OpSet) where
   | op : os.Op → Callee os
@@ -133,14 +147,17 @@ structure FnDef (os : OpSet) where
   ensures : os.R
   body : Expr os
 
-/-- For convenience, new `FnDef`'s are inserted at the front -/
+/--
+For convenience, new `FnDef`s are inserted at the front,
+i.e., `FnDef`s at the front can only call those at the back.
+-/
 abbrev FnCtx os := List (FnDef os)
 
 abbrev VarCtx (os : OpSet) := Var → Option (os.T)
 abbrev ResCtx (os : OpSet) := os.R
 
 structure Ctx (os : OpSet) where
-  cur_fn : FnDef os
+  self : FnDef os
   fns : FnCtx os
   vars : VarCtx os
   res : ResCtx os
@@ -168,6 +185,15 @@ def Ctx.getFn {os : OpSet} (Γ : Ctx os) (f : FnName) : Option (FnDef os) :=
 def Ctx.removeFn {os : OpSet} (Γ : Ctx os) (f : FnName) : Ctx os :=
   { Γ with fns := Γ.fns.filter (λ fn => fn.name ≠ f) }
 
+def Ctx.insertVar {os : OpSet} (Γ : Ctx os) (x : Var) (t : os.T) : Ctx os :=
+  { Γ with vars := Γ.vars.insert x t }
+
+def Ctx.insertTypedVars {os : OpSet} (Γ : Ctx os) (vs : TypedVars os) : Ctx os :=
+  { Γ with vars := Γ.vars.insertTypedVars vs }
+
+def Ctx.updateRes {os : OpSet} (Γ : Ctx os) (r : os.R) : Ctx os :=
+  { Γ with res := r }
+
 inductive Call.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Call os → Ctx os → List os.T → Prop where
   /-- Well-typed operator call -/
   | wt_call_op {args} :
@@ -175,15 +201,28 @@ inductive Call.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Call os → Ctx os
     (os.specOf op).requires ⬝ frame = Γ.res →
     Call.WellTyped
       Γ { callee := .op op, args := args }
-      { Γ with res := (os.specOf op).ensures ⬝ frame } (os.specOf op).outTys
+      (Γ.updateRes ((os.specOf op).ensures ⬝ frame))
+      (os.specOf op).outTys
   /-- Well-typed function call -/
   | wt_call_fn {args} :
     Γ.getFn f = some fn →
     Γ.WellTypedVars args (TypedVar.ty <$> fn.ins) →
     fn.requires ⬝ frame = Γ.res →
+    -- Functions defs are linear, so we remove `fn` from the context
     Call.WellTyped
       Γ { callee := .fn f, args := args }
-      { Γ.removeFn f with res := fn.ensures ⬝ frame } fn.outTys
+      ((Γ.removeFn f).updateRes (fn.ensures ⬝ frame))
+      fn.outTys
+
+inductive Binder.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Binder os → Ctx os → Prop where
+  /-- Well-typed call -/
+  | wt_bind_call {call} :
+    Call.WellTyped Γ call Γ' tys →
+    TypedVars.fromLists vars tys = some typedVars →
+    Binder.WellTyped Γ (.call vars call) (Γ.insertTypedVars typedVars)
+  /-- Well-typed constant binder -/
+  | wt_bind_const :
+    Binder.WellTyped Γ (.const var val) (Γ.insertVar var (os.typeOf val))
 
 inductive Expr.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Expr os → Ctx os → List os.T → Prop where
   /-- Well-typed variables -/
@@ -194,20 +233,23 @@ inductive Expr.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Expr os → Ctx os
   | wt_tail {Γ' tys} :
     Call.WellTyped Γ c Γ' tys →
     Expr.WellTyped Γ (.tail c) Γ' tys
-  /-- Well-typed tail recursive call -/
+  /-- Well-typed recursive tail call -/
   | wt_tail_rec :
-    Γ.WellTypedVars args (TypedVar.ty <$> Γ.cur_fn.ins) →
-    Γ.cur_fn.requires ⬝ frame = Γ.res →
+    Γ.WellTypedVars args (TypedVar.ty <$> Γ.self.ins) →
+    Γ.self.requires ⬝ frame = Γ.res →
     Expr.WellTyped
-      Γ (.tail { callee := .fn (Γ.cur_fn.name), args := args })
-      { Γ with res := Γ.cur_fn.ensures ⬝ frame } Γ.cur_fn.outTys
+      Γ (.tail { callee := .fn (Γ.self.name), args := args })
+      (Γ.updateRes (Γ.self.ensures ⬝ frame)) Γ.self.outTys
   /-- Well-typed branching -/
   | wt_branch :
+    -- Condition is well-typed
     Γ.vars.get x = some t →
     os.isBoolTy t →
+    -- Both branches are well-typed.
     Expr.WellTyped Γ left Γ₁ tys →
     Expr.WellTyped Γ right Γ₂ tys →
-    Γ.vars x = some t →
+    -- The resulting resource should be less than or
+    -- equal to the final resources of both branches.
     res' ≤ Γ₁.res →
     res' ≤ Γ₂.res →
     Expr.WellTyped
@@ -218,30 +260,17 @@ inductive Expr.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Expr os → Ctx os
         res := res'
       } tys
   /-- Well-typed let -/
-  | wt_bind_call {vars} :
-    Call.WellTyped Γ call Γ' tys →
-    vars.length = tys.length →
-    Expr.WellTyped {
-      Γ' with
-      -- Insert new bound variables
-      vars := Γ'.vars.insertTypedVars ((vars.zip tys).map (λ (v, t) => TypedVar.mk v t))
-    } body Γ'' tys' →
-    Expr.WellTyped Γ (.bind (.call vars call) body) Γ'' tys'
-  /-- Well-typed const -/
-  | wt_bind_const :
-    Expr.WellTyped {
-      Γ with
-      -- Insert the new bound variable
-      vars := Γ.vars.insert var (os.typeOf val)
-    } body Γ' tys →
-    Expr.WellTyped Γ (.bind (.const var val) body) Γ' tys
+  | wt_bind :
+    Binder.WellTyped Γ binder Γ' →
+    Expr.WellTyped Γ' body Γ'' tys →
+    Expr.WellTyped Γ (.bind binder body) Γ'' tys
 
 def FnDef.WellTyped {os : OpSet} [PCM os.R] (fns : FnCtx os) (fn : FnDef os) (fns' : FnCtx os) : Prop :=
   ∃ vars' res',
     Expr.WellTyped
-      { cur_fn := fn, fns, vars := VarCtx.fromTypedVars fn.ins, res := fn.requires }
+      { self := fn, fns, vars := VarCtx.fromTypedVars fn.ins, res := fn.requires }
       fn.body
-      { cur_fn := fn, fns := fns', vars := vars', res := res' }
+      { self := fn, fns := fns', vars := vars', res := res' }
       fn.outTys ∧
     res' ≤ fn.ensures
 
