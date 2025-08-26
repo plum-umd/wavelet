@@ -133,11 +133,14 @@ structure FnDef (os : OpSet) where
   ensures : os.R
   body : Expr os
 
+/-- For convenience, new `FnDef`'s are inserted at the front -/
 abbrev FnCtx os := List (FnDef os)
+
 abbrev VarCtx (os : OpSet) := Var → Option (os.T)
 abbrev ResCtx (os : OpSet) := os.R
 
 structure Ctx (os : OpSet) where
+  cur_fn : FnDef os
   fns : FnCtx os
   vars : VarCtx os
   res : ResCtx os
@@ -191,6 +194,13 @@ inductive Expr.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Expr os → Ctx os
   | wt_tail {Γ' tys} :
     Call.WellTyped Γ c Γ' tys →
     Expr.WellTyped Γ (.tail c) Γ' tys
+  /-- Well-typed tail recursive call -/
+  | wt_tail_rec :
+    Γ.WellTypedVars args (TypedVar.ty <$> Γ.cur_fn.ins) →
+    Γ.cur_fn.requires ⬝ frame = Γ.res →
+    Expr.WellTyped
+      Γ (.tail { callee := .fn (Γ.cur_fn.name), args := args })
+      { Γ with res := Γ.cur_fn.ensures ⬝ frame } Γ.cur_fn.outTys
   /-- Well-typed branching -/
   | wt_branch :
     Γ.vars.get x = some t →
@@ -203,25 +213,45 @@ inductive Expr.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Expr os → Ctx os
     Expr.WellTyped
       Γ (.branch x left right)
       {
+        Γ with
         fns := Γ₁.fns.intersect Γ₂.fns,
-        vars := Γ.vars, -- TODO: not used?
         res := res'
       } tys
+  /-- Well-typed let -/
+  | wt_bind_call {vars} :
+    Call.WellTyped Γ call Γ' tys →
+    vars.length = tys.length →
+    Expr.WellTyped {
+      Γ' with
+      -- Insert new bound variables
+      vars := Γ'.vars.insertTypedVars ((vars.zip tys).map (λ (v, t) => TypedVar.mk v t))
+    } body Γ'' tys' →
+    Expr.WellTyped Γ (.bind (.call vars call) body) Γ'' tys'
+  /-- Well-typed const -/
+  | wt_bind_const :
+    Expr.WellTyped {
+      Γ with
+      -- Insert the new bound variable
+      vars := Γ.vars.insert var (os.typeOf val)
+    } body Γ' tys →
+    Expr.WellTyped Γ (.bind (.const var val) body) Γ' tys
 
-def FnDef.WellTyped {os : OpSet} [PCM os.R] (fns fns' : FnCtx os) (fn : FnDef os) : Prop :=
+def FnDef.WellTyped {os : OpSet} [PCM os.R] (fns : FnCtx os) (fn : FnDef os) (fns' : FnCtx os) : Prop :=
   ∃ vars' res',
     Expr.WellTyped
-      { fns, vars := VarCtx.fromTypedVars fn.ins, res := fn.requires }
+      { cur_fn := fn, fns, vars := VarCtx.fromTypedVars fn.ins, res := fn.requires }
       fn.body
-      { fns := fns', vars := vars', res := res' }
+      { cur_fn := fn, fns := fns', vars := vars', res := res' }
       fn.outTys ∧
     res' ≤ fn.ensures
 
-inductive FnCtx.WellTyped {os : OpSet} [PCM os.R] : FnCtx os → Prop where
-  | wt_fn_ctx_nil : FnCtx.WellTyped []
-  | wt_fn_ctx_cons {fns' fn} :
-    FnCtx.WellTyped fns' →
-    FnDef.WellTyped fns fns' fn →
-    FnCtx.WellTyped (.cons fn fns)
+inductive FnCtx.WellTyped {os : OpSet} [PCM os.R] : FnCtx os → FnCtx os → Prop where
+  | wt_nil : FnCtx.WellTyped [] []
+  | wt_cons :
+    -- Type check previous defs first and get remaining unused defs
+    FnCtx.WellTyped fns fns' →
+    -- Typed check `fn`
+    FnDef.WellTyped fns' fn fns'' →
+    FnCtx.WellTyped (fn :: fns) (fn :: fns'')
 
 end Wavelet.L0
