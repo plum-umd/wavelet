@@ -182,9 +182,6 @@ def Ctx.WellTypedVars {os : OpSet} (Γ : Ctx os) (vs : Vars) (tys : List os.T) :
 def Ctx.getFn {os : OpSet} (Γ : Ctx os) (f : FnName) : Option (FnDef os) :=
   Γ.fns.find? (λ fn => fn.name = f)
 
-def Ctx.removeFn {os : OpSet} (Γ : Ctx os) (f : FnName) : Ctx os :=
-  { Γ with fns := Γ.fns.filter (λ fn => fn.name ≠ f) }
-
 def Ctx.insertVar {os : OpSet} (Γ : Ctx os) (x : Var) (t : os.T) : Ctx os :=
   { Γ with vars := Γ.vars.insert x t }
 
@@ -208,10 +205,9 @@ inductive Call.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Call os → Ctx os
     Γ.getFn f = some fn →
     Γ.WellTypedVars args (TypedVar.ty <$> fn.ins) →
     fn.requires ⬝ frame = Γ.res →
-    -- Functions defs are linear, so we remove `fn` from the context
     Call.WellTyped
       Γ { callee := .fn f, args := args }
-      ((Γ.removeFn f).updateRes (fn.ensures ⬝ frame))
+      (Γ.updateRes (fn.ensures ⬝ frame))
       fn.outTys
 
 inductive Binder.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Binder os → Ctx os → Prop where
@@ -265,22 +261,47 @@ inductive Expr.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Expr os → Ctx os
     Expr.WellTyped Γ' body Γ'' tys →
     Expr.WellTyped Γ (.bind binder body) Γ'' tys
 
-def FnDef.WellTyped {os : OpSet} [PCM os.R] (fns : FnCtx os) (fn : FnDef os) (fns' : FnCtx os) : Prop :=
+def FnDef.WellTyped {os : OpSet} [PCM os.R] (fns : FnCtx os) (fn : FnDef os) : Prop :=
   ∃ vars' res',
     Expr.WellTyped
       { self := fn, fns, vars := VarCtx.fromTypedVars fn.ins, res := fn.requires }
       fn.body
-      { self := fn, fns := fns', vars := vars', res := res' }
+      { self := fn, fns, vars := vars', res := res' }
       fn.outTys ∧
     res' ≤ fn.ensures
 
-inductive FnCtx.WellTyped {os : OpSet} [PCM os.R] : FnCtx os → FnCtx os → Prop where
-  | wt_nil : FnCtx.WellTyped [] []
+inductive FnCtx.WellTyped {os : OpSet} [PCM os.R] : FnCtx os → Prop where
+  | wt_nil : FnCtx.WellTyped []
   | wt_cons :
-    -- Type check previous defs first and get remaining unused defs
-    FnCtx.WellTyped fns fns' →
-    -- Typed check `fn`
-    FnDef.WellTyped fns' fn fns'' →
-    FnCtx.WellTyped (fn :: fns) (fn :: fns'')
+    FnCtx.WellTyped fns →
+    FnDef.WellTyped fns fn →
+    FnCtx.WellTyped (fn :: fns)
 
 end Wavelet.L0
+
+namespace Wavelet.L1
+
+open Wavelet.Op Wavelet.PCM
+
+abbrev Chan := String
+
+structure ChanType (os : OpSet) where
+  /-- `none` for ghost channel -/
+  ty : Option os.T
+  res : os.R
+
+inductive Process (os : OpSet) where
+  | Inact : Process os
+  | Par (p₁ : Process os) (p₂ : Process os) : Process os
+  | New (c : Chan) (ty : ChanType os) (p : Process os) : Process os
+  | Operator (op : os.Op) (ins : List Chan) (outs : List Chan) : Process os
+  | Steer (expected : Bool) (decider : Chan) (input : Chan) (output : Chan) : Process os
+  | Carry (decider : Chan) (init : Chan) (loop : Chan) (output : Chan) : Process os
+  | Merge (decider : Chan) (input₁ : Chan) (input₂ : Chan) (output : Chan) : Process os
+  | Fork (input : Chan) (output₁ : Chan) (output₂ : Chan) : Process os
+  | Order (input₁ : Chan) (input₂ : Chan) (output : Chan) : Process os
+  | Const (val : os.V) (act : Chan) (output : Chan) : Process os
+  | Sink (input : Chan) : Process os
+  | Forward (input : Chan) (output : Chan) : Process os
+
+end Wavelet.L1
