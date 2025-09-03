@@ -47,13 +47,64 @@ class LawfulPCM (R : Type u) [inst : PCM R] where
 
 end Wavelet.PCM
 
-/-! Basic definitions of finite interaction trees. -/
+/-! Basic definitions of interaction trees. -/
 namespace Wavelet.ITree
 
-inductive Fitree (E : Type u → Type v) (R : Type w) where
-  | Ret : R → Fitree E R
-  | Tau : Fitree E R → Fitree E R
-  | Vis {X : Type u} : E X → (X → Fitree E R) → Fitree E R
+/-- An inductive version of interaction trees with an explicit fixpoint constructor. -/
+inductive ITree (E : Type u → Type v) : Type w → Type (max (u + 1) v (w + 2)) where
+  | Ret : R → ITree E R
+  | Fix {A B : Type w} : (A → ITree E (A ⊕ B)) → A → (B → ITree E R) → ITree E R
+  | Vis : E A → (A → ITree E R) → ITree E R
+
+def ITree.bind {A B : Type u} (t : ITree E A) (f : A → ITree E B) : ITree E B :=
+  match t with
+  | ITree.Ret r => f r
+  | ITree.Fix m i k => ITree.Fix m i (λ x => (k x).bind f)
+  | ITree.Vis e k => ITree.Vis e (λ x => (k x).bind f)
+
+instance : Monad (ITree E) where
+  pure := ITree.Ret
+  bind := ITree.bind
+
+/-- Constructs an itree that represents the semantics of iterating `body` until it returns `inr`. -/
+def ITree.iter (body : A → ITree E (A ⊕ B)) : A → ITree E B :=
+  λ init => ITree.Fix body init ITree.Ret
+
+-- inductive ITree (E : Type u → Type v) (R : Type w) where
+--   | Ret : R → ITree E R
+--   | Tau : ITree E R → ITree E R
+--   | Vis {X : Type u} : E X → (X → ITree E R) → ITree E R
+
+-- def ITree.bind (t : ITree E A) (f : A → ITree E B) : ITree E B :=
+--   match t with
+--   | ITree.Ret r => f r
+--   | ITree.Tau t' => ITree.Tau (t'.bind f)
+--   | ITree.Vis e k => ITree.Vis e (λ x => (k x).bind f)
+
+-- instance : Monad (ITree E) where
+--   pure := ITree.Ret
+--   bind := ITree.bind
+
+-- instance [Inhabited R] : Inhabited (ITree E R) where
+--   default := ITree.Ret default
+
+-- -- instance[Bind E] [∀ α, Lean.Order.PartialOrder (ITree E α)] : Lean.Order.MonoBind (ITree E) where
+-- --   bind_mono_left := sorry
+-- --   bind_mono_right := sorry
+
+-- open Lean.Order
+
+-- def ITree.iter [Inhabited A] [Inhabited B] (body : A → ITree E (A ⊕ B)) : A → ITree E B :=
+--   λ init => do
+--     let r ← body init
+--     match r with
+--     | .inl a => ITree.iter body a
+--     | .inr b => ITree.Ret b
+--   partial_fixpoint monotonicity by
+--     monotonicity
+--     intros x y hxy
+--     simp only
+--     sorry
 
 end Wavelet.ITree
 
@@ -343,10 +394,11 @@ def InterpM.setVar {os : OpSet} {M} [Monad M] (v : Var) (val : os.V) : InterpM o
 def InterpM.lift {os : OpSet} {M} [Monad M] {α : Type u} : M α → InterpM os M α :=
   StateT.lift ∘ OptionT.lift
 
+/-! TODO: use itrees instead, as we can't prove anything useful about partial functions -/
 mutual
 
-partial def Expr.callFn
-  [Monad M] {os : OpSet} [PCM os.R] [OpSemantics os M]
+def Expr.callFn
+  {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
   (fns : FnCtx os)
   (self : FnDef os)
   (callee : FnDef os)
@@ -358,9 +410,11 @@ partial def Expr.callFn
     let init := VarMap.fromKVs (List.zip (TypedVar.name <$> self.ins) vals)
     let (ret, _) ← StateT.lift ((self.body.interpret fns self).run init)
     return ret
+partial_fixpoint monotonicity
+  sorry
 
-partial def Call.interpret
-  [Monad M] {os : OpSet} [PCM os.R] [OpSemantics os M]
+def Call.interpret
+  {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
   (fns : FnCtx os)
   (call : Call os) : InterpM os M (List os.V) :=
   match call.callee with
@@ -372,9 +426,10 @@ partial def Call.interpret
     | none => InterpM.fail
     | some callee =>
       Expr.callFn fns callee callee call.args
+partial_fixpoint monotonicity sorry
 
-partial def Binder.interpret
-  [Monad M] {os : OpSet} [PCM os.R] [OpSemantics os M]
+def Binder.interpret
+  {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
   (fns : FnCtx os) :
   Binder os → InterpM os M Unit
   | .call vars call => do
@@ -386,9 +441,10 @@ partial def Binder.interpret
       (vars.zip vals).forM (λ (var, val) => InterpM.setVar var val)
   | .const var val =>
     modify (VarMap.insert var val)
+partial_fixpoint monotonicity sorry
 
-partial def Expr.interpret
-  [Monad M] {os : OpSet} [PCM os.R] [OpSemantics os M]
+def Expr.interpret
+  {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
   (fns : FnCtx os)
   (self : FnDef os) :
   Expr os → InterpM os M (List os.V)
@@ -400,8 +456,18 @@ partial def Expr.interpret
     match os.asBool v with
     | none => InterpM.fail
     | some b => if b then left.interpret fns self else right.interpret fns self
+partial_fixpoint monotonicity sorry
 
 end -- mutual
+
+-- theorem test
+--   {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
+--   (fns : FnCtx os)
+--   (self : FnDef os)
+--   (e : Expr os) :
+--   e.interpret fns self = e.interpret (M := M) fns self := by
+--   unfold Expr.interpret
+--   sorry
 
 end Wavelet.L0
 
