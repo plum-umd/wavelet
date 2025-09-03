@@ -52,27 +52,23 @@ namespace Wavelet.ITree
 
 /-- An inductive version of interaction trees with an explicit fixpoint constructor. -/
 inductive ITree (E : Type u → Type v) : Type w → Type (max (u + 1) v (w + 2)) where
-  | Ret : R → ITree E R
-  | Fix {A B : Type w} [Inhabited B] : (A → ITree E (A ⊕ B)) → A → (B → ITree E R) → ITree E R
-  | Vis : E A → (A → ITree E R) → ITree E R
+  | ret : R → ITree E R
+  | fix {A B : Type w} : (A → ITree E (A ⊕ B)) → A → (B → ITree E R) → ITree E R
+  | vis : E A → (A → ITree E R) → ITree E R
 
 def ITree.bind {A B : Type u} (t : ITree E A) (f : A → ITree E B) : ITree E B :=
   match t with
-  | ITree.Ret r => f r
-  | ITree.Fix m i k => ITree.Fix m i (λ x => (k x).bind f)
-  | ITree.Vis e k => ITree.Vis e (λ x => (k x).bind f)
+  | .ret r => f r
+  | .fix m i k => .fix m i (λ x => (k x).bind f)
+  | .vis e k => .vis e (λ x => (k x).bind f)
 
 instance : Monad (ITree E) where
-  pure := ITree.Ret
-  bind := ITree.bind
+  pure := .ret
+  bind := .bind
 
-/-- Constructs an itree that represents the semantics of iterating `body` until it returns `inr`. -/
-def ITree.iter [Inhabited B] (body : A → ITree E (A ⊕ B)) : A → ITree E B :=
-  λ init => ITree.Fix body init ITree.Ret
+def ITree.lift (e : E A) : ITree E A := .vis e .ret
 
-def ITree.trigger (e : E A) : ITree E A := ITree.Vis e ITree.Ret
-
-abbrev EventHandler (M₁ M₂ : Type u → Type v) := ∀ {A : Type u}, M₁ A → M₂ A
+-- abbrev EventHandler (M₁ M₂ : Type u → Type v) := ∀ {A : Type u}, M₁ A → M₂ A
 
 -- def ITree.interpret [Inhabited A] [Inhabited B] [Monad E] [Monad M] (handler : EventHandler E M) : ITree E A → M A
 --   | ITree.Ret r => return r
@@ -355,38 +351,134 @@ inductive FnCtx.WellTyped {os : OpSet} [PCM os.R] : FnCtx os → Prop where
 
 open Wavelet.ITree
 
-/-- Attaches a local state and makes the operator monad fallible. -/
-abbrev InterpM (os : OpSet) (M) [Monad M] := StateT (VarMap os.V) (OptionT M)
+/-- Evaluation result of an expression -/
+inductive Expr.EvalResult (os : OpSet) where
+  | ret : List os.V → EvalResult os
+  | tail : List os.V → EvalResult os
+  | err : EvalResult os
 
-/-- TODO: add error types -/
-def InterpM.fail {os : OpSet} {M} [instM : Monad M] : InterpM os M α :=
-  StateT.lift (instM.pure none)
+mutual
 
-def InterpM.getVar {os : OpSet} {M} [Monad M] (v : Var) : InterpM os M os.V := do
-  let vars ← get
-  match vars.get v with
-  | some val => return val
-  | none => InterpM.fail
+def Callee.interpretFn
+  {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
+  (fns : FnCtx os)
+  (self : FnDef os)
+  (locals : VarMap os.V)
+  (cont : Expr os)
+  (callee : FnName)
+  (args : List os.V) : ITree M (Expr.EvalResult os)
+  :=
+  match fns with
+  | [] => return .err
+  | fn :: fns' =>
+    if fn.name = callee then
+      fn.interpret fns' args
+    else
+      Callee.interpretFn fns' self locals cont callee args
 
-def InterpM.setVar {os : OpSet} {M} [Monad M] (v : Var) (val : os.V) : InterpM os M Unit :=
-  modify (VarMap.insert v val)
+def Call.interpret
+  {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
+  (fns : FnCtx os)
+  (self : FnDef os)
+  (locals : VarMap os.V)
+  (cont : Expr os)
+  (call : Call os) : ITree M (Expr.EvalResult os)
+  := do
+  match call.args.mapM locals.get with
+  | some vals =>
+    match call.callee with
+    | .op op => ITree.lift (.ret <$> OpSemantics.runOp op vals)
+    | .fn f => Callee.interpretFn fns self locals cont f vals
+  | none => return .err
 
-def InterpM.lift {os : OpSet} {M} [Monad M] {α : Type u} : M α → InterpM os M α :=
-  StateT.lift ∘ OptionT.lift
+def Binder.interpret
+  {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
+  (fns : FnCtx os)
+  (self : FnDef os)
+  (locals : VarMap os.V)
+  (cont : Expr os) :
+  Binder os → ITree M (Expr.EvalResult os)
+  | .call vars call => do
+    let vals ← call.interpret fns self locals cont
+    -- Bind return values
+    match vals with
+    | .ret vals =>
+      if vals.length = vars.length then
+        let locals := (vars.zip vals).foldl (λ locals (var, val) => locals.insert var val) locals
+        cont.interpret fns self locals
+      else
+        return .err
+    | .err | .tail _ => return .err
+  | .const var val =>
+    cont.interpret fns self (locals.insert var val)
 
--- def Expr.interpret
---   {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
---   (fns : FnCtx os)
---   (self : FnDef os) :
---   Expr os → InterpM os M (List os.V)
---   | .vars vs => vs.mapM InterpM.getVar
---   | .tail args => Expr.callFn fns self self args
---   | .bind binder cont => binder.interpret fns *> cont.interpret fns self
---   | .branch cond left right => do
---     let v ← InterpM.getVar cond
---     match os.asBool v with
---     | none => InterpM.fail
---     | some b => if b then left.interpret fns self else right.interpret fns self
+/-- Interprets an expression as an `ITree` in the given `OpSemantics`. -/
+def Expr.interpret
+  {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
+  (fns : FnCtx os)
+  (self : FnDef os)
+  (locals : VarMap os.V) :
+  Expr os → ITree M (Expr.EvalResult os)
+  | .vars vs =>
+    return match vs.mapM locals.get with
+      | some vals => .ret vals
+      | none => .err
+  | .tail args =>
+    return match args.mapM locals.get with
+      | some vals => .tail vals
+      | none => .err
+  | .bind binder cont => binder.interpret fns self locals cont
+  | .branch cond left right =>
+    if let some v := locals.get cond then
+      if let some b := os.asBool v then
+        if b then
+          left.interpret fns self locals
+        else
+          right.interpret fns self locals
+      else return .err
+    else
+      return .err
+
+def FnDef.interpret
+  {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
+  (fns : FnCtx os)
+  (self : FnDef os)
+  (args : List os.V) :
+  ITree M (Expr.EvalResult os) :=
+    -- Interpreted as the fixpoint of repeatedly applying tail calls until return
+    ITree.fix (λ args =>
+      if args.length = self.ins.length then do
+        let locals := VarMap.fromKVs (List.zip (TypedVar.name <$> self.ins) args)
+        let res ← self.body.interpret fns self locals
+        match res with
+        | .ret vals => return .inr (.ret vals)
+        | .tail vals => return .inl vals
+        | .err => return .inr .err
+      else
+        return .inr .err)
+      args
+      .ret
+
+end -- mutual
+
+-- /-- Attaches a local state and makes the operator monad fallible. -/
+-- abbrev InterpM (os : OpSet) (M) [Monad M] := StateT (VarMap os.V) (OptionT M)
+
+-- /-- TODO: add error types -/
+-- def InterpM.fail {os : OpSet} {M} [instM : Monad M] : InterpM os M α :=
+--   StateT.lift (instM.pure none)
+
+-- def InterpM.getVar {os : OpSet} {M} [Monad M] (v : Var) : InterpM os M os.V := do
+--   let vars ← get
+--   match vars.get v with
+--   | some val => return val
+--   | none => InterpM.fail
+
+-- def InterpM.setVar {os : OpSet} {M} [Monad M] (v : Var) (val : os.V) : InterpM os M Unit :=
+--   modify (VarMap.insert v val)
+
+-- def InterpM.lift {os : OpSet} {M} [Monad M] {α : Type u} : M α → InterpM os M α :=
+--   StateT.lift ∘ OptionT.lift
 
 -- /-! TODO: use itrees instead, as we can't prove anything useful about partial functions -/
 -- mutual
