@@ -380,8 +380,7 @@ def Expr.interpret
   | .let_fn boundVars fnName args cont =>
     match args.mapM locals.get with
     | some args => do
-      let retVals ← Expr.interpretFn fns fnName args
-      match retVals with
+      match ← Expr.interpretFn fns fnName args with
       | some retVals =>
         if boundVars.length = retVals.length then
           cont.interpret fns self (locals.insertVars (boundVars.zip retVals))
