@@ -71,19 +71,36 @@ def ITree.lift (e : E A) : ITree E A := .vis e .ret
 /-- Short-hand for iterating the given function until it returns `inr` -/
 def ITree.iter {A B : Type u} (f : A → ITree E (A ⊕ B)) (a : A) : ITree E B := .fix f a .ret
 
--- abbrev EventHandler (M₁ M₂ : Type u → Type v) := ∀ {A : Type u}, M₁ A → M₂ A
+instance : LawfulFunctor (ITree E) where
+  map_const := rfl
+  id_map := by
+    intros _ x
+    simp only [Functor.map]
+    induction x with
+    | ret r => rfl
+    | fix m i k ih ih2 =>
+      simp only [ITree.bind, Function.comp_id, ITree.fix.injEq, heq_eq_eq, true_and]
+      funext
+      apply ih2
+    | vis e k ih =>
+      simp only [ITree.bind, Function.comp_id, ITree.vis.injEq, heq_eq_eq, true_and]
+      funext
+      apply ih
+  comp_map := by
+    intros _ _ _ g h x
+    simp only [Functor.map]
+    induction x with
+    | ret r => rfl
+    | fix m i k ih ih2 =>
+      simp only [ITree.bind, ITree.fix.injEq, heq_eq_eq, true_and]
+      funext
+      apply ih2
+    | vis e k ih =>
+      simp only [ITree.bind, ITree.vis.injEq, heq_eq_eq, true_and]
+      funext
+      apply ih
 
--- def ITree.interpret [Inhabited A] [Inhabited B] [Monad E] [Monad M] (handler : EventHandler E M) : ITree E A → M A
---   | ITree.Ret r => return r
---   | ITree.Vis e k => handler e >>= λ v => ITree.interpret handler (k v)
---   | ITree.Fix m i k => do
---     let v ← ITree.interpret handler (m i)
---     match v with
---     | .inl a => ITree.interpret handler (ITree.Fix m a k)
---     | .inr b => ITree.interpret handler (k b)
---   partial_fixpoint monotonicity by
-
---     sorry
+/- TODO: prove LawfulApplicative and LawfulMonad -/
 
 end Wavelet.ITree
 
@@ -411,100 +428,6 @@ def FnDef.interpret
     args
 
 end -- mutual
-
--- /-- Attaches a local state and makes the operator monad fallible. -/
--- abbrev InterpM (os : OpSet) (M) [Monad M] := StateT (VarMap os.V) (OptionT M)
-
--- /-- TODO: add error types -/
--- def InterpM.fail {os : OpSet} {M} [instM : Monad M] : InterpM os M α :=
---   StateT.lift (instM.pure none)
-
--- def InterpM.getVar {os : OpSet} {M} [Monad M] (v : Var) : InterpM os M os.V := do
---   let vars ← get
---   match vars.get v with
---   | some val => return val
---   | none => InterpM.fail
-
--- def InterpM.setVar {os : OpSet} {M} [Monad M] (v : Var) (val : os.V) : InterpM os M Unit :=
---   modify (VarMap.insert v val)
-
--- def InterpM.lift {os : OpSet} {M} [Monad M] {α : Type u} : M α → InterpM os M α :=
---   StateT.lift ∘ OptionT.lift
-
--- /-! TODO: use itrees instead, as we can't prove anything useful about partial functions -/
--- mutual
-
--- def Expr.callFn
---   {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
---   (fns : FnCtx os)
---   (self : FnDef os)
---   (callee : FnDef os)
---   (args : Vars) : InterpM os M (List os.V) := do
---   let vals ← args.mapM InterpM.getVar
---   if vals.length ≠ callee.ins.length then
---     InterpM.fail
---   else
---     let init := VarMap.fromKVs (List.zip (TypedVar.name <$> self.ins) vals)
---     let (ret, _) ← StateT.lift ((self.body.interpret fns self).run init)
---     return ret
--- partial_fixpoint monotonicity
---   sorry
-
--- def Call.interpret
---   {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
---   (fns : FnCtx os)
---   (call : Call os) : InterpM os M (List os.V) :=
---   match call.callee with
---   | .op op => do
---     let vals ← call.args.mapM InterpM.getVar
---     InterpM.lift (OpSemantics.runOp op vals)
---   | .fn fn =>
---     match fns.getFn fn with
---     | none => InterpM.fail
---     | some callee =>
---       Expr.callFn fns callee callee call.args
--- partial_fixpoint monotonicity sorry
-
--- def Binder.interpret
---   {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
---   (fns : FnCtx os) :
---   Binder os → InterpM os M Unit
---   | .call vars call => do
---     let vals ← call.interpret fns
---     if vals.length ≠ vars.length then
---       InterpM.fail
---     else
---       -- Bind the return values
---       (vars.zip vals).forM (λ (var, val) => InterpM.setVar var val)
---   | .const var val =>
---     modify (VarMap.insert var val)
--- partial_fixpoint monotonicity sorry
-
--- def Expr.interpret
---   {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
---   (fns : FnCtx os)
---   (self : FnDef os) :
---   Expr os → InterpM os M (List os.V)
---   | .vars vs => vs.mapM InterpM.getVar
---   | .tail args => Expr.callFn fns self self args
---   | .bind binder cont => binder.interpret fns *> cont.interpret fns self
---   | .branch cond left right => do
---     let v ← InterpM.getVar cond
---     match os.asBool v with
---     | none => InterpM.fail
---     | some b => if b then left.interpret fns self else right.interpret fns self
--- partial_fixpoint monotonicity sorry
-
--- end -- mutual
-
--- theorem test
---   {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
---   (fns : FnCtx os)
---   (self : FnDef os)
---   (e : Expr os) :
---   e.interpret fns self = e.interpret (M := M) fns self := by
---   unfold Expr.interpret
---   sorry
 
 end Wavelet.L0
 
