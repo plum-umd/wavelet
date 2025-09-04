@@ -68,6 +68,9 @@ instance : Monad (ITree E) where
 
 def ITree.lift (e : E A) : ITree E A := .vis e .ret
 
+/-- Short-hand for iterating the given function until it returns `inr` -/
+def ITree.iter {A B : Type u} (f : A → ITree E (A ⊕ B)) (a : A) : ITree E B := .fix f a .ret
+
 -- abbrev EventHandler (M₁ M₂ : Type u → Type v) := ∀ {A : Type u}, M₁ A → M₂ A
 
 -- def ITree.interpret [Inhabited A] [Inhabited B] [Monad E] [Monad M] (handler : EventHandler E M) : ITree E A → M A
@@ -153,40 +156,17 @@ abbrev Var := String
 abbrev Vars := List Var
 abbrev FnName := String
 
-structure TypedVar (T : Type u) where
-  name : Var
-  ty : T
-
-abbrev TypedVars (T : Type u) := List (TypedVar T)
-
-def TypedVars.fromLists {os : OpSet}
-  (vars : List Var) (tys : List os.T) : Option (TypedVars os.T) :=
-  if vars.length = tys.length then
-    some ((vars.zip tys).map (λ (v, t) => TypedVar.mk v t))
-  else
-    none
-
-inductive Callee (os : OpSet) where
-  | op : os.Op → Callee os
-  | fn : FnName → Callee os
-
-structure Call (os : OpSet) where
-  callee : Callee os
-  args : Vars
-
-inductive Binder (os : OpSet) where
-  | call : Vars → Call os → Binder os
-  | const : Var → os.V → Binder os
-
 inductive Expr (os : OpSet) where
   | vars : Vars → Expr os
   | tail : Vars → Expr os
-  | bind : Binder os → Expr os → Expr os
+  | let_fn : (boundVars : Vars) → FnName → (args : Vars) → Expr os → Expr os
+  | let_op : (boundVars : Vars) → os.Op → (args : Vars) → Expr os → Expr os
+  | let_const : Var → os.V → Expr os → Expr os
   | branch : Var → Expr os → Expr os → Expr os
 
 structure FnDef (os : OpSet) where
   name : FnName
-  ins : TypedVars os.T
+  ins : List (Var × os.T)
   outTys : List os.T
   requires : os.R
   ensures : os.R
@@ -212,14 +192,11 @@ def VarMap.insert (x : Var) (t : T) (vars : VarMap T) : VarMap T :=
 def VarMap.remove (x : Var) (vars : VarMap T): VarMap T :=
   λ y => if y = x then none else vars y
 
-def VarMap.insertTypedVars (vs : TypedVars T) (vars : VarMap T) : VarMap T :=
-  vs.foldl (λ ctx v => ctx.insert v.name v.ty) vars
+def VarMap.fromList (vs : List (Var × T)) : VarMap T :=
+  λ x => (vs.find? (λ (k, _) => k = x)).map Prod.snd
 
-def VarMap.fromTypedVars (vs : TypedVars T) : VarMap T :=
-  λ x => TypedVar.ty <$> vs.find? (λ v => v.name = x)
-
-def VarMap.fromKVs (kvs : List (Var × T)) : VarMap T :=
-  λ x => (kvs.find? (λ (k, _) => k = x)).map Prod.snd
+def VarMap.insertVars (vs : List (Var × T)) (vars : VarMap T) : VarMap T :=
+  λ x => (VarMap.fromList vs).get x <|> vars x
 
 /--
 For convenience, new `FnDef`s are inserted at the front,
@@ -256,37 +233,6 @@ def Ctx.updateRes {os : OpSet} (Γ : Ctx os) (r : os.R) : Ctx os :=
    ╚═╝      ╚═╝   ╚═╝     ╚═╝╚═╝  ╚═══╝ ╚═════╝     ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚══════╝╚══════╝
 -/
 
-inductive Call.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Call os → Ctx os → List os.T → Prop where
-  /-- Well-typed operator call -/
-  | wt_call_op {args} :
-    Γ.WellTypedVars args (os.specOf op).inTys →
-    (os.specOf op).requires ⬝ frame = Γ.res →
-    Call.WellTyped
-      Γ { callee := .op op, args := args }
-      { Γ with res := (os.specOf op).ensures ⬝ frame }
-      (os.specOf op).outTys
-  /-- Well-typed function call -/
-  | wt_call_fn {args} :
-    Γ.getFn f = some fn →
-    Γ.WellTypedVars args (TypedVar.ty <$> fn.ins) →
-    fn.requires ⬝ frame = Γ.res →
-    Call.WellTyped
-      Γ { callee := .fn f, args := args }
-      { Γ with res := fn.ensures ⬝ frame }
-      fn.outTys
-
-inductive Binder.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Binder os → Ctx os → Prop where
-  /-- Well-typed call -/
-  | wt_bind_call {call} :
-    Call.WellTyped Γ call Γ' tys →
-    TypedVars.fromLists vars tys = some typedVars →
-    Binder.WellTyped Γ (.call vars call)
-      { Γ with vars := Γ.vars.insertTypedVars typedVars }
-  /-- Well-typed constant binder -/
-  | wt_bind_const :
-    Binder.WellTyped Γ (.const var val)
-      { Γ with vars := Γ.vars.insert var (os.typeOf val) }
-
 inductive Expr.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Expr os → Ctx os → List os.T → Prop where
   /-- Well-typed variables -/
   | wt_vars :
@@ -294,11 +240,41 @@ inductive Expr.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Expr os → Ctx os
     Expr.WellTyped Γ (.vars vs) Γ tys
   /-- Well-typed recursive tail call -/
   | wt_tail :
-    Γ.WellTypedVars args (TypedVar.ty <$> Γ.self.ins) →
+    Γ.WellTypedVars args (Prod.snd <$> Γ.self.ins) →
     Γ.self.requires ⬝ frame = Γ.res →
     Expr.WellTyped
       Γ (.tail args)
       (Γ.updateRes (Γ.self.ensures ⬝ frame)) Γ.self.outTys
+  /-- Well-typed let fn call -/
+  | wt_let_fn :
+    Γ.getFn fnName = some fn →
+    Γ.WellTypedVars args (Prod.snd <$> fn.ins) →
+    fn.requires ⬝ frame = Γ.res →
+    boundVars.length = fn.outTys.length →
+    Expr.WellTyped {
+      Γ with
+      res := fn.ensures ⬝ frame,
+      vars := Γ.vars.insertVars (boundVars.zip fn.outTys)
+    } cont Γ' tys →
+    Expr.WellTyped Γ (.let_fn boundVars fnName args cont) Γ' tys
+  /-- Well-typed let op call -/
+  | wt_let_op :
+    Γ.WellTypedVars args (os.specOf op).inTys →
+    (os.specOf op).requires ⬝ frame = Γ.res →
+    boundVars.length = (os.specOf op).outTys.length →
+    Expr.WellTyped {
+      Γ with
+      res := (os.specOf op).ensures ⬝ frame,
+      vars := Γ.vars.insertVars (boundVars.zip (os.specOf op).outTys)
+    } cont Γ' tys →
+    Expr.WellTyped Γ (.let_op boundVars op args cont) Γ' tys
+  /-- Well-typed let constant -/
+  | wt_let_const :
+    Expr.WellTyped {
+      Γ with
+      vars := Γ.vars.insert var (os.typeOf val)
+    } cont Γ' tys →
+    Expr.WellTyped Γ (.let_const var val cont) Γ' tys
   /-- Well-typed branching -/
   | wt_branch :
     -- Condition is well-typed
@@ -318,16 +294,11 @@ inductive Expr.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Expr os → Ctx os
         fns := Γ₁.fns.intersect Γ₂.fns,
         res := res'
       } tys
-  /-- Well-typed let -/
-  | wt_bind :
-    Binder.WellTyped Γ binder Γ' →
-    Expr.WellTyped Γ' body Γ'' tys →
-    Expr.WellTyped Γ (.bind binder body) Γ'' tys
 
 def FnDef.WellTyped {os : OpSet} [PCM os.R] (fns : FnCtx os) (fn : FnDef os) : Prop :=
   ∃ vars' res',
     Expr.WellTyped
-      { self := fn, fns, vars := VarMap.fromTypedVars fn.ins, res := fn.requires }
+      { self := fn, fns, vars := VarMap.fromList fn.ins, res := fn.requires }
       fn.body
       { self := fn, fns, vars := vars', res := res' }
       fn.outTys ∧
@@ -359,62 +330,24 @@ inductive Expr.EvalResult (os : OpSet) where
 
 mutual
 
-def Callee.interpretFn
-  {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
+variable {os : OpSet} [PCM os.R]
+variable {M} [Monad M]
+variable [OpSemantics os M]
+
+def Expr.interpretFn
   (fns : FnCtx os)
-  (self : FnDef os)
-  (locals : VarMap os.V)
-  (cont : Expr os)
-  (callee : FnName)
-  (args : List os.V) : ITree M (Expr.EvalResult os)
-  :=
+  (fnName : FnName)
+  (args : List os.V) : ITree M (Option (List os.V)) :=
   match fns with
-  | [] => return .err
+  | [] => return none
   | fn :: fns' =>
-    if fn.name = callee then
+    if fn.name = fnName then
       fn.interpret fns' args
     else
-      Callee.interpretFn fns' self locals cont callee args
-
-def Call.interpret
-  {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
-  (fns : FnCtx os)
-  (self : FnDef os)
-  (locals : VarMap os.V)
-  (cont : Expr os)
-  (call : Call os) : ITree M (Expr.EvalResult os)
-  := do
-  match call.args.mapM locals.get with
-  | some vals =>
-    match call.callee with
-    | .op op => ITree.lift (.ret <$> OpSemantics.runOp op vals)
-    | .fn f => Callee.interpretFn fns self locals cont f vals
-  | none => return .err
-
-def Binder.interpret
-  {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
-  (fns : FnCtx os)
-  (self : FnDef os)
-  (locals : VarMap os.V)
-  (cont : Expr os) :
-  Binder os → ITree M (Expr.EvalResult os)
-  | .call vars call => do
-    let vals ← call.interpret fns self locals cont
-    -- Bind return values
-    match vals with
-    | .ret vals =>
-      if vals.length = vars.length then
-        let locals := (vars.zip vals).foldl (λ locals (var, val) => locals.insert var val) locals
-        cont.interpret fns self locals
-      else
-        return .err
-    | .err | .tail _ => return .err
-  | .const var val =>
-    cont.interpret fns self (locals.insert var val)
+      Expr.interpretFn fns' fnName args
 
 /-- Interprets an expression as an `ITree` in the given `OpSemantics`. -/
 def Expr.interpret
-  {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
   (fns : FnCtx os)
   (self : FnDef os)
   (locals : VarMap os.V) :
@@ -427,7 +360,29 @@ def Expr.interpret
     return match args.mapM locals.get with
       | some vals => .tail vals
       | none => .err
-  | .bind binder cont => binder.interpret fns self locals cont
+  | .let_fn boundVars fnName args cont =>
+    match args.mapM locals.get with
+    | some args => do
+      let retVals ← Expr.interpretFn fns fnName args
+      match retVals with
+      | some retVals =>
+        if boundVars.length = retVals.length then
+          cont.interpret fns self (locals.insertVars (boundVars.zip retVals))
+        else
+          return .err
+      | none => return .err
+    | none => return .err
+  | .let_op boundVars op args cont =>
+    match args.mapM locals.get with
+    | some args => do
+      let retVals ← ITree.lift (OpSemantics.runOp op args)
+      if boundVars.length = retVals.length then
+        cont.interpret fns self (locals.insertVars (boundVars.zip retVals))
+      else
+        return .err
+    | none => return .err
+  | .let_const var val cont =>
+    cont.interpret fns self (locals.insert var val)
   | .branch cond left right =>
     if let some v := locals.get cond then
       if let some b := os.asBool v then
@@ -440,24 +395,20 @@ def Expr.interpret
       return .err
 
 def FnDef.interpret
-  {os : OpSet} {M} [Monad M] [PCM os.R] [OpSemantics os M]
   (fns : FnCtx os)
   (self : FnDef os)
-  (args : List os.V) :
-  ITree M (Expr.EvalResult os) :=
-    -- Interpreted as the fixpoint of repeatedly applying tail calls until return
-    ITree.fix (λ args =>
-      if args.length = self.ins.length then do
-        let locals := VarMap.fromKVs (List.zip (TypedVar.name <$> self.ins) args)
-        let res ← self.body.interpret fns self locals
-        match res with
-        | .ret vals => return .inr (.ret vals)
-        | .tail vals => return .inl vals
-        | .err => return .inr .err
-      else
-        return .inr .err)
-      args
-      .ret
+  (args : List os.V) : ITree M (Option (List os.V)) :=
+  -- Interpreted as the fixpoint of repeatedly applying tail calls until return
+  ITree.iter (λ args =>
+    if args.length = self.ins.length then do
+      let locals := VarMap.fromList (List.zip (self.ins.map Prod.fst) args)
+      match ← self.body.interpret fns self locals with
+      | .ret vals => return .inr (some vals)
+      | .tail vals => return .inl vals
+      | .err => return .inr none
+    else
+      return .inr none)
+    args
 
 end -- mutual
 
