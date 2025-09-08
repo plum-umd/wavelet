@@ -366,6 +366,136 @@ inductive Final : Config os → sem.S → List os.V → Prop where
 
 end Wavelet.L0
 
+/-! A monadic semantics of L0. -/
+namespace Wavelet.L0
+
+open PCM Op L0
+
+/-- An inductive version of interaction trees with an explicit fixpoint constructor. -/
+inductive FixTree (E : Type u → Type v) : Type w → Type (max (u + 1) v (w + 2)) where
+  | ret : R → FixTree E R
+  | vis : E A → (A → FixTree E R) → FixTree E R
+  | fix {A B : Type w} : (A → FixTree E (A ⊕ B)) → A → (B → FixTree E R) → FixTree E R
+
+def FixTree.bind {A B : Type u} (t : FixTree E A) (f : A → FixTree E B) : FixTree E B :=
+  match t with
+  | .ret r => f r
+  | .vis e k => .vis e (λ x => (k x).bind f)
+  | .fix m i k => .fix m i (λ x => (k x).bind f)
+
+instance : Monad (FixTree E) where
+  pure := .ret
+  bind := .bind
+
+def FixTree.trigger (e : E A) : FixTree E A := .vis e .ret
+
+/-- Short-hand for iterating the given function until it returns `inr` -/
+def FixTree.iter {A B : Type u} (f : A → FixTree E (A ⊕ B)) (a : A) : FixTree E B := .fix f a .ret
+
+/-- Final evaluation result of an expression. -/
+inductive Expr.EvalResult (os : OpSet) where
+  | ret : List os.V → EvalResult os
+  | tail : List os.V → EvalResult os
+
+/-- Evaluation event. -/
+inductive Expr.EvalE (os : OpSet) : Type → Type where
+  | op : os.Op → List os.V → EvalE os (List os.V)
+
+/-- Evaluation monad for expressions. -/
+abbrev Expr.EvalM os := StateT (VarMap os.V) (OptionT (FixTree (Expr.EvalE os)))
+
+def Expr.EvalM.err {os : OpSet} : EvalM os R := StateT.lift OptionT.fail
+
+def Expr.EvalM.getLocal {os : OpSet} (x : Var) : EvalM os (os.V) := do
+  let locals ← get
+  match locals.get x with
+  | some v => return v
+  | none => .err
+
+def Expr.EvalM.setLocal {os : OpSet} (x : Var) (v : os.V) : EvalM os Unit := do
+  let locals ← get
+  set (locals.insert x v)
+
+/-- Evaluation monad for function definitions. -/
+abbrev FnDef.EvalM os := OptionT (FixTree (Expr.EvalE os))
+
+mutual
+
+variable {os : OpSet}
+
+def Expr.interpretFn
+  (fns : FnCtx os)
+  (fnName : FnName)
+  (args : List os.V) : Expr.EvalM os (List os.V) :=
+  match fns with
+  | [] => .err
+  | fn :: fns' =>
+    if fn.name = fnName then
+      .lift (fn.interpret fns' args)
+    else
+      Expr.interpretFn fns' fnName args
+
+/--
+Interprets an expression as an `ITree` in the given `OpSemantics`.
+Local variable reads/writes are interpreted directly through a "state monad"
+on `VarMap os.V` without `ITree` events.
+-/
+def Expr.interpret
+  (fns : FnCtx os)
+  (self : FnDef os) :
+  Expr os → Expr.EvalM os (Expr.EvalResult os)
+  | .vars vs => .ret <$> vs.mapM .getLocal
+  | .tail args => .tail <$> args.mapM .getLocal
+  | .let_fn boundVars fnName args cont => do
+    let argVals ← args.mapM .getLocal
+    let retVals ← Expr.interpretFn fns fnName argVals
+    if boundVars.length = retVals.length then
+      (boundVars.zip retVals).forM (λ (v, val) => .setLocal v val)
+      cont.interpret fns self
+    else
+      .err
+  | .let_op boundVars op args cont => do
+    let argVals ← args.mapM .getLocal
+    let retVals ← .lift (.lift (.trigger (.op op argVals)))
+    if boundVars.length = retVals.length then
+      (boundVars.zip retVals).forM (λ (v, val) => .setLocal v val)
+      cont.interpret fns self
+    else
+      .err
+  | .let_const var val cont => do
+    .setLocal var val
+    cont.interpret fns self
+  | .branch cond left right => do
+    let condVal ← .getLocal cond
+    if let some b := os.asBool condVal then
+      if b then
+        left.interpret fns self
+      else
+        right.interpret fns self
+    else
+      .err
+
+def FnDef.interpret
+  (fns : FnCtx os)
+  (self : FnDef os)
+  (args : List os.V) : FnDef.EvalM os (List os.V) :=
+  -- Interpreted as the fixpoint of repeatedly applying tail calls until return
+  FixTree.iter (λ args =>
+    if args.length = self.ins.length then do
+      let locals := VarMap.fromList (List.zip (self.ins.map Prod.fst) args)
+      let evalRes ← self.body.interpret fns self locals
+      match evalRes with
+      | some (.ret vals, _) => return .inr (some vals)
+      | some (.tail vals, _) => return .inl vals
+      | none => return .inr none
+    else
+      return .inr none)
+    args
+
+end -- mutual
+
+end Wavelet.L0
+
 /-! Syntax and operational semantics of L1. -/
 namespace Wavelet.L1
 
