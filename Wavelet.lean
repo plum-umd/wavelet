@@ -1,16 +1,10 @@
-import Batteries.Data.List.Basic
+import Mathlib.Data.List.Basic
+import Mathlib.Data.Finset.Basic
+
+set_option linter.dupNamespace false
 
 /-! A formulation of partial commutative monoids. -/
 namespace Wavelet.PCM
-
-/-
-██████╗  ██████╗███╗   ███╗     █████╗ ██╗  ██╗██╗ ██████╗ ███╗   ███╗███████╗
-██╔══██╗██╔════╝████╗ ████║    ██╔══██╗╚██╗██╔╝██║██╔═══██╗████╗ ████║██╔════╝
-██████╔╝██║     ██╔████╔██║    ███████║ ╚███╔╝ ██║██║   ██║██╔████╔██║███████╗
-██╔═══╝ ██║     ██║╚██╔╝██║    ██╔══██║ ██╔██╗ ██║██║   ██║██║╚██╔╝██║╚════██║
-██║     ╚██████╗██║ ╚═╝ ██║    ██║  ██║██╔╝ ██╗██║╚██████╔╝██║ ╚═╝ ██║███████║
-╚═╝      ╚═════╝╚═╝     ╚═╝    ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
--/
 
 class PCM (C : Type u) where
   add : C → C → C
@@ -47,63 +41,6 @@ class LawfulPCM (R : Type u) [inst : PCM R] where
 
 end Wavelet.PCM
 
-/-! Basic definitions of interaction trees. -/
-namespace Wavelet.ITree
-
-/-- An inductive version of interaction trees with an explicit fixpoint constructor. -/
-inductive ITree (E : Type u → Type v) : Type w → Type (max (u + 1) v (w + 2)) where
-  | ret : R → ITree E R
-  | fix {A B : Type w} : (A → ITree E (A ⊕ B)) → A → (B → ITree E R) → ITree E R
-  | vis : E A → (A → ITree E R) → ITree E R
-
-def ITree.bind {A B : Type u} (t : ITree E A) (f : A → ITree E B) : ITree E B :=
-  match t with
-  | .ret r => f r
-  | .fix m i k => .fix m i (λ x => (k x).bind f)
-  | .vis e k => .vis e (λ x => (k x).bind f)
-
-instance : Monad (ITree E) where
-  pure := .ret
-  bind := .bind
-
-def ITree.lift (e : E A) : ITree E A := .vis e .ret
-
-/-- Short-hand for iterating the given function until it returns `inr` -/
-def ITree.iter {A B : Type u} (f : A → ITree E (A ⊕ B)) (a : A) : ITree E B := .fix f a .ret
-
-instance : LawfulFunctor (ITree E) where
-  map_const := rfl
-  id_map := by
-    intros _ x
-    simp only [Functor.map]
-    induction x with
-    | ret r => rfl
-    | fix m i k ih ih2 =>
-      simp only [ITree.bind, Function.comp_id, ITree.fix.injEq, heq_eq_eq, true_and]
-      funext
-      apply ih2
-    | vis e k ih =>
-      simp only [ITree.bind, Function.comp_id, ITree.vis.injEq, heq_eq_eq, true_and]
-      funext
-      apply ih
-  comp_map := by
-    intros _ _ _ g h x
-    simp only [Functor.map]
-    induction x with
-    | ret r => rfl
-    | fix m i k ih ih2 =>
-      simp only [ITree.bind, ITree.fix.injEq, heq_eq_eq, true_and]
-      funext
-      apply ih2
-    | vis e k ih =>
-      simp only [ITree.bind, ITree.vis.injEq, heq_eq_eq, true_and]
-      funext
-      apply ih
-
-/- TODO: prove LawfulApplicative and LawfulMonad -/
-
-end Wavelet.ITree
-
 /-! Semantics of operators that our source and target languages are parametric in. -/
 namespace Wavelet.Op
 
@@ -130,7 +67,7 @@ structure OpSet where
   specOf : Op → OpSpec T R
   /-- Bool type -/
   isBoolTy : T → Bool
-  /-- Convert a type to bool type -/
+  /-- Convert a value to bool -/
   asBool : V → Option Bool
   /-- `asBool` behaves correctly -/
   asBool_correct : ∀ v, isBoolTy (typeOf v) ↔ (asBool v).isSome
@@ -138,9 +75,13 @@ structure OpSet where
 def OpSet.WellTypedValues (os : OpSet) (ins : List os.V) (inTys : List os.T) : Prop :=
   List.Forall₂ (λ v t => os.typeOf v = t) ins inTys
 
-class OpSemantics (os : OpSet) [PCM os.R] (M : Type u → Type v) [Monad M] where
-  /-- Interpret the semantics of operators in a custom monad. -/
-  runOp : os.Op → List os.V → M (List os.V)
+abbrev OpM S R := StateT S Option R
+
+class OpSemantics (os : OpSet) [PCM os.R] where
+  S : Type w
+
+  /-- TODO: generalize to custom monads? -/
+  runOp : os.Op → List os.V → OpM S (List os.V)
 
   /-- The operator's declared resource spec should be frame-preserving.  -/
   op_valid_res_spec (op : os.Op) : (os.specOf op).requires ⟹ (os.specOf op).ensures
@@ -150,24 +91,16 @@ class OpSemantics (os : OpSet) [PCM os.R] (M : Type u → Type v) [Monad M] wher
     (hwt_ins₁ : os.WellTypedValues ins₁ (os.specOf op₁).inTys)
     (hwt_ins₂ : os.WellTypedValues ins₂ (os.specOf op₂).inTys)
     (hdisj : (os.specOf op₁).requires ⊥ (os.specOf op₂).requires) :
-    ∀ (s : M T),
+    ∀ (s : OpM S R),
       s *> (Prod.mk <$> runOp op₁ ins₁ <*> runOp op₂ ins₂) =
       s *> (Prod.mk <$> runOp op₂ ins₂ <*> runOp op₁ ins₁)
+
 end Wavelet.Op
 
 /-! Syntax and typing rules of L0, a first-order sequential language with affine resources. -/
 namespace Wavelet.L0
 
 open Wavelet.Op Wavelet.PCM
-
-/-
-███████╗██╗   ██╗███╗   ██╗████████╗ █████╗ ██╗  ██╗
-██╔════╝╚██╗ ██╔╝████╗  ██║╚══██╔══╝██╔══██╗╚██╗██╔╝
-███████╗ ╚████╔╝ ██╔██╗ ██║   ██║   ███████║ ╚███╔╝
-╚════██║  ╚██╔╝  ██║╚██╗██║   ██║   ██╔══██║ ██╔██╗
-███████║   ██║   ██║ ╚████║   ██║   ██║  ██║██╔╝ ██╗
-╚══════╝   ╚═╝   ╚═╝  ╚═══╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝
--/
 
 abbrev Var := String
 abbrev Vars := List Var
@@ -188,15 +121,6 @@ structure FnDef (os : OpSet) where
   requires : os.R
   ensures : os.R
   body : Expr os
-
-/-
-████████╗██╗   ██╗██████╗ ██╗███╗   ██╗ ██████╗      ██████╗ ██████╗ ███╗   ██╗████████╗███████╗██╗  ██╗████████╗
-╚══██╔══╝╚██╗ ██╔╝██╔══██╗██║████╗  ██║██╔════╝     ██╔════╝██╔═══██╗████╗  ██║╚══██╔══╝██╔════╝╚██╗██╔╝╚══██╔══╝
-   ██║    ╚████╔╝ ██████╔╝██║██╔██╗ ██║██║  ███╗    ██║     ██║   ██║██╔██╗ ██║   ██║   █████╗   ╚███╔╝    ██║
-   ██║     ╚██╔╝  ██╔═══╝ ██║██║╚██╗██║██║   ██║    ██║     ██║   ██║██║╚██╗██║   ██║   ██╔══╝   ██╔██╗    ██║
-   ██║      ██║   ██║     ██║██║ ╚████║╚██████╔╝    ╚██████╗╚██████╔╝██║ ╚████║   ██║   ███████╗██╔╝ ██╗   ██║
-   ╚═╝      ╚═╝   ╚═╝     ╚═╝╚═╝  ╚═══╝ ╚═════╝      ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝   ╚═╝
--/
 
 /-- Variable context as a function for convenience -/
 abbrev VarMap (T : Type u) := Var → Option T
@@ -241,15 +165,7 @@ def Ctx.getFn {os : OpSet} (Γ : Ctx os) (f : FnName) : Option (FnDef os) := Γ.
 def Ctx.updateRes {os : OpSet} (Γ : Ctx os) (r : os.R) : Ctx os :=
   { Γ with res := r }
 
-/-
-████████╗██╗   ██╗██████╗ ██╗███╗   ██╗ ██████╗     ██████╗ ██╗   ██╗██╗     ███████╗███████╗
-╚══██╔══╝╚██╗ ██╔╝██╔══██╗██║████╗  ██║██╔════╝     ██╔══██╗██║   ██║██║     ██╔════╝██╔════╝
-   ██║    ╚████╔╝ ██████╔╝██║██╔██╗ ██║██║  ███╗    ██████╔╝██║   ██║██║     █████╗  ███████╗
-   ██║     ╚██╔╝  ██╔═══╝ ██║██║╚██╗██║██║   ██║    ██╔══██╗██║   ██║██║     ██╔══╝  ╚════██║
-   ██║      ██║   ██║     ██║██║ ╚████║╚██████╔╝    ██║  ██║╚██████╔╝███████╗███████╗███████║
-   ╚═╝      ╚═╝   ╚═╝     ╚═╝╚═╝  ╚═══╝ ╚═════╝     ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚══════╝╚══════╝
--/
-
+/-- Typing rules -/
 inductive Expr.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Expr os → Ctx os → List os.T → Prop where
   /-- Well-typed variables -/
   | wt_vars :
@@ -258,7 +174,7 @@ inductive Expr.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Expr os → Ctx os
   /-- Well-typed recursive tail call -/
   | wt_tail :
     Γ.WellTypedVars args (Prod.snd <$> Γ.self.ins) →
-    Γ.self.requires ⬝ frame = Γ.res →
+    Γ.self.requires ⬝ frame ≡ Γ.res →
     Expr.WellTyped
       Γ (.tail args)
       (Γ.updateRes (Γ.self.ensures ⬝ frame)) Γ.self.outTys
@@ -266,7 +182,7 @@ inductive Expr.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Expr os → Ctx os
   | wt_let_fn :
     Γ.getFn fnName = some fn →
     Γ.WellTypedVars args (Prod.snd <$> fn.ins) →
-    fn.requires ⬝ frame = Γ.res →
+    fn.requires ⬝ frame ≡ Γ.res →
     boundVars.length = fn.outTys.length →
     Expr.WellTyped {
       Γ with
@@ -277,7 +193,7 @@ inductive Expr.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Expr os → Ctx os
   /-- Well-typed let op call -/
   | wt_let_op :
     Γ.WellTypedVars args (os.specOf op).inTys →
-    (os.specOf op).requires ⬝ frame = Γ.res →
+    (os.specOf op).requires ⬝ frame ≡ Γ.res →
     boundVars.length = (os.specOf op).outTys.length →
     Expr.WellTyped {
       Γ with
@@ -328,115 +244,131 @@ inductive FnCtx.WellTyped {os : OpSet} [PCM os.R] : FnCtx os → Prop where
     FnDef.WellTyped fns fn →
     FnCtx.WellTyped (fn :: fns)
 
-/-
-███████╗███████╗███╗   ███╗ █████╗ ███╗   ██╗████████╗██╗ ██████╗███████╗
-██╔════╝██╔════╝████╗ ████║██╔══██╗████╗  ██║╚══██╔══╝██║██╔════╝██╔════╝
-███████╗█████╗  ██╔████╔██║███████║██╔██╗ ██║   ██║   ██║██║     ███████╗
-╚════██║██╔══╝  ██║╚██╔╝██║██╔══██║██║╚██╗██║   ██║   ██║██║     ╚════██║
-███████║███████╗██║ ╚═╝ ██║██║  ██║██║ ╚████║   ██║   ██║╚██████╗███████║
-╚══════╝╚══════╝╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝   ╚═╝ ╚═════╝╚══════╝
--/
+end Wavelet.L0
 
-open Wavelet.ITree
+/-! Small-step operational semantics of L0. -/
+namespace Wavelet.L0
 
-/-- Evaluation result of an expression -/
-inductive Expr.EvalResult (os : OpSet) where
-  | ret : List os.V → EvalResult os
-  | tail : List os.V → EvalResult os
-  | err : EvalResult os
+open PCM Op L0
 
-mutual
+variable (os : OpSet) [PCM os.R]
+variable [sem : OpSemantics os]
 
-variable {os : OpSet} [PCM os.R]
-variable {M} [Monad M]
-variable [OpSemantics os M]
+inductive Label where
+  | op : os.Op → List os.V → Label
+  | tau : Label
 
-def Expr.interpretFn
-  (fns : FnCtx os)
-  (fnName : FnName)
-  (args : List os.V) : ITree M (Option (List os.V)) :=
-  match fns with
-  | [] => return none
-  | fn :: fns' =>
-    if fn.name = fnName then
-      fn.interpret fns' args
-    else
-      Expr.interpretFn fns' fnName args
+/-- A saved stack frame. -/
+structure Frame where
+  locals : VarMap os.V
+  expr : Expr os
+  fn : FnDef os
+  contVars : Vars
 
-/-- Interprets an expression as an `ITree` in the given `OpSemantics`. -/
-def Expr.interpret
-  (fns : FnCtx os)
-  (self : FnDef os)
-  (locals : VarMap os.V) :
-  Expr os → ITree M (Expr.EvalResult os)
-  | .vars vs =>
-    return match vs.mapM locals.get with
-      | some vals => .ret vals
-      | none => .err
-  | .tail args =>
-    return match args.mapM locals.get with
-      | some vals => .tail vals
-      | none => .err
-  | .let_fn boundVars fnName args cont =>
-    match args.mapM locals.get with
-    | some args => do
-      match ← Expr.interpretFn fns fnName args with
-      | some retVals =>
-        if boundVars.length = retVals.length then
-          cont.interpret fns self (locals.insertVars (boundVars.zip retVals))
-        else
-          return .err
-      | none => return .err
-    | none => return .err
-  | .let_op boundVars op args cont =>
-    match args.mapM locals.get with
-    | some args => do
-      let retVals ← ITree.lift (OpSemantics.runOp op args)
-      if boundVars.length = retVals.length then
-        cont.interpret fns self (locals.insertVars (boundVars.zip retVals))
-      else
-        return .err
-    | none => return .err
-  | .let_const var val cont =>
-    cont.interpret fns self (locals.insert var val)
-  | .branch cond left right =>
-    if let some v := locals.get cond then
-      if let some b := os.asBool v then
-        if b then
-          left.interpret fns self locals
-        else
-          right.interpret fns self locals
-      else return .err
-    else
-      return .err
+structure Stack where
+  frames : List (Frame os)
+  locals : VarMap os.V
+  fn : FnDef os
 
-def FnDef.interpret
-  (fns : FnCtx os)
-  (self : FnDef os)
-  (args : List os.V) : ITree M (Option (List os.V)) :=
-  -- Interpreted as the fixpoint of repeatedly applying tail calls until return
-  ITree.iter (λ args =>
-    if args.length = self.ins.length then do
-      let locals := VarMap.fromList (List.zip (self.ins.map Prod.fst) args)
-      match ← self.body.interpret fns self locals with
-      | .ret vals => return .inr (some vals)
-      | .tail vals => return .inl vals
-      | .err => return .inr none
-    else
-      return .inr none)
-    args
+inductive Config where
+  | ret : FnCtx os → sem.S → Stack os → List os.V → Config
+  | expr : FnCtx os → sem.S → Stack os → Expr os → Config
 
-end -- mutual
+inductive Step : Config os → Label os → Config os → Prop where
+  | step_vars :
+    (vars.mapM stack.locals.get = some vals) →
+    Step
+      (Config.expr fns state stack (.vars vars))
+      .tau
+      (Config.ret fns state stack vals)
+  | step_ret :
+    stack.frames = frame :: restFrames →
+    frame.contVars.length = vals.length →
+    -- Restore the previous frame
+    Step
+      (Config.ret fns state stack vals)
+      .tau
+      (Config.expr fns state { stack with
+        frames := restFrames,
+        locals := frame.locals.insertVars (frame.contVars.zip vals)
+        fn := frame.fn
+      } frame.expr)
+  | step_tail :
+    args.length = stack.fn.ins.length →
+    (args.mapM stack.locals.get = some vals) →
+    Step
+      (Config.expr fns state stack (.tail args))
+      .tau
+      (Config.expr fns state { stack with
+        locals := VarMap.fromList ((stack.fn.ins.map Prod.fst).zip vals),
+      } stack.fn.body)
+  | step_let_fn :
+    fns.getFn fnName = some fn →
+    args.length = fn.ins.length →
+    (args.mapM stack.locals.get = some vals) →
+    Step
+      (Config.expr fns state stack (.let_fn boundVars fnName args cont))
+      .tau
+      -- Save current frame and continue with the new function
+      (Config.expr fns state { stack with
+        frames := {
+          contVars := boundVars,
+          expr := cont,
+          fn := stack.fn,
+          locals := stack.locals
+        } :: stack.frames,
+        locals := VarMap.fromList ((fn.ins.map Prod.fst).zip vals),
+      } stack.fn.body)
+  | step_let_op :
+    args.length = (os.specOf op).inTys.length →
+    (args.mapM stack.locals.get = some vals) →
+    (sem.runOp op vals).run state = some (outVals, newState) →
+    outVals.length = boundVars.length →
+    Step
+      (Config.expr fns state stack (.let_op boundVars op args cont))
+      (Label.op op vals)
+      (Config.expr fns newState { stack with
+        locals := stack.locals.insertVars (boundVars.zip outVals)
+      } cont)
+  | step_let_const :
+    Step
+      (Config.expr fns state stack (.let_const var val cont))
+      .tau
+      (Config.expr fns state { stack with
+        locals := stack.locals.insert var val
+      } cont)
+  | step_branch :
+    stack.locals.get condVar = some condVal →
+    os.asBool condVal = some condBool →
+    Step
+      (Config.expr fns state stack (.branch condVar left right))
+      .tau
+      (Config.expr fns state stack (if condBool then left else right))
+
+inductive StepStar : Config os → List (Label os) → Config os → Prop where
+  | refl : StepStar c [] c
+  | step :
+    Step os c₁ l c₂ →
+    StepStar c₂ l' c₃ →
+    StepStar c₁ (l :: l') c₃
+
+/-- Final configuration -/
+inductive Final : Config os → sem.S → List os.V → Prop where
+  | final :
+    stack.frames = [] →
+    Final (Config.ret _ state stack vals) state vals
 
 end Wavelet.L0
 
-/-! L1 is a language where the body of each function consists purely of dataflow. -/
+/-! Syntax and operational semantics of L1. -/
 namespace Wavelet.L1
 
-open Wavelet.Op Wavelet.PCM
+open PCM Op
+
+variable (os : OpSet)
 
 abbrev ProcName := String
-abbrev Chan := String
+abbrev Chan := L0.Var
 
 inductive ChanType (os : OpSet) where
   | prim : os.T → ChanType os
@@ -446,24 +378,81 @@ structure TypedChan (T : Type u) where
   name : Chan
   ty : T
 
-abbrev TypedChans (T : Type u) := List (TypedChan T)
+inductive AtomicProc where
+  | op (op : os.Op) (ins : List Chan) (outs : List Chan) (resIn : Chan) (resOut : Chan) : AtomicProc
+  | steer (expected : Bool) (decider : Chan) (input : Chan) (output : Chan) : AtomicProc
+  | carry (decider : Chan) (input₁ : Chan) (input₂ : Chan) (output : Chan) : AtomicProc
+  | merge (decider : Chan) (input₁ : Chan) (input₂ : Chan) (output : Chan) : AtomicProc
+  | fork (input : Chan) (output₁ : Chan) (output₂ : Chan) : AtomicProc
+  | const (val : os.V) (act : Chan) (output : Chan) : AtomicProc
+  | sink (input : Chan) : AtomicProc
+  | forward (input : Chan) (output : Chan) : AtomicProc
 
-inductive Proc (os : OpSet) where
-  | Inact : Proc os
-  | Par (p₁ : Proc os) (p₂ : Proc os) : Proc os
-  | New (c : Chan) (ty : ChanType os) (p : Proc os) : Proc os
-  | Operator (op : os.Op) (ins : List Chan) (outs : List Chan) (resIn : Chan) (resOut : Chan) : Proc os
-  | Steer (expected : Bool) (decider : Chan) (input : Chan) (output : Chan) : Proc os
-  | Merge (decider : Chan) (input₁ : Chan) (input₂ : Chan) (output : Chan) : Proc os
-  | Fork (input : Chan) (output₁ : Chan) (output₂ : Chan) : Proc os
-  | Const (val : os.V) (act : Chan) (output : Chan) : Proc os
-  | Sink (input : Chan) : Proc os
-  | Forward (input : Chan) (output : Chan) : Proc os
+abbrev Proc := Finset (AtomicProc os)
 
-structure ProcDef (os : OpSet) where
-  name : ProcName
-  ins : TypedChans (ChanType os)
-  outs : List os.T
-  body : Proc os
+inductive Token where
+  | val : os.V → Token
+  | res : os.R → Token
+
+abbrev ChanMap := L0.VarMap
+abbrev ChanState (os : OpSet) := ChanMap (List (Token os))
+
+variable [PCM os.R] [sem : OpSemantics os]
+
+inductive Label where
+  | op : os.Op → List os.V → Label
+  | tau : Label
+
+structure Config where
+  proc : Proc os
+  chans : ChanState os
+  state : sem.S
+
+def ChanState.pop (c : Chan) : StateT (ChanState os) Option (Token os) := do
+  let chans ← get
+  match chans.get c with
+  | some (v :: vs) => do
+    set (chans.insert c vs)
+    return v
+  | _ => StateT.lift none
+
+def ChanState.popValue (c : Chan) : StateT (ChanState os) Option os.V := do
+  let tok ← ChanState.pop os c
+  match tok with
+  | .val v => return v
+  | .res _ => StateT.lift none
+
+def ChanState.popRes (c : Chan) : StateT (ChanState os) Option os.R := do
+  let tok ← ChanState.pop os c
+  match tok with
+  | .res r => return r
+  | .val _ => StateT.lift none
+
+def ChanState.push (c : Chan) (v : Token os) : StateT (ChanState os) Option Unit := do
+  let chans ← get
+  match chans.get c with
+  | some vs => set (chans.insert c (vs ++ [v]))
+  | none => set (chans.insert c [v])
+
+inductive Step : Config os → Label os → Config os → Prop where
+  | step_op :
+    (.op op ins outs resIn resOut) ∈ c.proc →
+    -- Read input values
+    (ins.mapM (λ inChan => ChanState.popValue os inChan)).run c.chans = some (inVals, newChans) →
+    -- Read input resource
+    (ChanState.popRes os resIn).run newChans = some (inRes, newChans') →
+    -- Run the operator
+    (sem.runOp op inVals).run c.state = some (outVals, newState) →
+    -- Write output values
+    outVals.length = outs.length →
+    ((outs.zip outVals).mapM (λ (outChan, outVal) =>
+      ChanState.push os outChan (.val outVal))).run newChans' = some (_, newChans'') →
+    -- Write output resource
+    (ChanState.push os resOut (.res (os.specOf op).ensures)).run newChans'' = some (_, finalChans) →
+    Step c .tau { c with
+      chans := finalChans,
+      state := newState
+    }
+  /- TODO: more rules -/
 
 end Wavelet.L1

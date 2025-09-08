@@ -1,7 +1,7 @@
 import Lake
 open Lake DSL
 
-require batteries from git "https://github.com/leanprover-community/batteries" @ "v4.22.0"
+require "leanprover-community" / "mathlib"
 
 package «wavelet» where
   -- add package configuration options here
