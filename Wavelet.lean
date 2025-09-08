@@ -1,5 +1,6 @@
 import Mathlib.Data.List.Basic
 import Mathlib.Data.Finset.Basic
+import Mathlib.Data.Finset.Insert
 
 set_option linter.dupNamespace false
 
@@ -54,11 +55,11 @@ structure OpSpec (T : Type u) (R : Type w) where
 
 structure OpSet where
   /-- Base types -/
-  T : Type u
+  T : Type
   /-- Base values -/
-  V : Type v
+  V : Type
   /-- Ghost resource types -/
-  R : Type w
+  R : Type
   /-- Operators -/
   Op : Type
   /-- Value types -/
@@ -78,10 +79,10 @@ def OpSet.WellTypedValues (os : OpSet) (ins : List os.V) (inTys : List os.T) : P
 abbrev OpM S R := StateT S Option R
 
 class OpSemantics (os : OpSet) [PCM os.R] where
-  S : Type w
+  S : Type
 
   /-- TODO: generalize to custom monads? -/
-  runOp : os.Op → List os.V → OpM S (List os.V)
+  interpOp : os.Op → List os.V → OpM S (List os.V)
 
   /-- The operator's declared resource spec should be frame-preserving.  -/
   op_valid_res_spec (op : os.Op) : (os.specOf op).requires ⟹ (os.specOf op).ensures
@@ -92,8 +93,8 @@ class OpSemantics (os : OpSet) [PCM os.R] where
     (hwt_ins₂ : os.WellTypedValues ins₂ (os.specOf op₂).inTys)
     (hdisj : (os.specOf op₁).requires ⊥ (os.specOf op₂).requires) :
     ∀ (s : OpM S R),
-      s *> (Prod.mk <$> runOp op₁ ins₁ <*> runOp op₂ ins₂) =
-      s *> (Prod.mk <$> runOp op₂ ins₂ <*> runOp op₁ ins₁)
+      s *> (Prod.mk <$> interpOp op₁ ins₁ <*> interpOp op₂ ins₂) =
+      s *> (Prod.mk <$> interpOp op₂ ins₂ <*> interpOp op₁ ins₁)
 
 end Wavelet.Op
 
@@ -322,7 +323,7 @@ inductive Step : Config os → Label os → Config os → Prop where
   | step_let_op :
     args.length = (os.specOf op).inTys.length →
     (args.mapM stack.locals.get = some vals) →
-    (sem.runOp op vals).run state = some (outVals, newState) →
+    (sem.interpOp op vals).run state = some (outVals, newState) →
     outVals.length = boundVars.length →
     Step
       (Config.expr fns state stack (.let_op boundVars op args cont))
@@ -366,6 +367,7 @@ namespace Wavelet.L1
 open PCM Op
 
 variable (os : OpSet)
+variable [DecidableEq os.Op] [DecidableEq os.V]
 
 abbrev ProcName := String
 abbrev Chan := L0.Var
@@ -378,7 +380,7 @@ structure TypedChan (T : Type u) where
   name : Chan
   ty : T
 
-inductive AtomicProc where
+inductive AtomicProc [DecidableEq os.Op] [DecidableEq os.V] where
   | op (op : os.Op) (ins : List Chan) (outs : List Chan) (resIn : Chan) (resOut : Chan) : AtomicProc
   | steer (expected : Bool) (decider : Chan) (input : Chan) (output : Chan) : AtomicProc
   | carry (decider : Chan) (input₁ : Chan) (input₂ : Chan) (output : Chan) : AtomicProc
@@ -387,8 +389,7 @@ inductive AtomicProc where
   | const (val : os.V) (act : Chan) (output : Chan) : AtomicProc
   | sink (input : Chan) : AtomicProc
   | forward (input : Chan) (output : Chan) : AtomicProc
-
-abbrev Proc := Finset (AtomicProc os)
+  deriving DecidableEq
 
 inductive Token where
   | val : os.V → Token
@@ -403,56 +404,91 @@ inductive Label where
   | op : os.Op → List os.V → Label
   | tau : Label
 
-structure Config where
-  proc : Proc os
+structure ProcState where
   chans : ChanState os
   state : sem.S
 
-def ChanState.pop (c : Chan) : StateT (ChanState os) Option (Token os) := do
-  let chans ← get
-  match chans.get c with
-  | some (v :: vs) => do
-    set (chans.insert c vs)
-    return v
-  | _ => StateT.lift none
+abbrev ProcStateM R := StateT (ProcState os) Option R
 
-def ChanState.popValue (c : Chan) : StateT (ChanState os) Option os.V := do
-  let tok ← ChanState.pop os c
+def ProcStateM.err : ProcStateM os R := StateT.lift none
+
+def ProcStateM.getChans : ProcStateM os (ChanState os) := do
+  let config ← get
+  return config.chans
+
+def ProcStateM.getState : ProcStateM os sem.S := do
+  let config ← get
+  return config.state
+
+def ProcStateM.setChans (chans : ChanState os) : ProcStateM os Unit := do
+  let config ← get
+  set { config with chans := chans }
+
+def ProcStateM.setState (state : sem.S) : ProcStateM os Unit := do
+  let config ← get
+  set { config with state := state }
+
+def ProcStateM.pop (chan : Chan) : ProcStateM os (Token os) := do
+  let chans ← .getChans os
+  match chans.get chan with
+  | some (v :: vs) => do
+    .setChans os (chans.insert chan vs)
+    return v
+  | _ => ProcStateM.err os
+
+/-- Same as `ProcState.pop`, but expects a value token. -/
+def ProcStateM.popValue (chan : Chan) : ProcStateM os os.V := do
+  let tok ← ProcStateM.pop os chan
   match tok with
   | .val v => return v
-  | .res _ => StateT.lift none
+  | .res _ => .err os
 
-def ChanState.popRes (c : Chan) : StateT (ChanState os) Option os.R := do
-  let tok ← ChanState.pop os c
+/-- Same as `ProcState.pop`, but expects a resource token. -/
+def ProcStateM.popRes (chan : Chan) : ProcStateM os os.R := do
+  let tok ← ProcStateM.pop os chan
   match tok with
   | .res r => return r
-  | .val _ => StateT.lift none
+  | .val _ => .err os
 
-def ChanState.push (c : Chan) (v : Token os) : StateT (ChanState os) Option Unit := do
-  let chans ← get
-  match chans.get c with
-  | some vs => set (chans.insert c (vs ++ [v]))
-  | none => set (chans.insert c [v])
+def ProcStateM.push (chan : Chan) (v : Token os) : ProcStateM os Unit := do
+  let chans ← .getChans os
+  match chans.get chan with
+  | some vs => .setChans os (chans.insert chan (vs ++ [v]))
+  | none => .setChans os (chans.insert chan [v])
 
-inductive Step : Config os → Label os → Config os → Prop where
-  | step_op :
-    (.op op ins outs resIn resOut) ∈ c.proc →
-    -- Read input values
-    (ins.mapM (λ inChan => ChanState.popValue os inChan)).run c.chans = some (inVals, newChans) →
-    -- Read input resource
-    (ChanState.popRes os resIn).run newChans = some (inRes, newChans') →
+def ProcStateM.liftOpM (m : OpM sem.S R) : ProcStateM os R := do
+  let config ← get
+  match m.run config.state with
+  | some (r, newState) => do
+    set { config with state := newState }
+    return r
+  | none => ProcStateM.err os
+
+/-- Interprets an atomic process as a `ProcStateM`. -/
+def AtomicProc.interp (p : AtomicProc os) : ProcStateM os (Label os × AtomicProc os) :=
+  match p with
+  | .op o inChans outChans resInChan resOutChan => do
+    -- Read input values and resource
+    let inVals ← inChans.mapM (λ inChan => .popValue os inChan)
+    let inRes ← .popRes os resInChan
     -- Run the operator
-    (sem.runOp op inVals).run c.state = some (outVals, newState) →
-    -- Write output values
-    outVals.length = outs.length →
-    ((outs.zip outVals).mapM (λ (outChan, outVal) =>
-      ChanState.push os outChan (.val outVal))).run newChans' = some (_, newChans'') →
-    -- Write output resource
-    (ChanState.push os resOut (.res (os.specOf op).ensures)).run newChans'' = some (_, finalChans) →
-    Step c .tau { c with
-      chans := finalChans,
-      state := newState
-    }
-  /- TODO: more rules -/
+    let outVals ← .liftOpM os (sem.interpOp o inVals)
+    -- Write output values and resource
+    if outVals.length = outChans.length then
+      (outChans.zip outVals).forM (λ (outChan, outVal) =>
+        .push os outChan (.val outVal))
+      .push os resOutChan (.res (os.specOf o).ensures)
+      return (.op o inVals, p)
+    else .err os
+  | _ => /- TODO: more interpretation -/ sorry
+
+structure Config where
+  procs : Finset (AtomicProc os)
+  state : ProcState os
+
+def Step (c₁ : Config os) (l : Label os) (c₂ : Config os) : Prop :=
+  ∃ p p', p ∈ c₁.procs ∧
+    AtomicProc.interp os p = some (l, p') ∧
+    c₂ = { c₁ with procs := insert p' (c₁.procs.erase p) }
 
 end Wavelet.L1
