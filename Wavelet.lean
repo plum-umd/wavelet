@@ -377,6 +377,12 @@ inductive FixTree (E : Type u → Type v) : Type w → Type (max (u + 1) v (w + 
   | vis : E A → (A → FixTree E R) → FixTree E R
   | fix {A B : Type w} : (A → FixTree E (A ⊕ B)) → A → (B → FixTree E R) → FixTree E R
 
+/-- Types of next actions allowed in any `FixTree`. -/
+inductive FixTreeShape (E : Type u → Type v) : Type w → Type (max (u + 1) v (w + 2)) where
+  | ret : R → FixTreeShape E R
+  | tau : FixTree E R → FixTreeShape E R
+  | vis : E A → (A → FixTree E R) → FixTreeShape E R
+
 def FixTree.bind {A B : Type u} (t : FixTree E A) (f : A → FixTree E B) : FixTree E B :=
   match t with
   | .ret r => f r
@@ -386,6 +392,29 @@ def FixTree.bind {A B : Type u} (t : FixTree E A) (f : A → FixTree E B) : FixT
 instance : Monad (FixTree E) where
   pure := .ret
   bind := .bind
+
+/-- Destructs/unfolds a `FixTree` to get `FixTreeShape`. -/
+def FixTree.destruct (t : FixTree E R) : FixTreeShape E R :=
+  match t with
+  | .ret r => .ret r
+  | .vis e k => .vis e k
+  | .fix m i k =>
+    -- Try to get the next action of the inner iteration.
+    match FixTree.destruct (m i) with
+    -- Inner iteration decides to continute the loop without any action.
+    | .ret (.inl a) => .tau (FixTree.fix m a k)
+    -- Inner iteration terminates without action.
+    | .ret (.inr b) => FixTree.destruct (k b)
+    -- Inner iteration emits a silent action
+    | .tau t => .tau do
+      match ← t with
+      | .inl a => FixTree.fix m a k
+      | .inr b => k b
+    -- Inner iteration emits a visible action
+    | .vis e m' => .vis e (λ x => do
+      match ← m' x with
+      | .inl a => FixTree.fix m a k
+      | .inr b => k b)
 
 def FixTree.trigger (e : E A) : FixTree E A := .vis e .ret
 
