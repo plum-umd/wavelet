@@ -254,22 +254,13 @@ inductive FnCtx.WellTyped {os : OpSet} [PCM os.R] : FnCtx os → Prop where
 
 end Wavelet.L0
 
-/-! A monadic semantics of L0. -/
-namespace Wavelet.L0
-
-open PCM Op
+namespace Wavelet.ITree
 
 /-- An inductive version of interaction trees with an explicit fixpoint constructor. -/
 inductive FixTree (E : Type u → Type v) : Type w → Type (max (u + 1) v (w + 2)) where
   | ret : R → FixTree E R
   | vis : E A → (A → FixTree E R) → FixTree E R
   | fix {A B : Type w} : (A → FixTree E (A ⊕ B)) → A → (B → FixTree E R) → FixTree E R
-
-/-- Types of next actions allowed in any `FixTree`. -/
-inductive FixTreeShape (E : Type u → Type v) : Type w → Type (max (u + 1) v (w + 2)) where
-  | ret : R → FixTreeShape E R
-  | tau : FixTree E R → FixTreeShape E R
-  | vis : E A → (A → FixTree E R) → FixTreeShape E R
 
 def FixTree.bind {A B : Type u} (t : FixTree E A) (f : A → FixTree E B) : FixTree E B :=
   match t with
@@ -281,8 +272,17 @@ instance : Monad (FixTree E) where
   pure := .ret
   bind := .bind
 
-/-- Destructs/unfolds a `FixTree` to get `FixTreeShape`. -/
-def FixTree.destruct (t : FixTree E R) : FixTreeShape E R :=
+/-- Types of next actions allowed in any `FixTree`. -/
+inductive FixTreeUnfolded (E : Type u → Type v) : Type w → Type (max (u + 1) v (w + 2)) where
+  | ret : R → FixTreeUnfolded E R
+  | tau : FixTree E R → FixTreeUnfolded E R
+  | vis : E A → (A → FixTree E R) → FixTreeUnfolded E R
+
+/--
+Destructs/unfolds a `FixTree` to get `FixTreeShape`.
+TODO: figure out why this is ok.
+-/
+def FixTree.destruct (t : FixTree E R) : FixTreeUnfolded E R :=
   match t with
   | .ret r => .ret r
   | .vis e k => .vis e k
@@ -308,6 +308,13 @@ def FixTree.trigger (e : E A) : FixTree E A := .vis e .ret
 
 /-- Short-hand for iterating the given function until it returns `inr` -/
 def FixTree.iter {A B : Type u} (f : A → FixTree E (A ⊕ B)) (a : A) : FixTree E B := .fix f a .ret
+
+end Wavelet.ITree
+
+/-! A monadic semantics of L0. -/
+namespace Wavelet.L0
+
+open PCM Op ITree
 
 /-- Final evaluation result of an expression. -/
 inductive Expr.EvalResult (os : OpSet) where
@@ -413,6 +420,8 @@ def FnDef.interpret
 
 end -- mutual
 
+
+
 end Wavelet.L0
 
 /-! Syntax and monadic semantics of L1. -/
@@ -438,8 +447,8 @@ inductive Token [DecidableEq os.V] [DecidableEq os.R] where
 
 inductive AtomicProc [DecidableEq os.Op] [DecidableEq os.V] where
   | op (op : os.Op) (ins : List Chan) (outs : List Chan) (resIn : Chan) (resOut : Chan) : AtomicProc
-  | steer (expected : Bool) (decider : Chan) (input : Chan) (output : Chan) : AtomicProc
-  | carry (decider : Chan) (input₁ : Chan) (input₂ : Chan) (output : Chan) : AtomicProc
+  | steer (flavor : Bool) (decider : Chan) (input : Chan) (output : Chan) : AtomicProc
+  | carry (init : Bool) (flavor : Bool) (decider : Chan) (input₁ : Chan) (input₂ : Chan) (output : Chan) : AtomicProc
   | merge (decider : Chan) (input₁ : Chan) (input₂ : Chan) (output : Chan) : AtomicProc
   | fork (input : Chan) (output₁ : Chan) (output₂ : Chan) : AtomicProc
   | const (val : os.V) (act : Chan) (output : Chan) : AtomicProc
@@ -504,6 +513,14 @@ def ProcStateM.popValue (chan : Chan) : ProcStateM os os.V := do
   | .val v => return v
   | .res _ => .err os
 
+/-- Same as `ProcStateM.popValue`, but in addition expects a Boolean. -/
+def ProcStateM.popBool (chan : Chan) : ProcStateM os Bool := do
+  let v ← .popValue os chan
+  if let some b := os.asBool v then
+    return b
+  else
+    .err os
+
 /-- Same as `ProcState.pop`, but expects a resource token. -/
 def ProcStateM.popRes (chan : Chan) : ProcStateM os os.R := do
   let tok ← ProcStateM.pop os chan
@@ -530,7 +547,7 @@ def AtomicProc.step (p : AtomicProc os) : ProcStateM os (Label os × AtomicProc 
   | .op o inChans outChans resInChan resOutChan => do
     -- Read input values and resource
     let inVals ← inChans.mapM (λ inChan => .popValue os inChan)
-    let inRes ← .popRes os resInChan
+    let _ ← .popRes os resInChan -- resource is not used in semantics
     -- Run the operator
     let outVals ← .liftOpM os (sem.interpOp o inVals)
     -- Write output values and resource
@@ -540,7 +557,45 @@ def AtomicProc.step (p : AtomicProc os) : ProcStateM os (Label os × AtomicProc 
       .push os resOutChan (.res (os.specOf o).ensures)
       return (.op o inVals, p)
     else .err os
-  | _ => /- TODO: more interpretation -/ sorry
+  | .steer flavor decider input output => do
+    let b ← .popBool os decider
+    let v ← .pop os input
+    if b = flavor then
+      .push os output v
+    return (.tau, p)
+  | .carry init flavor decider input₁ input₂ output => do
+    if init then
+      .pop os input₁ >>= .push os output
+      return (.tau, .carry false flavor decider input₁ input₂ output)
+    else
+      let b ← .popBool os decider
+      if b = flavor then
+        .pop os input₂ >>= .push os output
+        return (.tau, .carry false flavor decider input₁ input₂ output)
+      else
+        return (.tau, .carry true flavor decider input₁ input₂ output)
+  | .merge decider input₁ input₂ output => do
+    let b ← .popBool os decider
+    if b then
+      .pop os input₁ >>= .push os output
+    else
+      .pop os input₂ >>= .push os output
+    return (.tau, p)
+  | .fork input output₁ output₂ => do
+    let v ← .pop os input
+    .push os output₁ v
+    .push os output₂ v
+    return (.tau, p)
+  | .const val act output => do
+    let _ ← .pop os act
+    .push os output (.val val)
+    return (.tau, p)
+  | .sink input => do
+    let _ ← .pop os input
+    return (.tau, p)
+  | .forward input output => do
+    .pop os input >>= .push os output
+    return (.tau, p)
 
 /-- Defines the semantics of one step of a `Proc`. -/
 def Proc.step (p : Proc os) : ProcStateM os (Label os × Proc os) :=
@@ -560,9 +615,31 @@ def Proc.step (p : Proc os) : ProcStateM os (Label os × Proc os) :=
 
 structure Config where
   proc : Proc os
-  state : ProcState os
+  pstate : ProcState os
 
 def Step (c₁ : Config os) (l : Label os) (c₂ : Config os) : Prop :=
-  ((l, c₂.proc), c₂.state) ∈ (c₁.proc.step os).run c₁.state
+  ((l, c₂.proc), c₂.pstate) ∈ (c₁.proc.step os).run c₁.pstate
+
+theorem step_tau_label_preserves_state
+  (hs : Step os c₁ .tau c₂) :
+  c₁.pstate.state = c₂.pstate.state := sorry
+
+theorem step_op_label_changes_state
+  (hs : Step os c₁ (.op o vs) c₂) :
+  ∃ vs, (sem.interpOp o vs).run c₁.pstate.state = some (vs, c₂.pstate.state) := by
+  simp only [Step, StateT.run] at hs
+  induction h : c₁.proc with
+  | atom ap =>
+    simp only [h, Proc.step, StateT.map, List.pure_def, List.bind_eq_flatMap, List.mem_flatMap,
+      List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false, Prod.exists,
+      exists_eq_right_right'] at hs
+    cases ap with
+    | op o' inChans outChans resInChan resOutChan =>
+      have ⟨l, p', hs'⟩ := hs
+      simp [AtomicProc.step] at hs'
+      sorry
+    | _ => sorry
+  | par p₁ p₂ ih => sorry
+  | new vts buf p ih => sorry
 
 end Wavelet.L1
