@@ -1,35 +1,30 @@
 import Mathlib.Data.List.Basic
-import Mathlib.Data.Finset.Basic
-import Mathlib.Data.Finset.Insert
-import Mathlib.Data.Multiset.Basic
-import Mathlib.Data.Multiset.UnionInter
-
-set_option linter.dupNamespace false
 
 /-! A formulation of partial commutative monoids. -/
-namespace Wavelet.PCM
-
 class PCM (C : Type u) where
   add : C → C → C
   zero : C
   valid : C → Prop
   eq : C → C → Prop
 
+/-! Notations and axioms for PCM. -/
+namespace Wavelet.PCM
+
 infixl:60 " ⬝ " => PCM.add
 infix:50 " ≡ " => PCM.eq
 prefix:40 "✓ " => PCM.valid
 
-def PCM.disjoint {C : Type u} [PCM C] (a b : C) : Prop := ✓ a ⬝ b
+def disjoint {C : Type u} [PCM C] (a b : C) : Prop := ✓ a ⬝ b
 
 /-- TODO: Implement some type class for partial order. -/
-def PCM.le {C : Type u} [PCM C] (a b : C) : Prop := ∃ c, b ≡ a ⬝ c
+def le {C : Type u} [PCM C] (a b : C) : Prop := ∃ c, b ≡ a ⬝ c
 
-def PCM.framePreserving {C : Type u} [PCM C] (a b : C) : Prop :=
+def framePreserving {C : Type u} [PCM C] (a b : C) : Prop :=
   ∀ c, ✓ a ⬝ c → ✓ b ⬝ c
 
-infix:50 " ⊥ " => PCM.disjoint
-infix:50 " ≤ " => PCM.le
-infix:50 " ⟹ " => PCM.framePreserving
+infix:50 " ⊥ " => disjoint
+infix:50 " ≤ " => le
+infix:50 " ⟹ " => framePreserving
 
 class LawfulPCM (R : Type u) [inst : PCM R] where
   add_comm : ∀ a b : R, a ⬝ b ≡ b ⬝ a
@@ -44,7 +39,7 @@ class LawfulPCM (R : Type u) [inst : PCM R] where
 
 end Wavelet.PCM
 
-/-! Semantics of operators that our source and target languages are parametric in. -/
+/-! Defines syntax and semantics of operator sets. -/
 namespace Wavelet.Op
 
 open Wavelet.PCM
@@ -125,7 +120,7 @@ structure FnDef (os : OpSet) where
   ensures : os.R
   body : Expr os
 
-/-- Variable context as a function for convenience -/
+/-- A utility type for partial maps from `Var`. -/
 abbrev VarMap (T : Type u) := Var → Option T
 
 def VarMap.get (x : Var) (vars : VarMap T) : Option T := vars x
@@ -144,6 +139,13 @@ def VarMap.fromList (vs : List (Var × T)) : VarMap T :=
 
 def VarMap.insertVars (vs : List (Var × T)) (vars : VarMap T) : VarMap T :=
   λ x => (VarMap.fromList vs).get x <|> vars x
+
+end Wavelet.L0
+
+/-! Typing rules for L0. -/
+namespace Wavelet.L0
+
+open PCM Op
 
 /--
 For convenience, new `FnDef`s are inserted at the front,
@@ -252,124 +254,10 @@ inductive FnCtx.WellTyped {os : OpSet} [PCM os.R] : FnCtx os → Prop where
 
 end Wavelet.L0
 
-/-! Small-step operational semantics of L0. -/
-namespace Wavelet.L0
-
-open PCM Op L0
-
-variable (os : OpSet) [PCM os.R]
-variable [sem : OpSemantics os]
-
-inductive Label where
-  | op : os.Op → List os.V → Label
-  | tau : Label
-
-/-- A saved stack frame. -/
-structure Frame where
-  locals : VarMap os.V
-  expr : Expr os
-  fn : FnDef os
-  contVars : Vars
-
-structure Stack where
-  frames : List (Frame os)
-  locals : VarMap os.V
-  fn : FnDef os
-
-inductive Config where
-  | ret : FnCtx os → sem.S → Stack os → List os.V → Config
-  | expr : FnCtx os → sem.S → Stack os → Expr os → Config
-
-inductive Step : Config os → Label os → Config os → Prop where
-  | step_vars :
-    (vars.mapM stack.locals.get = some vals) →
-    Step
-      (Config.expr fns state stack (.vars vars))
-      .tau
-      (Config.ret fns state stack vals)
-  | step_ret :
-    stack.frames = frame :: restFrames →
-    frame.contVars.length = vals.length →
-    -- Restore the previous frame
-    Step
-      (Config.ret fns state stack vals)
-      .tau
-      (Config.expr fns state { stack with
-        frames := restFrames,
-        locals := frame.locals.insertVars (frame.contVars.zip vals)
-        fn := frame.fn
-      } frame.expr)
-  | step_tail :
-    args.length = stack.fn.ins.length →
-    (args.mapM stack.locals.get = some vals) →
-    Step
-      (Config.expr fns state stack (.tail args))
-      .tau
-      (Config.expr fns state { stack with
-        locals := VarMap.fromList ((stack.fn.ins.map Prod.fst).zip vals),
-      } stack.fn.body)
-  | step_let_fn :
-    fns.getFn fnName = some fn →
-    args.length = fn.ins.length →
-    (args.mapM stack.locals.get = some vals) →
-    Step
-      (Config.expr fns state stack (.let_fn boundVars fnName args cont))
-      .tau
-      -- Save current frame and continue with the new function
-      (Config.expr fns state { stack with
-        frames := {
-          contVars := boundVars,
-          expr := cont,
-          fn := stack.fn,
-          locals := stack.locals
-        } :: stack.frames,
-        locals := VarMap.fromList ((fn.ins.map Prod.fst).zip vals),
-      } stack.fn.body)
-  | step_let_op :
-    args.length = (os.specOf op).inTys.length →
-    (args.mapM stack.locals.get = some vals) →
-    (sem.interpOp op vals).run state = some (outVals, newState) →
-    outVals.length = boundVars.length →
-    Step
-      (Config.expr fns state stack (.let_op boundVars op args cont))
-      (Label.op op vals)
-      (Config.expr fns newState { stack with
-        locals := stack.locals.insertVars (boundVars.zip outVals)
-      } cont)
-  | step_let_const :
-    Step
-      (Config.expr fns state stack (.let_const var val cont))
-      .tau
-      (Config.expr fns state { stack with
-        locals := stack.locals.insert var val
-      } cont)
-  | step_branch :
-    stack.locals.get condVar = some condVal →
-    os.asBool condVal = some condBool →
-    Step
-      (Config.expr fns state stack (.branch condVar left right))
-      .tau
-      (Config.expr fns state stack (if condBool then left else right))
-
-inductive StepStar : Config os → List (Label os) → Config os → Prop where
-  | refl : StepStar c [] c
-  | step :
-    Step os c₁ l c₂ →
-    StepStar c₂ l' c₃ →
-    StepStar c₁ (l :: l') c₃
-
-/-- Final configuration -/
-inductive Final : Config os → sem.S → List os.V → Prop where
-  | final :
-    stack.frames = [] →
-    Final (Config.ret _ state stack vals) state vals
-
-end Wavelet.L0
-
 /-! A monadic semantics of L0. -/
 namespace Wavelet.L0
 
-open PCM Op L0
+open PCM Op
 
 /-- An inductive version of interaction trees with an explicit fixpoint constructor. -/
 inductive FixTree (E : Type u → Type v) : Type w → Type (max (u + 1) v (w + 2)) where
@@ -448,10 +336,12 @@ def Expr.EvalM.setLocal {os : OpSet} (x : Var) (v : os.V) : EvalM os Unit := do
 /-- Evaluation monad for function definitions. -/
 abbrev FnDef.EvalM os := OptionT (FixTree (Expr.EvalE os))
 
+/-! Interprets `Expr` as `Expr.EvalM` and `FnDef` as `FnDef.EvalM`. -/
 mutual
 
 variable {os : OpSet}
 
+/-- Searches function with name `fnName` and applies the given arguments. -/
 def Expr.interpretFn
   (fns : FnCtx os)
   (fnName : FnName)
@@ -465,9 +355,9 @@ def Expr.interpretFn
       Expr.interpretFn fns' fnName args
 
 /--
-Interprets an expression as an `ITree` in the given `OpSemantics`.
-Local variable reads/writes are interpreted directly through a "state monad"
-on `VarMap os.V` without `ITree` events.
+Interprets an expression as an `Expr.EvalM`.
+For convenience, local variable reads/writes are interpreted
+directly through a state monad on `VarMap os.V` without itree events.
 -/
 def Expr.interpret
   (fns : FnCtx os)
@@ -525,140 +415,8 @@ end -- mutual
 
 end Wavelet.L0
 
-/-! Syntax and operational semantics of L1. -/
+/-! Syntax and monadic semantics of L1. -/
 namespace Wavelet.L1
-
-open PCM Op
-
-variable (os : OpSet)
-variable [DecidableEq os.Op] [DecidableEq os.V]
-
-abbrev ProcName := String
-abbrev Chan := L0.Var
-
-inductive ChanType (os : OpSet) where
-  | prim : os.T → ChanType os
-  | ghost : os.R → ChanType os
-
-structure TypedChan (T : Type u) where
-  name : Chan
-  ty : T
-
-inductive AtomicProc [DecidableEq os.Op] [DecidableEq os.V] where
-  | op (op : os.Op) (ins : List Chan) (outs : List Chan) (resIn : Chan) (resOut : Chan) : AtomicProc
-  | steer (expected : Bool) (decider : Chan) (input : Chan) (output : Chan) : AtomicProc
-  | carry (decider : Chan) (input₁ : Chan) (input₂ : Chan) (output : Chan) : AtomicProc
-  | merge (decider : Chan) (input₁ : Chan) (input₂ : Chan) (output : Chan) : AtomicProc
-  | fork (input : Chan) (output₁ : Chan) (output₂ : Chan) : AtomicProc
-  | const (val : os.V) (act : Chan) (output : Chan) : AtomicProc
-  | sink (input : Chan) : AtomicProc
-  | forward (input : Chan) (output : Chan) : AtomicProc
-  deriving DecidableEq
-
-inductive Token where
-  | val : os.V → Token
-  | res : os.R → Token
-
-abbrev ChanMap := L0.VarMap
-abbrev ChanState (os : OpSet) := ChanMap (List (Token os))
-
-variable [PCM os.R] [sem : OpSemantics os]
-
-inductive Label where
-  | op : os.Op → List os.V → Label
-  | tau : Label
-
-structure ProcState where
-  chans : ChanState os
-  state : sem.S
-
-abbrev ProcStateM R := StateT (ProcState os) Option R
-
-def ProcStateM.err : ProcStateM os R := StateT.lift none
-
-def ProcStateM.getChans : ProcStateM os (ChanState os) := do
-  let config ← get
-  return config.chans
-
-def ProcStateM.getState : ProcStateM os sem.S := do
-  let config ← get
-  return config.state
-
-def ProcStateM.setChans (chans : ChanState os) : ProcStateM os Unit := do
-  let config ← get
-  set { config with chans := chans }
-
-def ProcStateM.setState (state : sem.S) : ProcStateM os Unit := do
-  let config ← get
-  set { config with state := state }
-
-def ProcStateM.pop (chan : Chan) : ProcStateM os (Token os) := do
-  let chans ← .getChans os
-  match chans.get chan with
-  | some (v :: vs) => do
-    .setChans os (chans.insert chan vs)
-    return v
-  | _ => ProcStateM.err os
-
-/-- Same as `ProcState.pop`, but expects a value token. -/
-def ProcStateM.popValue (chan : Chan) : ProcStateM os os.V := do
-  let tok ← ProcStateM.pop os chan
-  match tok with
-  | .val v => return v
-  | .res _ => .err os
-
-/-- Same as `ProcState.pop`, but expects a resource token. -/
-def ProcStateM.popRes (chan : Chan) : ProcStateM os os.R := do
-  let tok ← ProcStateM.pop os chan
-  match tok with
-  | .res r => return r
-  | .val _ => .err os
-
-def ProcStateM.push (chan : Chan) (v : Token os) : ProcStateM os Unit := do
-  let chans ← .getChans os
-  match chans.get chan with
-  | some vs => .setChans os (chans.insert chan (vs ++ [v]))
-  | none => .setChans os (chans.insert chan [v])
-
-def ProcStateM.liftOpM (m : OpM sem.S R) : ProcStateM os R := do
-  let config ← get
-  match m.run config.state with
-  | some (r, newState) => do
-    set { config with state := newState }
-    return r
-  | none => ProcStateM.err os
-
-/-- Interprets an atomic process as a `ProcStateM`. -/
-def AtomicProc.interp (p : AtomicProc os) : ProcStateM os (Label os × AtomicProc os) :=
-  match p with
-  | .op o inChans outChans resInChan resOutChan => do
-    -- Read input values and resource
-    let inVals ← inChans.mapM (λ inChan => .popValue os inChan)
-    let inRes ← .popRes os resInChan
-    -- Run the operator
-    let outVals ← .liftOpM os (sem.interpOp o inVals)
-    -- Write output values and resource
-    if outVals.length = outChans.length then
-      (outChans.zip outVals).forM (λ (outChan, outVal) =>
-        .push os outChan (.val outVal))
-      .push os resOutChan (.res (os.specOf o).ensures)
-      return (.op o inVals, p)
-    else .err os
-  | _ => /- TODO: more interpretation -/ sorry
-
-structure Config where
-  procs : Finset (AtomicProc os)
-  state : ProcState os
-
-def Step (c₁ : Config os) (l : Label os) (c₂ : Config os) : Prop :=
-  ∃ p p', p ∈ c₁.procs ∧
-    AtomicProc.interp os p = some (l, p') ∧
-    c₂ = { c₁ with procs := insert p' (c₁.procs.erase p) }
-
-end Wavelet.L1
-
-/-! Syntax and operational semantics of L1 (second version). -/
-namespace Wavelet.L1'
 
 open PCM Op
 
@@ -784,7 +542,7 @@ def AtomicProc.step (p : AtomicProc os) : ProcStateM os (Label os × AtomicProc 
     else .err os
   | _ => /- TODO: more interpretation -/ sorry
 
-/-- Steps a process. -/
+/-- Defines the semantics of one step of a `Proc`. -/
 def Proc.step (p : Proc os) : ProcStateM os (Label os × Proc os) :=
   match p with
   | .atom ap => (ap.step os).map λ (lbl, ap') => (lbl, .atom ap')
@@ -807,4 +565,4 @@ structure Config where
 def Step (c₁ : Config os) (l : Label os) (c₂ : Config os) : Prop :=
   ((l, c₂.proc), c₂.state) ∈ (c₁.proc.step os).run c₁.state
 
-end Wavelet.L1'
+end Wavelet.L1
