@@ -162,15 +162,21 @@ structure Ctx (os : OpSet) where
 def FnCtx.intersect {os : OpSet} (fns₁ fns₂ : FnCtx os) : FnCtx os :=
   fns₁.filter (λ fn₁ => fns₂.any (λ fn₂ => fn₁.name = fn₂.name))
 
-def FnCtx.getFn {os : OpSet} (fns : FnCtx os) (f : FnName) : Option (FnDef os) :=
-  fns.find? (λ fn => fn.name = f)
+def FnCtx.getFn {os : OpSet} (name : FnName) (fns : FnCtx os) : Option (FnDef os × FnCtx os) :=
+  match fns with
+  | [] => none
+  | fn :: fns' =>
+    if fn.name = name then
+      some (fn, fns')
+    else
+      FnCtx.getFn name fns'
 
-def Ctx.WellTypedVars {os : OpSet} (Γ : Ctx os) (vs : Vars) (tys : List os.T) : Prop :=
+def Ctx.WellTypedVars {os : OpSet} (vs : Vars) (tys : List os.T) (Γ : Ctx os) : Prop :=
   List.Forall₂ (λ v t => Γ.vars.get v = some t) vs tys
 
-def Ctx.getFn {os : OpSet} (Γ : Ctx os) (f : FnName) : Option (FnDef os) := Γ.fns.getFn f
+def Ctx.getFn {os : OpSet} (name : FnName) (Γ : Ctx os) : Option (FnDef os) := Prod.fst <$> Γ.fns.getFn name
 
-def Ctx.updateRes {os : OpSet} (Γ : Ctx os) (r : os.R) : Ctx os :=
+def Ctx.updateRes {os : OpSet} (r : os.R) (Γ : Ctx os) : Ctx os :=
   { Γ with res := r }
 
 /-- Typing rules -/
@@ -420,11 +426,149 @@ def FnDef.interpret
 
 end -- mutual
 
+end Wavelet.L0
 
+/-! An small-step operational semantics of L0. -/
+namespace Wavelet.L0
+
+open PCM Op
+
+variable (os : OpSet) [PCM os.R]
+variable [sem : OpSemantics os]
+
+inductive Label where
+  | op : os.Op → List os.V → Label
+  | tau : Label
+
+/-- A saved stack frame. -/
+structure Frame where
+  locals : VarMap os.V
+  fn : FnDef os
+  contVars : Vars
+  contExpr : Expr os
+
+structure ExprState where
+  fns : FnCtx os
+  stack : List (Frame os)
+  locals : VarMap os.V
+  fn : FnDef os
+  state : sem.S
+
+abbrev ExprStateM := StateT (ExprState os) Option
+
+inductive ExprResult where
+  | final : List os.V → ExprResult
+  | cont : Expr os → ExprResult
+
+def ExprStateM.err : ExprStateM os R := StateT.lift Option.none
+
+def ExprStateM.getLocals : ExprStateM os (VarMap os.V) := ExprState.locals <$> get
+
+def ExprStateM.setLocals (locals : VarMap os.V) : ExprStateM os Unit :=
+  modify λ config => { config with locals := locals }
+
+def ExprStateM.curFn : ExprStateM os (FnDef os) := ExprState.fn <$> get
+
+def ExprStateM.getLocal (var : Var) : ExprStateM os (os.V) := do
+  let locals ← .getLocals os
+  match locals.get var with
+  | some v => return v
+  | none => .err os
+
+def ExprStateM.setLocal (var : Var) (val : os.V) : ExprStateM os Unit := do
+  let locals ← .getLocals os
+  .setLocals os (locals.insert var val)
+
+/-- Restores the next stack frame if it exists. -/
+def ExprStateM.restoreStack : ExprStateM os (Option (Frame os)) := do
+  let config ← get
+  match config.stack with
+  | [] => return none
+  | f :: rest => do
+    set { config with stack := rest, locals := f.locals, fn := f.fn }
+    return f
+
+/-- Saves the current stack frame. -/
+def ExprStateM.saveStack (contVars : Vars) (contExpr : Expr os) : ExprStateM os Unit := do
+  let config ← get
+  let frame := { locals := config.locals, fn := config.fn, contVars, contExpr }
+  set { config with stack := frame :: config.stack }
+
+def ExprStateM.liftOpM (m : OpM sem.S R) : ExprStateM os R := do
+  let config ← get
+  match m.run config.state with
+  | some (r, newState) => do
+    set { config with state := newState }
+    return r
+  | none => .err os
+
+/--
+Finds the function in the context with the given name,
+and then removes the prefix of `ExprState.fns` that does
+not match the name.
+-/
+def ExprStateM.getFn (name : FnName) : ExprStateM os (FnDef os) := do
+  let config ← get
+  match config.fns.getFn name with
+  | some (fn, fns') => do
+    set { config with fns := fns' }
+    return fn
+  | none => .err os
+
+def Expr.step : Expr os → ExprStateM os (Label os × ExprResult os)
+  | .vars vs => do
+    let vals ← vs.mapM (.getLocal os)
+    match ← .restoreStack os with
+    | none => return (.tau, .final vals)
+    | some f =>
+      if f.contVars.length ≠ vals.length then .err os
+      (f.contVars.zip vals).forM (λ (v, val) => .setLocal os v val)
+      return (.tau, .cont f.contExpr)
+  | .tail args => do
+    let fn ← .curFn os
+    let vals ← args.mapM (.getLocal os)
+    if fn.ins.length ≠ vals.length then .err os
+    -- Initialize new locals for the tail call
+    let locals := VarMap.fromList (List.zip (fn.ins.map Prod.fst) vals)
+    .setLocals os locals
+    return (.tau, .cont fn.body)
+  | .let_fn boundVars fnName args cont => do
+    let fn ← .getFn os fnName
+    let argVals ← args.mapM (.getLocal os)
+    if fn.ins.length ≠ argVals.length then .err os
+    let locals := VarMap.fromList (List.zip (fn.ins.map Prod.fst) argVals)
+    .saveStack os boundVars cont
+    .setLocals os locals
+    return (.tau, .cont fn.body)
+  | .let_op boundVars op args cont => do
+    let argVals ← args.mapM (.getLocal os)
+    let retVals ← .liftOpM os (sem.interpOp op argVals)
+    if boundVars.length ≠ retVals.length then .err os
+    (boundVars.zip retVals).forM (λ (v, val) => .setLocal os v val)
+    return (.op op argVals, .cont cont)
+  | .let_const var val cont => do
+    .setLocal os var val
+    return (.tau, .cont cont)
+  | .branch cond left right => do
+    let condVal ← .getLocal os cond
+    if let some b := os.asBool condVal then
+      if b then
+        return (.tau, .cont left)
+      else
+        return (.tau, .cont right)
+    else
+      .err os
+
+structure Config where
+  expr : Expr os
+  estate : ExprState os
+
+def Step (c₁ : Config os) (l : Label os) (c₂ : Config os) : Prop :=
+  (c₁.expr.step os).run c₁.estate = some ((l, .cont c₂.expr), c₂.estate)
 
 end Wavelet.L0
 
-/-! Syntax and monadic semantics of L1. -/
+/-! Syntax and operational semantics of L1. -/
 namespace Wavelet.L1
 
 open PCM Op
@@ -539,7 +683,7 @@ def ProcStateM.liftOpM (m : OpM sem.S R) : ProcStateM os R := do
   | some (r, newState) => do
     set { config with state := newState }
     return r
-  | none => ProcStateM.err os
+  | none => .err os
 
 /-- Steps an atomic process as a `ProcStateM`. -/
 def AtomicProc.step (p : AtomicProc os) : ProcStateM os (Label os × AtomicProc os) :=
