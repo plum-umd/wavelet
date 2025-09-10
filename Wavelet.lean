@@ -100,45 +100,47 @@ namespace Wavelet.L0
 
 open Wavelet.Op Wavelet.PCM
 
-abbrev Var := String
-abbrev Vars := List Var
+variable (χ : Type) [DecidableEq χ] -- Variable names
+variable (os : OpSet)
+
+abbrev Vars := List χ
 abbrev FnName := String
 
-inductive Expr (os : OpSet) where
-  | vars : Vars → Expr os
-  | tail : Vars → Expr os
-  | let_fn : (boundVars : Vars) → FnName → (args : Vars) → Expr os → Expr os
-  | let_op : (boundVars : Vars) → os.Op → (args : Vars) → Expr os → Expr os
-  | let_const : Var → os.V → Expr os → Expr os
-  | branch : Var → Expr os → Expr os → Expr os
+inductive Expr where
+  | vars : Vars χ → Expr
+  | tail : Vars χ → Expr
+  | let_fn : (boundVars : Vars χ) → FnName → (args : Vars χ) → Expr → Expr
+  | let_op : (boundVars : Vars χ) → os.Op → (args : Vars χ) → Expr → Expr
+  | let_const : χ → os.V → Expr → Expr
+  | branch : χ → Expr → Expr → Expr
 
-structure FnDef (os : OpSet) where
+structure FnDef where
   name : FnName
-  ins : List (Var × os.T)
+  ins : List (χ × os.T)
   outTys : List os.T
   requires : os.R
   ensures : os.R
-  body : Expr os
+  body : Expr χ os
 
 /-- A utility type for partial maps from `Var`. -/
-abbrev VarMap (T : Type u) := Var → Option T
+abbrev VarMap (T : Type u) := χ → Option T
 
-def VarMap.get (x : Var) (vars : VarMap T) : Option T := vars x
+def VarMap.get (x : χ) (vars : VarMap χ T) : Option T := vars x
 
-def VarMap.insert (x : Var) (t : T) (vars : VarMap T) : VarMap T :=
+def VarMap.insert (x : χ) (t : T) (vars : VarMap χ T) : VarMap χ T :=
   λ y => if y = x then some t else vars y
 
-def VarMap.insertOption (x : Var) (t : Option T) (vars : VarMap T) : VarMap T :=
+def VarMap.insertOption (x : χ) (t : Option T) (vars : VarMap χ T) : VarMap χ T :=
   λ y => if y = x then t else vars y
 
-def VarMap.remove (x : Var) (vars : VarMap T): VarMap T :=
+def VarMap.remove (x : χ) (vars : VarMap χ T): VarMap χ T :=
   λ y => if y = x then none else vars y
 
-def VarMap.fromList (vs : List (Var × T)) : VarMap T :=
+def VarMap.fromList (vs : List (χ × T)) : VarMap χ T :=
   λ x => (vs.find? (λ (k, _) => k = x)).map Prod.snd
 
-def VarMap.insertVars (vs : List (Var × T)) (vars : VarMap T) : VarMap T :=
-  λ x => (VarMap.fromList vs).get x <|> vars x
+def VarMap.insertVars (vs : List (χ × T)) (vars : VarMap χ T) : VarMap χ T :=
+  λ x => (VarMap.fromList χ vs).get χ x <|> vars x
 
 end Wavelet.L0
 
@@ -147,22 +149,24 @@ namespace Wavelet.L0
 
 open PCM Op
 
+variable (χ : Type) [DecidableEq χ] -- Variable names
+
 /--
 For convenience, new `FnDef`s are inserted at the front,
 i.e., `FnDef`s at the front can only call those at the back.
 -/
-abbrev FnCtx os := List (FnDef os)
+abbrev FnCtx os := List (FnDef χ os)
 
 structure Ctx (os : OpSet) where
-  self : FnDef os
-  fns : FnCtx os
-  vars : VarMap os.T
+  self : FnDef χ os
+  fns : FnCtx χ os
+  vars : VarMap χ os.T
   res : os.R
 
-def FnCtx.intersect {os : OpSet} (fns₁ fns₂ : FnCtx os) : FnCtx os :=
+def FnCtx.intersect {os : OpSet} (fns₁ fns₂ : FnCtx χ os) : FnCtx χ os :=
   fns₁.filter (λ fn₁ => fns₂.any (λ fn₂ => fn₁.name = fn₂.name))
 
-def FnCtx.getFn {os : OpSet} (name : FnName) (fns : FnCtx os) : Option (FnDef os × FnCtx os) :=
+def FnCtx.getFn {os : OpSet} (name : FnName) (fns : FnCtx χ os) : Option (FnDef χ os × FnCtx χ os) :=
   match fns with
   | [] => none
   | fn :: fns' =>
@@ -171,61 +175,61 @@ def FnCtx.getFn {os : OpSet} (name : FnName) (fns : FnCtx os) : Option (FnDef os
     else
       FnCtx.getFn name fns'
 
-def Ctx.WellTypedVars {os : OpSet} (vs : Vars) (tys : List os.T) (Γ : Ctx os) : Prop :=
-  List.Forall₂ (λ v t => Γ.vars.get v = some t) vs tys
+def Ctx.WellTypedVars {os : OpSet} (vs : Vars χ) (tys : List os.T) (Γ : Ctx χ os) : Prop :=
+  List.Forall₂ (λ v t => Γ.vars.get χ v = some t) vs tys
 
-def Ctx.getFn {os : OpSet} (name : FnName) (Γ : Ctx os) : Option (FnDef os) := Prod.fst <$> Γ.fns.getFn name
+def Ctx.getFn {os : OpSet} (name : FnName) (Γ : Ctx χ os) : Option (FnDef χ os) := Prod.fst <$> Γ.fns.getFn χ name
 
-def Ctx.updateRes {os : OpSet} (r : os.R) (Γ : Ctx os) : Ctx os :=
+def Ctx.updateRes {os : OpSet} (r : os.R) (Γ : Ctx χ os) : Ctx χ os :=
   { Γ with res := r }
 
 /-- Typing rules -/
-inductive Expr.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Expr os → Ctx os → List os.T → Prop where
+inductive Expr.WellTyped {os : OpSet} [PCM os.R] : Ctx χ os → Expr χ os → Ctx χ os → List os.T → Prop where
   /-- Well-typed variables -/
   | wt_vars :
-    Γ.WellTypedVars vs tys →
+    Γ.WellTypedVars χ vs tys →
     Expr.WellTyped Γ (.vars vs) Γ tys
   /-- Well-typed recursive tail call -/
   | wt_tail :
-    Γ.WellTypedVars args (Prod.snd <$> Γ.self.ins) →
+    Γ.WellTypedVars χ args (Prod.snd <$> Γ.self.ins) →
     Γ.self.requires ⬝ frame ≡ Γ.res →
     Expr.WellTyped
       Γ (.tail args)
-      (Γ.updateRes (Γ.self.ensures ⬝ frame)) Γ.self.outTys
+      (Γ.updateRes χ (Γ.self.ensures ⬝ frame)) Γ.self.outTys
   /-- Well-typed let fn call -/
   | wt_let_fn :
-    Γ.getFn fnName = some fn →
-    Γ.WellTypedVars args (Prod.snd <$> fn.ins) →
+    Γ.getFn χ fnName = some fn →
+    Γ.WellTypedVars χ args (Prod.snd <$> fn.ins) →
     fn.requires ⬝ frame ≡ Γ.res →
     boundVars.length = fn.outTys.length →
     Expr.WellTyped {
       Γ with
       res := fn.ensures ⬝ frame,
-      vars := Γ.vars.insertVars (boundVars.zip fn.outTys)
+      vars := Γ.vars.insertVars χ (boundVars.zip fn.outTys)
     } cont Γ' tys →
     Expr.WellTyped Γ (.let_fn boundVars fnName args cont) Γ' tys
   /-- Well-typed let op call -/
   | wt_let_op :
-    Γ.WellTypedVars args (os.specOf op).inTys →
+    Γ.WellTypedVars χ args (os.specOf op).inTys →
     (os.specOf op).requires ⬝ frame ≡ Γ.res →
     boundVars.length = (os.specOf op).outTys.length →
     Expr.WellTyped {
       Γ with
       res := (os.specOf op).ensures ⬝ frame,
-      vars := Γ.vars.insertVars (boundVars.zip (os.specOf op).outTys)
+      vars := Γ.vars.insertVars χ (boundVars.zip (os.specOf op).outTys)
     } cont Γ' tys →
     Expr.WellTyped Γ (.let_op boundVars op args cont) Γ' tys
   /-- Well-typed let constant -/
   | wt_let_const :
     Expr.WellTyped {
       Γ with
-      vars := Γ.vars.insert var (os.typeOf val)
+      vars := Γ.vars.insert χ var (os.typeOf val)
     } cont Γ' tys →
     Expr.WellTyped Γ (.let_const var val cont) Γ' tys
   /-- Well-typed branching -/
   | wt_branch :
     -- Condition is well-typed
-    Γ.vars.get x = some t →
+    Γ.vars.get χ x = some t →
     os.isBoolTy t →
     -- Both branches are well-typed.
     Expr.WellTyped Γ left Γ₁ tys →
@@ -238,24 +242,24 @@ inductive Expr.WellTyped {os : OpSet} [PCM os.R] : Ctx os → Expr os → Ctx os
       Γ (.branch x left right)
       {
         Γ with
-        fns := Γ₁.fns.intersect Γ₂.fns,
+        fns := Γ₁.fns.intersect χ Γ₂.fns,
         res := res'
       } tys
 
-def FnDef.WellTyped {os : OpSet} [PCM os.R] (fns : FnCtx os) (fn : FnDef os) : Prop :=
+def FnDef.WellTyped {os : OpSet} [PCM os.R] (fns : FnCtx χ os) (fn : FnDef χ os) : Prop :=
   ∃ vars' res',
-    Expr.WellTyped
-      { self := fn, fns, vars := VarMap.fromList fn.ins, res := fn.requires }
+    Expr.WellTyped χ
+      { self := fn, fns, vars := VarMap.fromList χ fn.ins, res := fn.requires }
       fn.body
       { self := fn, fns, vars := vars', res := res' }
       fn.outTys ∧
     res' ≤ fn.ensures
 
-inductive FnCtx.WellTyped {os : OpSet} [PCM os.R] : FnCtx os → Prop where
+inductive FnCtx.WellTyped {os : OpSet} [PCM os.R] : FnCtx χ os → Prop where
   | wt_nil : FnCtx.WellTyped []
   | wt_cons :
     FnCtx.WellTyped fns →
-    FnDef.WellTyped fns fn →
+    FnDef.WellTyped χ fns fn →
     FnCtx.WellTyped (fn :: fns)
 
 end Wavelet.L0
@@ -317,122 +321,12 @@ def FixTree.iter {A B : Type u} (f : A → FixTree E (A ⊕ B)) (a : A) : FixTre
 
 end Wavelet.ITree
 
-/-! A monadic semantics of L0. -/
-namespace Wavelet.L0
-
-open PCM Op ITree
-
-/-- Final evaluation result of an expression. -/
-inductive Expr.EvalResult (os : OpSet) where
-  | ret : List os.V → EvalResult os
-  | tail : List os.V → EvalResult os
-
-/-- Evaluation event. -/
-inductive Expr.EvalE (os : OpSet) : Type → Type where
-  | op : os.Op → List os.V → EvalE os (List os.V)
-
-/-- Evaluation monad for expressions. -/
-abbrev Expr.EvalM os := StateT (VarMap os.V) (OptionT (FixTree (Expr.EvalE os)))
-
-def Expr.EvalM.err {os : OpSet} : EvalM os R := StateT.lift OptionT.fail
-
-def Expr.EvalM.getLocal {os : OpSet} (x : Var) : EvalM os (os.V) := do
-  let locals ← get
-  match locals.get x with
-  | some v => return v
-  | none => .err
-
-def Expr.EvalM.setLocal {os : OpSet} (x : Var) (v : os.V) : EvalM os Unit := do
-  let locals ← get
-  set (locals.insert x v)
-
-/-- Evaluation monad for function definitions. -/
-abbrev FnDef.EvalM os := OptionT (FixTree (Expr.EvalE os))
-
-/-! Interprets `Expr` as `Expr.EvalM` and `FnDef` as `FnDef.EvalM`. -/
-mutual
-
-variable {os : OpSet}
-
-/-- Searches function with name `fnName` and applies the given arguments. -/
-def Expr.interpretFn
-  (fns : FnCtx os)
-  (fnName : FnName)
-  (args : List os.V) : Expr.EvalM os (List os.V) :=
-  match fns with
-  | [] => .err
-  | fn :: fns' =>
-    if fn.name = fnName then
-      .lift (fn.interpret fns' args)
-    else
-      Expr.interpretFn fns' fnName args
-
-/--
-Interprets an expression as an `Expr.EvalM`.
-For convenience, local variable reads/writes are interpreted
-directly through a state monad on `VarMap os.V` without itree events.
--/
-def Expr.interpret
-  (fns : FnCtx os)
-  (self : FnDef os) :
-  Expr os → Expr.EvalM os (Expr.EvalResult os)
-  | .vars vs => .ret <$> vs.mapM .getLocal
-  | .tail args => .tail <$> args.mapM .getLocal
-  | .let_fn boundVars fnName args cont => do
-    let argVals ← args.mapM .getLocal
-    let retVals ← Expr.interpretFn fns fnName argVals
-    if boundVars.length = retVals.length then
-      (boundVars.zip retVals).forM (λ (v, val) => .setLocal v val)
-      cont.interpret fns self
-    else
-      .err
-  | .let_op boundVars op args cont => do
-    let argVals ← args.mapM .getLocal
-    let retVals ← .lift (.lift (.trigger (.op op argVals)))
-    if boundVars.length = retVals.length then
-      (boundVars.zip retVals).forM (λ (v, val) => .setLocal v val)
-      cont.interpret fns self
-    else
-      .err
-  | .let_const var val cont => do
-    .setLocal var val
-    cont.interpret fns self
-  | .branch cond left right => do
-    let condVal ← .getLocal cond
-    if let some b := os.asBool condVal then
-      if b then
-        left.interpret fns self
-      else
-        right.interpret fns self
-    else
-      .err
-
-def FnDef.interpret
-  (fns : FnCtx os)
-  (self : FnDef os)
-  (args : List os.V) : FnDef.EvalM os (List os.V) :=
-  -- Interpreted as the fixpoint of repeatedly applying tail calls until return
-  FixTree.iter (λ args =>
-    if args.length = self.ins.length then do
-      let locals := VarMap.fromList (List.zip (self.ins.map Prod.fst) args)
-      let evalRes ← self.body.interpret fns self locals
-      match evalRes with
-      | some (.ret vals, _) => return .inr (some vals)
-      | some (.tail vals, _) => return .inl vals
-      | none => return .inr none
-    else
-      return .inr none)
-    args
-
-end -- mutual
-
-end Wavelet.L0
-
 /-! An small-step operational semantics of L0. -/
 namespace Wavelet.L0
 
 open PCM Op
 
+variable (χ : Type) [DecidableEq χ] -- Variable names
 variable (os : OpSet) [PCM os.R]
 variable [sem : OpSemantics os]
 
@@ -442,45 +336,41 @@ inductive Label where
 
 /-- A saved stack frame. -/
 structure Frame where
-  locals : VarMap os.V
-  fn : FnDef os
-  contVars : Vars
-  contExpr : Expr os
+  locals : VarMap χ os.V
+  fn : FnDef χ os
+  contVars : Vars χ
+  contExpr : Expr χ os
 
 structure ExprState where
-  fns : FnCtx os
-  stack : List (Frame os)
-  locals : VarMap os.V
-  fn : FnDef os
+  fns : FnCtx χ os
+  stack : List (Frame χ os)
+  locals : VarMap χ os.V
+  fn : FnDef χ os
   state : sem.S
 
-abbrev ExprStateM := StateT (ExprState os) Option
+abbrev ExprStateM := StateT (ExprState χ os) Option
 
-inductive ExprResult where
-  | final : List os.V → ExprResult
-  | cont : Expr os → ExprResult
+def ExprStateM.err : ExprStateM χ os R := StateT.lift Option.none
 
-def ExprStateM.err : ExprStateM os R := StateT.lift Option.none
+def ExprStateM.getLocals : ExprStateM χ os (VarMap χ os.V) := ExprState.locals <$> get
 
-def ExprStateM.getLocals : ExprStateM os (VarMap os.V) := ExprState.locals <$> get
-
-def ExprStateM.setLocals (locals : VarMap os.V) : ExprStateM os Unit :=
+def ExprStateM.setLocals (locals : VarMap χ os.V) : ExprStateM χ os Unit :=
   modify λ config => { config with locals := locals }
 
-def ExprStateM.curFn : ExprStateM os (FnDef os) := ExprState.fn <$> get
+def ExprStateM.curFn : ExprStateM χ os (FnDef χ os) := ExprState.fn <$> get
 
-def ExprStateM.getLocal (var : Var) : ExprStateM os (os.V) := do
-  let locals ← .getLocals os
-  match locals.get var with
+def ExprStateM.getLocal (var : χ) : ExprStateM χ os (os.V) := do
+  let locals ← .getLocals χ os
+  match locals.get χ var with
   | some v => return v
-  | none => .err os
+  | none => .err χ os
 
-def ExprStateM.setLocal (var : Var) (val : os.V) : ExprStateM os Unit := do
-  let locals ← .getLocals os
-  .setLocals os (locals.insert var val)
+def ExprStateM.setLocal (var : χ) (val : os.V) : ExprStateM χ os Unit := do
+  let locals ← .getLocals χ os
+  .setLocals χ os (locals.insert χ var val)
 
 /-- Restores the next stack frame if it exists. -/
-def ExprStateM.restoreStack : ExprStateM os (Option (Frame os)) := do
+def ExprStateM.restoreStack : ExprStateM χ os (Option (Frame χ os)) := do
   let config ← get
   match config.stack with
   | [] => return none
@@ -489,82 +379,88 @@ def ExprStateM.restoreStack : ExprStateM os (Option (Frame os)) := do
     return f
 
 /-- Saves the current stack frame. -/
-def ExprStateM.saveStack (contVars : Vars) (contExpr : Expr os) : ExprStateM os Unit := do
+def ExprStateM.saveStack (contVars : Vars χ) (contExpr : Expr χ os) : ExprStateM χ os Unit := do
   let config ← get
   let frame := { locals := config.locals, fn := config.fn, contVars, contExpr }
   set { config with stack := frame :: config.stack }
 
-def ExprStateM.liftOpM (m : OpM sem.S R) : ExprStateM os R := do
+def ExprStateM.liftOpM (m : OpM sem.S R) : ExprStateM χ os R := do
   let config ← get
   match m.run config.state with
   | some (r, newState) => do
     set { config with state := newState }
     return r
-  | none => .err os
+  | none => .err χ os
 
 /--
 Finds the function in the context with the given name,
 and then removes the prefix of `ExprState.fns` that does
 not match the name.
 -/
-def ExprStateM.getFn (name : FnName) : ExprStateM os (FnDef os) := do
+def ExprStateM.getFn (name : FnName) : ExprStateM χ os (FnDef χ os) := do
   let config ← get
-  match config.fns.getFn name with
+  match config.fns.getFn χ name with
   | some (fn, fns') => do
     set { config with fns := fns' }
     return fn
-  | none => .err os
+  | none => .err χ os
 
-def Expr.step : Expr os → ExprStateM os (Label os × ExprResult os)
+inductive ExprResult where
+  | final : List os.V → ExprResult
+  | cont : Expr χ os → ExprResult
+
+def Expr.step : Expr χ os → ExprStateM χ os (Label os × ExprResult χ os)
   | .vars vs => do
-    let vals ← vs.mapM (.getLocal os)
-    match ← .restoreStack os with
+    let vals ← vs.mapM (.getLocal χ os)
+    match ← .restoreStack χ os with
     | none => return (.tau, .final vals)
     | some f =>
-      if f.contVars.length ≠ vals.length then .err os
-      (f.contVars.zip vals).forM (λ (v, val) => .setLocal os v val)
+      if f.contVars.length ≠ vals.length then .err χ os
+      (f.contVars.zip vals).forM (λ (v, val) => .setLocal χ os v val)
       return (.tau, .cont f.contExpr)
   | .tail args => do
-    let fn ← .curFn os
-    let vals ← args.mapM (.getLocal os)
-    if fn.ins.length ≠ vals.length then .err os
+    let fn ← .curFn χ os
+    let vals ← args.mapM (.getLocal χ os)
+    if fn.ins.length ≠ vals.length then .err χ os
     -- Initialize new locals for the tail call
-    let locals := VarMap.fromList (List.zip (fn.ins.map Prod.fst) vals)
-    .setLocals os locals
+    let locals := VarMap.fromList χ (List.zip (fn.ins.map Prod.fst) vals)
+    .setLocals χ os locals
     return (.tau, .cont fn.body)
   | .let_fn boundVars fnName args cont => do
-    let fn ← .getFn os fnName
-    let argVals ← args.mapM (.getLocal os)
-    if fn.ins.length ≠ argVals.length then .err os
-    let locals := VarMap.fromList (List.zip (fn.ins.map Prod.fst) argVals)
-    .saveStack os boundVars cont
-    .setLocals os locals
+    let fn ← .getFn χ os fnName
+    let argVals ← args.mapM (.getLocal χ os)
+    if fn.ins.length ≠ argVals.length then .err χ os
+    let locals := VarMap.fromList χ (List.zip (fn.ins.map Prod.fst) argVals)
+    .saveStack χ os boundVars cont
+    .setLocals χ os locals
     return (.tau, .cont fn.body)
   | .let_op boundVars op args cont => do
-    let argVals ← args.mapM (.getLocal os)
-    let retVals ← .liftOpM os (sem.interpOp op argVals)
-    if boundVars.length ≠ retVals.length then .err os
-    (boundVars.zip retVals).forM (λ (v, val) => .setLocal os v val)
+    let argVals ← args.mapM (.getLocal χ os)
+    let retVals ← .liftOpM χ os (sem.interpOp op argVals)
+    if boundVars.length ≠ retVals.length then .err χ os
+    (boundVars.zip retVals).forM (λ (v, val) => .setLocal χ os v val)
     return (.op op argVals, .cont cont)
   | .let_const var val cont => do
-    .setLocal os var val
+    .setLocal χ os var val
     return (.tau, .cont cont)
   | .branch cond left right => do
-    let condVal ← .getLocal os cond
+    let condVal ← .getLocal χ os cond
     if let some b := os.asBool condVal then
       if b then
         return (.tau, .cont left)
       else
         return (.tau, .cont right)
     else
-      .err os
+      .err χ os
 
 structure Config where
-  expr : Expr os
-  estate : ExprState os
+  res : ExprResult χ os
+  estate : ExprState χ os
 
-def Step (c₁ : Config os) (l : Label os) (c₂ : Config os) : Prop :=
-  (c₁.expr.step os).run c₁.estate = some ((l, .cont c₂.expr), c₂.estate)
+inductive Step : Config χ os → Label os → Config χ os → Prop where
+  | step (l : Label os) :
+    (expr.step χ os).run estate = some ((l, res), estate') →
+    Step { res := .cont expr, estate } l { res, estate := estate' }
 
 end Wavelet.L0
 
@@ -573,206 +469,264 @@ namespace Wavelet.L1
 
 open PCM Op
 
+variable (χ : Type) [DecidableEq χ] -- Channel names
 variable (os : OpSet)
-variable [DecidableEq os.Op] [DecidableEq os.V] [DecidableEq os.T] [DecidableEq os.R]
 
 abbrev ProcName := String
-abbrev Chan := L0.Var
 
-inductive ChanType [DecidableEq os.T] [DecidableEq os.R] where
+inductive ChanType where
   | prim : os.T → ChanType
   | ghost : os.R → ChanType
-  deriving DecidableEq
 
-inductive Token [DecidableEq os.V] [DecidableEq os.R] where
+inductive Token where
   | val : os.V → Token
   | res : os.R → Token
-  deriving DecidableEq
 
-inductive AtomicProc [DecidableEq os.Op] [DecidableEq os.V] where
-  | op (op : os.Op) (ins : List Chan) (outs : List Chan) (resIn : Chan) (resOut : Chan) : AtomicProc
-  | steer (flavor : Bool) (decider : Chan) (input : Chan) (output : Chan) : AtomicProc
-  | carry (init : Bool) (flavor : Bool) (decider : Chan) (input₁ : Chan) (input₂ : Chan) (output : Chan) : AtomicProc
-  | merge (decider : Chan) (input₁ : Chan) (input₂ : Chan) (output : Chan) : AtomicProc
-  | fork (input : Chan) (output₁ : Chan) (output₂ : Chan) : AtomicProc
-  | const (val : os.V) (act : Chan) (output : Chan) : AtomicProc
-  | sink (input : Chan) : AtomicProc
-  | forward (input : Chan) (output : Chan) : AtomicProc
-  deriving DecidableEq
+inductive AtomicProc where
+  | op (op : os.Op) (inputs : List χ) (outputs : List χ) (resInput : χ) (resOutput : χ) : AtomicProc
+  -- | steer (flavor : Bool) (decider : χ) (input : χ) (output : χ) : AtomicProc
+  -- | carry (init : Bool) (flavor : Bool) (decider : χ) (input₁ : χ) (input₂ : χ) (output : χ) : AtomicProc
+  -- | merge (decider : χ) (input₁ : χ) (input₂ : χ) (output : χ) : AtomicProc
+  | steer (flavor : Bool) (decider : χ) (inputs : List χ) (outputs : List χ) : AtomicProc
+  | carry (init : Bool) (flavor : Bool) (decider : χ) (inputs₁ : List χ) (inputs₂ : List χ) (output : List χ) : AtomicProc
+  | merge (decider : χ) (inputs₁ : List χ) (inputs₂ : List χ) (output : List χ) : AtomicProc
+  | fork (input : χ) (output₁ : χ) (output₂ : χ) : AtomicProc
+  | const (val : os.V) (act : χ) (output : χ) : AtomicProc
+  | sink (input : χ) : AtomicProc
+  | forward (input : χ) (output : χ) : AtomicProc
 
-inductive Proc [DecidableEq os.Op] [DecidableEq os.V] [DecidableEq os.T] [DecidableEq os.R] where
-  | atom : AtomicProc os → Proc
+mutual
+
+inductive Proc where
+  | atom : AtomicProc χ os → Proc
   | par : Proc → Proc → Proc
-  | new : (Chan × ChanType os) → List (Token os) → Proc → Proc
-  deriving DecidableEq
+  | new : (chan : χ) → (typ : ChanType os) → (init : List (Token os)) → Proc → Proc
+  -- | graph :
+  --   (inputs : List χ) → (outputs : List χ) →
+  --   (inputs' : List (χ × ChanType os)) →
+  --   (outputs' : List (χ × ChanType os)) →
+  --   Proc → Proc
 
-abbrev ChanState := Chan → List (Token os)
-def ChanState.get (c : Chan) (chans : ChanState os) : List (Token os) := chans c
-def ChanState.insert (c : Chan) (ts : List (Token os)) (chans : ChanState os) : ChanState os :=
+structure Graph where
+  ins : List (χ × ChanType os)
+  outs : List (χ × ChanType os)
+  proc : Proc
+
+end -- mutual
+
+abbrev ChanState := χ → List (Token os)
+
+def ChanState.empty : ChanState χ os := λ _ => []
+
+def ChanState.get (c : χ) (chans : ChanState χ os) : List (Token os) := chans c
+
+def ChanState.insert (c : χ) (ts : List (Token os)) (chans : ChanState χ os) : ChanState χ os :=
   λ d => if d = c then ts else chans d
+
+inductive Label where
+  | op : os.Op → List os.V → Label
+  | tau : Label
 
 variable [PCM os.R] [sem : OpSemantics os]
 
-inductive Label [DecidableEq os.Op] [DecidableEq os.V] where
-  | op : os.Op → List os.V → Label
-  | tau : Label
-  deriving DecidableEq
-
 structure ProcState where
-  chans : ChanState os
+  chans : ChanState χ os
   state : sem.S
 
-abbrev ProcStateM := StateT (ProcState os) List
+abbrev ProcStateM := StateT (ProcState χ os) List
 
-def ProcStateM.err : ProcStateM os R := StateT.lift []
+def ProcStateM.err : ProcStateM χ os R := StateT.lift []
 
-def ProcStateM.getChans : ProcStateM os (ChanState os) := do
+def ProcStateM.getChans : ProcStateM χ os (ChanState χ os) := do
   let config ← get
   return config.chans
 
-def ProcStateM.getState : ProcStateM os sem.S := do
+def ProcStateM.getChan (chan : χ) : ProcStateM χ os (List (Token os)) := do
+  let config ← get
+  return config.chans.get χ os chan
+
+def ProcStateM.getState : ProcStateM χ os sem.S := do
   let config ← get
   return config.state
 
-def ProcStateM.setChans (chans : ChanState os) : ProcStateM os Unit := do
+def ProcStateM.setChans (chans : ChanState χ os) : ProcStateM χ os Unit := do
   let config ← get
   set { config with chans := chans }
 
-def ProcStateM.setState (state : sem.S) : ProcStateM os Unit := do
+def ProcStateM.setChan (chan : χ) (toks : List (Token os)) : ProcStateM χ os Unit := do
+  let config ← get
+  set { config with chans := config.chans.insert χ os chan toks }
+
+def ProcStateM.setState (state : sem.S) : ProcStateM χ os Unit := do
   let config ← get
   set { config with state := state }
 
-def ProcStateM.pop (chan : Chan) : ProcStateM os (Token os) := do
-  let chans ← .getChans os
-  match chans.get os chan with
+def ProcStateM.pop (chan : χ) : ProcStateM χ os (Token os) := do
+  let chans ← .getChans χ os
+  match chans.get χ os chan with
   | v :: vs => do
-    .setChans os (chans.insert os chan vs)
+    .setChans χ os (chans.insert χ os chan vs)
     return v
-  | _ => ProcStateM.err os
+  | _ => ProcStateM.err χ os
 
 /-- Same as `ProcState.pop`, but expects a value token. -/
-def ProcStateM.popValue (chan : Chan) : ProcStateM os os.V := do
-  let tok ← ProcStateM.pop os chan
+def ProcStateM.popValue (chan : χ) : ProcStateM χ os os.V := do
+  let tok ← ProcStateM.pop χ os chan
   match tok with
   | .val v => return v
-  | .res _ => .err os
+  | .res _ => .err χ os
 
 /-- Same as `ProcStateM.popValue`, but in addition expects a Boolean. -/
-def ProcStateM.popBool (chan : Chan) : ProcStateM os Bool := do
-  let v ← .popValue os chan
+def ProcStateM.popBool (chan : χ) : ProcStateM χ os Bool := do
+  let v ← .popValue χ os chan
   if let some b := os.asBool v then
     return b
   else
-    .err os
+    .err χ os
 
 /-- Same as `ProcState.pop`, but expects a resource token. -/
-def ProcStateM.popRes (chan : Chan) : ProcStateM os os.R := do
-  let tok ← ProcStateM.pop os chan
+def ProcStateM.popRes (chan : χ) : ProcStateM χ os os.R := do
+  let tok ← ProcStateM.pop χ os chan
   match tok with
   | .res r => return r
-  | .val _ => .err os
+  | .val _ => .err χ os
 
-def ProcStateM.push (chan : Chan) (v : Token os) : ProcStateM os Unit := do
-  let chans ← .getChans os
-  let vs := chans.get os chan
-  .setChans os (chans.insert os chan (vs ++ [v]))
+def ProcStateM.popMany (chans : List χ) : ProcStateM χ os (List (Token os)) :=
+  chans.mapM (λ chan => .pop χ os chan)
 
-def ProcStateM.liftOpM (m : OpM sem.S R) : ProcStateM os R := do
+def ProcStateM.popManyValues (chans : List χ) : ProcStateM χ os (List os.V) :=
+  chans.mapM (λ chan => .popValue χ os chan)
+
+def ProcStateM.push (chan : χ) (v : Token os) : ProcStateM χ os Unit := do
+  let chans ← .getChans χ os
+  let vs := chans.get χ os chan
+  .setChans χ os (chans.insert χ os chan (vs ++ [v]))
+
+def ProcStateM.pushMany (chans : List χ) (toks : List (Token os)) : ProcStateM χ os Unit := do
+  if chans.length = toks.length then
+    (chans.zip toks).forM λ (c, v) => .push χ os c v
+  else
+    .err χ os
+
+def ProcStateM.pushManyValues (chans : List χ) (vals : List os.V) : ProcStateM χ os Unit := do
+  if chans.length = vals.length then
+    (chans.zip vals).forM λ (c, v) => .push χ os c (.val v)
+  else
+    .err χ os
+
+def ProcStateM.liftOpM (m : OpM sem.S R) : ProcStateM χ os R := do
   let config ← get
   match m.run config.state with
   | some (r, newState) => do
     set { config with state := newState }
     return r
-  | none => .err os
+  | none => .err χ os
 
 /-- Steps an atomic process as a `ProcStateM`. -/
-def AtomicProc.step (p : AtomicProc os) : ProcStateM os (Label os × AtomicProc os) :=
+def AtomicProc.step (p : AtomicProc χ os) : ProcStateM χ os (Label os × AtomicProc χ os) :=
   match p with
-  | .op o inChans outChans resInChan resOutChan => do
+  | .op o inputs outputs resInput resOutput => do
     -- Read input values and resource
-    let inVals ← inChans.mapM (λ inChan => .popValue os inChan)
-    let _ ← .popRes os resInChan -- resource is not used in semantics
+    let inVals ← .popManyValues χ os inputs
+    let _ ← .popRes χ os resInput -- resource is not used in semantics
     -- Run the operator
-    let outVals ← .liftOpM os (sem.interpOp o inVals)
+    let outVals ← .liftOpM χ os (sem.interpOp o inVals)
     -- Write output values and resource
-    if outVals.length = outChans.length then
-      (outChans.zip outVals).forM (λ (outChan, outVal) =>
-        .push os outChan (.val outVal))
-      .push os resOutChan (.res (os.specOf o).ensures)
-      return (.op o inVals, p)
-    else .err os
-  | .steer flavor decider input output => do
-    let b ← .popBool os decider
-    let v ← .pop os input
+    .pushManyValues χ os outputs outVals
+    .push χ os resOutput (.res (os.specOf o).ensures)
+    return (.op o inVals, p)
+  | .steer flavor decider inputs outputs => do
+    let b ← .popBool χ os decider
+    let toks ← inputs.mapM (λ input => .pop χ os input)
     if b = flavor then
-      .push os output v
+      .pushMany χ os outputs toks
     return (.tau, p)
-  | .carry init flavor decider input₁ input₂ output => do
+  | .carry init flavor decider inputs₁ inputs₂ outputs => do
     if init then
-      .pop os input₁ >>= .push os output
-      return (.tau, .carry false flavor decider input₁ input₂ output)
+      .popMany χ os inputs₁ >>= .pushMany χ os outputs
+      return (.tau, .carry false flavor decider inputs₁ inputs₂ outputs)
     else
-      let b ← .popBool os decider
+      let b ← .popBool χ os decider
       if b = flavor then
-        .pop os input₂ >>= .push os output
-        return (.tau, .carry false flavor decider input₁ input₂ output)
+        .popMany χ os inputs₂ >>= .pushMany χ os outputs
+        return (.tau, .carry false flavor decider inputs₁ inputs₂ outputs)
       else
-        return (.tau, .carry true flavor decider input₁ input₂ output)
-  | .merge decider input₁ input₂ output => do
-    let b ← .popBool os decider
+        return (.tau, .carry true flavor decider inputs₁ inputs₂ outputs)
+  | .merge decider inputs₁ inputs₂ outputs => do
+    let b ← .popBool χ os decider
     if b then
-      .pop os input₁ >>= .push os output
+      .popMany χ os inputs₁ >>= .pushMany χ os outputs
     else
-      .pop os input₂ >>= .push os output
+      .popMany χ os inputs₂ >>= .pushMany χ os outputs
     return (.tau, p)
   | .fork input output₁ output₂ => do
-    let v ← .pop os input
-    .push os output₁ v
-    .push os output₂ v
+    let v ← .pop χ os input
+    .push χ os output₁ v
+    .push χ os output₂ v
     return (.tau, p)
   | .const val act output => do
-    let _ ← .pop os act
-    .push os output (.val val)
+    let _ ← .pop χ os act
+    .push χ os output (.val val)
     return (.tau, p)
   | .sink input => do
-    let _ ← .pop os input
+    let _ ← .pop χ os input
     return (.tau, p)
   | .forward input output => do
-    .pop os input >>= .push os output
+    .pop χ os input >>= .push χ os output
     return (.tau, p)
 
 /-- Defines the semantics of one step of a `Proc`. -/
-def Proc.step (p : Proc os) : ProcStateM os (Label os × Proc os) :=
+def Proc.step (p : Proc χ os) : ProcStateM χ os (Label os × Proc χ os) :=
   match p with
-  | .atom ap => (ap.step os).map λ (lbl, ap') => (lbl, .atom ap')
+  | .atom ap => (ap.step χ os).map λ (lbl, ap') => (lbl, .atom ap')
   | .par p₁ p₂ => p₁.step <|> p₂.step
-  | .new vts buf p => do
-      let chans ← .getChans os
-      let oldBuf := chans.get os vts.fst
-      .setChans os (chans.insert os vts.fst buf)
+  | .new chan ty buf p => do
+      let chans ← .getChans χ os
+      let oldBuf := chans.get χ os chan
+      .setChans χ os (chans.insert χ os chan buf)
       let (lbl, p') ← p.step
       -- Restore old buffer
-      let chans ← .getChans os
-      let newBuf := chans.get os vts.fst
-      .setChans os (chans.insert os vts.fst oldBuf)
-      return (lbl, .new vts newBuf p')
+      let chans ← .getChans χ os
+      let newBuf := chans.get χ os chan
+      .setChans χ os (chans.insert χ os chan oldBuf)
+      return (lbl, .new chan ty newBuf p')
+  -- | .graph inputs outputs g => do
+  --   let oldChans ← .getChans χ os
+  --   .setChans χ os (.empty χ os)
+  --   if inputs.length ≠ g.ins.length ∨ outputs.length ≠ g.outs.length then
+  --     .err χ os
+  --   -- In the new channel state, replace the input and output channels
+  --   (inputs.zip g.ins).forM λ (input, (gInput, _)) =>
+  --     .setChan χ os gInput (oldChans.get χ os input)
+  --   (outputs.zip g.outs).forM λ (output, (gOutput, _)) =>
+  --     .setChan χ os gOutput (oldChans.get χ os output)
+  --   -- Step the inner process
+  --   let (lbl, proc') ← g.proc.step
+  --   -- Restore the old channel state, except for channels bound by the graph
+  --   let chans ← .getChans χ os
+  --   .setChans χ os (oldChans)
+  --   (inputs.zip g.ins).forM λ (input, (gInput, _)) =>
+  --     .setChan χ os input (chans.get χ os gInput)
+  --   (outputs.zip g.outs).forM λ (output, (gOutput, _)) =>
+  --     .setChan χ os output (chans.get χ os gOutput)
+  --   return (lbl, .graph inputs outputs { g with proc := proc' })
 
 structure Config where
-  proc : Proc os
-  pstate : ProcState os
+  proc : Proc χ os
+  pstate : ProcState χ os
 
-def Step (c₁ : Config os) (l : Label os) (c₂ : Config os) : Prop :=
-  ((l, c₂.proc), c₂.pstate) ∈ (c₁.proc.step os).run c₁.pstate
+def Step (c₁ : Config χ os) (l : Label os) (c₂ : Config χ os) : Prop :=
+  ((l, c₂.proc), c₂.pstate) ∈ (c₁.proc.step χ os).run c₁.pstate
 
 theorem step_tau_label_preserves_state
-  (hs : Step os c₁ .tau c₂) :
+  (hs : Step χ os c₁ .tau c₂) :
   c₁.pstate.state = c₂.pstate.state := sorry
 
 theorem step_op_label_changes_state
-  (hs : Step os c₁ (.op o vs) c₂) :
+  (hs : Step χ os c₁ (.op o vs) c₂) :
   ∃ vs, (sem.interpOp o vs).run c₁.pstate.state = some (vs, c₂.pstate.state) := by
   simp only [Step, StateT.run] at hs
-  induction h : c₁.proc with
+  cases h : c₁.proc with
   | atom ap =>
     simp only [h, Proc.step, StateT.map, List.pure_def, List.bind_eq_flatMap, List.mem_flatMap,
       List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false, Prod.exists,
@@ -783,7 +737,40 @@ theorem step_op_label_changes_state
       simp [AtomicProc.step] at hs'
       sorry
     | _ => sorry
-  | par p₁ p₂ ih => sorry
-  | new vts buf p ih => sorry
+  | par p₁ p₂ => sorry
+  | new chan ty buf p => sorry
+  -- | graph ins outs g => sorry
 
 end Wavelet.L1
+
+/-! A compiler from L0 programs to L1 processes. -/
+namespace Wavelet.Compile
+
+open PCM Op
+
+variable (os : OpSet)
+
+/-- Defined this way to help defining the simulation relation. -/
+inductive Chan χ where
+  | var : χ → (fnName : L0.FnName) → (shadow : ℕ) → (copy : ℕ) → Chan χ
+
+def compileExpr
+  (fns : L0.FnCtx χ os)
+  (self : L0.FnDef χ os) -- Current function being compiled
+  (chans : L0.VarMap χ (Chan χ)) -- Map from L0 variables to channel names
+  (actChan : Chan χ) -- Channel for activation signals
+  (tailFlag : Chan χ) -- Channel to indicate whether we have a tail recursion
+  (outChans : List (Chan χ)) -- Channels to output results
+  (tailChans : List (Chan χ)) -- Channels to output tail call arguments
+  : L0.Expr χ os → L1.Proc (Chan χ) os :=
+  sorry
+
+end Wavelet.Compile
+
+/-
+TODOs and questions:
+- Well-typed L1 processes have the same semantics on fair and complete traces.
+- Well-typed L0 programs compile to well-typed L1 processes.
+- L0 program is simulated by the compiled L1 process.
+- Futher ghost resource erasure and equivalence (maybe together with L1-level rewrites).
+-/
