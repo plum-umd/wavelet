@@ -495,7 +495,7 @@ inductive AtomicProc where
   | sink (input : χ) : AtomicProc
   | forward (input : χ) (output : χ) : AtomicProc
 
-mutual
+-- mutual
 
 inductive Proc where
   | atom : AtomicProc χ os → Proc
@@ -507,12 +507,12 @@ inductive Proc where
   --   (outputs' : List (χ × ChanType os)) →
   --   Proc → Proc
 
-structure Graph where
-  ins : List (χ × ChanType os)
-  outs : List (χ × ChanType os)
-  proc : Proc
+-- structure Graph where
+--   ins : List (χ × ChanType os)
+--   outs : List (χ × ChanType os)
+--   proc : Proc
 
-end -- mutual
+-- end -- mutual
 
 abbrev ChanState := χ → List (Token os)
 
@@ -681,15 +681,15 @@ def Proc.step (p : Proc χ os) : ProcStateM χ os (Label os × Proc χ os) :=
   | .atom ap => (ap.step χ os).map λ (lbl, ap') => (lbl, .atom ap')
   | .par p₁ p₂ => p₁.step <|> p₂.step
   | .new chan ty buf p => do
-      let chans ← .getChans χ os
-      let oldBuf := chans.get χ os chan
-      .setChans χ os (chans.insert χ os chan buf)
-      let (lbl, p') ← p.step
-      -- Restore old buffer
-      let chans ← .getChans χ os
-      let newBuf := chans.get χ os chan
-      .setChans χ os (chans.insert χ os chan oldBuf)
-      return (lbl, .new chan ty newBuf p')
+    let chans ← .getChans χ os
+    let oldBuf := chans.get χ os chan
+    .setChans χ os (chans.insert χ os chan buf)
+    let (lbl, p') ← p.step
+    -- Restore old buffer
+    let chans ← .getChans χ os
+    let newBuf := chans.get χ os chan
+    .setChans χ os (chans.insert χ os chan oldBuf)
+    return (lbl, .new chan ty newBuf p')
   -- | .graph inputs outputs g => do
   --   let oldChans ← .getChans χ os
   --   .setChans χ os (.empty χ os)
