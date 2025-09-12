@@ -33,8 +33,8 @@ def MuTree.bindCont
   | .fix body args cont => .fix body args (λ v => bindCont contRet contTail (cont v))
 
 /-- Interpretation of an operator set as concrete values. -/
-class OpInterp (V : Type u) (M : Type u → Type w) where
-  interp : (op : Op) → Vector V (arity.ι op) → OptionT M (Vector V (arity.ω op))
+class OpInterp (V S : Type u) where
+  interp : (op : Op) → Vector V (arity.ι op) → StateT S Option (Vector V (arity.ω op))
   asBool : V → Bool
 
 inductive Label (V : Type w) where
@@ -43,13 +43,13 @@ inductive Label (V : Type w) where
   deriving Repr
 
 /-- Reduces the expression by one step in the given interpretation. -/
-def MuTree.step [OpInterp Op V M] [Monad M]
-  : MuTree Op V m n → OptionT M (Label Op V × (Vector V n ⊕ MuTree Op V m n))
+def MuTree.step [OpInterp Op V S]
+  : MuTree Op V m n → StateT S Option (Label Op V × (Vector V n ⊕ MuTree Op V m n))
   | .ret v => return (.tau, .inl v)
-  | .tail _ => .fail -- Cannot reduce from tail calls
+  | .tail _ => StateT.lift none -- Cannot reduce from tail calls
   | .op o args cont => return (.op o args, .inr (cont (← OpInterp.interp o args)))
   | .br c left right =>
-    if OpInterp.asBool Op M c then return (.tau, .inr left)
+    if OpInterp.asBool Op S c then return (.tau, .inr left)
     else return (.tau, .inr right)
   | .fix body args cont =>
     return (.tau, .inr (bindCont Op V
@@ -57,8 +57,8 @@ def MuTree.step [OpInterp Op V M] [Monad M]
       (λ args => .fix body args cont)
       (body args)))
 
-partial def MuTree.steps [OpInterp Op V M] [Monad M]
-  (e : MuTree Op V m n) : OptionT M (List (Label Op V) × Vector V n)
+partial def MuTree.steps [OpInterp Op V S]
+  (e : MuTree Op V m n) : StateT S Option (List (Label Op V) × Vector V n)
   := do
     match ← MuTree.step Op e with
     | (l, .inl v) => return ([l], v)
@@ -75,70 +75,15 @@ example (x : χ) (y : χ) : MuTree Op χ m 2 :=
 
 end
 
-inductive MiniOp where
-  | add
-  | less
-  | const (n : Nat)
-  deriving Repr
-
-instance : ToString MiniOp where
-  toString | .add => "add"
-           | .less => "less"
-           | .const n => s!"const[{n}]"
-
-namespace MiniOp
-
-instance : OpArity MiniOp where
-  ι | .add => 2
-    | .less => 2
-    | .const _ => 0
-  ω | .add => 1
-    | .less => 1
-    | .const _ => 1
-
-instance : OpInterp MiniOp ℕ Id where
-  interp | .add => λ args => return #v[args[0] + args[1]]
-         | .less => λ args => return #v[if args[0] < args[1] then 1 else 0]
-         | .const n => λ _ => return #v[n]
-  asBool | 0 => false
-         | _ => true
-
-abbrev Expr := MuTree MiniOp
-
-def exampleAdd (x : χ) (y : χ) : Expr χ 0 1 :=
-  .op .add #v[x, y] (λ v => .ret #v[v[0]])
-
-/--
-def f(x, y) = if x < y then x else f(x + 10, y)
--/
-def exampleFix (x : χ) (y : χ) : Expr χ 0 1 :=
-  .fix (λ v => let x := v[0]; let y := v[1]
-    .op .less #v[x, y] (λ v => let less? := v[0]
-    .br less?
-      (.op (.const 10) #v[] (λ v => let c := v[0]
-      (.op .add #v[x, c] (λ v => let x' := v[0]
-      .tail #v[x', y]))))
-      (.ret #v[x])))
-    #v[x, y]
-    (λ v => .ret #v[v[0]])
-
-def MiniExpr.steps (e : Expr ℕ m n) : OptionT Id (List (Label MiniOp ℕ) × Vector ℕ n) := MuTree.steps MiniOp e
-
-#eval MiniExpr.steps (exampleAdd 1 202)
-
-#eval MiniExpr.steps (exampleFix 5 20)
-
-end MiniOp
-
 section
 
-variable (Op : Type u) (χ : Type v) (V : Type u)
+variable (Op : Type u) (χ : Type u) (V : Type u)
 variable [arity : OpArity Op]
-variable [OpInterp Op V M]
+variable (S) [OpInterp Op V S]
 
-abbrev Input : Type (max v u) := χ × List V
+abbrev Input : Type u := χ × List V
 
-inductive AtomicProc : ℕ → Type (max u v) where
+inductive AtomicProc : ℕ → Type u where
   | op (op : Op) (inputs : Vector (Input χ V) (arity.ι op)) : AtomicProc (arity.ω op)
   | steer (decider : Input χ V) (input : Input χ V) : AtomicProc 1
   -- Forward needs to be n-ary to allow combining multiple outputs
@@ -148,7 +93,7 @@ inductive AtomicProc : ℕ → Type (max u v) where
 Essentially the parallel composition of a list of atomic processes,
 with data dependencies going forward through the closure.
 -/
-inductive DagProc : ℕ → Type (max u v) where
+inductive DagProc : ℕ → Type u where
   | atom : AtomicProc Op χ V n → DagProc n
   | par : DagProc n → (Vector χ n → DagProc m) → DagProc m
 
@@ -188,8 +133,8 @@ def pushAll (vs : Vector V n) (p : ∀ χ, Vector χ n → DagProc Op χ V m) :
     p'.resolvePush Op χ V
 
 /-- Selectively pushes channels bound by the top-level binder. -/
-def pushAllOpt (vs : Vector (Option V) n) (p : ∀ χ, Vector χ n → DagProc Op χ V m) :
-  ∀ χ, Vector χ n → DagProc Op χ V m :=
+def pushAllOpt (vs : Vector (Option V) n) (p : ∀ (χ : Type u), Vector χ n → DagProc Op χ V m) :
+  ∀ (χ : Type u), Vector χ n → DagProc Op χ V m :=
   λ χ xs =>
     let p' := p (χ × Option V)
       (xs.mapFinIdx λ j _ _ => (xs[j], vs[j]))
@@ -198,7 +143,7 @@ def pushAllOpt (vs : Vector (Option V) n) (p : ∀ χ, Vector χ n → DagProc O
 /-! Some utilities to print processes. -/
 section Print
 
-inductive ChanName where
+inductive ChanName.{v} : Type v where
   | chan (n : ℕ)
   deriving Nonempty
 
@@ -236,19 +181,6 @@ end -- mutual
 
 end Print
 
-def exampleProc1 (x : χ) (y : χ) : AtomicProc Op χ V 1 :=
-  .steer (x, []) (y, [])
-
-def exampleProc2 (v : Vector χ 3) : DagProc MiniOp χ ℕ 1 :=
-  let x := v[0]; let y := v[1]; let z := v[2]
-  .par (.atom (.steer (x, []) (y, []))) λ vs => let y' := vs[0]
-  .par (.atom (.steer (x, []) (z, []))) λ vs => let z' := vs[0]
-        .atom (.op MiniOp.add #v[(y', []), (z', [])])
-
-#eval (DagProc.contToString MiniOp ℕ 0
-  (pushAllOpt MiniOp ℕ #v[some 100, some 200, none]
-  (pushAllOpt MiniOp ℕ #v[some 101, none, some 300] exampleProc2) ChanName)).2.1
-
 /-- `Proc` structural equivalence -/
 inductive Equiv : DagProc Op χ V n → DagProc Op χ V n → Prop where
   /-- Commutes two atomic processes if there is no data dependency. -/
@@ -267,21 +199,108 @@ inductive Equiv : DagProc Op χ V n → DagProc Op χ V n → Prop where
 
 infix:50 " ≡ " => Equiv
 
--- inductive Step : (∀ χ, DagProc Op χ V n) → Label Op V → DagProc Op χ V n → Vector (Option V) n → Prop where
---   | step_steer_true :
---     OpInterp.asBool Op M deciderVal →
---     Step (.atom (.steer (decider, deciderVal :: deciderBuf) (input, inputVal :: inputBuf)))
---       .tau
---       (.atom (.steer (decider, deciderBuf) (input, inputBuf)))
---       (#v[some inputVal])
---   | step_steer_false :
---     ¬ OpInterp.asBool Op M deciderVal →
---     Step (.atom (.steer (decider, deciderVal :: deciderBuf) (input, inputVal :: inputBuf)))
---       .tau
---       (.atom (.steer (decider, deciderBuf) (input, inputBuf)))
---       (#v[none])
---   | step_par_left :
---     Step p₁ l p₁' outputVals →
---     Step (.par p₁ k) l (.par p₁' (pushAllOpt Op V sorry outputVals)) sorry
+inductive AtomicProc.Step : (∀ χ, AtomicProc Op χ V n) → Label Op V → AtomicProc Op χ V n → Vector (Option V) n → Prop where
+  | step_steer :
+    p χ = .steer (decider, deciderVal :: deciderBuf) (input, inputVal :: inputBuf) →
+    Step
+      p .tau
+      (.steer (decider, deciderBuf) (input, inputBuf))
+      (#v[if OpInterp.asBool Op S deciderVal then some inputVal else none])
+  | step_forward :
+    p χ = .forward inputs →
+    Step
+      p .tau
+      (.forward (inputs.map (λ (x, buf) => (x, buf.tail))))
+      (inputs.map (λ (_, buf) => match buf with
+        | [] => none
+        | v :: _ => some v))
+
+inductive DagProc.Step' : (∀ χ, DagProc Op χ V n) → Label Op V → DagProc Op χ V n → Vector (Option V) n → Prop where
+  | step_atom :
+    AtomicProc.Step Op χ V S ap l ap' outputVals →
+    Step' (λ χ => .atom (ap χ)) l (.atom ap') outputVals
+  | step_par_left {k : ∀ χ, Vector χ n → DagProc Op χ V m} :
+    Step' p l p' outputVals →
+    Step' (λ χ => .par (p χ) (k χ)) l (.par p' (pushAllOpt Op V outputVals k χ)) (Vector.replicate m none)
+  | step_par_right
+    {p : ∀ χ, DagProc Op χ V n}
+    {k : ∀ χ, Vector χ n → DagProc Op χ V m}
+    {k' : Vector χ n → DagProc Op χ V m} :
+    (∀ xs : ∀ χ, Vector χ n, Step' (λ χ => k χ (xs χ)) l (k' (xs χ)) outputVals) →
+    Step' (λ χ => .par (p χ) (k χ)) l (.par (p χ) (k χ)) outputVals
+
+def DagProc.Step (p : ∀ χ, DagProc Op χ V n) (l : Label Op V) (q : ∀ χ, DagProc Op χ V n) (outputVals : Vector (Option V) n) : Prop
+  := ∃ p' q' : ∀ χ, DagProc Op χ V n,
+    (∀ χ, Equiv Op χ V (p χ) (p' χ)) ∧
+    (∀ χ, Equiv Op χ V (q χ) (q' χ)) ∧
+    ∀ χ, DagProc.Step' Op χ V S p' l (q' χ) outputVals
 
 end
+
+inductive MiniOp where
+  | add
+  | less
+  | const (n : Nat)
+  deriving Repr
+
+instance : ToString MiniOp where
+  toString | .add => "add"
+           | .less => "less"
+           | .const n => s!"const[{n}]"
+
+namespace MiniOp
+
+instance : OpArity MiniOp where
+  ι | .add => 2
+    | .less => 2
+    | .const _ => 0
+  ω | .add => 1
+    | .less => 1
+    | .const _ => 1
+
+instance : OpInterp MiniOp ℕ Unit where
+  interp | .add => λ args => return #v[args[0] + args[1]]
+         | .less => λ args => return #v[if args[0] < args[1] then 1 else 0]
+         | .const n => λ _ => return #v[n]
+  asBool | 0 => false
+         | _ => true
+
+abbrev Expr := MuTree MiniOp
+
+def exampleAdd (x : χ) (y : χ) : Expr χ 0 1 :=
+  .op .add #v[x, y] (λ v => .ret #v[v[0]])
+
+/--
+def f(x, y) = if x < y then x else f(x + 10, y)
+-/
+def exampleFix (x : χ) (y : χ) : Expr χ 0 1 :=
+  .fix (λ v => let x := v[0]; let y := v[1]
+    .op .less #v[x, y] (λ v => let less? := v[0]
+    .br less?
+      (.op (.const 10) #v[] (λ v => let c := v[0]
+      (.op .add #v[x, c] (λ v => let x' := v[0]
+      .tail #v[x', y]))))
+      (.ret #v[x])))
+    #v[x, y]
+    (λ v => .ret #v[v[0]])
+
+def MiniExpr.steps (e : Expr ℕ m n) : StateT Unit Option (List (Label MiniOp ℕ) × Vector ℕ n) := MuTree.steps MiniOp e
+
+#eval (MiniExpr.steps (exampleAdd 1 202)).run ()
+
+#eval (MiniExpr.steps (exampleFix 5 20)).run ()
+
+def exampleProc1 (χ) (x : χ) (y : χ) : AtomicProc MiniOp χ V 1 :=
+  .steer (x, []) (y, [])
+
+def exampleProc2 (χ) (v : Vector χ 3) : DagProc MiniOp χ ℕ 1 :=
+  let x := v[0]; let y := v[1]; let z := v[2]
+  .par (.atom (.steer (x, []) (y, []))) λ vs => let y' := vs[0]
+  .par (.atom (.steer (x, []) (z, []))) λ vs => let z' := vs[0]
+        .atom (.op MiniOp.add #v[(y', []), (z', [])])
+
+#eval (DagProc.contToString MiniOp ℕ 0
+  (pushAllOpt MiniOp ℕ #v[some 100, some 200, none]
+  (pushAllOpt MiniOp ℕ #v[some 101, none, some 300] exampleProc2) ChanName)).2.1
+
+end MiniOp
