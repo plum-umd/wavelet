@@ -81,6 +81,11 @@ inductive MiniOp where
   | const (n : Nat)
   deriving Repr
 
+instance : ToString MiniOp where
+  toString | .add => "add"
+           | .less => "less"
+           | .const n => s!"const[{n}]"
+
 namespace MiniOp
 
 instance : OpArity MiniOp where
@@ -136,7 +141,8 @@ abbrev Input : Type (max v u) := χ × List V
 inductive AtomicProc : ℕ → Type (max u v) where
   | op (op : Op) (inputs : Vector (Input χ V) (arity.ι op)) : AtomicProc (arity.ω op)
   | steer (decider : Input χ V) (input : Input χ V) : AtomicProc 1
-  | forward (input : Input χ V) : AtomicProc 1
+  -- Forward needs to be n-ary to allow combining multiple outputs
+  | forward (input : Vector (Input χ V) n) : AtomicProc n
 
 /--
 Essentially the parallel composition of a list of atomic processes,
@@ -146,27 +152,11 @@ inductive DagProc : ℕ → Type (max u v) where
   | atom : AtomicProc Op χ V n → DagProc n
   | par : DagProc n → (Vector χ n → DagProc m) → DagProc m
 
-def exampleProc1 (x : χ) (y : χ) : AtomicProc Op χ V 1 :=
-  .steer (x, []) (y, [])
-
-def exampleProc2 (x : χ) (y : χ) (z : χ) : DagProc MiniOp χ ℕ 1 :=
-  .par (.atom (.steer (x, []) (y, []))) λ vs => let y' := vs[0]
-  .par (.atom (.steer (x, []) (z, []))) λ vs => let z' := vs[0]
-        .atom (.op MiniOp.add #v[(y', []), (z', [])])
-
--- def pushAll (p : ∀ χ, Vector χ n → AtomicProc Op χ V m) (vs : Vector V n) :
---   Vector χ n → AtomicProc Op χ V m :=
---   λ xs => match p (Fin n × V) (vs.mapFinIdx λ i v hv => (Fin.mk i hv, v)) with
---     | .op o inputs => .op o (inputs.map (λ ((i, v), buf) => (xs[i], buf ++ [v])))
---     | .steer ((i₁, v₁), buf₁) ((i₂, v₂), buf₂) =>
---       .steer (xs[i₁], buf₁ ++ [v₁]) (xs[i₂], buf₂ ++ [v₂])
---     | .forward ((i, v), buf) => .forward (xs[i], buf ++ [v])
-
 def AtomicProc.resolvePush :
   AtomicProc Op (χ × Option V) V n → AtomicProc Op χ V n
   | .op o inputs => .op o (inputs.map resolve)
   | .steer decider input => .steer (resolve decider) (resolve input)
-  | .forward input => .forward (resolve input)
+  | .forward inputs => .forward (inputs.map resolve)
   where resolve (i : Input (χ × Option V) V) : Input χ V :=
     match i.fst.snd with
     | none => (i.fst.fst, i.snd)
@@ -180,13 +170,84 @@ def DagProc.resolvePush : DagProc Op (χ × Option V) V n → DagProc Op χ V n
       (λ xs => (k (xs.map (Prod.mk · none))).resolvePush)
 
 /-- Pushes one value to the i-th bound channel. -/
-def push (p : ∀ χ, Vector χ n → DagProc Op χ V m) (i : Fin n) (v : V) :
-  (∀ χ, Vector χ n → DagProc Op χ V m) :=
-  λ χ' xs =>
-    -- Replace variables with indices
-    let p' := p (χ' × Option V) (xs.mapFinIdx λ j _ hv => (xs[j]'hv, if i = j then some v else none))
+def push (i : Fin n) (v : V) (p : ∀ χ, Vector χ n → DagProc Op χ V m) :
+  ∀ χ, Vector χ n → DagProc Op χ V m :=
+  λ χ xs =>
+    -- Replace variables with temporarily pushed values
+    let p' := p (χ × Option V)
+      (xs.mapFinIdx λ j _ _ => (xs[j], if i = j then some v else none))
     -- Push to the buffer at the i-th channel
-    p'.resolvePush Op χ' V
+    p'.resolvePush Op χ V
+
+/-- Pushes all channels bound by the top-level binder. -/
+def pushAll (vs : Vector V n) (p : ∀ χ, Vector χ n → DagProc Op χ V m) :
+  ∀ χ, Vector χ n → DagProc Op χ V m :=
+  λ χ xs =>
+    let p' := p (χ × Option V)
+      (xs.mapFinIdx λ j _ _ => (xs[j], some vs[j]))
+    p'.resolvePush Op χ V
+
+/-- Selectively pushes channels bound by the top-level binder. -/
+def pushAllOpt (vs : Vector (Option V) n) (p : ∀ χ, Vector χ n → DagProc Op χ V m) :
+  ∀ χ, Vector χ n → DagProc Op χ V m :=
+  λ χ xs =>
+    let p' := p (χ × Option V)
+      (xs.mapFinIdx λ j _ _ => (xs[j], vs[j]))
+    p'.resolvePush Op χ V
+
+/-! Some utilities to print processes. -/
+section Print
+
+inductive ChanName where
+  | chan (n : ℕ)
+  deriving Nonempty
+
+instance : ToString ChanName where
+  toString | .chan n => s!"c{n}"
+
+def AtomicProc.toString [ToString Op] [ToString V] : AtomicProc Op ChanName V n → String
+  | .op o inputs =>
+    let inputStr := String.intercalate ", " (inputs.toList.map (λ (c, buf) => s!"{c} : {buf}"))
+    s!"{o}({inputStr})"
+  | .steer (decider, buf₁) (input, buf₂) =>
+    s!"steer({decider} : {buf₁}, {input} : {buf₂})"
+  | .forward inputs =>
+    let inputStr := String.intercalate ", " (inputs.toList.map (λ (c, buf) => s!"{c} : {buf}"))
+    s!"forward({inputStr})"
+
+/-! Some utilities -/
+mutual
+
+partial def DagProc.contToString [ToString Op] [ToString V]
+  (offset : ℕ) (k : Vector ChanName n → DagProc Op ChanName V m) : Vector ChanName n × String × ℕ :=
+  let names := (Vector.range n).map (λ i => ChanName.chan (offset + i))
+  (names, (k names).toString (offset + n))
+
+partial def DagProc.toString [ToString Op] [ToString V]
+  (offset : ℕ) (p : DagProc Op ChanName V m) : String × ℕ :=
+  match p with
+  | .atom ap => (ap.toString Op V, offset)
+  | .par p k =>
+    let (lhs, offset') := p.toString offset
+    let (names, rhs, offset'') := DagProc.contToString offset' k
+    (s!"{lhs} => {names.toList} || {rhs}", offset'')
+
+end -- mutual
+
+end Print
+
+def exampleProc1 (x : χ) (y : χ) : AtomicProc Op χ V 1 :=
+  .steer (x, []) (y, [])
+
+def exampleProc2 (v : Vector χ 3) : DagProc MiniOp χ ℕ 1 :=
+  let x := v[0]; let y := v[1]; let z := v[2]
+  .par (.atom (.steer (x, []) (y, []))) λ vs => let y' := vs[0]
+  .par (.atom (.steer (x, []) (z, []))) λ vs => let z' := vs[0]
+        .atom (.op MiniOp.add #v[(y', []), (z', [])])
+
+#eval (DagProc.contToString MiniOp ℕ 0
+  (pushAllOpt MiniOp ℕ #v[some 100, some 200, none]
+  (pushAllOpt MiniOp ℕ #v[some 101, none, some 300] exampleProc2) ChanName)).2.1
 
 /-- `Proc` structural equivalence -/
 inductive Equiv : DagProc Op χ V n → DagProc Op χ V n → Prop where
@@ -195,11 +256,32 @@ inductive Equiv : DagProc Op χ V n → DagProc Op χ V n → Prop where
     Equiv (.par p λ vs => .par q λ vs' => k vs vs') (.par q λ vs' => .par p λ vs => k vs vs')
   | equiv_par_assoc :
     Equiv (.par (.par p k) k') (.par p λ vs => .par (k vs) k')
+  /- TODO: structural rule for inaction/unit? -/
   | equiv_refl : Equiv p p
   | equiv_symm : Equiv p q → Equiv q p
   | equiv_trans : Equiv p q → Equiv q r → Equiv p r
   | equiv_congr :
+    Equiv p p' →
     (∀ xs, Equiv (k xs) (k' xs)) →
-    Equiv (.par p k) (.par p k')
+    Equiv (.par p k) (.par p' k')
+
+infix:50 " ≡ " => Equiv
+
+-- inductive Step : (∀ χ, DagProc Op χ V n) → Label Op V → DagProc Op χ V n → Vector (Option V) n → Prop where
+--   | step_steer_true :
+--     OpInterp.asBool Op M deciderVal →
+--     Step (.atom (.steer (decider, deciderVal :: deciderBuf) (input, inputVal :: inputBuf)))
+--       .tau
+--       (.atom (.steer (decider, deciderBuf) (input, inputBuf)))
+--       (#v[some inputVal])
+--   | step_steer_false :
+--     ¬ OpInterp.asBool Op M deciderVal →
+--     Step (.atom (.steer (decider, deciderVal :: deciderBuf) (input, inputVal :: inputBuf)))
+--       .tau
+--       (.atom (.steer (decider, deciderBuf) (input, inputBuf)))
+--       (#v[none])
+--   | step_par_left :
+--     Step p₁ l p₁' outputVals →
+--     Step (.par p₁ k) l (.par p₁' (pushAllOpt Op V sorry outputVals)) sorry
 
 end
