@@ -57,7 +57,6 @@ def compile
            (← compile definedVars' pathConds cont)
   | .br cond left right => do
     let condChan := curVar cond
-    let mergeCondChan := (.merge_cond condChan.1, [])
     let leftConds := (true, condChan.1) :: pathConds
     let rightConds := (false, condChan.1) :: pathConds
     let leftComp ← compile definedVars leftConds left
@@ -69,18 +68,23 @@ def compile
           (.empty _ (.var v (definedVars.count v) pathConds))
           (.var v (definedVars.count v) leftConds)
     -- Forward the condition to the merge nodes
-    let forward := .forward #v[condChan] #v[mergeCondChan.1]
+    let forward := .forward #v[condChan] #v[.merge_cond condChan.1]
     -- Merge results from the two branches
-    let merges :=
-      (List.range n).mapIdx λ i _ =>
-        .merge mergeCondChan
-          (.empty _ (.dest i leftConds))
-          (.empty _ (.dest i rightConds))
-          (.dest i pathConds)
-    return steers++ [forward] ++ leftComp ++ rightComp ++ merges
+    let merges := genMerges n condChan.1
+    return steers ++ [forward] ++ leftComp ++ rightComp ++ merges
   where
     /-- Generates the current channel name of the given variable name. -/
     curVar v := .empty _ (.var v (definedVars.count v) pathConds)
+    /-- Generates merge gates to combine return values of multiple branches. -/
+    genMerges n condChan : List (AtomicProc Op _ V) :=
+      let leftConds := (true, condChan) :: pathConds
+      let rightConds := (false, condChan) :: pathConds
+      let mergeCond := .empty _ (.merge_cond condChan)
+      (List.range n).mapIdx λ i _ =>
+        .merge mergeCond
+          (.empty _ (.dest i leftConds))
+          (.empty _ (.dest i rightConds))
+          (.dest i pathConds)
     /--
     Defines new variables while maintaining a list of defined variables.
     `vs` may contain duplicates.
@@ -367,45 +371,71 @@ def Proc.IsDAG (p : Proc Op χ V) : Prop :=
   ∀ i j, (hi : i < p.length) → (hj : j ≤ i) →
     ∀ output ∈ p[i].outputs, ¬ p[j].HasInput Op χ V output
 
+def Proc.HasEmptyInputs (p : Proc Op χ V) : Prop :=
+  ∀ ap ∈ p, ap.HasEmptyInputs Op χ V
+
 def SimR (ec : Expr.Config Op χ V S n) (pc : Proc.Config Op (ChanName χ) V S) : Prop :=
   -- Equal global states
   ec.estate.state = pc.state ∧
   -- Process is a DAG
   pc.proc.IsDAG _ _ _ ∧
-  -- A prefix of the processes are not fireable, and the rest
-  -- is the same as the compilation result of the continuation
-  -- expression (with suitable ghost states).
-  ∃ done notDone,
-    pc.proc = done ++ notDone ∧
-    -- `done`'s processes all have empty input buffers
-    (∀ ap ∈ done, ap.HasEmptyInputs _ _ _) ∧
+  -- We can find a fragment of the compiled process list
+  -- that is compiled from the current expression.
+  ∃ contextLeft currentProc contextRight,
+    pc.proc = contextLeft ++ currentProc ++ contextRight ∧
+    contextLeft.HasEmptyInputs _ _ _ ∧
     -- TODO: more constraints for the final state
-    (∀ vs, ec.expr = .ret vs → notDone = []) ∧
-    -- For continuations, we require that `notDone` is exactly
+    (∀ vs, ec.expr = .ret vs → currentProc = [] ∧ contextRight = []) ∧
+    -- For continuations, we require that `currentProc` is exactly
     -- their compiled process (modulo buffer differences).
     (∀ expr, ec.expr = .cont expr →
       -- Match except for exact buffers
-      (∃ notDone',
-        compile _ _ ec.estate.definedVars ec.estate.pathConds expr = some notDone' ∧
-        List.Forall₂ (AtomicProc.MatchModuloBuffers _ _ _) notDone notDone') ∧
-      -- For all inputs of processes in `notDone`
-      ∀ ap ∈ notDone, ∀ inp ∈ ap.inputs,
+      (∃ currentProc',
+        compile _ _ ec.estate.definedVars ec.estate.pathConds expr = some currentProc' ∧
+        List.Forall₂ (AtomicProc.MatchModuloBuffers _ _ _) currentProc currentProc') ∧
+      -- For all inputs of processes in `currentProc`
+      (∀ ap ∈ currentProc, ∀ inp ∈ ap.inputs,
         -- Check if the channel name corresponds to a live variable
         -- in the current branch
         let IsLiveVar (name : ChanName χ) val := ∃ var,
           ec.estate.vars var = some val ∧
           name = .var var (ec.estate.definedVars.count var) ec.estate.pathConds
-        -- Check if the channel name corresponds to a merge condition
-        let IsMergeCond (name : ChanName χ) b := ∃ cond,
-          (b, cond) ∈ ec.estate.pathConds ∧
-          name = .merge_cond cond
         -- If it's a live var, the channel buffer should have the corresponding value
         (∀ val, IsLiveVar inp.1 val → inp.2 = [val]) ∧
-        -- If it's a merge condition, the channel buffer should have the correct Bool value
-        (∀ b, IsMergeCond inp.1 b → ∃ v, inp.2 = [v] ∧ OpInterp.asBool Op S v = b) ∧
-        -- Otherwise the buffer should be empty
-        (∀ val b, ¬ IsLiveVar inp.1 val → ¬ IsMergeCond inp.1 b →
-          inp.2 = []))
+        -- Otherwise it's empty.
+        (∀ val, ¬ IsLiveVar inp.1 val) → inp.2 = [])) ∧
+      -- The remaining processes in `contextRight`
+      -- should be of the form
+      --
+      --   `p₁ ... pₘ || merge x n || p'₁ ... p'ₖ || merge x n || ...`
+      --
+      -- i.e., a sequence of processes interspersed with consecutive
+      -- chunks of n merge nodes.
+      -- Furthermore, all processes other than these merges should
+      -- have empty input buffers, and the merges will have exactly
+      -- one Boolean in the decider buffers corresponding to the
+      -- branching decision.
+      (∃ (chunks : List (Proc Op _ V × Proc Op _ V)) (tail : Proc Op _ V),
+        contextRight = (joinM (chunks.map (λ (l, r) => l ++ r))) ++ tail ∧
+        -- The first half chunks and the tail have empty inputs
+        (∀ chunk₁ chunk₂, (chunk₁, chunk₂) ∈ chunks → chunk₁.HasEmptyInputs _ _ _) ∧
+        tail.HasEmptyInputs _ _ _ ∧
+        -- The second half chunk corresponds exactly to the merge nodes
+        -- generated along the branches marked in the current `pathConds`.
+        List.Forall₂
+          (λ (_, chunk) (b, cond) =>
+            chunk.length = n ∧
+            ∀ i : ℕ, (h : i < chunk.length) →
+              ∃ v,
+                OpInterp.asBool Op S v = b ∧
+                let prevPathCond := ec.estate.pathConds.drop (i + 1)
+                -- This should match `compile.genMerges` except for the decider buffers
+                chunk[i]'h = .merge
+                  (.merge_cond cond, [v]) -- Decider buffer
+                  (.empty _ (.dest i ((true, cond) :: prevPathCond)))
+                  (.empty _ (.dest i ((false, cond) :: prevPathCond)))
+                  (.dest i prevPathCond))
+          chunks ec.estate.pathConds)
 
   /- Invariants?
   1. pc.proc = left ++ right such that right == compile ? ? current_expr, and none of left is fireable (empty input channels).
