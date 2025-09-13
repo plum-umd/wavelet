@@ -56,7 +56,6 @@ def MuTree.step [OpInterp Op V S]
       cont
       (λ args => .fix body args cont)
       (body args)))
-
 partial def MuTree.steps [OpInterp Op V S]
   (e : MuTree Op V m n) : StateT S Option (List (Label Op V) × Vector V n)
   := do
@@ -83,9 +82,11 @@ variable (S) [OpInterp Op V S]
 
 abbrev Input : Type u := χ × List V
 
+/-- `AtomicProc n` -/
 inductive AtomicProc : ℕ → Type u where
   | op (op : Op) (inputs : Vector (Input χ V) (arity.ι op)) : AtomicProc (arity.ω op)
   | steer (decider : Input χ V) (input : Input χ V) : AtomicProc 1
+  | merge (decider : Input χ V) (input₁ input₂ : Input χ V) : AtomicProc 1
   -- Forward needs to be n-ary to allow combining multiple outputs
   | forward (input : Vector (Input χ V) n) : AtomicProc n
 
@@ -101,6 +102,8 @@ def AtomicProc.resolvePush :
   AtomicProc Op (χ × Option V) V n → AtomicProc Op χ V n
   | .op o inputs => .op o (inputs.map resolve)
   | .steer decider input => .steer (resolve decider) (resolve input)
+  | .merge decider input₁ input₂ =>
+    .merge (resolve decider) (resolve input₁) (resolve input₂)
   | .forward inputs => .forward (inputs.map resolve)
   where resolve (i : Input (χ × Option V) V) : Input χ V :=
     match i.fst.snd with
@@ -156,6 +159,8 @@ def AtomicProc.toString [ToString Op] [ToString V] : AtomicProc Op ChanName V n 
     s!"{o}({inputStr})"
   | .steer (decider, buf₁) (input, buf₂) =>
     s!"steer({decider} : {buf₁}, {input} : {buf₂})"
+  | .merge (decider, buf₁) (input₁, buf₂) (input₂, buf₃) =>
+    s!"merge({decider} : {buf₁}, {input₁} : {buf₂}, {input₂} : {buf₃})"
   | .forward inputs =>
     let inputStr := String.intercalate ", " (inputs.toList.map (λ (c, buf) => s!"{c} : {buf}"))
     s!"forward({inputStr})"
@@ -237,6 +242,26 @@ def DagProc.Step (p : ∀ χ, DagProc Op χ V n) (l : Label Op V) (q : ∀ χ, D
 
 end
 
+section Compile
+
+variable (Op : Type u) (χ : Type u) (V : Type u)
+variable [arity : OpArity Op]
+variable (S) [OpInterp Op V S]
+
+def compile (e : MuTree Op χ m n) : DagProc Op χ V n :=
+  match e with
+  | .ret vs => .atom (.forward (vs.map (λ v => (v, []))))
+  | .op o args cont =>
+    let ap : AtomicProc Op χ V (OpArity.ω o) := .op o (args.map (λ v => (v, [])))
+    .par (.atom ap) (λ vs => compile (cont vs))
+  | .br c left right =>
+    sorry
+  -- Recursion not supported yet
+  | .tail ..
+  | .fix .. => sorry
+
+end Compile
+
 inductive MiniOp where
   | add
   | less
@@ -280,6 +305,7 @@ def exampleFix (x : χ) (y : χ) : Expr χ 0 1 :=
       (.op (.const 10) #v[] (λ v => let c := v[0]
       (.op .add #v[x, c] (λ v => let x' := v[0]
       .tail #v[x', y]))))
+
       (.ret #v[x])))
     #v[x, y]
     (λ v => .ret #v[v[0]])
@@ -298,6 +324,11 @@ def exampleProc2 (χ) (v : Vector χ 3) : DagProc MiniOp χ ℕ 1 :=
   .par (.atom (.steer (x, []) (y, []))) λ vs => let y' := vs[0]
   .par (.atom (.steer (x, []) (z, []))) λ vs => let z' := vs[0]
         .atom (.op MiniOp.add #v[(y', []), (z', [])])
+
+#eval (DagProc.contToString MiniOp ℕ 0 (exampleProc2 ChanName)).2.1
+
+#eval (DagProc.contToString MiniOp ℕ 0
+  ((pushAllOpt MiniOp ℕ #v[some 101, none, some 300] exampleProc2) ChanName)).2.1
 
 #eval (DagProc.contToString MiniOp ℕ 0
   (pushAllOpt MiniOp ℕ #v[some 100, some 200, none]

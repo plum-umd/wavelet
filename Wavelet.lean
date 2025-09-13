@@ -754,14 +754,23 @@ variable (os : OpSet)
 inductive Chan χ where
   | var : χ → (fnName : L0.FnName) → (shadow : ℕ) → (copy : ℕ) → Chan χ
 
+structure CompileCtx χ where
+  /-- Current function being compiled -/
+  self : L0.FnDef χ os
+  /-- Map from L0 variables to channel names -/
+  chans : L0.VarMap χ (Chan χ)
+  /-- Channel for activation signals -/
+  actChan : Chan χ
+  /-- Channel to indicate whether we have a tail recursion -/
+  tailFlag : Chan χ
+  /-- Channels to output results -/
+  outChans : List (Chan χ)
+  /-- Channels to output tail call arguments -/
+  tailChans : List (Chan χ)
+
 def compileExpr
   (fns : L0.FnCtx χ os)
-  (self : L0.FnDef χ os) -- Current function being compiled
-  (chans : L0.VarMap χ (Chan χ)) -- Map from L0 variables to channel names
-  (actChan : Chan χ) -- Channel for activation signals
-  (tailFlag : Chan χ) -- Channel to indicate whether we have a tail recursion
-  (outChans : List (Chan χ)) -- Channels to output results
-  (tailChans : List (Chan χ)) -- Channels to output tail call arguments
+  (ctx : CompileCtx os χ)
   : L0.Expr χ os → L1.Proc (Chan χ) os :=
   sorry
 
