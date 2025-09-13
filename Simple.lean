@@ -404,7 +404,7 @@ def SimR (ec : Expr.Config Op χ V S n) (pc : Proc.Config Op (ChanName χ) V S) 
         -- If it's a merge condition, the channel buffer should have the correct Bool value
         (∀ b, IsMergeCond inp.1 b → ∃ v, inp.2 = [v] ∧ OpInterp.asBool Op S v = b) ∧
         -- Otherwise the buffer should be empty
-        (∀ val b, IsLiveVar inp.1 val → IsMergeCond inp.1 b →
+        (∀ val b, ¬ IsLiveVar inp.1 val → ¬ IsMergeCond inp.1 b →
           inp.2 = []))
 
   /- Invariants?
