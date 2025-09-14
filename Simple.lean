@@ -366,9 +366,9 @@ inductive Refines
   (R : Expr.Config Op χ₁ V S n → Proc.Config Op χ₂ V S → Prop) where
   | mk
     (hr : R ec pc)
-    (hcoind : ∀ ec' ec'' ls₁ pc',
+    (hcoind : ∀ ec' ec'' l₁ pc',
       R ec' pc' →
-      Expr.StepPlus _ _ V S n ec' ls₁ ec'' →
+      Expr.Step _ _ V S n ec' l₁ ec'' →
       ∃ pc'' ls₂,
         Proc.StepPlus _ _ V S pc' ls₂ pc'' ∧
         /- TODO: match labels? -/
@@ -598,7 +598,7 @@ theorem sim_step
   (pc : Proc.Config Op (ChanName χ) V S)
   (hsim : SimR _ _ _ _ ec pc)
   (hstep : Expr.Step _ _ _ _ n ec l ec') :
-  ∃ pc',
+  ∃ pc' ls,
     Proc.StepPlus _ _ _ _ pc ls pc' ∧
     SimR _ _ _ _ ec' pc' := by
   simp [Expr.Step] at hstep
@@ -632,6 +632,22 @@ theorem sim_step
       sorry
     | op => sorry
     | br => sorry
+
+theorem comp_refines
+  (e : Expr Op χ n)
+  (p : Proc Op (ChanName χ) V)
+  (hwf : e.WellFormed _ _)
+  (hcomp : compile _ _ [] [] e = some p)
+  (s : S)
+  (initVars : List (χ × V)) :
+  Refines _ _ _
+    (Expr.Config.init _ _ _ _ e s initVars)
+    (Proc.Config.init _ _ _ _ p s (ChanUpdate.init _ _ initVars))
+    (SimR _ _ _ _) := by
+  constructor
+  · apply sim_init_config <;> assumption
+  · intros ec ec' l₁ pc hsim hstep
+    apply sim_step <;> assumption
 
 end Simulation
 
