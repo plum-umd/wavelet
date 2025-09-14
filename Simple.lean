@@ -102,6 +102,31 @@ def compile
 def compileTop [DecidableEq χ] : Expr Op χ n → Option (Proc Op (ChanName χ) V) :=
   compile Op χ [] []
 
+/-- Some static, non-typing constraints on expressions. -/
+inductive Expr.WellFormed : Expr Op χ n → Prop where
+  | wf_ret : WellFormed (.ret vars)
+  | wf_op :
+    rets.toList.Nodup →
+    WellFormed cont →
+    WellFormed (.op o args rets cont)
+  | wf_br :
+    WellFormed left →
+    WellFormed right →
+    WellFormed (.br c left right)
+
+inductive AtomicProc.WellFormed : AtomicProc Op χ V → Prop where
+  | wf_op :
+    outputs.toList.Nodup →
+    WellFormed (.op o inputs outputs)
+  | wf_steer : WellFormed (.steer decider input output)
+  | wf_merge : WellFormed (.merge decider input₁ input₂ output)
+  | wf_forward :
+    outputs.toList.Nodup →
+    WellFormed (.forward inputs outputs)
+
+def Proc.WellFormed (p : Proc Op χ V) : Prop :=
+  ∀ ap ∈ p, ap.WellFormed Op χ
+
 section Semantics
 
 /-- Interpretation of an operator set as concrete values. -/
@@ -134,23 +159,22 @@ structure ExprState where
   -- Ghost states for the simulation relation
   -- TODO: maintain these ghost states in the
   --       step function.
-  init : Expr Op χ n
   definedVars : List χ
   pathConds : List (Bool × ChanName χ)
 
-abbrev ExprStateM := StateT (ExprState Op χ V S) Option
+abbrev ExprStateM := StateT (ExprState χ V S) Option
 
-def ExprStateM.getVar (v : χ) : ExprStateM Op χ V S V := do
+def ExprStateM.getVar (v : χ) : ExprStateM χ V S V := do
   match (← get).vars v with
   | some val => return val
   | none => .failure
 
-def ExprStateM.setVar (v : χ) (val : V) : ExprStateM Op χ V S PUnit := do
+def ExprStateM.setVar (v : χ) (val : V) : ExprStateM χ V S PUnit := do
   modify λ s => {
     s with vars := λ x => if x = v then some val else s.vars x
   }
 
-def ExprStateM.liftS (s : StateT S Option T) : ExprStateM Op χ V S T := do
+def ExprStateM.liftS (s : StateT S Option T) : ExprStateM χ V S T := do
   let (val, state) ← s.run (← get).state
   modify λ s => { s with state }
   return val
@@ -159,17 +183,17 @@ inductive ExprResult (n : ℕ) where
   | ret (vals : Vector V n)
   | cont (expr : Expr Op χ n)
 
-def Expr.step : Expr Op χ n → ExprStateM Op χ V S (Label Op V × ExprResult Op χ V n)
+def Expr.step : Expr Op χ n → ExprStateM χ V S (Label Op V × ExprResult Op χ V n)
   | .ret vars => do
-    let vals ← vars.mapM (.getVar _ _ _ _)
+    let vals ← vars.mapM (.getVar _ _ _)
     return (.tau, .ret vals)
   | .op o args rets cont => do
-    let argVals ← args.mapM (.getVar _ _ _ _)
-    let retVals ← .liftS _ _ _ _ (OpInterp.interp o argVals)
-    (rets.zip retVals).forM λ (v, val) => .setVar _ _ _ _ v val
+    let argVals ← args.mapM (.getVar _ _ _)
+    let retVals ← .liftS _ _ _ (OpInterp.interp o argVals)
+    (rets.zip retVals).forM λ (v, val) => .setVar _ _ _ v val
     return (.op o argVals, .cont cont)
   | .br cond left right => do
-    let condVal ← .getVar _ _ _ _ cond
+    let condVal ← .getVar _ _ _ cond
     if OpInterp.asBool Op S condVal then
       return (.tau, .cont left)
     else
@@ -177,6 +201,10 @@ def Expr.step : Expr Op χ n → ExprStateM Op χ V S (Label Op V × ExprResult 
 
 abbrev ProcStateM := StateT S List
 abbrev ChanUpdate := List (χ × V)
+
+/-- Channel update should not have duplicate variables. -/
+def ChanUpdate.WellFormed (upd : ChanUpdate χ V) : Prop :=
+  (upd.map Prod.fst).Nodup
 
 def ProcStateM.liftS (s : StateT S Option T) : ProcStateM S T := do
   match s.run (← get) with
@@ -265,11 +293,40 @@ def Proc.step (p : Proc Op χ V) : ProcStateM S (Label Op V × Proc Op χ V) := 
 
 structure Expr.Config n where
   expr : ExprResult Op χ V n
-  estate : ExprState Op χ V S
+  estate : ExprState χ V S
+
+/-- Initial `Expr` state, with `vars` assigning free variables. -/
+def Expr.Config.init
+  (expr : Expr Op χ n)
+  (state : S)
+  (vars : List (χ × V)) : Expr.Config Op χ V S n
+  := {
+    expr := .cont expr,
+    estate := {
+      vars := λ v => (vars.find? (·.1 = v)).map (·.2),
+      state,
+      definedVars := [],
+      pathConds := [],
+    }
+  }
 
 structure Proc.Config where
   proc : Proc Op χ V
   state : S
+
+/-- Convert vars to names of free channels. -/
+def ChanUpdate.init
+  (vars : List (χ × V)) : ChanUpdate (ChanName χ) V :=
+  vars.map λ (v, val) =>
+    (.var v 0 [], val)
+
+/-- Initial process state, with `vars` given as initial
+values pushed to some channels. -/
+def Proc.Config.init
+  (proc : Proc Op χ V)
+  (state : S)
+  (vars : List (χ × V)) : Proc.Config Op χ V S
+  := { proc := proc.pushAll _ _ _ vars, state }
 
 /-
 Various small-step operational semantics.
@@ -302,16 +359,18 @@ abbrev Proc.StepStar := TransReflClosure (Proc.Step Op χ V S)
 
 /-- `pc` simulates `ec` as witnessed by the simulation relation `R`. -/
 inductive Refines
-  (ec : Expr.Config Op χ V S n)
-  (pc : Proc.Config Op χ V S)
-  (R : Expr.Config Op χ V S n → Proc.Config Op χ V S → Prop) where
+  [DecidableEq χ₁]
+  [DecidableEq χ₂]
+  (ec : Expr.Config Op χ₁ V S n)
+  (pc : Proc.Config Op χ₂ V S)
+  (R : Expr.Config Op χ₁ V S n → Proc.Config Op χ₂ V S → Prop) where
   | mk
     (hr : R ec pc)
     (hcoind : ∀ ec' ec'' ls₁ pc',
       R ec' pc' →
-      Expr.StepPlus Op χ V S n ec' ls₁ ec'' →
+      Expr.StepPlus _ _ V S n ec' ls₁ ec'' →
       ∃ pc'' ls₂,
-        Proc.StepPlus Op χ V S pc' ls₂ pc'' ∧
+        Proc.StepPlus _ _ V S pc' ls₂ pc'' ∧
         /- TODO: match labels? -/
         R ec'' pc'')
 
@@ -367,6 +426,9 @@ def AtomicProc.MatchModuloBuffers : AtomicProc Op χ V → AtomicProc Op χ V �
     outputs₁.toList = outputs₂.toList
   | _, _ => False
 
+def Proc.MatchModuloBuffers (p₁ p₂ : Proc Op χ V) : Prop :=
+  List.Forall₂ (AtomicProc.MatchModuloBuffers Op χ V) p₁ p₂
+
 def Proc.IsDAG (p : Proc Op χ V) : Prop :=
   ∀ i j, (hi : i < p.length) → (hj : j ≤ i) →
     ∀ output ∈ p[i].outputs, ¬ p[j].HasInput Op χ V output
@@ -389,10 +451,12 @@ def SimR (ec : Expr.Config Op χ V S n) (pc : Proc.Config Op (ChanName χ) V S) 
     -- For continuations, we require that `currentProc` is exactly
     -- their compiled process (modulo buffer differences).
     (∀ expr, ec.expr = .cont expr →
+      -- Expr is well-formed
+      expr.WellFormed _ _ ∧
       -- Match except for exact buffers
       (∃ currentProc',
         compile _ _ ec.estate.definedVars ec.estate.pathConds expr = some currentProc' ∧
-        List.Forall₂ (AtomicProc.MatchModuloBuffers _ _ _) currentProc currentProc') ∧
+        currentProc.MatchModuloBuffers _ _ _ currentProc') ∧
       -- For all inputs of processes in `currentProc`
       (∀ ap ∈ currentProc, ∀ inp ∈ ap.inputs,
         -- Check if the channel name corresponds to a live variable
@@ -403,39 +467,38 @@ def SimR (ec : Expr.Config Op χ V S n) (pc : Proc.Config Op (ChanName χ) V S) 
         -- If it's a live var, the channel buffer should have the corresponding value
         (∀ val, IsLiveVar inp.1 val → inp.2 = [val]) ∧
         -- Otherwise it's empty.
-        (∀ val, ¬ IsLiveVar inp.1 val) → inp.2 = [])) ∧
-      -- The remaining processes in `contextRight`
-      -- should be of the form
-      --
-      --   `p₁ ... pₘ || merge x n || p'₁ ... p'ₖ || merge x n || ...`
-      --
-      -- i.e., a sequence of processes interspersed with consecutive
-      -- chunks of n merge nodes.
-      -- Furthermore, all processes other than these merges should
-      -- have empty input buffers, and the merges will have exactly
-      -- one Boolean in the decider buffers corresponding to the
-      -- branching decision.
-      (∃ (chunks : List (Proc Op _ V × Proc Op _ V)) (tail : Proc Op _ V),
-        contextRight = (joinM (chunks.map (λ (l, r) => l ++ r))) ++ tail ∧
-        -- The first half chunks and the tail have empty inputs
-        (∀ chunk₁ chunk₂, (chunk₁, chunk₂) ∈ chunks → chunk₁.HasEmptyInputs _ _ _) ∧
-        tail.HasEmptyInputs _ _ _ ∧
-        -- The second half chunk corresponds exactly to the merge nodes
-        -- generated along the branches marked in the current `pathConds`.
-        List.Forall₂
-          (λ (_, chunk) (b, cond) =>
-            chunk.length = n ∧
-            ∀ i : ℕ, (h : i < chunk.length) →
-              ∃ v,
-                OpInterp.asBool Op S v = b ∧
-                let prevPathCond := ec.estate.pathConds.drop (i + 1)
-                -- This should match `compile.genMerges` except for the decider buffers
-                chunk[i]'h = .merge
-                  (.merge_cond cond, [v]) -- Decider buffer
-                  (.empty _ (.dest i ((true, cond) :: prevPathCond)))
-                  (.empty _ (.dest i ((false, cond) :: prevPathCond)))
-                  (.dest i prevPathCond))
-          chunks ec.estate.pathConds)
+        ((∀ val, ¬ IsLiveVar inp.1 val) → inp.2 = []))) ∧
+    -- The remaining processes in `contextRight` should be of the form
+    --
+    --   `p₁ ... pₘ || merge x n || p'₁ ... p'ₖ || merge x n || ...`
+    --
+    -- i.e., a sequence of processes interspersed with consecutive
+    -- chunks of n merge nodes.
+    -- Furthermore, all processes other than these merges should
+    -- have empty input buffers, and the merges will have exactly
+    -- one Boolean in the decider buffers corresponding to the
+    -- branching decision.
+    (∃ (chunks : List (Proc Op _ V × Proc Op _ V)) (tail : Proc Op _ V),
+      contextRight = (joinM (chunks.map (λ (l, r) => l ++ r))) ++ tail ∧
+      -- The first half chunks and the tail have empty inputs
+      (∀ chunk₁ chunk₂, (chunk₁, chunk₂) ∈ chunks → chunk₁.HasEmptyInputs _ _ _) ∧
+      tail.HasEmptyInputs _ _ _ ∧
+      -- The second half chunk corresponds exactly to the merge nodes
+      -- generated along the branches marked in the current `pathConds`.
+      List.Forall₂
+        (λ (_, chunk) (b, cond) =>
+          chunk.length = n ∧
+          ∀ i : ℕ, (h : i < chunk.length) →
+            ∃ v,
+              OpInterp.asBool Op S v = b ∧
+              let prevPathCond := ec.estate.pathConds.drop (i + 1)
+              -- This should match `compile.genMerges` except for the decider buffers
+              chunk[i]'h = .merge
+                (.merge_cond cond, [v]) -- Decider buffer
+                (.empty _ (.dest i ((true, cond) :: prevPathCond)))
+                (.empty _ (.dest i ((false, cond) :: prevPathCond)))
+                (.dest i prevPathCond))
+        chunks ec.estate.pathConds)
 
   /- Invariants?
   1. pc.proc = left ++ right such that right == compile ? ? current_expr, and none of left is fireable (empty input channels).
@@ -447,6 +510,128 @@ def SimR (ec : Expr.Config Op χ V S n) (pc : Proc.Config Op (ChanName χ) V S) 
      with the corresponding value.
      - shadowing?
   -/
+
+/-- Well-formed `Expr` compiles to well-formed processes. -/
+theorem wf_expr_compile_to_wf_proc
+  (e : Expr Op χ n)
+  (p : Proc Op (ChanName χ) V)
+  (hwf : e.WellFormed _ _)
+  (hcomp : compile _ _ definedVars pathConds e = some p) :
+  p.WellFormed _ _ := sorry
+
+/-- Output of compile should be a DAG. -/
+theorem compile_is_dag
+  {e : Expr Op χ n}
+  {p : Proc Op (ChanName χ) V}
+  (hcomp : compile _ _ definedVars pathConds e = some p) :
+  p.IsDAG _ _ _ := sorry
+
+/-- Output process of compile has empty buffers. -/
+theorem compile_empty_buf
+  (e : Expr Op χ n)
+  (p : Proc Op (ChanName χ) V)
+  (hcomp : compile _ _ definedVars pathConds e = some p) :
+  p.HasEmptyInputs _ _ _ := sorry
+
+/-- Pushing preserves the "shape" of the process. -/
+theorem push_preserves_shape
+  {p : Proc Op χ V}
+  {upd : ChanUpdate χ V} :
+  (p.pushAll _ _ _ upd).MatchModuloBuffers _ _ _ p := sorry
+
+theorem push_preserves_dag
+  {p : Proc Op χ V}
+  (upd : ChanUpdate χ V)
+  (hd : p.IsDAG _ _ _) :
+  (p.pushAll _ _ _ upd).IsDAG _ _ _ := sorry
+
+/-- TODO: should be auto derived. -/
+instance [DecidableEq χ] : DecidableEq (ChanName χ) := sorry
+
+/-- Initial configs satisfy the simulation relation. -/
+theorem sim_init_config
+  (e : Expr Op χ n)
+  (p : Proc Op (ChanName χ) V)
+  (hwf : e.WellFormed _ _)
+  (hcomp : compile _ _ [] [] e = some p)
+  (s : S)
+  (initVars : List (χ × V)) :
+  SimR _ _ _ _
+    (Expr.Config.init _ _ _ _ e s initVars)
+    (Proc.Config.init _ _ _ _ p s (ChanUpdate.init _ _ initVars)) := by
+  and_intros
+  · rfl
+  · have := compile_is_dag _ _ _ hcomp
+    exact push_preserves_dag _ _ _ _ this
+  · -- simp only [compile] at hcomp
+    generalize (ChanUpdate.init χ V initVars) = initChans
+    exists [], p.pushAll _ _ _ initChans, []
+    and_intros
+    · simp; rfl
+    · simp [Proc.HasEmptyInputs]
+    · simp [Expr.Config.init]
+    · intros e' he'
+      simp [Expr.Config.init] at he'
+      simp only [←he']
+      and_intros
+      · exact hwf
+      · exists p
+        simp only [Expr.Config.init, hcomp, true_and]
+        apply push_preserves_shape
+      · intros ap hap inp hinp
+        and_intros
+        -- TODO: reason about facts about `pushAll`
+        · simp [Expr.Config.init]
+          sorry
+        · simp [Expr.Config.init]
+          sorry
+    · exists [], []
+      and_intros
+      · simp [joinM]
+      · simp
+      · simp [Proc.HasEmptyInputs]
+      · simp [Expr.Config.init]
+
+/-- Main simulation requirement. -/
+theorem sim_step
+  (ec ec' : Expr.Config Op χ V S n)
+  (pc : Proc.Config Op (ChanName χ) V S)
+  (hsim : SimR _ _ _ _ ec pc)
+  (hstep : Expr.Step _ _ _ _ n ec l ec') :
+  ∃ pc',
+    Proc.StepPlus _ _ _ _ pc ls pc' ∧
+    SimR _ _ _ _ ec' pc' := by
+  simp [Expr.Step] at hstep
+  cases hec : ec.expr with
+  | ret vars => simp [hec] at hstep
+  | cont expr =>
+    simp [hec] at hstep
+    -- TODO: maybe use separate theorems to extract these facts from `SimR`
+    have ⟨
+      hsim_eqs,
+      hsim_dag,
+      ⟨
+        ctxLeft, curProc, ctxRight,
+        hproc,
+        hctx_left_empty,
+        _,
+        hsim_cont,
+        hsim_tail,
+      ⟩,
+    ⟩ := hsim
+    have ⟨
+      hwf_expr,
+      ⟨comp_expr, hcomp_expr, hsame_shape_proc⟩,
+      hlive_vars,
+    ⟩ := hsim_cont expr hec
+    cases hexpr : expr with
+    | ret vars =>
+      simp [hexpr, Expr.step] at hstep
+      simp [compile, hexpr] at hcomp_expr
+      simp [← hcomp_expr, Proc.MatchModuloBuffers] at hsame_shape_proc
+      sorry
+    | op => sorry
+    | br => sorry
 
 end Simulation
 
