@@ -21,6 +21,7 @@ of variables `χ`.
 universe u
 
 variable (Op : Type u) (χ : Type u)
+variable [DecidableEq χ]
 
 class OpArity where
   ι : Op → ℕ
@@ -47,8 +48,9 @@ abbrev ChanBuf (V) := χ × List V
 
 def ChanBuf.empty (v : χ) : ChanBuf χ V := (v, [])
 
-def ChanBuf.push (buf : ChanBuf χ V) (val : V) : ChanBuf χ V :=
-  (buf.1, buf.2.concat val)
+def ChanBuf.push (var : χ) (val : V) (buf : ChanBuf χ V) : ChanBuf χ V :=
+  if buf.1 = var then (buf.1, buf.2.concat val)
+  else (buf.1, buf.2)
 
 def ChanBuf.pop (buf : ChanBuf χ V) : Option (V × ChanBuf χ V) :=
   match buf.2 with
@@ -98,6 +100,195 @@ class OpInterp (V S : Type u) where
 
 variable (V S) [OpInterp Op V S]
 
+/-- Consistent channel naming for the compiler. -/
+inductive ChanName where
+  | var (base : χ) (count : ℕ) (pathConds : List (Bool × ChanName))
+  | merge_cond (chan : ChanName)
+  | dest (i : ℕ) (pathConds : List (Bool × ChanName))
+  | tail_arg (i : ℕ) (pathConds : List (Bool × ChanName))
+  | tail_cond (pathConds : List (Bool × ChanName))
+  | final_dest (i : ℕ)
+  | final_tail_arg (i : ℕ)
+  deriving Repr
+
+/-- State of expression execution. -/
+structure ExprState (m n : ℕ) where
+  fn : Fn Op χ m n
+  vars : χ → Option V
+  state : S
+  -- Ghost states for the simulation relation
+  definedVars : List χ
+  pathConds : List (Bool × ChanName χ)
+
+abbrev ExprStateM m n := StateT (ExprState Op χ V S m n) Option
+
+def ExprStateM.getVar (v : χ) : ExprStateM Op χ V S m n V := do
+  match (← get).vars v with
+  | some val => return val
+  | none => .failure
+
+def ExprStateM.setVar (v : χ) (val : V) : ExprStateM Op χ V S m n PUnit := do
+  modify λ s => {
+    s with vars := λ x => if x = v then some val else s.vars x
+  }
+
+def ExprStateM.tailCall (m : ℕ) (vals : Vector V m) : ExprStateM Op χ V S m n (Fn Op χ m n) := do
+  let s ← get
+  let fn := s.fn
+  let params := fn.params
+  modify λ s => {
+    s with
+    vars := λ _ => none,
+    definedVars := [],
+    pathConds := [],
+  }
+  (params.zip vals).forM λ (p, v) => setVar _ _ _ _ p v
+  return fn
+
+def ExprStateM.addDefinedVars (vs : List χ) : ExprStateM Op χ V S m n PUnit := do
+  modify λ s => { s with definedVars := s.definedVars ++ vs }
+
+def ExprStateM.addPathCond (b : Bool) (v : χ) : ExprStateM Op χ V S m n PUnit := do
+  modify λ s => {
+    s with
+    pathConds := (b, .var v (s.definedVars.count v) s.pathConds) :: s.pathConds,
+  }
+
+def ExprStateM.liftS (s : StateT S Option T) : ExprStateM Op χ V S m n T := do
+  let (val, state) ← s.run (← get).state
+  modify λ s => { s with state }
+  return val
+
+inductive ExprResult (m n : ℕ) where
+  | ret (vals : Vector V n)
+  | cont (expr : Expr Op χ m n)
+
+def Expr.step : Expr Op χ m n → ExprStateM Op χ V S m n (ExprResult Op χ V m n)
+  | .ret vars => do
+    let vals ← vars.mapM getVar
+    return .ret vals
+  | .tail vars => do
+    let vals ← vars.mapM getVar
+    let fn ← .tailCall _ _ _ _ _ vals
+    return .cont fn.body
+  | .op o args rets cont => do
+    let argVals ← args.mapM getVar
+    let retVals ← .liftS _ _ _ _ (OpInterp.interp o argVals)
+    (rets.zip retVals).forM λ (v, val) => setVar v val
+    .addDefinedVars _ _ _ _ rets.toList
+    return .cont cont
+  | .br cond left right => do
+    let condVal ← getVar cond
+    if OpInterp.asBool Op S condVal then
+      .addPathCond _ _ _ _ true cond
+      return .cont left
+    else
+      .addPathCond _ _ _ _ false cond
+      return .cont right
+  where
+    getVar := ExprStateM.getVar _ _ _ _
+    setVar := ExprStateM.setVar _ _ _ _
+
+abbrev ProcStateM := StateT S List
+
+abbrev ChanUpdate := List (χ × V)
+
+def ProcStateM.liftS (s : StateT S Option T) : ProcStateM S T := do
+  match s.run (← get) with
+  | none => .failure
+  | some (val, state) =>
+    set state
+    return val
+
+def ProcStateM.popBuf
+  (buf : ChanBuf χ V) :
+  ProcStateM S (V × ChanBuf χ V) :=
+  match buf.pop with
+  | none => .failure
+  | some (v, buf') => return (v, buf')
+
+def ProcStateM.popBufs
+  (bufs : Vector (ChanBuf χ V) n) :
+  ProcStateM S (Vector V n × Vector (ChanBuf χ V) n) := do
+  let vs ← bufs.mapM λ buf => popBuf _ _ _ buf
+  return (vs.map Prod.fst, vs.map Prod.snd)
+
+/-- Fire the given atomic process and return the modified process along with channel pushes. -/
+def AtomicProc.step :
+  AtomicProc Op χ V → ProcStateM S (AtomicProc Op χ V × ChanUpdate χ V)
+  | .op o inputs outputs => do
+    let (inputVals, inputs') ← .popBufs _ _ _ inputs
+    let outputVals ← .liftS _ (OpInterp.interp o inputVals)
+    return (.op o inputs' outputs, (outputs.zip outputVals).toList)
+  | .steer decider inputs outputs => do
+    let (deciderVal, decider') ← .popBuf _ _ _ decider
+    let (inputVals, inputs') ← .popBufs _ _ _ inputs
+    return (
+      .steer decider' inputs' outputs,
+      if OpInterp.asBool Op S deciderVal then (outputs.zip inputVals).toList
+      else [],
+    )
+  | .carry inLoop decider inputs₁ inputs₂ outputs => do
+    if inLoop then
+      let (deciderVal, decider') ← .popBuf _ _ _ decider
+      if OpInterp.asBool Op S deciderVal then
+        let (inputVals, inputs₂') ← .popBufs _ _ _ inputs₂
+        return (.carry true decider' inputs₁ inputs₂' outputs, (outputs.zip inputVals).toList)
+      else
+        return (.carry false decider' inputs₁ inputs₂ outputs, [])
+    else
+      let (inputVals, inputs₁') ← .popBufs _ _ _ inputs₁
+      return (.carry true decider inputs₁' inputs₂ outputs, (outputs.zip inputVals).toList)
+  | .merge decider inputs₁ inputs₂ outputs => do
+    let (deciderVal, decider') ← .popBuf _ _ _ decider
+    if OpInterp.asBool Op S deciderVal then
+      let (inputVals, inputs₁') ← .popBufs _ _ _ inputs₁
+      return (.merge decider' inputs₁' inputs₂ outputs, (outputs.zip inputVals).toList)
+    else
+      let (inputVals, inputs₂') ← .popBufs _ _ _ inputs₂
+      return (.merge decider' inputs₁ inputs₂' outputs, (outputs.zip inputVals).toList)
+  | .forward inputs outputs => do
+    let (inputVals, inputs') ← .popBufs _ _ _ inputs
+    return (.forward inputs' outputs, (outputs.zip inputVals).toList)
+  | .const c act outputs => do
+    let (_, act') ← .popBuf _ _ _ act
+    return (.const c act' outputs, outputs.toList.map λ output => (output, c))
+
+/-- Push the given value to input channels with the same variable name. -/
+def AtomicProc.push (var : χ) (val : V) : AtomicProc Op χ V → AtomicProc Op χ V
+  | .op o inputs outputs => .op o (inputs.map pushVal) outputs
+  | .steer decider inputs outputs => .steer (pushVal decider) (inputs.map pushVal) outputs
+  | .carry inLoop decider inputs₁ inputs₂ outputs =>
+    .carry inLoop (pushVal decider) (inputs₁.map pushVal) (inputs₂.map pushVal) outputs
+  | .merge decider inputs₁ inputs₂ outputs =>
+    .merge (pushVal decider) (inputs₁.map pushVal) (inputs₂.map pushVal) outputs
+  | .forward inputs outputs => .forward (inputs.map pushVal) outputs
+  | .const c act outputs => .const c (pushVal act) outputs
+  where pushVal := ChanBuf.push _ var val
+
+def Proc.push (var : χ) (val : V) (p : Proc Op χ V m n) : Proc Op χ V m n :=
+  {
+    p with
+    outputs := p.outputs.map (ChanBuf.push _ var val),
+    atoms := p.atoms.map (AtomicProc.push _ _ _ var val)
+  }
+
+def Proc.pushAll (updates : ChanUpdate χ V) (p : Proc Op χ V m n) : Proc Op χ V m n :=
+  updates.foldl (λ p (var, val) => p.push _ _ _ var val) p
+
+/-- Fire the `i`-th atomic process. -/
+def Proc.stepAtom (p : Proc Op χ V m n) (i : Fin p.atoms.length) :
+  ProcStateM S (Proc Op χ V m n) := do
+  let (ap, upd) ← p.atoms[i].step Op χ V S
+  let p' := { p with atoms := p.atoms.set i ap }
+  let p'' := Proc.pushAll _ _ _ upd p'
+  return p''
+
+/-- Non-deterministically choose one atomic process to fire. -/
+def Proc.step (p : Proc Op χ V m n) : ProcStateM S (Proc Op χ V m n) := do
+  ← (List.finRange p.atoms.length).map λ i => Proc.stepAtom _ _ _ _ p i
+
+
 /-
  ██████╗ ██████╗ ███╗   ███╗██████╗ ██╗██╗     ███████╗██████╗
 ██╔════╝██╔═══██╗████╗ ████║██╔══██╗██║██║     ██╔════╝██╔══██╗
@@ -108,18 +299,6 @@ variable (V S) [OpInterp Op V S]
 
 We define compilers from `Expr` and `Fn` to `Proc`.
 -/
-
-variable [DecidableEq χ]
-
-inductive ChanName where
-  | var (base : χ) (count : ℕ) (pathConds : List (Bool × ChanName))
-  | merge_cond (chan : ChanName)
-  | dest (i : ℕ) (pathConds : List (Bool × ChanName))
-  | tail_arg (i : ℕ) (pathConds : List (Bool × ChanName))
-  | tail_cond (pathConds : List (Bool × ChanName))
-  | final_dest (i : ℕ)
-  | final_tail_arg (i : ℕ)
-  deriving Repr
 
 /--
 Compiles an expression to a list of atomic processes, with
@@ -199,13 +378,19 @@ def Expr.compile
         vs.map λ v => .var v (definedVars.count v + 1) pathConds
       )
 
+/--
+Compiles a function to a process with `m` inputs and `n` outputs.
+
+Most of the compiled process should be a DAG, except for the back
+edges of channels with the name `.tail_cond []` or `.tail_arg i []`.
+-/
 def Fn.compile
-  (fn : Fn Op χ m n) : Option (Proc Op (ChanName χ) V m n)
+  (fn : Fn Op χ m n) : Proc Op (ChanName χ) V m n
   :=
   let bodyComp := fn.body.compile Op χ V S fn.wf fn.params.toList []
-  return {
+  {
     inputs := fn.params.map λ v => .var v 0 [],
-    outputs := (Vector.range n).map λ i => .empty _ (.dest i []),
+    outputs := (Vector.range n).map λ i => .empty _ (.final_tail_arg i),
     atoms := [
       -- A carry gate to merge initial values and tail call arguments
       .carry
@@ -214,6 +399,7 @@ def Fn.compile
         (fn.params.map λ v => .empty _ (.var v 0 []))
         ((Vector.range m).map λ i => .empty _ (.final_tail_arg i))
         (fn.params.map λ v => .var v 1 []),
+    ] ++ bodyComp ++ [
       -- If tail condition is true, discard the junk return values
       .steer
         (.empty _ (.tail_cond []))
@@ -224,5 +410,5 @@ def Fn.compile
         (.empty _ (.tail_cond []))
         ((Vector.range m).map λ i => .empty _ (.tail_arg i []))
         ((Vector.range m).map λ i => .final_tail_arg i),
-    ] ++ bodyComp
+    ]
   }
