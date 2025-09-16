@@ -1,5 +1,5 @@
 import Mathlib.Data.List.Basic
-import Mathlib.Data.PNat.Basic
+import Mathlib.Logic.Relation
 
 /-!
 Trying a simple version with branching and recursion.
@@ -120,6 +120,17 @@ structure ExprState (m n : ℕ) where
   definedVars : List χ
   pathConds : List (Bool × ChanName χ)
 
+def ExprState.init
+  (fn : Fn Op χ m n)
+  (state : S)
+  (args : Vector V m) : ExprState Op χ V S m n := {
+    fn,
+    vars := λ v => ((fn.params.zip args).toList.find? (·.1 = v)).map (·.2),
+    state,
+    definedVars := [],
+    pathConds := [],
+  }
+
 abbrev ExprStateM m n := StateT (ExprState Op χ V S m n) Option
 
 def ExprStateM.getVar (v : χ) : ExprStateM Op χ V S m n V := do
@@ -134,16 +145,8 @@ def ExprStateM.setVar (v : χ) (val : V) : ExprStateM Op χ V S m n PUnit := do
 
 def ExprStateM.tailCall (m : ℕ) (vals : Vector V m) : ExprStateM Op χ V S m n (Fn Op χ m n) := do
   let s ← get
-  let fn := s.fn
-  let params := fn.params
-  modify λ s => {
-    s with
-    vars := λ _ => none,
-    definedVars := [],
-    pathConds := [],
-  }
-  (params.zip vals).forM λ (p, v) => setVar _ _ _ _ p v
-  return fn
+  set (ExprState.init _ _ _ _ s.fn s.state vals)
+  return s.fn
 
 def ExprStateM.addDefinedVars (vs : List χ) : ExprStateM Op χ V S m n PUnit := do
   modify λ s => { s with definedVars := s.definedVars ++ vs }
@@ -188,6 +191,31 @@ def Expr.step : Expr Op χ m n → ExprStateM Op χ V S m n (ExprResult Op χ V 
   where
     getVar := ExprStateM.getVar _ _ _ _
     setVar := ExprStateM.setVar _ _ _ _
+
+structure Expr.Config m n where
+  expr : ExprResult Op χ V m n
+  estate : ExprState Op χ V S m n
+
+/-- Initialize an expression configuration. -/
+def Expr.Config.init
+  (fn : Fn Op χ m n)
+  (state : S)
+  (vars : Vector V m) : Expr.Config Op χ V S m n
+  := {
+    expr := .cont fn.body,
+    estate := ExprState.init _ _ _ _ fn state vars,
+  }
+
+/-- Main step relation for expressions. -/
+def Expr.Step
+  (c c' : Expr.Config Op χ V S m n) : Prop :=
+  match c.expr with
+  | .ret _ => False
+  | .cont expr => some (c'.expr, c'.estate) = (expr.step _ _ _ _).run c.estate
+
+def Expr.StepPlus {m n} := @Relation.TransGen (Expr.Config Op χ V S m n) (Expr.Step Op χ V S)
+
+def Expr.StepStar {m n} := @Relation.ReflTransGen (Expr.Config Op χ V S m n) (Expr.Step Op χ V S)
 
 abbrev ProcStateM := StateT S List
 
@@ -288,6 +316,26 @@ def Proc.stepAtom (p : Proc Op χ V m n) (i : Fin p.atoms.length) :
 def Proc.step (p : Proc Op χ V m n) : ProcStateM S (Proc Op χ V m n) := do
   ← (List.finRange p.atoms.length).map λ i => Proc.stepAtom _ _ _ _ p i
 
+structure Proc.Config m n where
+  proc : Proc Op χ V m n
+  state : S
+
+/-- Initial process configuration. -/
+def Proc.Config.init
+  (proc : Proc Op χ V m n)
+  (state : S)
+  (vars : Vector V m) : Proc.Config Op χ V S m n
+  := {
+    proc := proc.pushAll _ _ _ (proc.inputs.zip vars).toList,
+    state,
+  }
+
+def Proc.Step (c c' : Proc.Config Op χ V S m n) : Prop :=
+  (c'.proc, c'.state) ∈ (c.proc.step Op χ V S).run c.state
+
+def Proc.StepPlus {m n} := @Relation.TransGen (Proc.Config Op χ V S m n) (Proc.Step Op χ V S)
+
+def Proc.StepStar {m n} := @Relation.ReflTransGen (Proc.Config Op χ V S m n) (Proc.Step Op χ V S)
 
 /-
  ██████╗ ██████╗ ███╗   ███╗██████╗ ██╗██╗     ███████╗██████╗
