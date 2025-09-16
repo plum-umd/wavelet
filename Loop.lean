@@ -78,9 +78,9 @@ def ChanBuf.pop (buf : ChanBuf χ V) : Option (V × ChanBuf χ V) :=
   | [] => none
   | v :: vs => some (v, (buf.1, vs))
 
-inductive AtomicProc (V) where
+inductive AtomicProc V where
   | op (op : Op) (inputs : Vector (ChanBuf χ V) (arity.ι op)) (outputs : Vector χ (arity.ω op))
-  | steer (decider : ChanBuf χ V) (inputs : Vector (ChanBuf χ V) n) (outputs : Vector χ n)
+  | steer (flavor : Bool) (decider : ChanBuf χ V) (inputs : Vector (ChanBuf χ V) n) (outputs : Vector χ n)
   | carry (inLoop : Bool)
     (decider : ChanBuf χ V)
     (inputs₁ : Vector (ChanBuf χ V) n) (inputs₂ : Vector (ChanBuf χ V) n)
@@ -92,11 +92,13 @@ inductive AtomicProc (V) where
   | const (c : V) (act : ChanBuf χ V) (outputs : Vector χ n)
   deriving Repr
 
+abbrev AtomicProcs V := List (AtomicProc Op χ V)
+
 /-- `Proc _ m n` is a process with `m` inputs and `n` outputs. -/
-structure Proc (V) (m : ℕ) (n : ℕ) where
+structure Proc V (m : ℕ) (n : ℕ) where
   inputs : Vector χ m
   outputs : Vector (ChanBuf χ V) n
-  atoms : List (AtomicProc Op χ V)
+  atoms : AtomicProcs Op χ V
 
 /-
 ███████╗███████╗███╗   ███╗ █████╗ ███╗   ██╗████████╗██╗ ██████╗███████╗
@@ -151,7 +153,7 @@ def ExprState.init
     fn,
     vars := λ v => ((fn.params.zip args).toList.find? (·.1 = v)).map (·.2),
     state,
-    definedVars := [],
+    definedVars := fn.params.toList,
     pathConds := [],
   }
 
@@ -272,12 +274,12 @@ def AtomicProc.step :
     let (inputVals, inputs') ← .popBufs _ _ _ inputs
     let outputVals ← .liftS _ (OpInterp.interp o inputVals)
     return (.op o inputs' outputs, (outputs.zip outputVals).toList)
-  | .steer decider inputs outputs => do
+  | .steer flavor decider inputs outputs => do
     let (deciderVal, decider') ← .popBuf _ _ _ decider
     let (inputVals, inputs') ← .popBufs _ _ _ inputs
     return (
-      .steer decider' inputs' outputs,
-      if OpInterp.asBool Op S deciderVal then (outputs.zip inputVals).toList
+      .steer flavor decider' inputs' outputs,
+      if OpInterp.asBool Op S deciderVal = flavor then (outputs.zip inputVals).toList
       else [],
     )
   | .carry inLoop decider inputs₁ inputs₂ outputs => do
@@ -306,34 +308,33 @@ def AtomicProc.step :
     let (_, act') ← .popBuf _ _ _ act
     return (.const c act' outputs, outputs.toList.map λ output => (output, c))
 
-/-- Push the given value to input channels with the same variable name. -/
-def AtomicProc.push (var : χ) (val : V) : AtomicProc Op χ V → AtomicProc Op χ V
+/-- Pushes all relevant channel updates. -/
+def ChanBuf.pushAll
+  (updates : ChanUpdate χ V)
+  (buf : ChanBuf χ V) : ChanBuf χ V :=
+  updates.foldl (λ buf (var, val) => ChanBuf.push _ var val buf) buf
+
+def AtomicProc.pushAll (updates : ChanUpdate χ V) : AtomicProc Op χ V → AtomicProc Op χ V
   | .op o inputs outputs => .op o (inputs.map pushVal) outputs
-  | .steer decider inputs outputs => .steer (pushVal decider) (inputs.map pushVal) outputs
+  | .steer flavor decider inputs outputs => .steer flavor (pushVal decider) (inputs.map pushVal) outputs
   | .carry inLoop decider inputs₁ inputs₂ outputs =>
     .carry inLoop (pushVal decider) (inputs₁.map pushVal) (inputs₂.map pushVal) outputs
   | .merge decider inputs₁ inputs₂ outputs =>
     .merge (pushVal decider) (inputs₁.map pushVal) (inputs₂.map pushVal) outputs
   | .forward inputs outputs => .forward (inputs.map pushVal) outputs
   | .const c act outputs => .const c (pushVal act) outputs
-  where pushVal := ChanBuf.push _ var val
+  where pushVal := ChanBuf.pushAll _ _ updates
 
-def AtomicProc.pushAll
+def AtomicProcs.pushAll
   (updates : ChanUpdate χ V)
-  (aps : List (AtomicProc Op χ V)) :
-  List (AtomicProc Op χ V) :=
-  updates.foldl (λ aps (var, val) => aps.map (AtomicProc.push _ _ _ var val)) aps
-
-def ChanBuf.pushAll
-  (updates : ChanUpdate χ V)
-  (buf : ChanBuf χ V) : ChanBuf χ V :=
-  updates.foldl (λ buf (var, val) => ChanBuf.push _ var val buf) buf
+  (aps : AtomicProcs Op χ V) :
+  AtomicProcs Op χ V :=
+  aps.map (AtomicProc.pushAll _ _ _ updates)
 
 def Proc.pushAll (updates : ChanUpdate χ V) (p : Proc Op χ V m n) : Proc Op χ V m n :=
   { p with
     outputs := p.outputs.map (ChanBuf.pushAll _ _ updates),
-    atoms := AtomicProc.pushAll _ _ _ updates p.atoms,
-  }
+    atoms := AtomicProcs.pushAll _ _ _ updates p.atoms }
 
 /-- Fire the `i`-th atomic process. -/
 def Proc.stepAtom (p : Proc Op χ V m n) (i : Fin p.atoms.length) :
@@ -423,9 +424,12 @@ def Expr.compile
     let allVars := definedVars.eraseDups.toArray.toVector
     [
       -- Steer all live variables
-      .steer condChan
+      .steer true condChan
         (allVars.map λ v => empty (.var v (definedVars.count v) pathConds))
         (allVars.map λ v => .var v (definedVars.count v) leftConds),
+      .steer false condChan
+        (allVars.map λ v => empty (.var v (definedVars.count v) pathConds))
+        (allVars.map λ v => .var v (definedVars.count v) rightConds),
       -- Forward the condition again to the merge
       -- (extra forward for a simpler simulation relation)
       .forward #v[condChan] #v[.merge_cond condChan.1],
@@ -471,31 +475,32 @@ edges of channels with the name `.tail_cond []` or `.tail_arg i []`.
 def Fn.compile
   (fn : Fn Op χ m n) : Proc Op (ChanName χ) V m n
   :=
-  let bodyComp := fn.body.compile Op χ V S fn.NonEmptyIO fn.params.toList []
   {
     inputs := fn.params.map λ v => .var v 0 [],
     outputs := (Vector.range n).map λ i => .empty _ (.final_tail_arg i),
-    atoms := [
-      -- A carry gate to merge initial values and tail call arguments
-      .carry
-        false
+    atoms := initCarry :: (bodyComp ++ resultSteers m n)
+  }
+  where
+    -- A carry gate to merge initial values and tail call arguments
+    initCarry :=
+      .carry false
         (.empty _ (.tail_cond []))
         (fn.params.map λ v => .empty _ (.var v 0 []))
         ((Vector.range m).map λ i => .empty _ (.final_tail_arg i))
-        (fn.params.map λ v => .var v 1 []),
-    ] ++ bodyComp ++ [
+        (fn.params.map λ v => .var v 1 [])
+    bodyComp := fn.body.compile Op χ V S fn.NonEmptyIO fn.params.toList []
+    resultSteers m n := [
       -- If tail condition is true, discard the junk return values
-      .steer
+      .steer false
         (.empty _ (.tail_cond []))
         ((Vector.range n).map λ i => .empty _ (.dest i []))
         ((Vector.range n).map λ i => .final_dest i),
       -- If tail condition is false, discard the junk tail arguments
-      .steer
+      .steer true
         (.empty _ (.tail_cond []))
         ((Vector.range m).map λ i => .empty _ (.tail_arg i []))
         ((Vector.range m).map λ i => .final_tail_arg i),
     ]
-  }
 
 def Refines
   {T : Type v} {S : Type w}
@@ -519,7 +524,7 @@ def Expr.RefinesProc
 def AtomicProc.inputs (ap : AtomicProc Op χ V) : List (ChanBuf χ V) :=
   match ap with
   | .op _ inputs _ => inputs.toList
-  | .steer decider inputs _ => [decider] ++ inputs.toList
+  | .steer _ decider inputs _ => [decider] ++ inputs.toList
   | .carry _ decider input₁ input₂ _ => [decider] ++ input₁.toList ++ input₂.toList
   | .merge decider input₁ input₂ _ => [decider] ++ input₁.toList ++ input₂.toList
   | .forward inputs _ => inputs.toList
@@ -528,7 +533,7 @@ def AtomicProc.inputs (ap : AtomicProc Op χ V) : List (ChanBuf χ V) :=
 def AtomicProc.outputs (ap : AtomicProc Op χ V) : List χ :=
   match ap with
   | .op _ _ outputs => outputs.toList
-  | .steer _ _ outputs => outputs.toList
+  | .steer _ _ _ outputs => outputs.toList
   | .carry _ _ _ _ outputs => outputs.toList
   | .merge _ _ _ outputs => outputs.toList
   | .forward _ outputs => outputs.toList
@@ -550,7 +555,8 @@ def AtomicProc.MatchModBuffers : AtomicProc Op χ V → AtomicProc Op χ V → P
     o₁ = o₂ ∧
     List.Forall₂ MatchBuf inputs₁.toList inputs₂.toList ∧
     outputs₁.toList = outputs₂.toList
-  | .steer decider₁ inputs₁ outputs₁, .steer decider₂ inputs₂ outputs₂ =>
+  | .steer flavor₁ decider₁ inputs₁ outputs₁, .steer flavor₂ decider₂ inputs₂ outputs₂ =>
+    flavor₁ = flavor₂ ∧
     decider₁.1 = decider₂.1 ∧
     List.Forall₂ MatchBuf inputs₁.toList inputs₂.toList ∧
     outputs₁.toList = outputs₂.toList
@@ -578,32 +584,32 @@ def AtomicProc.MatchModBuffers : AtomicProc Op χ V → AtomicProc Op χ V → P
     @[simp]
     MatchBuf := ChanBuf.MatchModBuffer _ _
 
-def Proc.MatchModBuffers (aps₁ aps₂ : List (AtomicProc Op χ V)) : Prop :=
+def AtomicProcs.MatchModBuffers (aps₁ aps₂ : AtomicProcs Op χ V) : Prop :=
   List.Forall₂ (AtomicProc.MatchModBuffers Op χ V) aps₁ aps₂
 
-def Proc.IsDAG (aps : List (AtomicProc Op χ V)) : Prop :=
+def AtomicProcs.IsDAG (aps : AtomicProcs Op χ V) : Prop :=
   ∀ i j, (hi : i < aps.length) → (hj : j ≤ i) →
     ∀ output ∈ aps[i].outputs, ¬ aps[j].HasInput Op χ V output
 
-def Proc.HasEmptyInputs (aps : List (AtomicProc Op χ V)) : Prop :=
+def AtomicProcs.HasEmptyInputs (aps : AtomicProcs Op χ V) : Prop :=
   ∀ ap ∈ aps, ap.HasEmptyInputs Op χ V
 
 def SimR (ec : Expr.Config Op χ V S m n) (pc : Proc.Config Op (ChanName χ) V S m n) : Prop :=
   ec.estate.state = pc.state ∧
   -- The process matches the compiled function in shape
-  Proc.MatchModBuffers _ _ _ pc.proc.atoms (Fn.compile Op χ V S ec.estate.fn).atoms ∧
-  ∃ (rest : List (AtomicProc Op (ChanName χ) V))
+  AtomicProcs.MatchModBuffers _ _ _ pc.proc.atoms (Fn.compile Op χ V S ec.estate.fn).atoms ∧
+  ∃ (rest : AtomicProcs Op (ChanName χ) V)
     (carryInLoop : Bool)
     (carryDecider : ChanBuf (ChanName χ) V)
     (carryInputs₁ carryInputs₂ : Vector (ChanBuf (ChanName χ) V) m)
     (carryOutputs : Vector (ChanName χ) m)
-    (ctxLeft ctxCurrent ctxRight : List (AtomicProc Op (ChanName χ) V)),
+    (ctxLeft ctxCurrent ctxRight : AtomicProcs Op (ChanName χ) V),
     -- The processes form a DAG if we remove the first carry operator
     pc.proc.atoms = (.carry carryInLoop carryDecider carryInputs₁ carryInputs₂ carryOutputs) :: rest ∧
-    Proc.IsDAG _ _ _ rest ∧
+    rest.IsDAG _ _ _ ∧
     -- The processes can be split into three fragments
     rest = ctxLeft ++ ctxCurrent ++ ctxRight ∧
-    Proc.HasEmptyInputs _ _ _ ctxLeft ∧
+    ctxLeft.HasEmptyInputs _ _ _ ∧
     -- If we have reached the end of execution, nothing else should be executable
     (∀ vals, ec.expr = .ret vals →
       ctxCurrent = [] ∧
@@ -615,7 +621,7 @@ def SimR (ec : Expr.Config Op χ V S m n) (pc : Proc.Config Op (ChanName χ) V S
     (∀ expr, ec.expr = .cont expr →
       expr.WellFormed ∧
       -- The current fragment corresponds to the compilation results
-      Proc.MatchModBuffers _ _ _
+      AtomicProcs.MatchModBuffers _ _ _
         ctxCurrent
         (expr.compile Op χ V S ec.estate.fn.NonEmptyIO ec.estate.definedVars ec.estate.pathConds) ∧
       -- Some constraints about live variables
@@ -639,11 +645,11 @@ def SimR (ec : Expr.Config Op χ V S m n) (pc : Proc.Config Op (ChanName χ) V S
       -- have empty input buffers, and the merges will have exactly
       -- one Boolean in the decider buffers corresponding to the
       -- branching decision.
-      (∃ (chunks : List (List (AtomicProc Op (ChanName χ) V) × AtomicProc Op (ChanName χ) V))
-        (tail : List (AtomicProc Op (ChanName χ) V)),
+      (∃ (chunks : List (AtomicProcs Op (ChanName χ) V × AtomicProc Op (ChanName χ) V))
+        (tail : AtomicProcs Op (ChanName χ) V),
         -- The first half chunks and the tail have empty inputs
-        (∀ chunk₁ chunk₂, (chunk₁, chunk₂) ∈ chunks → Proc.HasEmptyInputs _ _ _ chunk₁) ∧
-        Proc.HasEmptyInputs _ _ _ tail ∧
+        (∀ chunk₁ chunk₂, (chunk₁, chunk₂) ∈ chunks → chunk₁.HasEmptyInputs _ _ _) ∧
+        tail.HasEmptyInputs _ _ _ ∧
         -- The second half chunk corresponds exactly to the merge nodes
         -- generated along the branches marked in the current `pathConds`.
         List.Forall₂
@@ -676,27 +682,37 @@ Invariants?
       channel set with one value.
 -/
 
-theorem push_preserves_shape
-  {p : Proc Op χ V m n}
-  {upd : ChanUpdate χ V} :
-  Proc.MatchModBuffers Op χ V (p.pushAll Op χ V upd).atoms p.atoms := sorry
+theorem aps_match_mod_bufs_refl
+  {aps : AtomicProcs Op χ V} :
+  AtomicProcs.MatchModBuffers Op χ V aps aps := sorry
 
-theorem push_preserves_dag
-  {aps : List (AtomicProc Op χ V)}
+theorem aps_push_preserves_shape
+  {aps : AtomicProcs Op χ V}
+  {upd : ChanUpdate χ V} :
+  AtomicProcs.MatchModBuffers Op χ V (AtomicProcs.pushAll Op χ V upd aps) aps := sorry
+
+theorem aps_push_preserves_dag
+  {aps : AtomicProcs Op χ V}
   {upd : ChanUpdate χ V}
-  (hdag : Proc.IsDAG Op _ V aps) :
-  Proc.IsDAG Op _ V (AtomicProc.pushAll Op χ V upd aps) := sorry
+  (hdag : AtomicProcs.IsDAG Op _ V aps) :
+  AtomicProcs.IsDAG Op _ V (AtomicProcs.pushAll Op χ V upd aps) := sorry
 
-theorem push_commutes_tail
-  {aps : List (AtomicProc Op χ V)}
+theorem aps_push_commutes_tail
+  {aps : AtomicProcs Op χ V}
   {upd : ChanUpdate χ V} :
-  (AtomicProc.pushAll Op χ V upd aps).tail
-    = AtomicProc.pushAll Op χ V upd aps.tail := sorry
+  (AtomicProcs.pushAll Op χ V upd aps).tail
+    = AtomicProcs.pushAll Op χ V upd aps.tail := sorry
+
+theorem aps_push_commutes_append
+  {aps₁ aps₂ : AtomicProcs Op χ V}
+  {upd : ChanUpdate χ V} :
+  (AtomicProcs.pushAll Op χ V upd (aps₁ ++ aps₂))
+    = (AtomicProcs.pushAll Op χ V upd aps₁) ++ (AtomicProcs.pushAll Op χ V upd aps₂) := sorry
 
 /-- The result of compilation should be a DAG except for the first carry process. -/
 theorem fn_compile_dag
   {fn : Fn Op χ m n} :
-  Proc.IsDAG Op _ V ((Fn.compile Op χ V S fn).atoms.tail) := sorry
+  AtomicProcs.IsDAG Op _ V ((Fn.compile Op χ V S fn).atoms.tail) := sorry
 
 /-- Initial configs satisfy the simulation relation. -/
 theorem sim_init_config
@@ -711,8 +727,8 @@ theorem sim_init_config
   simp only [← hcomp]
   and_intros
   · rfl
-  · apply push_preserves_shape
-  · generalize ((Fn.compile Op χ V S f).inputs.zip args).toList = initUpd
+  · apply aps_push_preserves_shape
+  · generalize hinitUpd : ((Fn.compile Op χ V S f).inputs.zip args).toList = initUpd
     exists
       (Proc.pushAll Op _ _ initUpd p).atoms.tail,
       false,
@@ -721,29 +737,41 @@ theorem sim_init_config
       ((Vector.range m).map λ i => .empty _ (.final_tail_arg i)),
       (f.params.map λ v => .var v 1 []),
       [],
-      (Proc.pushAll Op _ _ initUpd p).atoms.tail,
-      []
+      AtomicProcs.pushAll Op _ _ initUpd (Fn.compile.bodyComp Op χ V S f),
+      AtomicProcs.pushAll Op _ _ initUpd (Fn.compile.resultSteers Op χ V m n)
     and_intros
-    · simp [Proc.Config.init, Proc.pushAll, AtomicProc.pushAll,
-        Fn.compile]
-      sorry
-    · simp [Proc.pushAll, push_commutes_tail, ← hcomp]
-      apply push_preserves_dag
+    · simp [Proc.Config.init, Proc.pushAll, aps_push_commutes_tail, ← hcomp]
+      cases h : (Fn.compile Op χ V S f).atoms with
+      | nil => simp [Fn.compile] at h
+      | cons carry rest =>
+        simp [AtomicProcs.pushAll, List.tail, hinitUpd]
+        -- TODO: Reason about carry substitution
+        sorry
+    · simp [Proc.pushAll, aps_push_commutes_tail, ← hcomp]
+      apply aps_push_preserves_dag
       apply fn_compile_dag
-    · simp
-    · simp [Proc.HasEmptyInputs]
+    · simp only [Proc.pushAll, aps_push_commutes_tail, ← hcomp, Fn.compile]
+      simp [List.tail, aps_push_commutes_append]
+    · simp [AtomicProcs.HasEmptyInputs]
     · simp [Expr.Config.init]
     · intros expr hexpr
       simp [Expr.Config.init] at hexpr
       simp only [← hexpr]
       and_intros
       · exact f.WellFormedBody
-      · sorry
-      · sorry
+      · simp only [Fn.compile.bodyComp, Expr.Config.init, ExprState.init]
+        apply aps_push_preserves_shape
+      · intros ap hap inp hinp
+        constructor
+        · intros val hval
+          have ⟨var, hvar_lookup, hvar_name⟩ := hval
+
+          sorry
+        · sorry
       · exists [], []
         simp
         and_intros
-        · simp [Proc.HasEmptyInputs]
+        · simp [AtomicProcs.HasEmptyInputs]
         · constructor
 
 theorem sim_step
