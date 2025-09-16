@@ -38,11 +38,32 @@ inductive Expr : ℕ → ℕ → Type u where
     (cont : Expr m n) : Expr m n
   | br (cond : χ) (left : Expr m n) (right : Expr m n) : Expr m n
 
+/-- Some static, non-typing constraints on expressions. -/
+inductive Expr.WellFormed : Expr Op χ n m → Prop where
+  | wf_ret : WellFormed (.ret vars)
+  | wf_tail : WellFormed (.tail vars)
+  | wf_op :
+    rets.toList.Nodup →
+    WellFormed cont →
+    WellFormed (.op o args rets cont)
+  | wf_br :
+    WellFormed left →
+    WellFormed right →
+    WellFormed (.br c left right)
+
 /-- `Fn m n` is a function with `m` inputs and `n` outputs. -/
 structure Fn (m : ℕ) (n : ℕ) : Type u where
   params : Vector χ m
   body : Expr Op χ m n
-  wf : m > 0 ∧ n > 0
+  wf : m > 0 ∧ n > 0 ∧
+    params.toList.Nodup ∧
+    Expr.WellFormed _ _ body
+
+def Fn.NonEmptyIO (fn : Fn Op χ m n) : m > 0 ∧ n > 0 :=
+  ⟨fn.wf.1, fn.wf.2.1⟩
+
+def Fn.WellFormedBody (fn : Fn Op χ m n) : Expr.WellFormed _ _ fn.body :=
+  fn.wf.2.2.2
 
 abbrev ChanBuf (V) := χ × List V
 
@@ -393,38 +414,43 @@ def Expr.compile
     [
       -- Steer all live variables
       .steer condChan
-        (allVars.map λ v => .empty _ (.var v (definedVars.count v) pathConds))
+        (allVars.map λ v => empty (.var v (definedVars.count v) pathConds))
         (allVars.map λ v => .var v (definedVars.count v) leftConds),
       -- Forward the condition again to the merge
       -- (extra forward for a simpler simulation relation)
       .forward #v[condChan] #v[.merge_cond condChan.1],
     ] ++ leftComp ++ rightComp ++ [
-      -- Merges at the end so that we can maintain a simpler DAG property.
-      -- Merge tail call conditions
-      .merge (.empty _ (.merge_cond condChan.1))
-        #v[.empty _ (.tail_cond leftConds)]
-        #v[.empty _ (.tail_cond rightConds)]
-        #v[.tail_cond pathConds],
-      -- Merge return values of both branches
-      .merge (.empty _ (.merge_cond condChan.1))
-        ((Vector.range n).mapIdx λ i _ => .empty _ (.dest i leftConds))
-        ((Vector.range n).mapIdx λ i _ => .empty _ (.dest i rightConds))
-        ((Vector.range n).mapIdx λ i _ => .dest i pathConds),
-      -- Merge tail call arguments of both branches
-      .merge (.empty _ (.merge_cond condChan.1))
-        ((Vector.range m).mapIdx λ i _ => .empty _ (.tail_arg i leftConds))
-        ((Vector.range m).mapIdx λ i _ => .empty _ (.tail_arg i rightConds))
-        ((Vector.range m).mapIdx λ i _ => .tail_arg i pathConds),
+      -- Merge tail call conditions, return values and tail call arguments
+      -- from both branches. This is done at the end so that we can keep
+      -- the graph as "acyclic" as possible.
+      brMerge m n condChan.1 [] pathConds
     ]
   where
-    liveVar v := .empty _ (.var v (definedVars.count v) pathConds)
-    retChans := (Vector.range n).mapIdx λ i _ => .dest i pathConds
-    tailArgs := (Vector.range m).mapIdx λ i _ => .tail_arg i pathConds
+    empty := ChanBuf.empty _
+    liveVar v := empty (.var v (definedVars.count v) pathConds)
+    retChans := (Vector.range n).map λ i => .dest i pathConds
+    tailArgs := (Vector.range m).map λ i => .tail_arg i pathConds
     newVars {k} (vs : Vector χ k) : List χ × Vector (ChanName χ) k :=
       (
         definedVars ++ vs.toList,
         vs.map λ v => .var v (definedVars.count v + 1) pathConds
       )
+    brMerge m n condName condBuf pathConds :=
+      let leftConds := (true, condName) :: pathConds
+      let rightConds := (false, condName) :: pathConds
+      let leftResults := #v[empty (.tail_cond leftConds)] ++
+        ((Vector.range n).map λ i => empty (.dest i leftConds)) ++
+        ((Vector.range m).map λ i => empty (.tail_arg i leftConds))
+      let rightResults := #v[empty (.tail_cond rightConds)] ++
+        ((Vector.range n).map λ i => empty (.dest i rightConds)) ++
+        ((Vector.range m).map λ i => empty (.tail_arg i rightConds))
+      let results := #v[ChanName.tail_cond pathConds] ++
+        ((Vector.range n).map λ i => ChanName.dest i pathConds) ++
+        ((Vector.range m).map λ i => ChanName.tail_arg i pathConds)
+      .merge (.merge_cond condName, condBuf)
+        leftResults
+        rightResults
+        results
 
 /--
 Compiles a function to a process with `m` inputs and `n` outputs.
@@ -435,7 +461,7 @@ edges of channels with the name `.tail_cond []` or `.tail_arg i []`.
 def Fn.compile
   (fn : Fn Op χ m n) : Proc Op (ChanName χ) V m n
   :=
-  let bodyComp := fn.body.compile Op χ V S fn.wf fn.params.toList []
+  let bodyComp := fn.body.compile Op χ V S fn.NonEmptyIO fn.params.toList []
   {
     inputs := fn.params.map λ v => .var v 0 [],
     outputs := (Vector.range n).map λ i => .empty _ (.final_tail_arg i),
@@ -460,3 +486,179 @@ def Fn.compile
         ((Vector.range m).map λ i => .final_tail_arg i),
     ]
   }
+
+def Refines
+  {T : Type v} {S : Type w}
+  (c₁ : T) (c₂ : S)
+  (R : T → S → Prop)
+  (Step₁ : T → T → Prop)
+  (Step₂ : S → S → Prop) :=
+  R c₁ c₂ ∧
+  (∀ c₁ c₁', Step₁ c₁ c₁' → ∃ c₂', Step₂ c₂ c₂' ∧ R c₁' c₂')
+
+def Expr.RefinesProc
+  [DecidableEq χ₁] [DecidableEq χ₂]
+  (c₁ : Expr.Config Op χ₁ V S m n)
+  (c₂ : Proc.Config Op χ₂ V S m n)
+  (R : Expr.Config Op χ₁ V S m n → Proc.Config Op χ₂ V S m n → Prop) : Prop :=
+  Refines c₁ c₂ R (Expr.Step Op χ₁ V S) (Proc.StepPlus Op χ₂ V S)
+
+def AtomicProc.inputs (ap : AtomicProc Op χ V) : List (ChanBuf χ V) :=
+  match ap with
+  | .op _ inputs _ => inputs.toList
+  | .steer decider inputs _ => [decider] ++ inputs.toList
+  | .carry _ decider input₁ input₂ _ => [decider] ++ input₁.toList ++ input₂.toList
+  | .merge decider input₁ input₂ _ => [decider] ++ input₁.toList ++ input₂.toList
+  | .forward inputs _ => inputs.toList
+  | .const _ act _ => [act]
+
+def AtomicProc.outputs (ap : AtomicProc Op χ V) : List χ :=
+  match ap with
+  | .op _ _ outputs => outputs.toList
+  | .steer _ _ outputs => outputs.toList
+  | .carry _ _ _ _ outputs => outputs.toList
+  | .merge _ _ _ outputs => outputs.toList
+  | .forward _ outputs => outputs.toList
+  | .const _ _ outputs => outputs.toList
+
+def AtomicProc.HasInput (ap : AtomicProc Op χ V) (v : χ) : Prop :=
+  ∃ inp ∈ ap.inputs, inp.1 = v
+
+def AtomicProc.HasInputWithBuf (ap : AtomicProc Op χ V) (v : χ) (buf : List V) : Prop :=
+  ∃ inp ∈ ap.inputs, inp = (v, buf)
+
+def AtomicProc.HasEmptyInputs (ap : AtomicProc Op χ V) : Prop :=
+  ∀ inp ∈ ap.inputs, inp.2 = []
+
+def ChanBuf.MatchModBuffer (buf₁ buf₂ : ChanBuf χ V) : Prop := buf₁.1 = buf₂.1
+
+def AtomicProc.MatchModBuffers : AtomicProc Op χ V → AtomicProc Op χ V → Prop
+  | .op o₁ inputs₁ outputs₁, .op o₂ inputs₂ outputs₂ =>
+    o₁ = o₂ ∧
+    List.Forall₂ MatchBuf inputs₁.toList inputs₂.toList ∧
+    outputs₁.toList = outputs₂.toList
+  | .steer decider₁ inputs₁ outputs₁, .steer decider₂ inputs₂ outputs₂ =>
+    decider₁.1 = decider₂.1 ∧
+    List.Forall₂ MatchBuf inputs₁.toList inputs₂.toList ∧
+    outputs₁.toList = outputs₂.toList
+  | .carry inLoop₁ decider₁ inputs₁₁ inputs₁₂ outputs₁,
+    .carry inLoop₂ decider₂ inputs₂₁ inputs₂₂ outputs₂ =>
+    inLoop₁ = inLoop₂ ∧
+    decider₁.1 = decider₂.1 ∧
+    List.Forall₂ MatchBuf inputs₁₁.toList inputs₂₁.toList ∧
+    List.Forall₂ MatchBuf inputs₁₂.toList inputs₂₂.toList ∧
+    outputs₁.toList = outputs₂.toList
+  | .merge decider₁ inputs₁₁ inputs₁₂ outputs₁,
+    .merge decider₂ inputs₂₁ inputs₂₂ outputs₂ =>
+    decider₁.1 = decider₂.1 ∧
+    List.Forall₂ MatchBuf inputs₁₁.toList inputs₂₁.toList ∧
+    List.Forall₂ MatchBuf inputs₁₂.toList inputs₂₂.toList ∧
+    outputs₁.toList = outputs₂.toList
+  | .forward inputs₁ outputs₁, .forward inputs₂ outputs₂ =>
+    List.Forall₂ MatchBuf inputs₁.toList inputs₂.toList ∧
+    outputs₁.toList = outputs₂.toList
+  | .const c₁ act₁ outputs₁, .const c₂ act₂ outputs₂ =>
+    c₁ = c₂ ∧ act₁.1 = act₂.1 ∧
+    outputs₁.toList = outputs₂.toList
+  | _, _ => False
+  where
+    @[simp]
+    MatchBuf := ChanBuf.MatchModBuffer _ _
+
+def Proc.MatchModBuffers (aps₁ aps₂ : List (AtomicProc Op χ V)) : Prop :=
+  List.Forall₂ (AtomicProc.MatchModBuffers Op χ V) aps₁ aps₂
+
+def Proc.IsDAG (aps : List (AtomicProc Op χ V)) : Prop :=
+  ∀ i j, (hi : i < aps.length) → (hj : j ≤ i) →
+    ∀ output ∈ aps[i].outputs, ¬ aps[j].HasInput Op χ V output
+
+def Proc.HasEmptyInputs (aps : List (AtomicProc Op χ V)) : Prop :=
+  ∀ ap ∈ aps, ap.HasEmptyInputs Op χ V
+
+def SimR (ec : Expr.Config Op χ V S m n) (pc : Proc.Config Op (ChanName χ) V S m n) : Prop :=
+  ec.estate.state = pc.state ∧
+  ∃ (rest : List (AtomicProc Op (ChanName χ) V))
+    (carryInLoop : Bool)
+    (carryDecider : ChanBuf (ChanName χ) V)
+    (carryInputs₁ carryInputs₂ : Vector (ChanBuf (ChanName χ) V) m)
+    (carryOutputs : Vector (ChanName χ) m)
+    (ctxLeft ctxCurrent ctxRight : List (AtomicProc Op (ChanName χ) V)),
+    -- The process matches the compiled function in shape
+    Proc.MatchModBuffers _ _ _ pc.proc.atoms (Fn.compile Op χ V S ec.estate.fn).atoms ∧
+    -- The processes form a DAG if we remove the first carry operator
+    pc.proc.atoms = (.carry carryInLoop carryDecider carryInputs₁ carryInputs₂ carryOutputs) :: rest ∧
+    Proc.IsDAG _ _ _ rest ∧
+    -- The processes can be split into three fragments
+    rest = ctxLeft ++ ctxCurrent ++ ctxRight ∧
+    Proc.HasEmptyInputs _ _ _ ctxLeft ∧
+    -- If we have reached the end of execution, nothing else should be executable
+    (∀ vals, ec.expr = .ret vals →
+      ctxCurrent = [] ∧
+      ctxRight = [] ∧
+      -- Same return value in the proc side
+      List.Forall₂ (λ v (_, buf) => buf = [v])
+        vals.toList pc.proc.outputs.toList) ∧
+    -- If we still have a continuation
+    (∀ expr, ec.expr = .cont expr →
+      expr.WellFormed ∧
+      -- The current fragment corresponds to the compilation results
+      Proc.MatchModBuffers _ _ _
+        ctxCurrent
+        (expr.compile Op χ V S ec.estate.fn.NonEmptyIO ec.estate.definedVars ec.estate.pathConds) ∧
+      -- Some constraints about live variables
+      (∀ ap ∈ ctxCurrent, ∀ inp ∈ ap.inputs,
+        -- Check if the channel name corresponds to a live variable
+        -- in the current branch
+        let IsLiveVar (name : ChanName χ) val := ∃ var,
+          ec.estate.vars var = some val ∧
+          name = .var var (ec.estate.definedVars.count var) ec.estate.pathConds
+        -- If it's a live var, the channel buffer should have the corresponding value
+        (∀ val, IsLiveVar inp.1 val → inp.2 = [val]) ∧
+        -- Otherwise it's empty.
+        ((∀ val, ¬ IsLiveVar inp.1 val) → inp.2 = [])) ∧
+      -- The remaining processes in `ctxRight` should be of the form
+      --
+      --   `p₁ ... pₘ || merge || p'₁ ... p'ₖ || merge || ...`
+      --
+      -- i.e., a sequence of processes interspersed with consecutive
+      -- chunks of n merge nodes.
+      -- Furthermore, all processes other than these merges should
+      -- have empty input buffers, and the merges will have exactly
+      -- one Boolean in the decider buffers corresponding to the
+      -- branching decision.
+      (∃ (chunks : List (List (AtomicProc Op (ChanName χ) V) × AtomicProc Op (ChanName χ) V))
+        (tail : List (AtomicProc Op (ChanName χ) V)),
+        -- The first half chunks and the tail have empty inputs
+        (∀ chunk₁ chunk₂, (chunk₁, chunk₂) ∈ chunks → Proc.HasEmptyInputs _ _ _ chunk₁) ∧
+        Proc.HasEmptyInputs _ _ _ tail ∧
+        -- The second half chunk corresponds exactly to the merge nodes
+        -- generated along the branches marked in the current `pathConds`.
+        List.Forall₂
+          (λ (_, merge) i =>
+            let (b, cond) := ec.estate.pathConds[i]
+            let prevPathConds := ec.estate.pathConds.drop (i + 1)
+            ∃ v,
+              OpInterp.asBool Op S v = b ∧
+              -- Same as the original merge gate, except with the corresponding
+              -- branching decision in the decider buffer.
+              merge = Expr.compile.brMerge Op _ _ m n cond [v] prevPathConds)
+          chunks
+          (Vector.finRange ec.estate.pathConds.length).toList))
+
+/-
+Invariants?
+
+- Equal global states
+- Proc is a DAG except for the back edges of the first carry
+- The first carry gate has either
+  - inLoop = false, and its first input set non-empty, and second input set empty
+  - inLoop = true, and all of its input buffers empty
+- Proc matches the following shapes
+  - proc matches fn.compile modulo buffers
+  - proc = [carry] ++ A ++ B ++ C ++ [steer₁, steer₂], where
+    - A is a list of atoms with empty buffers
+    - B matches expr.compile modulo buffers
+    - C is a list of atoms, interspersed with a list of merges
+      with the same length as pathConds. Each merge has the decider
+      channel set with one value.
+-/
