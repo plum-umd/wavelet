@@ -121,15 +121,20 @@ class OpInterp (V S : Type u) where
   falseVal : V
   junkVal : V
 
-variable (V S) [OpInterp Op V S]
+variable (V S) [instInterp : OpInterp Op V S]
 
 /-- Consistent channel naming for the compiler. -/
 inductive ChanName where
   | var (base : χ) (count : ℕ) (pathConds : List (Bool × ChanName))
+  -- Only sent during branching
   | merge_cond (chan : ChanName)
+  -- Only sent during ret/tail
   | dest (i : ℕ) (pathConds : List (Bool × ChanName))
+  -- Only sent during ret/tail
   | tail_arg (i : ℕ) (pathConds : List (Bool × ChanName))
+  -- Only sent during ret/tail
   | tail_cond (pathConds : List (Bool × ChanName))
+  -- Only sent during the final steers
   | final_dest (i : ℕ)
   | final_tail_arg (i : ℕ)
   deriving Repr
@@ -137,10 +142,25 @@ inductive ChanName where
 /-- TODO: should be auto-derived -/
 instance : DecidableEq (ChanName χ) := sorry
 
+abbrev VarMap := χ → Option V
+
+def VarMap.insertVars
+  (vars : Vector χ n)
+  (vals : Vector V n)
+  (m : VarMap χ V) : VarMap χ V :=
+  λ v => ((vars.zip vals).toList.find? (·.1 = v)).map (·.2) <|> m v
+
+def VarMap.getVar (v : χ) (m : VarMap χ V) : Option V := m v
+
+def VarMap.getVars
+  (vars : Vector χ n)
+  (m : VarMap χ V) : Option (Vector V n) :=
+  vars.mapM m
+
 /-- State of expression execution. -/
 structure ExprState (m n : ℕ) where
   fn : Fn Op χ m n
-  vars : χ → Option V
+  vars : VarMap χ V
   state : S
   -- Ghost states for the simulation relation
   definedVars : List χ
@@ -594,6 +614,19 @@ def AtomicProcs.IsDAG (aps : AtomicProcs Op χ V) : Prop :=
 def AtomicProcs.HasEmptyInputs (aps : AtomicProcs Op χ V) : Prop :=
   ∀ ap ∈ aps, ap.HasEmptyInputs Op χ V
 
+/-- Checks if the channel name is a variable and it has
+a different suffix than the given path condition. -/
+def ChanName.HasDiffPathSuffix (pathConds : List (Bool × ChanName χ)) (name : ChanName χ) : Prop :=
+  match name with
+  | .var _ _ pathConds' => ∀ ext, ext ++ pathConds ≠ pathConds'
+  | _ => True
+
+def AtomicProc.HasDiffPathSuffix (pathConds : List (Bool × ChanName χ)) (ap : AtomicProc Op (ChanName χ) V) : Prop :=
+  ∀ inp ∈ ap.inputs, inp.1.HasDiffPathSuffix _ pathConds
+
+def AtomicProcs.HasDiffPathSuffix (pathConds : List (Bool × ChanName χ)) (aps : AtomicProcs Op (ChanName χ) V) : Prop :=
+  ∀ ap ∈ aps, ap.HasDiffPathSuffix _ _ _ pathConds
+
 def SimR (ec : Expr.Config Op χ V S m n) (pc : Proc.Config Op (ChanName χ) V S m n) : Prop :=
   ec.estate.state = pc.state ∧
   -- The process matches the compiled function in shape
@@ -650,9 +683,13 @@ def SimR (ec : Expr.Config Op χ V S m n) (pc : Proc.Config Op (ChanName χ) V S
       -- branching decision.
       (∃ (chunks : List (AtomicProcs Op (ChanName χ) V × AtomicProc Op (ChanName χ) V))
         (tail : AtomicProcs Op (ChanName χ) V),
+        ctxRight = (joinM (chunks.map (λ (l, r) => l ++ [r]))) ++ tail ∧
         -- The first half chunks and the tail have empty inputs
-        (∀ chunk₁ chunk₂, (chunk₁, chunk₂) ∈ chunks → chunk₁.HasEmptyInputs _ _ _) ∧
+        (∀ chunk₁ chunk₂, (chunk₁, chunk₂) ∈ chunks →
+          chunk₁.HasEmptyInputs _ _ _ ∧
+          chunk₁.HasDiffPathSuffix _ _ _ ec.estate.pathConds) ∧
         tail.HasEmptyInputs _ _ _ ∧
+        tail.HasDiffPathSuffix _ _ _ ec.estate.pathConds ∧
         -- The second half chunk corresponds exactly to the merge nodes
         -- generated along the branches marked in the current `pathConds`.
         List.Forall₂
@@ -780,10 +817,13 @@ theorem sim_init_config
           simp [Expr.Config.init, ExprState.init] at hvar_lookup
           sorry
         · sorry
-      · exists [], []
-        simp
+      · exists [], AtomicProcs.pushAll Op _ _ initUpd (Fn.compile.resultSteers Op χ V m n)
+        simp [joinM]
         and_intros
-        · simp [AtomicProcs.HasEmptyInputs]
+        · -- TODO: reason about steer pushes
+          sorry
+        · -- TODO: reason about HasDiffPathSuffix
+          sorry
         · constructor
 
 theorem aps_match_symmetric
@@ -798,6 +838,93 @@ theorem aps_match_implies_exists_ap_match
   (hmem : ap ∈ aps) :
   ∃ ap' ∈ aps', AtomicProc.MatchModBuffers Op χ V ap ap'
   := sorry
+
+def ChanBuf.HasSingletonBufs (bufs : Vector (ChanBuf χ V) n) (vals : Vector V n) : Prop :=
+  List.Forall₂ (λ (_, buf) v => buf = [v]) bufs.toList vals.toList
+
+def ChanBuf.clearBufs (bufs : Vector (ChanBuf χ V) n) : Vector (ChanBuf χ V) n :=
+  bufs.map (λ (var, _) => (var, []))
+
+-- /-- Alternative semantics of an op atom. -/
+-- theorem proc_step_op
+--   (pc : Proc.Config Op (ChanName χ) V S m n)
+--   (inputVals : Vector V (OpArity.ι o))
+--   (hinputs : ChanBuf.HasSingletonBufs _ _ inputs inputVals)
+--   (hmem : pc.proc.atoms = left ++ [AtomicProc.op o inputs outputs] ++ right)
+--   (hop : (OpInterp.interp o inputVals).run pc.state = some (outputVals, state')) :
+--   ∃ pc',
+--     let updates := (outputs.zip outputVals).toList
+--     Proc.Step _ _ _ _ pc pc' ∧
+--     pc'.state = state' ∧
+--     pc'.proc.outputs = pc.proc.outputs.map (ChanBuf.pushAll _ _ updates) ∧
+--     pc'.proc.atoms = AtomicProcs.pushAll _ _ _ updates
+--       (left ++ [AtomicProc.op o (ChanBuf.clearBufs _ _ inputs) outputs] ++ right)
+--   := sorry
+
+/-- Alternative operational semantics. -/
+inductive Expr.Step' : Expr.Config Op χ V S m n → Expr.Config Op χ V S m n → Prop where
+  | step_op {args : Vector χ (OpArity.ι o)}
+    (hinputs : vars.getVars _ _ args = some inputVals)
+    (hop : (instInterp.interp o inputVals).run state = some (outputVals, state')) :
+    Step'
+      {
+        expr := .cont (.op o args rets cont),
+        estate := {
+          fn, vars,
+          definedVars := definedVars,
+          pathConds := pathConds,
+          state,
+        },
+      }
+      {
+        expr := .cont cont,
+        estate := {
+          fn,
+          vars := vars.insertVars _ _ rets outputVals,
+          definedVars := definedVars ++ rets.toList,
+          pathConds := pathConds,
+          state := state',
+        },
+      }
+
+def ChanBuf.popBufs (bufs : Vector (ChanBuf χ V) n) : Option (Vector V n × Vector (ChanBuf χ V) n) := do
+  let res ← bufs.mapM λ (var, buf) => match buf with
+    | [] => none
+    | v :: buf => some (v, (var, buf))
+  return (res.map Prod.fst, res.map Prod.snd)
+
+inductive Proc.Step' : Proc.Config Op χ V S m n → Proc.Config Op χ V S m n → Prop where
+  | step_op
+    {inputs : Vector (ChanBuf χ V) (OpArity.ι o)} {outputs}
+    (hinputs : ChanBuf.popBufs _ _ inputs = some (inputVals, inputs'))
+    (hop : (instInterp.interp o inputVals).run state = some (outputVals, state')) :
+    Step'
+      {
+        proc := {
+          inputs := procInputs,
+          outputs := procOutputs,
+          atoms := ctxLeft ++ [AtomicProc.op o inputs outputs] ++ ctxRight
+        },
+        state,
+      }
+      {
+        proc := {
+          inputs := procInputs,
+          outputs := procOutputs.map (.pushAll _ _ (outputs.zip outputVals).toList),
+          atoms :=
+            .pushAll _ _ _ (outputs.zip outputVals).toList
+            (ctxLeft ++ [AtomicProc.op o inputs' outputs] ++ ctxRight)
+        },
+        state := state',
+      }
+
+theorem expr_step_to_step' :
+  Expr.Step Op χ V S ec ec' ↔ Expr.Step' Op χ V S ec ec' := by
+  sorry
+
+theorem proc_step_to_step' :
+  Proc.StepPlus Op χ V S pc pc' ↔ Proc.Step' Op χ V S pc pc' := by
+  sorry
 
 theorem sim_step
   (ec ec' : Expr.Config Op χ V S m n)
@@ -820,7 +947,7 @@ theorem sim_step
       ctxLeft,
       ctxCurrent,
       ctxRight,
-      hcarry,
+      hatoms,
       hdag,
       hcarry_false,
       hcarry_true,
@@ -833,7 +960,7 @@ theorem sim_step
   cases hexpr : ec.expr with
   | ret vals => simp only [Expr.Step, hexpr] at hstep
   | cont expr =>
-    simp only [Expr.Step, hexpr] at hstep
+    -- simp only [Expr.Step, hexpr] at hstep
     have ⟨
       hwf_expr,
       hmatch_ctxCurrent,
@@ -842,31 +969,39 @@ theorem sim_step
     ⟩ := hcont expr hexpr
     cases expr with
     | ret vars =>
-      simp only [Expr.step] at hstep
+      simp only [Expr.Step, hexpr, Expr.step] at hstep
       simp [Expr.compile] at hmatch_ctxCurrent
       sorry
     | tail => sorry
     | op o args bind cont =>
-      simp only [Expr.step] at hstep
+      simp only [Expr.Step] at hstep
+      simp only [Expr.Step, hexpr, Expr.step] at hstep
       simp [Expr.compile] at hmatch_ctxCurrent
-      generalize hap :
-        AtomicProc.op o
-          (Vector.map (Expr.compile.liveVar χ V ec.estate.definedVars ec.estate.pathConds) args)
-          (Expr.compile.newVars χ ec.estate.definedVars ec.estate.pathConds bind).snd
-        = ap
-      simp only [hap] at hmatch_ctxCurrent
-      have := aps_match_implies_exists_ap_match _ _ _ _ _ ap
+      -- generalize hap :
+      --   AtomicProc.op o
+      --     (Vector.map (Expr.compile.liveVar χ V ec.estate.definedVars ec.estate.pathConds) args)
+      --     (Expr.compile.newVars χ ec.estate.definedVars ec.estate.pathConds bind).snd
+      --   = ap
+      -- simp only [hap] at hmatch_ctxCurrent
+      have ⟨ap, hap_mem, hap_match⟩ := aps_match_implies_exists_ap_match
+        _ _ _ _ _ _
         (aps_match_symmetric _ _ _ hmatch_ctxCurrent)
-      simp at this
-      have ⟨ap', hap_mem, hap_match⟩ := this
-      simp [← hap, AtomicProc.MatchModBuffers] at hap_match
-      cases ap' <;> simp at hap_match
-      rename_i o' inputs' outputs'
+        List.mem_cons_self
+      simp [AtomicProc.MatchModBuffers] at hap_match
+      cases ap <;> simp at hap_match
+      rename_i o' inputs outputs
       have ⟨heq_o, hap_match_inputs, hap_match_outputs⟩ := hap_match
-      have hmem_ap' : AtomicProc.op o' inputs' outputs' ∈ pc.proc.atoms := sorry
-      have hinputs' : ∀ input ∈ inputs', ∃ var val,
+      have hmem_ap : AtomicProc.op o' inputs outputs ∈ pc.proc.atoms := by
+        simp only [hrest] at hatoms
+        simp [hatoms]
+        right; left
+        assumption
+      -- TODO: from hlive_vars
+
+      have hinputs : ∀ input ∈ inputs, ∃ var val,
         some val = ec.estate.vars var ∧
         input = (.var var (ec.estate.definedVars.count var) ec.estate.pathConds, [val]) := sorry
+
       -- TODO: from `hinputs'` and `hmem_ap'`,
       --       show that we can run the atomic process
       --       and substitute the result to the remainder of `ctxCurrent`.
