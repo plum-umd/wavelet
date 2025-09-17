@@ -15,6 +15,8 @@ variable [DecidableEq χ]
 /- A channel name attached with a value buffer. -/
 abbrev ChanBuf V := χ × List V
 
+abbrev ChanBufs V (n : Nat) := Vector (ChanBuf χ V) n
+
 def ChanBuf.empty (v : χ) : ChanBuf χ V := (v, [])
 
 def ChanBuf.push (updates : List (χ × V)) (buf : ChanBuf χ V) : ChanBuf χ V :=
@@ -22,31 +24,31 @@ def ChanBuf.push (updates : List (χ × V)) (buf : ChanBuf χ V) : ChanBuf χ V 
     if buf.1 = var then (buf.1, buf.2.concat val)
     else (buf.1, buf.2)) buf
 
-def ChanBuf.pushAll (updates : List (χ × V))
-  (bufs : Vector (ChanBuf χ V) n) : Vector (ChanBuf χ V) n :=
-  bufs.map (ChanBuf.push _ updates)
-
 def ChanBuf.pop (buf : ChanBuf χ V) : Option (V × ChanBuf χ V) :=
   match buf.2 with
   | [] => none
   | v :: vs => some (v, (buf.1, vs))
 
-def ChanBuf.popAll (bufs : Vector (ChanBuf χ V) n) : Option (Vector V n × Vector (ChanBuf χ V) n) := do
+def ChanBufs.push (updates : List (χ × V))
+  (bufs : ChanBufs χ V n) : ChanBufs χ V n :=
+  bufs.map (ChanBuf.push _ updates)
+
+def ChanBufs.pop (bufs : ChanBufs χ V n) : Option (Vector V n × ChanBufs χ V n) := do
   let res ← bufs.mapM (ChanBuf.pop _)
   return (res.map Prod.fst, res.map Prod.snd)
 
 /-- Dataflow operators. -/
 inductive AtomicProc V where
-  | op (op : Op) (inputs : Vector (ChanBuf χ V) (Arity.ι op)) (outputs : Vector χ (Arity.ω op))
-  | steer (flavor : Bool) (decider : ChanBuf χ V) (inputs : Vector (ChanBuf χ V) n) (outputs : Vector χ n)
+  | op (op : Op) (inputs : ChanBufs χ V (Arity.ι op)) (outputs : Vector χ (Arity.ω op))
+  | steer (flavor : Bool) (decider : ChanBuf χ V) (inputs : ChanBufs χ V n) (outputs : Vector χ n)
   | carry (inLoop : Bool)
     (decider : ChanBuf χ V)
-    (inputs₁ : Vector (ChanBuf χ V) n) (inputs₂ : Vector (ChanBuf χ V) n)
+    (inputs₁ : ChanBufs χ V n) (inputs₂ : ChanBufs χ V n)
     (outputs : Vector χ n)
   | merge (decider : ChanBuf χ V)
-    (inputs₁ : Vector (ChanBuf χ V) n) (inputs₂ : Vector (ChanBuf χ V) n)
+    (inputs₁ : ChanBufs χ V n) (inputs₂ : ChanBufs χ V n)
     (outputs : Vector χ n)
-  | forward (inputs : Vector (ChanBuf χ V) n) (outputs : Vector χ n)
+  | forward (inputs : ChanBufs χ V n) (outputs : Vector χ n)
   | const (c : V) (act : ChanBuf χ V) (outputs : Vector χ n)
   deriving Repr
 
@@ -73,7 +75,7 @@ abbrev AtomicProcs V := List (AtomicProc Op χ V)
 /-- `Proc _ m n` is a process with `m` inputs and `n` outputs. -/
 structure Proc V (m : Nat) (n : Nat) where
   inputs : Vector χ m
-  outputs : Vector (ChanBuf χ V) n
+  outputs : ChanBufs χ V n
   atoms : AtomicProcs Op χ V
 
 /- From this point onwards, assume a fixed operator semantics. -/
@@ -90,9 +92,9 @@ def AtomicProc.push (updates : List (χ × V)) : AtomicProc Op χ V → AtomicPr
   | .const c act outputs => .const c (pushOne act) outputs
   where
     pushOne (buf : ChanBuf χ V) := ChanBuf.push _ updates buf
-    pushAll {n} (bufs : Vector (ChanBuf χ V) n) := ChanBuf.pushAll _ updates bufs
+    pushAll {n} (bufs : ChanBufs χ V n) := ChanBufs.push _ updates bufs
 
-def AtomicProcs.pushAll
+def AtomicProcs.push
   (updates : List (χ × V))
   (aps : AtomicProcs Op χ V) :
   AtomicProcs Op χ V :=
@@ -100,8 +102,8 @@ def AtomicProcs.pushAll
 
 def Proc.push (updates : List (χ × V)) (p : Proc Op χ V m n) : Proc Op χ V m n :=
   { p with
-    outputs := ChanBuf.pushAll _ updates p.outputs,
-    atoms := AtomicProcs.pushAll _ _ _ updates p.atoms }
+    outputs := .push _ updates p.outputs,
+    atoms := AtomicProcs.push _ _ _ updates p.atoms }
 
 structure Config m n where
   proc : Proc Op χ V m n
@@ -119,25 +121,15 @@ def Config.init
 
 inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop where
   | step_op
-    {state : S}
-    {inputs : Vector (ChanBuf χ V) (Arity.ι o)} {outputs}
-    (hinputs : ChanBuf.popAll _ inputs = some (inputVals, inputs'))
-    (hop : (instInterp.interp o inputVals).run state = some (outputVals, state')) :
-    Step
+    {inputs : ChanBufs χ V (Arity.ι o)}
+    (hinputs : inputs.pop _ = some (inputVals, inputs'))
+    (hop : (instInterp.interp o inputVals).run c.state = some (outputVals, state'))
+    (hatoms : c.proc.atoms = ctxLeft ++ [AtomicProc.op o inputs outputs] ++ ctxRight) :
+    Step c
       {
-        proc := {
-          inputs := procInputs,
-          outputs := procOutputs,
-          atoms := ctxLeft ++ [AtomicProc.op o inputs outputs] ++ ctxRight
-        },
-        state,
-      }
-      {
-        proc := {
-          inputs := procInputs,
-          outputs := ChanBuf.pushAll _ (outputs.zip outputVals).toList procOutputs,
-          atoms :=
-            .pushAll _ _ _ (outputs.zip outputVals).toList
+        proc := { c.proc with
+          outputs := c.proc.outputs.push _ (outputs.zip outputVals).toList,
+          atoms := AtomicProcs.push _ _ _ (outputs.zip outputVals).toList
             (ctxLeft ++ [AtomicProc.op o inputs' outputs] ++ ctxRight)
         },
         state := state',

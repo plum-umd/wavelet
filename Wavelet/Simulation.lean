@@ -197,33 +197,41 @@ def SimR (ec : Seq.Config Op χ V S m n) (pc : Dataflow.Config Op (ChanName χ) 
           chunks
           (Vector.finRange ec.estate.pathConds.length).toList))
 
-theorem aps_match_mod_bufs_refl
-  {aps : AtomicProcs Op χ V} :
+theorem aps_match_mod_bufs_refl :
   AtomicProcs.MatchModBuffers Op χ V aps aps := sorry
 
-theorem aps_push_preserves_shape
-  {aps : AtomicProcs Op χ V} :
-  AtomicProcs.MatchModBuffers Op χ V (AtomicProcs.pushAll Op χ V updates aps) aps := sorry
+theorem aps_match_symmetric
+  (hmatch : AtomicProcs.MatchModBuffers Op χ V aps aps') :
+  AtomicProcs.MatchModBuffers Op χ V aps' aps := sorry
+
+theorem aps_push_preserves_shape :
+  AtomicProcs.MatchModBuffers Op χ V (aps.push Op χ V updates) aps := sorry
 
 theorem aps_push_preserves_dag
-  {aps : AtomicProcs Op χ V}
   (hdag : AtomicProcs.IsDAG Op _ V aps) :
-  AtomicProcs.IsDAG Op _ V (AtomicProcs.pushAll Op χ V updates aps) := sorry
+  AtomicProcs.IsDAG Op _ V (aps.push Op χ V updates) := sorry
 
 theorem aps_push_commutes_tail
-  {aps : AtomicProcs Op χ V}  :
-  (AtomicProcs.pushAll Op χ V updates aps).tail
-    = AtomicProcs.pushAll Op χ V updates aps.tail := sorry
+  {aps : AtomicProcs Op χ V} :
+  (aps.push Op χ V updates).tail
+    = AtomicProcs.push Op χ V updates aps.tail := sorry
 
-theorem aps_push_commutes_append
-  {aps₁ aps₂ : AtomicProcs Op χ V} :
-  (AtomicProcs.pushAll Op χ V updates (aps₁ ++ aps₂))
-    = (AtomicProcs.pushAll Op χ V updates aps₁) ++ (AtomicProcs.pushAll Op χ V updates aps₂) := sorry
+theorem aps_push_commutes_append :
+  (AtomicProcs.push Op χ V updates (aps₁ ++ aps₂))
+    = (AtomicProcs.push Op χ V updates aps₁) ++
+      (AtomicProcs.push Op χ V updates aps₂) := sorry
 
 /-- The result of compilation should be a DAG except for the first carry process. -/
-theorem fn_compile_dag
-  {fn : Fn Op χ m n} :
+theorem fn_compile_dag :
   AtomicProcs.IsDAG Op _ V ((compileFn Op χ V S fn).atoms.tail) := sorry
+
+theorem aps_match_cons_implies_exists_ap_match
+  (hmatch : AtomicProcs.MatchModBuffers Op χ V aps (ap' :: rest')) :
+  ∃ ap rest,
+    aps = ap :: rest ∧
+    AtomicProc.MatchModBuffers _ _ _ ap ap' ∧
+    AtomicProcs.MatchModBuffers _ _ _ rest rest'
+  := sorry
 
 /-- Initial configs satisfy the simulation relation. -/
 theorem sim_init_config
@@ -248,14 +256,14 @@ theorem sim_init_config
       ((Vector.range m).map λ i => .empty _ (.final_tail_arg i)),
       (f.params.map λ v => .var v 1 []),
       [],
-      AtomicProcs.pushAll Op _ _ initUpdates (compileFn.bodyComp Op χ V S f),
-      AtomicProcs.pushAll Op _ _ initUpdates (compileFn.resultSteers Op χ V m n)
+      AtomicProcs.push Op _ _ initUpdates (compileFn.bodyComp Op χ V S f),
+      AtomicProcs.push Op _ _ initUpdates (compileFn.resultSteers Op χ V m n)
     and_intros
     · simp [Dataflow.Config.init, Proc.push, ← hcomp]
       cases h : (compileFn Op χ V S f).atoms with
       | nil => simp [compileFn] at h
       | cons carry rest =>
-        simp [AtomicProcs.pushAll, List.tail, hinitUpdates]
+        simp [AtomicProcs.push, List.tail, hinitUpdates]
         -- TODO: Reason about carry substitution
         simp [compileFn, compileFn.initCarry] at h
         simp only [← h.1, AtomicProc.push, AtomicProc.push.pushOne]
@@ -287,7 +295,7 @@ theorem sim_init_config
           simp [Seq.Config.init, ExprState.init] at hvar_lookup
           sorry
         · sorry
-      · exists [], AtomicProcs.pushAll Op _ _ initUpdates (compileFn.resultSteers Op χ V m n)
+      · exists [], AtomicProcs.push Op _ _ initUpdates (compileFn.resultSteers Op χ V m n)
         simp [joinM]
         and_intros
         · -- TODO: reason about steer pushes
@@ -327,55 +335,49 @@ theorem sim_step
       hcont,
     ⟩,
   ⟩ := hsim
-  cases hexpr : ec.expr with
-  | ret vals =>
-    cases hstep
-    simp at hexpr
-  | cont expr =>
-    -- simp only [Expr.Step, hexpr] at hstep
+  generalize hcarry :
+    @AtomicProc.carry Op _ _ V m
+      carryInLoop carryDecider
+      carryInputs₁ carryInputs₂
+      carryOutputs = carry
+  simp only [hcarry] at hatoms
+  cases hstep with
+  | step_op hinputs hop hexpr =>
+    rename_i o inputVals outputVals state' args rets cont
     have ⟨
       hwf_expr,
-      hmatch_ctxCurrent,
+      hmatch,
       hlive_vars,
       hctxRight,
-    ⟩ := hcont expr hexpr
-    cases expr with
-    | ret vars => sorry
-    | tail => sorry
-    | op o args bind cont =>
-      -- simp only [Expr.Step, hexpr, Expr.step] at hstep
-      -- simp [Expr.compile] at hmatch_ctxCurrent
-      -- -- generalize hap :
-      -- --   AtomicProc.op o
-      -- --     (Vector.map (Expr.compile.liveVar χ V ec.estate.definedVars ec.estate.pathConds) args)
-      -- --     (Expr.compile.newVars χ ec.estate.definedVars ec.estate.pathConds bind).snd
-      -- --   = ap
-      -- -- simp only [hap] at hmatch_ctxCurrent
-      -- have ⟨ap, hap_mem, hap_match⟩ := aps_match_implies_exists_ap_match
-      --   _ _ _ _ _ _
-      --   (aps_match_symmetric _ _ _ hmatch_ctxCurrent)
-      --   List.mem_cons_self
-      -- simp [AtomicProc.MatchModBuffers] at hap_match
-      -- cases ap <;> simp at hap_match
-      -- rename_i o' inputs outputs
-      -- have ⟨heq_o, hap_match_inputs, hap_match_outputs⟩ := hap_match
-      -- have hmem_ap : AtomicProc.op o' inputs outputs ∈ pc.proc.atoms := by
-      --   simp only [hrest] at hatoms
-      --   simp [hatoms]
-      --   right; left
-      --   assumption
-      -- TODO: from hlive_vars
-      -- have hinputs : ∀ input ∈ inputs, ∃ var val,
-      --   some val = ec.estate.vars var ∧
-      --   input = (.var var (ec.estate.definedVars.count var) ec.estate.pathConds, [val]) := sorry
-      -- TODO: from `hinputs'` and `hmem_ap'`,
-      --       show that we can run the atomic process
-      --       and substitute the result to the remainder of `ctxCurrent`.
-      --       - `ctxLeft` remain unchanged due to DAG structure
-      --       - `ctxRight` remain unchanged due to ??? (different pathConds)
-      -- TODO: show that the result preserves the relational invariant...
+    ⟩ := hcont _ hexpr
+    simp [compileExpr] at hmatch
+    have ⟨
+      ap, ctxRest,
+      hctxCurrent,
+      hmatch_ap,
+      hmatch_ctxRest,
+    ⟩ := aps_match_cons_implies_exists_ap_match _ _ _ hmatch
+    simp [AtomicProc.MatchModBuffers] at hmatch_ap
+    cases ap <;> simp at hmatch_ap
+    rename_i o' inputs outputs
+    have ⟨heq_o, hap_match_inputs, hap_match_outputs⟩ := hmatch_ap
+    replace heq_o := heq_o.symm
+    subst heq_o
+    have hatoms' : pc.proc.atoms = ([carry] ++ ctxLeft) ++ [AtomicProc.op o inputs outputs] ++ (ctxRest ++ ctxRight) := by
+      grind
+    have ⟨inputs', hinputs'⟩ : ∃ inputs', inputs.pop _ = some (inputVals, inputs') :=
       sorry
-    | br => sorry
+    simp only [heq_state] at hop
+    have : Dataflow.Config.StepPlus _ _ _ _ pc _ := .single (.step_op hinputs' hop hatoms')
+    simp only at this
+    constructor
+    constructor
+    · exact this
+    · and_intros
+      · rfl
+      · simp
+        sorry
+      · sorry
 
 theorem compile_refines
   (f : Fn Op χ m n)

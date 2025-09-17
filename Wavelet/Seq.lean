@@ -127,29 +127,21 @@ def Config.init
 
 /-- Small-step operational semantics for Seq. -/
 inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop where
-  | step_op {args : Vector χ (Arity.ι o)}
-    (hinputs : vars.getVars _ _ args = some inputVals)
-    (hop : (instInterp.interp o inputVals).run state = some (outputVals, state')) :
-    Step
-      {
-        expr := .cont (.op o args rets cont),
-        estate := {
-          fn, vars,
-          definedVars := definedVars,
-          pathConds := pathConds,
-          state,
-        },
-      }
-      {
-        expr := .cont cont,
-        estate := {
-          fn,
-          vars := vars.insertVars _ _ rets outputVals,
-          definedVars := definedVars ++ rets.toList,
-          pathConds := pathConds,
-          state := state',
-        },
-      }
+  | step_op
+    {args : Vector χ (Arity.ι o)}
+    (hinputs : c.estate.vars.getVars _ _ args = some inputVals)
+    (hop : (instInterp.interp o inputVals).run c.estate.state = some (outputVals, state'))
+    (hexpr : c.expr = .cont (.op o args rets cont)) :
+    Step c {
+      expr := .cont cont,
+      estate := {
+        fn := c.estate.fn,
+        vars := c.estate.vars.insertVars _ _ rets outputVals,
+        definedVars := c.estate.definedVars ++ rets.toList,
+        pathConds := c.estate.pathConds,
+        state := state',
+      },
+    }
 
 def Config.StepPlus {m n} := @Relation.TransGen (Config Op χ V S m n) (Step Op χ V S)
 def Config.StepStar {m n} := @Relation.ReflTransGen (Config Op χ V S m n) (Step Op χ V S)
