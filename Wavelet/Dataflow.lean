@@ -120,23 +120,113 @@ def Config.init
   }
 
 inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop where
-  | step_op
-    {inputs : ChanBufs χ V (Arity.ι o)}
-    (hinputs : inputs.pop _ = some (inputVals, inputs'))
-    (hop : (instInterp.interp o inputVals).run c.state = some (outputVals, state'))
-    (hatoms : c.proc.atoms = ctxLeft ++ [AtomicProc.op o inputs outputs] ++ ctxRight) :
+  | step_op {inputs : ChanBufs χ V (Arity.ι o)} :
+    c.proc.atoms = ctxLeft ++ [.op o inputs outputs] ++ ctxRight →
+    inputs.pop _ = some (inputVals, inputs') →
+    (instInterp.interp o inputVals).run c.state = some (outputVals, state') →
     Step c
       {
         proc := { c.proc with
           outputs := c.proc.outputs.push _ (outputs.zip outputVals).toList,
-          atoms := AtomicProcs.push _ _ _ (outputs.zip outputVals).toList
-            (ctxLeft ++ [AtomicProc.op o inputs' outputs] ++ ctxRight)
+          atoms := .push _ _ _ (outputs.zip outputVals).toList
+            (ctxLeft ++ [.op o inputs' outputs] ++ ctxRight),
         },
         state := state',
       }
+  | step_steer :
+    c.proc.atoms = ctxLeft ++ [.steer flavor decider inputs outputs] ++ ctxRight →
+    decider.pop _ = some (deciderVal, decider') →
+    inputs.pop _ = some (inputVals, inputs') →
+    Step c { c with
+      proc :=
+        if instInterp.asBool deciderVal = flavor then
+          { c.proc with
+            outputs := c.proc.outputs.push _ (outputs.zip inputVals).toList,
+            atoms := .push _ _ _ (outputs.zip inputVals).toList
+              (ctxLeft ++ [.steer flavor decider' inputs' outputs] ++ ctxRight),
+          }
+        else
+          { c.proc with
+            atoms := ctxLeft ++ [.steer flavor decider' inputs' outputs] ++ ctxRight,
+          }
+    }
+  | step_merge_true :
+    c.proc.atoms = ctxLeft ++ [.merge decider inputs₁ inputs₂ outputs] ++ ctxRight →
+    decider.pop _ = some (deciderVal, decider') →
+    instInterp.asBool deciderVal →
+    inputs₁.pop _ = some (inputVals, inputs₁') →
+    Step c { c with
+      proc := { c.proc with
+        outputs := c.proc.outputs.push _ (outputs.zip inputVals).toList,
+        atoms := .push _ _ _ (outputs.zip inputVals).toList
+          (ctxLeft ++ [.merge decider' inputs₁' inputs₂ outputs] ++ ctxRight),
+      },
+    }
+  | step_merge_false :
+    c.proc.atoms = ctxLeft ++ [.merge decider inputs₁ inputs₂ outputs] ++ ctxRight →
+    decider.pop _ = some (deciderVal, decider') →
+    ¬ instInterp.asBool deciderVal →
+    inputs₂.pop _ = some (inputVals, inputs₂') →
+    Step c { c with
+      proc := { c.proc with
+        outputs := c.proc.outputs.push _ (outputs.zip inputVals).toList,
+        atoms := .push _ _ _ (outputs.zip inputVals).toList
+          (ctxLeft ++ [.merge decider' inputs₁ inputs₂' outputs] ++ ctxRight),
+      },
+    }
+  | step_carry_init :
+    c.proc.atoms = ctxLeft ++ [.carry false decider inputs₁ inputs₂ outputs] ++ ctxRight →
+    inputs₁.pop _ = some (inputVals, inputs₁') →
+    Step c { c with
+      proc := { c.proc with
+        outputs := c.proc.outputs.push _ (outputs.zip inputVals).toList,
+        atoms := .push _ _ _ (outputs.zip inputVals).toList
+          (ctxLeft ++ [.carry true decider inputs₁' inputs₂ outputs] ++ ctxRight),
+      },
+    }
+  | step_carry_true :
+    c.proc.atoms = ctxLeft ++ [.carry true decider inputs₁ inputs₂ outputs] ++ ctxRight →
+    decider.pop _ = some (deciderVal, decider') →
+    instInterp.asBool deciderVal →
+    inputs₂.pop _ = some (inputVals, inputs₂') →
+    Step c { c with
+      proc := { c.proc with
+        outputs := c.proc.outputs.push _ (outputs.zip inputVals).toList,
+        atoms := .push _ _ _ (outputs.zip inputVals).toList
+          (ctxLeft ++ [.carry true decider' inputs₁ inputs₂' outputs] ++ ctxRight),
+      },
+    }
+  | step_carry_false :
+    c.proc.atoms = ctxLeft ++ [.carry true decider inputs₁ inputs₂ outputs] ++ ctxRight →
+    decider.pop _ = some (deciderVal, decider') →
+    ¬ instInterp.asBool deciderVal →
+    Step c { c with
+      proc := { c.proc with
+        atoms := ctxLeft ++ [.carry false decider' inputs₁ inputs₂ outputs] ++ ctxRight,
+      },
+    }
+  | step_forward :
+    c.proc.atoms = ctxLeft ++ [.forward inputs outputs] ++ ctxRight →
+    inputs.pop _ = some (inputVals, inputs') →
+    Step c { c with
+      proc := { c.proc with
+        outputs := c.proc.outputs.push _ (outputs.zip inputVals).toList,
+        atoms := .push _ _ _ (outputs.zip inputVals).toList
+          (ctxLeft ++ [.forward inputs' outputs] ++ ctxRight),
+      },
+    }
+  | step_const :
+    c.proc.atoms = ctxLeft ++ [.const val act outputs] ++ ctxRight →
+    act.pop _ = some (inputVal, act') →
+    Step c { c with
+      proc := { c.proc with
+        outputs := c.proc.outputs.push _ (outputs.zip (Vector.replicate _ val)).toList,
+        atoms := .push _ _ _ (outputs.zip (Vector.replicate _ val)).toList
+          (ctxLeft ++ [.const val act' outputs] ++ ctxRight),
+      },
+    }
 
 def Config.StepPlus {m n} := @Relation.TransGen (Config Op χ V S m n) (Step Op χ V S)
-
 def Config.StepStar {m n} := @Relation.ReflTransGen (Config Op χ V S m n) (Step Op χ V S)
 
 end Wavelet.Dataflow

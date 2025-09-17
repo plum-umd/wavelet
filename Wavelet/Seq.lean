@@ -127,19 +127,45 @@ def Config.init
 
 /-- Small-step operational semantics for Seq. -/
 inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop where
-  | step_op
-    {args : Vector χ (Arity.ι o)}
-    (hinputs : c.estate.vars.getVars _ _ args = some inputVals)
-    (hop : (instInterp.interp o inputVals).run c.estate.state = some (outputVals, state'))
-    (hexpr : c.expr = .cont (.op o args rets cont)) :
+  | step_ret :
+    c.expr = .cont (.ret args) →
+    c.estate.vars.getVars _ _ args = some inputVals →
+    Step c {
+      expr := .ret inputVals,
+      estate := c.estate,
+    }
+  | step_tail :
+    c.expr = .cont (.tail args) →
+    c.estate.vars.getVars _ _ args = some inputVals →
+    Step c {
+      expr := .cont c.estate.fn.body,
+      estate := .init _ _ _ _ c.estate.fn c.estate.state inputVals,
+    }
+  | step_op {args : Vector χ (Arity.ι o)} :
+    c.expr = .cont (.op o args rets cont) →
+    c.estate.vars.getVars _ _ args = some inputVals →
+    (instInterp.interp o inputVals).run c.estate.state = some (outputVals, state') →
     Step c {
       expr := .cont cont,
-      estate := {
-        fn := c.estate.fn,
+      estate := { c.estate with
         vars := c.estate.vars.insertVars _ _ rets outputVals,
         definedVars := c.estate.definedVars ++ rets.toList,
-        pathConds := c.estate.pathConds,
         state := state',
+      },
+    }
+  | step_br {cond} :
+    c.expr = .cont (.br cond left right) →
+    c.estate.vars.getVar _ _ cond = some condVal →
+    Step c {
+      expr := if instInterp.asBool condVal then .cont left else .cont right,
+      estate := {
+        c.estate with
+        pathConds :=
+          (
+            instInterp.asBool condVal,
+            .var cond (c.estate.definedVars.count cond) c.estate.pathConds,
+          )
+          :: c.estate.pathConds,
       },
     }
 

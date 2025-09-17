@@ -342,7 +342,7 @@ theorem sim_step
       carryOutputs = carry
   simp only [hcarry] at hatoms
   cases hstep with
-  | step_op hinputs hop hexpr =>
+  | step_op hexpr hinputs hop =>
     rename_i o inputVals outputVals state' args rets cont
     have ⟨
       hwf_expr,
@@ -368,7 +368,7 @@ theorem sim_step
     have ⟨inputs', hinputs'⟩ : ∃ inputs', inputs.pop _ = some (inputVals, inputs') :=
       sorry
     simp only [heq_state] at hop
-    have : Dataflow.Config.StepPlus _ _ _ _ pc _ := .single (.step_op hinputs' hop hatoms')
+    have : Dataflow.Config.StepPlus _ _ _ _ pc _ := .single (.step_op hatoms' hinputs' hop)
     simp only at this
     constructor
     constructor
@@ -378,6 +378,7 @@ theorem sim_step
       · simp
         sorry
       · sorry
+  | _ => sorry
 
 theorem compile_refines
   (f : Fn Op χ m n)
