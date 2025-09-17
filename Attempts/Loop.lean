@@ -435,7 +435,7 @@ def Expr.compile
     let inputChans := args.map liveVar
     let (definedVars', outputChans) := newVars rets
     (.op o inputChans outputChans) :: compile wf definedVars' pathConds cont
-  | .br cond left right => do
+  | .br cond left right =>
     let condChan := liveVar cond
     let leftConds := (true, condChan.1) :: pathConds
     let rightConds := (false, condChan.1) :: pathConds
