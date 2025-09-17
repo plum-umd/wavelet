@@ -41,6 +41,26 @@ inductive ChanName where
   | dest (i : ℕ) (pathConds : List (Bool × ChanName))
   deriving Repr
 
+/--
+
+// pathConds = []
+let y = op(x)
+if c then
+  // pathConds = [(true, c)]
+  let _ = f(y)
+  let _ = g(y)
+else
+  // pathConds = [(false, c)]
+  if c2 then
+    // pathConds = [(false, c), (true, c2)]
+    // (y, pathConds)
+    E2(y)
+  else
+    // pathConds = [(false, c), (false, c2)]
+    E3(y)
+
+-/
+
 def compile
   [DecidableEq χ]
   (definedVars : List χ)

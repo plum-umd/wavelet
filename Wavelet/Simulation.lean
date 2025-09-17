@@ -197,12 +197,17 @@ def SimR (ec : Seq.Config Op χ V S m n) (pc : Dataflow.Config Op (ChanName χ) 
           chunks
           (Vector.finRange ec.estate.pathConds.length).toList))
 
-theorem aps_match_mod_bufs_refl :
+theorem aps_match_refl :
   AtomicProcs.MatchModBuffers Op χ V aps aps := sorry
 
-theorem aps_match_symmetric
+theorem aps_match_symm
   (hmatch : AtomicProcs.MatchModBuffers Op χ V aps aps') :
   AtomicProcs.MatchModBuffers Op χ V aps' aps := sorry
+
+theorem aps_match_trans
+  (h₁ : AtomicProcs.MatchModBuffers Op χ V aps₁ aps₂)
+  (h₂ : AtomicProcs.MatchModBuffers Op χ V aps₂ aps₃) :
+  AtomicProcs.MatchModBuffers Op χ V aps₁ aps₃ := sorry
 
 theorem aps_push_preserves_shape :
   AtomicProcs.MatchModBuffers Op χ V (aps.push Op χ V updates) aps := sorry
@@ -373,11 +378,54 @@ theorem sim_step
     constructor
     constructor
     · exact this
-    · and_intros
+    · -- Prove the simulation relation after the step
+      and_intros
       · rfl
       · simp
-        sorry
-      · sorry
+        apply aps_match_trans
+        · apply aps_push_preserves_shape
+        · apply aps_match_trans _ _ _ _ hmatch_fn
+          simp [hatoms']
+          -- TODO: prove AtomicProcs.MatchModBuffers
+          sorry
+      · exists
+          AtomicProcs.push Op (ChanName χ) V (outputs.zip outputVals).toList
+            (ctxLeft ++ [AtomicProc.op o inputs' outputs] ++ (ctxRest ++ ctxRight)),
+          carryInLoop,
+          carryDecider,
+          carryInputs₁,
+          carryInputs₂,
+          carryOutputs,
+          ctxLeft ++ [AtomicProc.op o inputs' outputs],
+          AtomicProcs.push Op (ChanName χ) V (outputs.zip outputVals).toList ctxRest,
+          ctxRight
+        and_intros
+        · simp
+          -- TODO: need to prove that the push does not affect
+          -- carry, ctxLeft, the current .op, and ctxRight
+          sorry
+        · apply aps_push_preserves_dag
+          -- TODO: prove that poping preserves DAG.
+          sorry
+        · grind
+        · grind
+        · sorry
+        · -- TODO: prove that input' have empty buffers
+          sorry
+        · simp
+        · intros expr' hexpr'
+          simp at hexpr'
+          subst hexpr'
+          and_intros
+          · cases hwf_expr
+            assumption
+          · simp
+            sorry
+          · simp
+            -- TODO: variable mapping
+            sorry
+          · -- TODO: invariants about tail
+            sorry
   | _ => sorry
 
 theorem compile_refines

@@ -141,7 +141,10 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
       expr := .cont c.estate.fn.body,
       estate := .init _ _ _ _ c.estate.fn c.estate.state inputVals,
     }
-  | step_op {args : Vector χ (Arity.ι o)} :
+  | step_op
+    {o inputVals outputVals state'}
+    {args : Vector χ (Arity.ι o)}
+    {rets cont} :
     c.expr = .cont (.op o args rets cont) →
     c.estate.vars.getVars _ _ args = some inputVals →
     (instInterp.interp o inputVals).run c.estate.state = some (outputVals, state') →
