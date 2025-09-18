@@ -19,8 +19,10 @@ abbrev ChanBufs V (n : Nat) := Vector (ChanBuf χ V) n
 
 def ChanBuf.empty (v : χ) : ChanBuf χ V := (v, [])
 
-def ChanBuf.push (updates : List (χ × V)) (buf : ChanBuf χ V) : ChanBuf χ V :=
-  updates.foldl (λ buf (var, val) =>
+def ChanBuf.singleton (v : χ) (val : V) : ChanBuf χ V := (v, [val])
+
+def ChanBuf.push (vars : Vector χ n) (vals : Vector V n) (buf : ChanBuf χ V) : ChanBuf χ V :=
+  (vars.zip vals).foldl (λ buf (var, val) =>
     if buf.1 = var then (buf.1, buf.2.concat val)
     else (buf.1, buf.2)) buf
 
@@ -29,9 +31,15 @@ def ChanBuf.pop (buf : ChanBuf χ V) : Option (V × ChanBuf χ V) :=
   | [] => none
   | v :: vs => some (v, (buf.1, vs))
 
-def ChanBufs.push (updates : List (χ × V))
+def ChanBufs.empty (vars : Vector χ n) : ChanBufs χ V n :=
+  vars.map (ChanBuf.empty _)
+
+def ChanBufs.singleton (vars : Vector χ n) (vals : Vector V n) : ChanBufs χ V n :=
+  vars.zipWith (λ var val => .singleton _ var val) vals
+
+def ChanBufs.push (vars : Vector χ m) (vals : Vector V m)
   (bufs : ChanBufs χ V n) : ChanBufs χ V n :=
-  bufs.map (ChanBuf.push _ updates)
+  bufs.map (ChanBuf.push _ vars vals)
 
 def ChanBufs.pop (bufs : ChanBufs χ V n) : Option (Vector V n × ChanBufs χ V n) := do
   let res ← bufs.mapM (ChanBuf.pop _)
@@ -81,7 +89,8 @@ structure Proc V (m : Nat) (n : Nat) where
 /- From this point onwards, assume a fixed operator semantics. -/
 variable (V S) [instInterp : Interp Op V S]
 
-def AtomicProc.push (updates : List (χ × V)) : AtomicProc Op χ V → AtomicProc Op χ V
+@[simp]
+def AtomicProc.push (vars : Vector χ n) (vals : Vector V n) : AtomicProc Op χ V → AtomicProc Op χ V
   | .op o inputs outputs => .op o (pushAll inputs) outputs
   | .steer flavor decider inputs outputs => .steer flavor (pushOne decider) (pushAll inputs) outputs
   | .carry inLoop decider inputs₁ inputs₂ outputs =>
@@ -91,31 +100,38 @@ def AtomicProc.push (updates : List (χ × V)) : AtomicProc Op χ V → AtomicPr
   | .forward inputs outputs => .forward (pushAll inputs) outputs
   | .const c act outputs => .const c (pushOne act) outputs
   where
-    pushOne (buf : ChanBuf χ V) := ChanBuf.push _ updates buf
-    pushAll {n} (bufs : ChanBufs χ V n) := ChanBufs.push _ updates bufs
+    @[simp] pushOne (buf : ChanBuf χ V) := ChanBuf.push _ vars vals buf
+    @[simp] pushAll {m} (bufs : ChanBufs χ V m) := ChanBufs.push _ vars vals bufs
 
+@[simp]
 def AtomicProcs.push
-  (updates : List (χ × V))
+  (vars : Vector χ n)
+  (vals : Vector V n)
   (aps : AtomicProcs Op χ V) :
   AtomicProcs Op χ V :=
-  aps.map (AtomicProc.push _ _ _ updates)
+  aps.map (AtomicProc.push _ _ _ vars vals)
 
-def Proc.push (updates : List (χ × V)) (p : Proc Op χ V m n) : Proc Op χ V m n :=
+@[simp]
+def Proc.push
+  (vars : Vector χ k)
+  (vals : Vector V k)
+  (p : Proc Op χ V m n) : Proc Op χ V m n :=
   { p with
-    outputs := .push _ updates p.outputs,
-    atoms := AtomicProcs.push _ _ _ updates p.atoms }
+    outputs := .push _ vars vals p.outputs,
+    atoms := AtomicProcs.push _ _ _ vars vals p.atoms }
 
 structure Config m n where
   proc : Proc Op χ V m n
   state : S
 
 /-- Initial process configuration. -/
+@[simp]
 def Config.init
   (proc : Proc Op χ V m n)
   (state : S)
-  (vars : Vector V m) : Config Op χ V S m n
+  (args : Vector V m) : Config Op χ V S m n
   := {
-    proc := proc.push _ _ _ (proc.inputs.zip vars).toList,
+    proc := proc.push _ _ _ proc.inputs args,
     state,
   }
 
@@ -127,8 +143,8 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     Step c
       {
         proc := { c.proc with
-          outputs := c.proc.outputs.push _ (outputs.zip outputVals).toList,
-          atoms := .push _ _ _ (outputs.zip outputVals).toList
+          outputs := c.proc.outputs.push _ outputs outputVals,
+          atoms := .push _ _ _ outputs outputVals
             (ctxLeft ++ [.op o inputs' outputs] ++ ctxRight),
         },
         state := state',
@@ -141,8 +157,8 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
       proc :=
         if instInterp.asBool deciderVal = flavor then
           { c.proc with
-            outputs := c.proc.outputs.push _ (outputs.zip inputVals).toList,
-            atoms := .push _ _ _ (outputs.zip inputVals).toList
+            outputs := c.proc.outputs.push _ outputs inputVals,
+            atoms := .push _ _ _ outputs inputVals
               (ctxLeft ++ [.steer flavor decider' inputs' outputs] ++ ctxRight),
           }
         else
@@ -157,8 +173,8 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     inputs₁.pop _ = some (inputVals, inputs₁') →
     Step c { c with
       proc := { c.proc with
-        outputs := c.proc.outputs.push _ (outputs.zip inputVals).toList,
-        atoms := .push _ _ _ (outputs.zip inputVals).toList
+        outputs := c.proc.outputs.push _ outputs inputVals,
+        atoms := .push _ _ _ outputs inputVals
           (ctxLeft ++ [.merge decider' inputs₁' inputs₂ outputs] ++ ctxRight),
       },
     }
@@ -169,8 +185,8 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     inputs₂.pop _ = some (inputVals, inputs₂') →
     Step c { c with
       proc := { c.proc with
-        outputs := c.proc.outputs.push _ (outputs.zip inputVals).toList,
-        atoms := .push _ _ _ (outputs.zip inputVals).toList
+        outputs := c.proc.outputs.push _ outputs inputVals,
+        atoms := .push _ _ _ outputs inputVals
           (ctxLeft ++ [.merge decider' inputs₁ inputs₂' outputs] ++ ctxRight),
       },
     }
@@ -179,8 +195,8 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     inputs₁.pop _ = some (inputVals, inputs₁') →
     Step c { c with
       proc := { c.proc with
-        outputs := c.proc.outputs.push _ (outputs.zip inputVals).toList,
-        atoms := .push _ _ _ (outputs.zip inputVals).toList
+        outputs := c.proc.outputs.push _ outputs inputVals,
+        atoms := .push _ _ _ outputs inputVals
           (ctxLeft ++ [.carry true decider inputs₁' inputs₂ outputs] ++ ctxRight),
       },
     }
@@ -191,8 +207,8 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     inputs₂.pop _ = some (inputVals, inputs₂') →
     Step c { c with
       proc := { c.proc with
-        outputs := c.proc.outputs.push _ (outputs.zip inputVals).toList,
-        atoms := .push _ _ _ (outputs.zip inputVals).toList
+        outputs := c.proc.outputs.push _ outputs inputVals,
+        atoms := .push _ _ _ outputs inputVals
           (ctxLeft ++ [.carry true decider' inputs₁ inputs₂' outputs] ++ ctxRight),
       },
     }
@@ -210,8 +226,8 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     inputs.pop _ = some (inputVals, inputs') →
     Step c { c with
       proc := { c.proc with
-        outputs := c.proc.outputs.push _ (outputs.zip inputVals).toList,
-        atoms := .push _ _ _ (outputs.zip inputVals).toList
+        outputs := c.proc.outputs.push _ outputs inputVals,
+        atoms := .push _ _ _ outputs inputVals
           (ctxLeft ++ [.forward inputs' outputs] ++ ctxRight),
       },
     }
@@ -220,13 +236,44 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     act.pop _ = some (inputVal, act') →
     Step c { c with
       proc := { c.proc with
-        outputs := c.proc.outputs.push _ (outputs.zip (Vector.replicate _ val)).toList,
-        atoms := .push _ _ _ (outputs.zip (Vector.replicate _ val)).toList
+        outputs := c.proc.outputs.push _ outputs (Vector.replicate _ val),
+        atoms := .push _ _ _ outputs (Vector.replicate _ val)
           (ctxLeft ++ [.const val act' outputs] ++ ctxRight),
       },
     }
 
 def Config.StepPlus {m n} := @Relation.TransGen (Config Op χ V S m n) (Step Op χ V S)
 def Config.StepStar {m n} := @Relation.ReflTransGen (Config Op χ V S m n) (Step Op χ V S)
+
+/- Some alternative forms of stepping. -/
+
+theorem step_eq :
+  Config.Step Op χ V S c₁ c₂ →
+  c₂ = c₂' →
+  Config.Step _ _ _ _ c₁ c₂' := sorry
+
+theorem step_forward_alt₁
+  ctxLeft inputVals inputs' :
+  c.proc.atoms = ctxLeft ++ [.forward inputs outputs] ++ ctxRight →
+  inputs.pop _ = some (inputVals, inputs') →
+  Config.Step Op χ V S c { c with
+    proc := { c.proc with
+      outputs := c.proc.outputs.push _ outputs inputVals,
+      atoms := .push _ _ _ outputs inputVals
+        (ctxLeft ++ [.forward inputs' outputs] ++ ctxRight),
+    },
+  } := by apply Config.Step.step_forward
+
+theorem step_const_alt₁
+  ctxLeft :
+  c.proc.atoms = ctxLeft ++ [.const val act outputs] ++ ctxRight →
+  act.pop _ = some (inputVal, act') →
+  Config.Step Op χ V S c { c with
+    proc := { c.proc with
+      outputs := c.proc.outputs.push _ outputs (Vector.replicate _ val),
+      atoms := .push _ _ _ outputs (Vector.replicate _ val)
+        (ctxLeft ++ [.const val act' outputs] ++ ctxRight),
+    },
+  } := sorry
 
 end Wavelet.Dataflow

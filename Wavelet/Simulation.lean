@@ -210,21 +210,21 @@ theorem aps_match_trans
   AtomicProcs.MatchModBuffers Op χ V aps₁ aps₃ := sorry
 
 theorem aps_push_preserves_shape :
-  AtomicProcs.MatchModBuffers Op χ V (aps.push Op χ V updates) aps := sorry
+  AtomicProcs.MatchModBuffers Op χ V (aps.push Op χ V vars vals) aps := sorry
 
 theorem aps_push_preserves_dag
   (hdag : AtomicProcs.IsDAG Op _ V aps) :
-  AtomicProcs.IsDAG Op _ V (aps.push Op χ V updates) := sorry
+  AtomicProcs.IsDAG Op _ V (aps.push Op χ V vars vals) := sorry
 
 theorem aps_push_commutes_tail
   {aps : AtomicProcs Op χ V} :
-  (aps.push Op χ V updates).tail
-    = AtomicProcs.push Op χ V updates aps.tail := sorry
+  (aps.push Op χ V vars vals).tail
+    = AtomicProcs.push Op χ V vars vals aps.tail := sorry
 
 theorem aps_push_commutes_append :
-  (AtomicProcs.push Op χ V updates (aps₁ ++ aps₂))
-    = (AtomicProcs.push Op χ V updates aps₁) ++
-      (AtomicProcs.push Op χ V updates aps₂) := sorry
+  (AtomicProcs.push Op χ V vars vals (aps₁ ++ aps₂))
+    = (AtomicProcs.push Op χ V vars vals aps₁) ++
+      (AtomicProcs.push Op χ V vars vals aps₂) := sorry
 
 /-- The result of compilation should be a DAG except for the first carry process. -/
 theorem fn_compile_dag :
@@ -252,26 +252,26 @@ theorem sim_init_config
   and_intros
   · rfl
   · apply aps_push_preserves_shape
-  · generalize hinitUpdates : ((compileFn Op χ V S f).inputs.zip args).toList = initUpdates
+  · generalize hcompInputs : (compileFn Op χ V S f).inputs = compInputs
     exists
-      (Proc.push Op _ _ initUpdates p).atoms.tail,
+      (Proc.push Op _ _ compInputs args p).atoms.tail,
       false,
       (.empty _ (.tail_cond [])),
-      (f.params.map λ v => (ChanBuf.empty _ (.var v 0 [])).push _ initUpdates),
+      (f.params.map λ v => (ChanBuf.empty _ (.var v 0 [])).push _ compInputs args),
       ((Vector.range m).map λ i => .empty _ (.final_tail_arg i)),
       (f.params.map λ v => .var v 1 []),
       [],
-      AtomicProcs.push Op _ _ initUpdates (compileFn.bodyComp Op χ V S f),
-      AtomicProcs.push Op _ _ initUpdates (compileFn.resultSteers Op χ V m n)
+      AtomicProcs.push Op _ _ compInputs args (compileFn.bodyComp Op χ V S f),
+      AtomicProcs.push Op _ _ compInputs args (compileFn.resultSteers Op χ V m n)
     and_intros
     · simp [Dataflow.Config.init, Proc.push, ← hcomp]
       cases h : (compileFn Op χ V S f).atoms with
       | nil => simp [compileFn] at h
       | cons carry rest =>
-        simp [AtomicProcs.push, List.tail, hinitUpdates]
+        simp [List.tail, hcompInputs]
         -- TODO: Reason about carry substitution
         simp [compileFn, compileFn.initCarry] at h
-        simp only [← h.1, AtomicProc.push, AtomicProc.push.pushOne]
+        simp only [← h.1]
         congr 1
         · sorry
         · sorry
@@ -300,7 +300,7 @@ theorem sim_init_config
           simp [Seq.Config.init, ExprState.init] at hvar_lookup
           sorry
         · sorry
-      · exists [], AtomicProcs.push Op _ _ initUpdates (compileFn.resultSteers Op χ V m n)
+      · exists [], AtomicProcs.push Op _ _ compInputs args (compileFn.resultSteers Op χ V m n)
         simp [joinM]
         and_intros
         · -- TODO: reason about steer pushes
@@ -383,13 +383,14 @@ theorem sim_step
       · rfl
       · simp
         apply aps_match_trans
-        · apply aps_push_preserves_shape
+        · sorry -- apply aps_push_preserves_shape
         · apply aps_match_trans _ _ _ _ hmatch_fn
-          simp [hatoms']
+          -- simp [hatoms']
           -- TODO: prove AtomicProcs.MatchModBuffers
-          sorry
+          all_goals sorry
+        all_goals sorry
       · exists
-          AtomicProcs.push Op (ChanName χ) V (outputs.zip outputVals).toList
+          AtomicProcs.push Op (ChanName χ) V outputs outputVals
             (ctxLeft ++ [AtomicProc.op o inputs' outputs] ++ (ctxRest ++ ctxRight)),
           carryInLoop,
           carryDecider,
@@ -397,7 +398,7 @@ theorem sim_step
           carryInputs₂,
           carryOutputs,
           ctxLeft ++ [AtomicProc.op o inputs' outputs],
-          AtomicProcs.push Op (ChanName χ) V (outputs.zip outputVals).toList ctxRest,
+          AtomicProcs.push Op (ChanName χ) V outputs outputVals ctxRest,
           ctxRight
         and_intros
         · simp
@@ -463,6 +464,63 @@ theorem bufs_forall₂_implies_pop_some
   (hbufs : List.Forall₂ (λ buf buf' => buf.1 = buf'.1 ∧ ∃ val, buf.2 = val :: buf.2) bufs.toList bufs'.toList) :
   bufs.pop _ = some (vals, bufs') := sorry
 
+@[simp]
+theorem buf_pop_singleton :
+  (ChanBuf.singleton _ var val).pop _ = some (val, ChanBuf.empty _ var) := sorry
+
+@[simp]
+theorem bufs_pop_singleton :
+  (ChanBufs.singleton _ vars vals).pop _ = some (vals, ChanBufs.empty _ vars) := sorry
+
+@[simp]
+theorem buf_push_tail_args_to_empty_var :
+  ChanBuf.push (ChanName χ)
+    (compileExpr.tailArgs χ pathConds) vals
+    (ChanBuf.empty (ChanName χ) (compileExpr.liveVar χ definedVars pathConds var))
+  = ChanBuf.empty (ChanName χ) (compileExpr.liveVar χ definedVars pathConds var) := sorry
+
+@[simp]
+theorem buf_push_tail_args_to_singleton_var :
+  ChanBuf.push (ChanName χ)
+    (compileExpr.tailArgs χ pathConds) vals
+    (ChanBuf.singleton (ChanName χ) (compileExpr.liveVar χ definedVars pathConds var) val)
+  = ChanBuf.singleton (ChanName χ) (compileExpr.liveVar χ definedVars pathConds var) val := sorry
+
+@[simp]
+theorem buf_push_ret_chans_to_singleton_var :
+  ChanBuf.push (ChanName χ)
+    (compileExpr.retChans χ pathConds) vals
+    (ChanBuf.singleton (ChanName χ) (compileExpr.liveVar χ definedVars pathConds var) val)
+  = ChanBuf.singleton (ChanName χ) (compileExpr.liveVar χ definedVars pathConds var) val := sorry
+
+@[simp]
+theorem buf_push_tail_cond_to_empty_vars :
+  ChanBuf.push (ChanName χ)
+    #v[ChanName.tail_cond pathConds] #v[val]
+    (ChanBuf.empty (ChanName χ) (compileExpr.liveVar χ definedVars pathConds var))
+  = ChanBuf.empty (ChanName χ) (compileExpr.liveVar χ definedVars pathConds var) := sorry
+
+@[simp]
+theorem bufs_push_tail_args_to_empty_vars :
+  ChanBufs.push (ChanName χ)
+    (compileExpr.tailArgs χ pathConds) vals
+    (ChanBufs.empty (ChanName χ) (compileExpr.liveVars χ definedVars pathConds vars))
+  = ChanBufs.empty (ChanName χ) (compileExpr.liveVars χ definedVars pathConds vars) := sorry
+
+@[simp]
+theorem bufs_push_tail_cond_to_empty_vars :
+  ChanBufs.push (ChanName χ)
+    #v[ChanName.tail_cond pathConds] #v[val]
+    (ChanBufs.empty (ChanName χ) (compileExpr.liveVars χ definedVars pathConds vars))
+  = ChanBufs.empty (ChanName χ) (compileExpr.liveVars χ definedVars pathConds vars) := sorry
+
+@[simp]
+theorem bufs_push_ret_chans_to_empty_var :
+  ChanBufs.push (ChanName χ)
+    (compileExpr.retChans χ pathConds) vals
+    (ChanBufs.empty (ChanName χ) (compileExpr.liveVars χ definedVars pathConds vars))
+  = ChanBufs.empty (ChanName χ) (compileExpr.liveVars χ definedVars pathConds vars) := sorry
+
 theorem eval_refines
   (expr : Expr Op χ m n)
   (hwf : m > 0 ∧ n > 0)
@@ -471,18 +529,12 @@ theorem eval_refines
   (state : S)
   (locals : VarMap χ V)
   {proc : Proc _ _ _ definedVars.eraseDups.length (1 + n + m)}
-  {inputVals : Vector V definedVars.eraseDups.length}
+  {args : Vector V definedVars.eraseDups.length}
   (hcomp : proc = compileExprAsProc Op χ V S hwf definedVars pathConds expr)
   (heval : (expr.eval _ _ _ _ locals).run state = some (.ret vals, state'))
   (hlocals : ∀ var, var ∈ definedVars ↔ locals.getVar χ V var ≠ none)
   : Dataflow.Config.StepPlus Op (ChanName χ) V S
-    { proc := { proc with
-        atoms :=
-          proc.atoms.push _ _ _
-          ((definedVars.eraseDups.toArray.toVector.map λ v =>
-              ChanName.var v (definedVars.count v) pathConds).zip inputVals).toList,
-      },
-      state }
+    (Dataflow.Config.init _ _ _ _ proc state args)
     { proc := { proc with
         outputs := (proc.outputs.zip (
           #v[(Interp.trueVal Op S : V)] ++
@@ -494,23 +546,65 @@ theorem eval_refines
   := by
   cases expr with
   | ret vars =>
-    simp [Expr.eval] at heval
+    -- Simplify evals
+    simp [Expr.eval, bind, liftM, monadLift, MonadLift.monadLift] at heval
+    cases hvals : VarMap.getVars χ V vars locals <;> simp [hvals] at heval
+    · contradiction
+    rename_i vals
+    simp [StateT.bind, StateT.lift, StateT.run, Option.bind, pure, StateT.pure] at heval
+    -- Simplify pushes
     simp [compileExprAsProc, compileExpr] at hcomp
-    simp [hcomp, AtomicProcs.push, AtomicProc.push,
-      AtomicProc.push.pushOne, AtomicProc.push.pushAll]
+    simp [hcomp]
+    -- Some facts about push
+    generalize hallVars : compileExpr.allDefinedVars χ definedVars pathConds = allVars
+    have houtputsNoChange :
+      ChanBufs.push (ChanName χ) allVars args
+        (ChanBufs.empty (ChanName χ) (compileExpr.exprOutputs χ m n pathConds))
+      = ChanBufs.empty (ChanName χ) (compileExpr.exprOutputs χ m n pathConds) := sorry
+    simp only [houtputsNoChange]
+    have hpush₁ :
+      ChanBufs.push (ChanName χ)
+        allVars args
+        (.empty _ (compileExpr.liveVars χ definedVars pathConds vars))
+      = .singleton _
+        (compileExpr.liveVars χ definedVars pathConds vars) vals := sorry
+    simp only [hpush₁]
+    have hpush₂ :
+      ChanBuf.push (ChanName χ) allVars args
+        (ChanBufs.empty (ChanName χ)
+          (compileExpr.liveVars χ definedVars pathConds vars))[0]
+      = ChanBuf.singleton _
+        (compileExpr.liveVar χ definedVars pathConds vars[0])
+        vals[0] := sorry
+    simp only [hpush₂]
+    -- Step 1: run forward
     apply Relation.TransGen.head
-    · apply @Dataflow.Config.Step.step_forward
-        _ _ _ _ _ _ _ _ _
-        [] -- ctxLeft
-        _ _ _
-        (vars.map (compileExpr.liveVar χ V definedVars pathConds))
+    · apply step_forward_alt₁ _ _ _ _ []
+        vals -- inputVals
+        (.empty _ (compileExpr.liveVars χ definedVars pathConds vars)) -- inputs after pop
       · rfl
-      · simp [ChanBufs.push]
-        apply bufs_forall₂_implies_pop_some
-        · sorry
-        · sorry
-      all_goals sorry
-    · sorry
+      · simp
+    simp
+    -- Step 2: run const
+    apply Relation.TransGen.head
+    · apply step_const_alt₁ _ _ _ _ [_]
+      · rfl
+      · simp
+        constructor <;> rfl
+    simp
+    -- Step 3: run second const
+    apply Relation.TransGen.single
+    apply step_eq
+    · apply step_const_alt₁ _ _ _ _ [_, _]
+      · rfl
+      · simp
+        constructor <;> rfl
+    simp
+    and_intros
+    · -- TODO: pushes at the final output
+      sorry
+    · simp [ChanBufs.empty, compileExpr.liveVars]
+    · exact heval.2
   | _ => sorry
 
 end Wavelet.Simulation

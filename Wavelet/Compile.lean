@@ -26,7 +26,7 @@ def compileExpr
   (pathConds : List (Bool × ChanName χ))
   : Expr Op χ m n → AtomicProcs Op (ChanName χ) V
   | .ret vars =>
-    let chans := vars.map liveVar
+    let chans := .empty _ (liveVars vars)
     let act := chans[0] -- Use the first return value as an activation signal
     [
       .forward chans retChans,
@@ -36,7 +36,7 @@ def compileExpr
       .const (Interp.falseVal Op S) act #v[.tail_cond pathConds]
     ]
   | .tail vars =>
-    let chans := vars.map liveVar
+    let chans := .empty _ (liveVars vars)
     let act := chans[0]
     [
       .const (Interp.junkVal Op S) act retChans,
@@ -44,24 +44,23 @@ def compileExpr
       .const (Interp.trueVal Op S) act #v[.tail_cond pathConds]
     ]
   | .op o args rets cont =>
-    let inputChans := args.map liveVar
+    let inputChans := .empty _ (liveVars args)
     let (definedVars', outputChans) := newVars rets
     (.op o inputChans outputChans) :: compileExpr wf definedVars' pathConds cont
   | .br cond left right =>
-    let condChan := liveVar cond
+    let condChan := .empty _ (liveVar cond)
     let leftConds := (true, condChan.1) :: pathConds
     let rightConds := (false, condChan.1) :: pathConds
     let leftComp := compileExpr wf definedVars leftConds left
     let rightComp := compileExpr wf definedVars rightConds right
-    let allVars := definedVars.eraseDups.toArray.toVector
     [
       -- Steer all live variables
       .steer true condChan
-        (allVars.map λ v => empty (.var v (definedVars.count v) pathConds))
-        (allVars.map λ v => .var v (definedVars.count v) leftConds),
+        (.empty _ (allDefinedVars pathConds))
+        (allDefinedVars leftConds),
       .steer false condChan
-        (allVars.map λ v => empty (.var v (definedVars.count v) pathConds))
-        (allVars.map λ v => .var v (definedVars.count v) rightConds),
+        (.empty _ (allDefinedVars pathConds))
+        (allDefinedVars rightConds),
       -- Forward the condition again to the merge
       -- (extra forward for a simpler simulation relation)
       .forward #v[condChan] #v[.merge_cond condChan.1],
@@ -72,8 +71,8 @@ def compileExpr
       brMerge m n condChan.1 [] pathConds
     ]
   where
-    empty := ChanBuf.empty _
-    liveVar v := empty (.var v (definedVars.count v) pathConds)
+    liveVar v := .var v (definedVars.count v) pathConds
+    liveVars {n} (vars : Vector χ n) := vars.map liveVar
     retChans := (Vector.range n).map λ i => .dest i pathConds
     tailArgs := (Vector.range m).map λ i => .tail_arg i pathConds
     newVars {k} (vs : Vector χ k) : List χ × Vector (ChanName χ) k :=
@@ -81,22 +80,20 @@ def compileExpr
         definedVars ++ vs.toList,
         vs.map λ v => .var v (definedVars.count v + 1) pathConds
       )
+    allDefinedVars pathConds
+      : Vector (ChanName χ) definedVars.eraseDups.length :=
+      definedVars.eraseDups.toArray.toVector.map λ v =>
+        .var v (definedVars.count v) pathConds
+    exprOutputs m n pathConds := #v[ChanName.tail_cond pathConds] ++
+      ((Vector.range n).map λ i => ChanName.dest i pathConds) ++
+      ((Vector.range m).map λ i => ChanName.tail_arg i pathConds)
     brMerge m n condName condBuf pathConds :=
       let leftConds := (true, condName) :: pathConds
       let rightConds := (false, condName) :: pathConds
-      let leftResults := #v[empty (.tail_cond leftConds)] ++
-        ((Vector.range n).map λ i => empty (.dest i leftConds)) ++
-        ((Vector.range m).map λ i => empty (.tail_arg i leftConds))
-      let rightResults := #v[empty (.tail_cond rightConds)] ++
-        ((Vector.range n).map λ i => empty (.dest i rightConds)) ++
-        ((Vector.range m).map λ i => empty (.tail_arg i rightConds))
-      let results := #v[ChanName.tail_cond pathConds] ++
-        ((Vector.range n).map λ i => ChanName.dest i pathConds) ++
-        ((Vector.range m).map λ i => ChanName.tail_arg i pathConds)
       .merge (.merge_cond condName, condBuf)
-        leftResults
-        rightResults
-        results
+        (.empty _ (exprOutputs m n leftConds))
+        (.empty _ (exprOutputs m n rightConds))
+        (exprOutputs m n pathConds)
 
 /-- Same as `compileExpr` but produces a `Proc` with well-defined inputs/outputs. -/
 def compileExprAsProc
@@ -105,16 +102,9 @@ def compileExprAsProc
   (pathConds : List (Bool × ChanName χ))
   (expr : Expr Op χ m n)
   : Proc Op (ChanName χ) V definedVars.eraseDups.length (1 + n + m) :=
-  let tailCond : Vector (ChanBuf (ChanName χ) V) 1 :=
-    #v[.empty _ (.tail_cond pathConds)]
-  let retChans : Vector (ChanBuf (ChanName χ) V) n :=
-    (Vector.range n).map (λ i => .empty _ (.dest i pathConds))
-  let tailArgs : Vector (ChanBuf (ChanName χ) V) m :=
-    (Vector.range m).map (λ i => .empty _ (.tail_arg i pathConds))
   {
-    inputs := definedVars.eraseDups.toArray.toVector.map λ v =>
-      ChanName.var v (definedVars.count v) pathConds,
-    outputs := tailCond ++ retChans ++ tailArgs,
+    inputs := compileExpr.allDefinedVars _ definedVars pathConds,
+    outputs := (.empty _ (compileExpr.exprOutputs _ m n pathConds)),
     atoms := compileExpr Op χ V S wf definedVars pathConds expr,
   }
 
