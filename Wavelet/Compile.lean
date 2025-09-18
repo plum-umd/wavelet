@@ -98,6 +98,26 @@ def compileExpr
         rightResults
         results
 
+/-- Same as `compileExpr` but produces a `Proc` with well-defined inputs/outputs. -/
+def compileExprAsProc
+  (wf : m > 0 ∧ n > 0) -- Additional well-formedness condition
+  (definedVars : List χ)
+  (pathConds : List (Bool × ChanName χ))
+  (expr : Expr Op χ m n)
+  : Proc Op (ChanName χ) V definedVars.eraseDups.length (1 + n + m) :=
+  let tailCond : Vector (ChanBuf (ChanName χ) V) 1 :=
+    #v[.empty _ (.tail_cond pathConds)]
+  let retChans : Vector (ChanBuf (ChanName χ) V) n :=
+    (Vector.range n).map (λ i => .empty _ (.dest i pathConds))
+  let tailArgs : Vector (ChanBuf (ChanName χ) V) m :=
+    (Vector.range m).map (λ i => .empty _ (.tail_arg i pathConds))
+  {
+    inputs := definedVars.eraseDups.toArray.toVector.map λ v =>
+      ChanName.var v (definedVars.count v) pathConds,
+    outputs := tailCond ++ retChans ++ tailArgs,
+    atoms := compileExpr Op χ V S wf definedVars pathConds expr,
+  }
+
 /--
 Compiles a function to a process with `m` inputs and `n` outputs.
 

@@ -447,4 +447,70 @@ theorem compile_refines
     apply sim_step _ _ _ _ ec ec'
     exact hstep
 
+/-- Converts a local map to channel pushes to the continuation process. -/
+def localToInputs
+  (locals : VarMap χ V)
+  (definedVars : List χ)
+  (pathConds : List (Bool × ChanName χ)) :
+  Option (Vector (ChanName χ × V) definedVars.eraseDups.length) :=
+  let uniq := definedVars.eraseDups.toArray.toVector
+  uniq.mapM λ var =>
+    return (ChanName.var var (uniq.count var) pathConds, ← locals.getVar χ V var)
+
+theorem bufs_forall₂_implies_pop_some
+  {bufs bufs' : ChanBufs χ V n}
+  (hvals : List.Forall₂ (λ buf val => ∃ rest, buf.2 = val :: rest) bufs.toList vals.toList)
+  (hbufs : List.Forall₂ (λ buf buf' => buf.1 = buf'.1 ∧ ∃ val, buf.2 = val :: buf.2) bufs.toList bufs'.toList) :
+  bufs.pop _ = some (vals, bufs') := sorry
+
+theorem eval_refines
+  (expr : Expr Op χ m n)
+  (hwf : m > 0 ∧ n > 0)
+  (definedVars : List χ)
+  (pathConds : List (Bool × ChanName χ))
+  (state : S)
+  (locals : VarMap χ V)
+  {proc : Proc _ _ _ definedVars.eraseDups.length (1 + n + m)}
+  {inputVals : Vector V definedVars.eraseDups.length}
+  (hcomp : proc = compileExprAsProc Op χ V S hwf definedVars pathConds expr)
+  (heval : (expr.eval _ _ _ _ locals).run state = some (.ret vals, state'))
+  (hlocals : ∀ var, var ∈ definedVars ↔ locals.getVar χ V var ≠ none)
+  : Dataflow.Config.StepPlus Op (ChanName χ) V S
+    { proc := { proc with
+        atoms :=
+          proc.atoms.push _ _ _
+          ((definedVars.eraseDups.toArray.toVector.map λ v =>
+              ChanName.var v (definedVars.count v) pathConds).zip inputVals).toList,
+      },
+      state }
+    { proc := { proc with
+        outputs := (proc.outputs.zip (
+          #v[(Interp.trueVal Op S : V)] ++
+          vals ++
+          Vector.replicate m (Interp.junkVal Op S : V)
+        )).map λ ((name, _), val) => (name, [val])
+      },
+      state := state' }
+  := by
+  cases expr with
+  | ret vars =>
+    simp [Expr.eval] at heval
+    simp [compileExprAsProc, compileExpr] at hcomp
+    simp [hcomp, AtomicProcs.push, AtomicProc.push,
+      AtomicProc.push.pushOne, AtomicProc.push.pushAll]
+    apply Relation.TransGen.head
+    · apply @Dataflow.Config.Step.step_forward
+        _ _ _ _ _ _ _ _ _
+        [] -- ctxLeft
+        _ _ _
+        (vars.map (compileExpr.liveVar χ V definedVars pathConds))
+      · rfl
+      · simp [ChanBufs.push]
+        apply bufs_forall₂_implies_pop_some
+        · sorry
+        · sorry
+      all_goals sorry
+    · sorry
+  | _ => sorry
+
 end Wavelet.Simulation

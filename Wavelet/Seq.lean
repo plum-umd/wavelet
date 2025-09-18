@@ -175,4 +175,29 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
 def Config.StepPlus {m n} := @Relation.TransGen (Config Op χ V S m n) (Step Op χ V S)
 def Config.StepStar {m n} := @Relation.ReflTransGen (Config Op χ V S m n) (Step Op χ V S)
 
+inductive EvalResult (m n : Nat) where
+  | ret (vals : Vector V n)
+  | tail (args : Vector V m)
+
+/-- A simple big-step semantics of expressions -/
+def Expr.eval (locals : VarMap χ V)
+  : Expr Op χ m n → StateT S Option (EvalResult V m n)
+  | .ret vars => do
+    let vals ← locals.getVars _ _ vars
+    return .ret vals
+  | .tail vars => do
+    let vals ← locals.getVars _ _ vars
+    return .tail vals
+  | .op o args rets cont => do
+    let inputVals ← locals.getVars _ _ args
+    let outputVals ← instInterp.interp o inputVals
+    let locals := locals.insertVars _ _ rets outputVals
+    eval locals cont
+  | .br cond left right => do
+    let condVal ← locals.getVar _ _ cond
+    if instInterp.asBool condVal then
+      eval locals left
+    else
+      eval locals right
+
 end Wavelet.Seq
