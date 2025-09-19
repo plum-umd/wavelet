@@ -23,11 +23,11 @@ chooses to perform a tail call (with `m` arguments) or return
 -/
 def compileExpr
   (hnz : m > 0 ∧ n > 0)
-  (definedVars : List χ)
+  (definedVars : Vector χ k)
   (pathConds : List (Bool × ChanName χ))
   : Expr Op χ m n → AtomicProcs Op (ChanName χ) V
   | .ret vars =>
-    let chans := varNames vars
+    let chans := .empty _ (varNames vars)
     let act := chans[0] -- Use the first return value as an activation signal
     [
       .forward chans retChans,
@@ -37,7 +37,7 @@ def compileExpr
       .const (Interp.falseVal Op S) act #v[.tail_cond pathConds]
     ]
   | .tail vars =>
-    let chans := varNames vars
+    let chans := .empty _ (varNames vars)
     let act := chans[0]
     [
       .const (Interp.junkVal Op S) act retChans,
@@ -45,27 +45,27 @@ def compileExpr
       .const (Interp.trueVal Op S) act #v[.tail_cond pathConds]
     ]
   | .op o args rets cont =>
-    let inputChans := varNames args
+    let inputChans := .empty _ (varNames args)
     (.op o inputChans (varNames rets)) ::
-      compileExpr hnz (definedVars.removeAll args.toList ++ rets.toList) pathConds cont
+      compileExpr hnz (definedVars ++ rets) pathConds cont
   | .br cond left right =>
-    let condChan := varName cond
-    let leftConds := (true, condChan) :: pathConds
-    let rightConds := (false, condChan) :: pathConds
-    let leftComp := compileExpr hnz (definedVars.erase cond) leftConds left
-    let rightComp := compileExpr hnz (definedVars.erase cond) rightConds right
+    let condChan := .empty _ (varName cond)
+    let leftConds := (true, condChan.1) :: pathConds
+    let rightConds := (false, condChan.1) :: pathConds
+    let leftComp := compileExpr hnz definedVars leftConds left
+    let rightComp := compileExpr hnz definedVars rightConds right
     [
       -- Steer all live variables
-      .steer true condChan (allVars pathConds) (allVars leftConds),
-      .steer false condChan (allVars pathConds) (allVars rightConds),
+      .steer true condChan (.empty _ (allVars pathConds)) (allVars leftConds),
+      .steer false condChan (.empty _ (allVars pathConds)) (allVars rightConds),
       -- Forward the condition again to the merge
       -- (extra forward for a simpler simulation relation)
-      .forward #v[condChan] #v[.merge_cond condChan],
+      .forward #v[condChan] #v[.merge_cond condChan.1],
     ] ++ leftComp ++ rightComp ++ [
       -- Merge tail call conditions, return values and tail call arguments
       -- from both branches. This is done at the end so that we can keep
       -- the graph as "acyclic" as possible.
-      brMerge m n condChan pathConds
+      brMerge m n condChan.1 [] pathConds
     ]
   where
     -- Current variable names
@@ -73,16 +73,17 @@ def compileExpr
     varNames {n} (vars : Vector χ n) := vars.map varName
     retChans := (Vector.range n).map (.dest · pathConds)
     tailArgs := (Vector.range m).map (.tail_arg · pathConds)
-    allVars pathConds := definedVars.toVector.map (.var · pathConds)
+    allVars pathConds : Vector (ChanName χ) k :=
+      definedVars.map (.var · pathConds)
     exprOutputs m n pathConds := #v[ChanName.tail_cond pathConds] ++
       ((Vector.range n).map (ChanName.dest · pathConds)) ++
       ((Vector.range m).map (ChanName.tail_arg · pathConds))
-    brMerge m n condName pathConds :=
+    brMerge m n condName condBuf pathConds :=
       let leftConds := (true, condName) :: pathConds
       let rightConds := (false, condName) :: pathConds
-      .merge (.merge_cond condName)
-        (exprOutputs m n leftConds)
-        (exprOutputs m n rightConds)
+      .merge (.merge_cond condName, condBuf)
+        (.empty _ (exprOutputs m n leftConds))
+        (.empty _ (exprOutputs m n rightConds))
         (exprOutputs m n pathConds)
 
 /--
@@ -97,7 +98,7 @@ def compileFn
   :=
   {
     inputs,
-    outputs := (Vector.range n).map .final_tail_arg,
+    outputs := .empty _ ((Vector.range n).map .final_tail_arg),
     atoms := initCarry false :: (bodyComp ++ resultSteers m n)
   }
   where
@@ -105,21 +106,21 @@ def compileFn
     inputs := fn.params.map .input
     initCarry inLoop :=
       .carry inLoop
-        (.tail_cond [])
-        inputs
-        ((Vector.range m).map .final_tail_arg)
+        (.empty _ (.tail_cond []))
+        (.empty _ inputs)
+        (.empty _ ((Vector.range m).map .final_tail_arg))
         (fn.params.map λ v => .var v [])
-    bodyComp := compileExpr Op χ V S hnz fn.params.toList [] fn.body
+    bodyComp := compileExpr Op χ V S hnz fn.params [] fn.body
     resultSteers m n := [
       -- If tail condition is true, discard the junk return values
       .steer false
-        (.tail_cond [])
-        ((Vector.range n).map (.dest · []))
+        (.empty _ (.tail_cond []))
+        (.empty _ ((Vector.range n).map (.dest · [])))
         ((Vector.range n).map .final_dest),
       -- If tail condition is false, discard the junk tail arguments
       .steer true
-        (.tail_cond [])
-        ((Vector.range m).map (.tail_arg · []))
+        (.empty _ (.tail_cond []))
+        (.empty _ ((Vector.range m).map (.tail_arg · [])))
         ((Vector.range m).map .final_tail_arg),
     ]
 

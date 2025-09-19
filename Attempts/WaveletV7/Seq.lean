@@ -1,5 +1,6 @@
 import Mathlib.Logic.Relation
 import Wavelet.Op
+import Wavelet.Lemmas
 
 /-! Syntax and semantics for a simple imperative language. -/
 
@@ -9,7 +10,7 @@ open Op
 
 universe u
 variable (Op : Type u) (χ : Type u)
-variable [instArity : Arity Op]
+variable [Arity Op]
 variable [DecidableEq χ]
 
 inductive Expr : Nat → Nat → Type u where
@@ -23,27 +24,20 @@ inductive Expr : Nat → Nat → Type u where
 
 /--
 Some static, non-typing constraints on expressions:
-1. Bounded variables are disjoint
-2. Use of variables is affine
-3. No shadowing
+1. No shadowing
+2. Bounded variables are disjoint
 -/
 inductive Expr.WellFormed : List χ → Expr Op χ n m → Prop where
-  | wf_ret :
-    vars.toList.Nodup →
-    WellFormed definedVars (.ret vars)
-  | wf_tail :
-    vars.toList.Nodup →
-    WellFormed definedVars (.tail vars)
+  | wf_ret : WellFormed definedVars (.ret vars)
+  | wf_tail : WellFormed definedVars (.tail vars)
   | wf_op :
-    args.toList.Nodup →
     rets.toList.Nodup →
     definedVars.Disjoint rets.toList →
-    args.toList ⊆ definedVars →
-    WellFormed ((definedVars.removeAll args.toList) ++ rets.toList) cont →
+    WellFormed (rets.toList ++ definedVars) cont →
     WellFormed definedVars (.op o args rets cont)
   | wf_br :
-    WellFormed (definedVars.erase c) left →
-    WellFormed (definedVars.erase c) right →
+    WellFormed definedVars left →
+    WellFormed definedVars right →
     WellFormed definedVars (.br c left right)
 
 /-- `Fn m n` is a function with `m` inputs and `n` outputs. -/
@@ -81,42 +75,55 @@ variable (V S) [instInterp : Interp Op V S]
 instance : DecidableEq (ChanName χ) := sorry
 
 /-- Partial map from variables. -/
-abbrev VarMap := χ → Option V
+abbrev VarMap := List (χ × V)
 
 def VarMap.insertVars
   (vars : Vector χ n)
   (vals : Vector V n)
   (m : VarMap χ V) : VarMap χ V :=
-  λ v => ((vars.zip vals).toList.find? (·.1 = v)).map (·.2) <|> m v
+  (vars.zip vals).toList ++ m
 
-def VarMap.getVar (v : χ) (m : VarMap χ V) : Option V := m v
+def VarMap.getVar (v : χ) (m : VarMap χ V) : Option V :=
+  (m.find? (·.1 = v)).map (·.2)
 
 def VarMap.getVars
   (vars : Vector χ n)
   (m : VarMap χ V) : Option (Vector V n) :=
-  vars.mapM m
+  vars.mapM (λ v => m.getVar _ _ v)
 
-def VarMap.fromList (kvs : List (χ × V)) : VarMap χ V :=
-  λ v => (kvs.find? (·.1 = v)).map (·.2)
+def VarMap.varsAsVector
+  (m : VarMap χ V) : Vector χ m.length :=
+  m.toVector.map Prod.fst
 
-def VarMap.removeVar (v : χ) (m : VarMap χ V) : VarMap χ V :=
-  λ v' => if v = v' then none else m v'
-
-def VarMap.removeVars (vars : List χ) (m : VarMap χ V) : VarMap χ V :=
-  λ v => if v ∈ vars then none else m v
-
-inductive ExprResult (m n : Nat) where
-  | ret (vals : Vector V n)
-  | cont (expr : Expr Op χ m n)
+def VarMap.valsAsVector
+  (m : VarMap χ V) : Vector V m.length :=
+  m.toVector.map Prod.snd
 
 /-- State of expression execution. -/
-structure Config m n where
-  expr : ExprResult Op χ V m n
+structure ExprState (m n : Nat) where
   fn : Fn Op χ m n
   vars : VarMap χ V
   state : S
   -- Ghost state for the simulation relation
   pathConds : List (Bool × ChanName χ)
+
+inductive ExprResult (m n : Nat) where
+  | ret (vals : Vector V n)
+  | cont (expr : Expr Op χ m n)
+
+structure Config m n where
+  expr : ExprResult Op χ V m n
+  estate : ExprState Op χ V S m n
+
+def ExprState.init
+  (fn : Fn Op χ m n)
+  (state : S)
+  (args : Vector V m) : ExprState Op χ V S m n := {
+    fn,
+    vars := (fn.params.zip args).toList,
+    state,
+    pathConds := [],
+  }
 
 /-- Initialize an expression configuration. -/
 def Config.init
@@ -125,51 +132,90 @@ def Config.init
   (args : Vector V m) : Config Op χ V S m n
   := {
     expr := .cont fn.body,
-    fn,
-    vars := .fromList _ _ (fn.params.zip args).toList,
-    state,
-    pathConds := [],
+    estate := ExprState.init _ _ _ _ fn state args,
   }
+
+def Config.definedVars (c : Config Op χ V S m n) : Vector χ c.estate.vars.length :=
+  c.estate.vars.toVector.map Prod.fst
+
+def Config.definedVals (c : Config Op χ V S m n) : Vector V c.estate.vars.length :=
+  c.estate.vars.toVector.map Prod.snd
+
+def Config.definedVarsAsNames (c : Config Op χ V S m n) : Vector (ChanName χ) c.estate.vars.length :=
+  c.estate.vars.varsAsVector.map (.var · c.estate.pathConds)
 
 /-- Small-step operational semantics for Seq. -/
 inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop where
   | step_ret :
     c.expr = .cont (.ret args) →
-    c.vars.getVars _ _ args = some inputVals →
-    Step c { c with
+    c.estate.vars.getVars _ _ args = some inputVals →
+    Step c {
       expr := .ret inputVals,
-      vars := c.vars.removeVars _ _ args.toList,
+      estate := c.estate,
     }
   | step_tail :
     c.expr = .cont (.tail args) →
-    c.vars.getVars _ _ args = some inputVals →
-    Step c (.init _ _ _ _ c.fn c.state inputVals)
+    c.estate.vars.getVars _ _ args = some inputVals →
+    Step c {
+      expr := .cont c.estate.fn.body,
+      estate := .init _ _ _ _ c.estate.fn c.estate.state inputVals,
+    }
   | step_op
     {o inputVals outputVals state'}
     {args : Vector χ (Arity.ι o)}
     {rets cont} :
     c.expr = .cont (.op o args rets cont) →
-    c.vars.getVars _ _ args = some inputVals →
-    (instInterp.interp o inputVals).run c.state = some (outputVals, state') →
-    Step c { c with
+    c.estate.vars.getVars _ _ args = some inputVals →
+    (instInterp.interp o inputVals).run c.estate.state = some (outputVals, state') →
+    Step c {
       expr := .cont cont,
-      vars := (c.vars.removeVars _ _ args.toList).insertVars _ _ rets outputVals,
-      state := state',
+      estate := { c.estate with
+        vars := c.estate.vars.insertVars _ _ rets outputVals,
+        state := state',
+      },
     }
   | step_br {cond} :
     c.expr = .cont (.br cond left right) →
-    c.vars.getVar _ _ cond = some condVal →
-    Step c { c with
+    c.estate.vars.getVar _ _ cond = some condVal →
+    Step c {
       expr := if instInterp.asBool condVal then .cont left else .cont right,
-      vars := c.vars.removeVar _ _ cond,
-      pathConds :=
-        (
-          instInterp.asBool condVal,
-          .var cond c.pathConds,
-        ) :: c.pathConds,
+      estate := {
+        c.estate with
+        pathConds :=
+          (
+            instInterp.asBool condVal,
+            .var cond c.estate.pathConds,
+          )
+          :: c.estate.pathConds,
+      },
     }
 
 def Config.StepPlus {m n} := @Relation.TransGen (Config Op χ V S m n) (Step Op χ V S)
 def Config.StepStar {m n} := @Relation.ReflTransGen (Config Op χ V S m n) (Step Op χ V S)
+
+inductive EvalResult (m n : Nat) where
+  | ret (vals : Vector V n)
+  | tail (args : Vector V m)
+
+/-- A simple big-step semantics of expressions. -/
+def Expr.eval (locals : VarMap χ V)
+  : Expr Op χ m n → StateT S Option (EvalResult V m n)
+  | .ret vars => do
+    let vals ← locals.getVars _ _ vars
+    return .ret vals
+  | .tail vars => do
+    let vals ← locals.getVars _ _ vars
+    return .tail vals
+  | .op o args rets cont => do
+    let inputVals ← locals.getVars _ _ args
+    let outputVals ← instInterp.interp o inputVals
+    let locals := locals.insertVars _ _ rets outputVals
+    eval locals cont
+  | .br cond left right => do
+    let condVal ← locals.getVar _ _ cond
+    if instInterp.asBool condVal then
+      eval locals left
+    else
+      eval locals right
 
 end Wavelet.Seq
