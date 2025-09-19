@@ -1,6 +1,5 @@
 import Mathlib.Logic.Relation
 import Wavelet.Op
-import Wavelet.Lemmas
 
 /-! Syntax and semantics for a simple imperative language. -/
 
@@ -22,39 +21,37 @@ inductive Expr : Nat → Nat → Type u where
     (cont : Expr m n) : Expr m n
   | br (cond : χ) (left : Expr m n) (right : Expr m n) : Expr m n
 
-/--
-Some static, non-typing constraints on expressions:
-1. No shadowing
-2. Bounded variables are disjoint
--/
-inductive Expr.WellFormed : List χ → Expr Op χ n m → Prop where
-  | wf_ret : WellFormed definedVars (.ret vars)
-  | wf_tail : WellFormed definedVars (.tail vars)
+/-- Some static, non-typing constraints on expressions. -/
+inductive Expr.WellFormed : Expr Op χ n m → Prop where
+  | wf_ret : WellFormed (.ret vars)
+  | wf_tail : WellFormed (.tail vars)
   | wf_op :
     rets.toList.Nodup →
-    definedVars.Disjoint rets.toList →
-    WellFormed (rets.toList ++ definedVars) cont →
-    WellFormed definedVars (.op o args rets cont)
+    WellFormed cont →
+    WellFormed (.op o args rets cont)
   | wf_br :
-    WellFormed definedVars left →
-    WellFormed definedVars right →
-    WellFormed definedVars (.br c left right)
+    WellFormed left →
+    WellFormed right →
+    WellFormed (.br c left right)
 
 /-- `Fn m n` is a function with `m` inputs and `n` outputs. -/
 structure Fn (m n : Nat) : Type u where
   params : Vector χ m
   body : Expr Op χ m n
+  wf : m > 0 ∧ n > 0 ∧
+    params.toList.Nodup ∧
+    body.WellFormed _ _
 
-def Fn.WellFormed (fn : Fn Op χ m n) : Prop :=
-  fn.params.toList.Nodup ∧
-  fn.body.WellFormed _ _ fn.params.toList
+def Fn.NonEmptyIO (fn : Fn Op χ m n) : m > 0 ∧ n > 0 :=
+  ⟨fn.wf.1, fn.wf.2.1⟩
+
+def Fn.WellFormedBody (fn : Fn Op χ m n) : fn.body.WellFormed _ _ :=
+  fn.wf.2.2.2
 
 /-- Consistently encoding Seq variables (`χ`) into channel names, used in
 the compiler and also semantics of Seq to keep useful ghost states. -/
 inductive ChanName where
-  -- Inputs to a function's carry gates
-  | input (base : χ)
-  | var (base : χ) (pathConds : List (Bool × ChanName))
+  | var (base : χ) (count : Nat) (pathConds : List (Bool × ChanName))
   -- Only sent during branching
   | merge_cond (chan : ChanName)
   -- Only sent during ret/tail
@@ -75,36 +72,28 @@ variable (V S) [instInterp : Interp Op V S]
 instance : DecidableEq (ChanName χ) := sorry
 
 /-- Partial map from variables. -/
-abbrev VarMap := List (χ × V)
+abbrev VarMap := χ → Option V
 
 def VarMap.insertVars
   (vars : Vector χ n)
   (vals : Vector V n)
   (m : VarMap χ V) : VarMap χ V :=
-  (vars.zip vals).toList ++ m
+  λ v => ((vars.zip vals).toList.find? (·.1 = v)).map (·.2) <|> m v
 
-def VarMap.getVar (v : χ) (m : VarMap χ V) : Option V :=
-  (m.find? (·.1 = v)).map (·.2)
+def VarMap.getVar (v : χ) (m : VarMap χ V) : Option V := m v
 
 def VarMap.getVars
   (vars : Vector χ n)
   (m : VarMap χ V) : Option (Vector V n) :=
-  vars.mapM (λ v => m.getVar _ _ v)
-
-def VarMap.varsAsVector
-  (m : VarMap χ V) : Vector χ m.length :=
-  m.toVector.map Prod.fst
-
-def VarMap.valsAsVector
-  (m : VarMap χ V) : Vector V m.length :=
-  m.toVector.map Prod.snd
+  vars.mapM m
 
 /-- State of expression execution. -/
 structure ExprState (m n : Nat) where
   fn : Fn Op χ m n
   vars : VarMap χ V
   state : S
-  -- Ghost state for the simulation relation
+  -- Ghost states for the simulation relation
+  definedVars : List χ
   pathConds : List (Bool × ChanName χ)
 
 inductive ExprResult (m n : Nat) where
@@ -120,8 +109,9 @@ def ExprState.init
   (state : S)
   (args : Vector V m) : ExprState Op χ V S m n := {
     fn,
-    vars := (fn.params.zip args).toList,
+    vars := λ v => ((fn.params.zip args).toList.find? (·.1 = v)).map (·.2),
     state,
+    definedVars := fn.params.toList,
     pathConds := [],
   }
 
@@ -134,15 +124,6 @@ def Config.init
     expr := .cont fn.body,
     estate := ExprState.init _ _ _ _ fn state args,
   }
-
-def Config.definedVars (c : Config Op χ V S m n) : Vector χ c.estate.vars.length :=
-  c.estate.vars.toVector.map Prod.fst
-
-def Config.definedVals (c : Config Op χ V S m n) : Vector V c.estate.vars.length :=
-  c.estate.vars.toVector.map Prod.snd
-
-def Config.definedVarsAsNames (c : Config Op χ V S m n) : Vector (ChanName χ) c.estate.vars.length :=
-  c.estate.vars.varsAsVector.map (.var · c.estate.pathConds)
 
 /-- Small-step operational semantics for Seq. -/
 inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop where
@@ -171,6 +152,7 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
       expr := .cont cont,
       estate := { c.estate with
         vars := c.estate.vars.insertVars _ _ rets outputVals,
+        definedVars := c.estate.definedVars ++ rets.toList,
         state := state',
       },
     }
@@ -184,7 +166,7 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
         pathConds :=
           (
             instInterp.asBool condVal,
-            .var cond c.estate.pathConds,
+            .var cond (c.estate.definedVars.count cond) c.estate.pathConds,
           )
           :: c.estate.pathConds,
       },
@@ -197,7 +179,7 @@ inductive EvalResult (m n : Nat) where
   | ret (vals : Vector V n)
   | tail (args : Vector V m)
 
-/-- A simple big-step semantics of expressions. -/
+/-- A simple big-step semantics of expressions -/
 def Expr.eval (locals : VarMap χ V)
   : Expr Op χ m n → StateT S Option (EvalResult V m n)
   | .ret vars => do

@@ -1,7 +1,6 @@
 import Wavelet.Op
 import Wavelet.Seq
 import Wavelet.Dataflow
-import Wavelet.Lemmas
 
 /-! A compiler from Seq to dataflow. -/
 
@@ -23,7 +22,7 @@ chooses to perform a tail call (with `m` arguments) or return
 -/
 def compileExpr
   (hnz : m > 0 ∧ n > 0)
-  (definedVars : Vector χ k)
+  (definedVars : List χ)
   (pathConds : List (Bool × ChanName χ))
   : Expr Op χ m n → AtomicProcs Op (ChanName χ) V
   | .ret vars =>
@@ -46,8 +45,8 @@ def compileExpr
     ]
   | .op o args rets cont =>
     let inputChans := .empty _ (varNames args)
-    (.op o inputChans (varNames rets)) ::
-      compileExpr hnz (definedVars ++ rets) pathConds cont
+    (.op o inputChans (newVarNames rets)) ::
+      compileExpr hnz (definedVars ++ rets.toList) pathConds cont
   | .br cond left right =>
     let condChan := .empty _ (varName cond)
     let leftConds := (true, condChan.1) :: pathConds
@@ -56,8 +55,12 @@ def compileExpr
     let rightComp := compileExpr hnz definedVars rightConds right
     [
       -- Steer all live variables
-      .steer true condChan (.empty _ (allVars pathConds)) (allVars leftConds),
-      .steer false condChan (.empty _ (allVars pathConds)) (allVars rightConds),
+      .steer true condChan
+        (.empty _ (allDefinedVars pathConds))
+        (allDefinedVars leftConds),
+      .steer false condChan
+        (.empty _ (allDefinedVars pathConds))
+        (allDefinedVars rightConds),
       -- Forward the condition again to the merge
       -- (extra forward for a simpler simulation relation)
       .forward #v[condChan] #v[.merge_cond condChan.1],
@@ -69,15 +72,19 @@ def compileExpr
     ]
   where
     -- Current variable names
-    varName v := .var v pathConds
+    varName v := .var v (definedVars.count v) pathConds
     varNames {n} (vars : Vector χ n) := vars.map varName
-    retChans := (Vector.range n).map (.dest · pathConds)
-    tailArgs := (Vector.range m).map (.tail_arg · pathConds)
-    allVars pathConds : Vector (ChanName χ) k :=
-      definedVars.map (.var · pathConds)
+    -- New variable names after shadowing
+    newVarName v := .var v (definedVars.count v + 1) pathConds
+    newVarNames {n} (vars : Vector χ n) := vars.map newVarName
+    retChans := (Vector.range n).map λ i => .dest i pathConds
+    tailArgs := (Vector.range m).map λ i => .tail_arg i pathConds
+    allDefinedVars pathConds : Vector (ChanName χ) definedVars.eraseDups.length :=
+      definedVars.eraseDups.toArray.toVector.map λ v =>
+        .var v (definedVars.count v) pathConds
     exprOutputs m n pathConds := #v[ChanName.tail_cond pathConds] ++
-      ((Vector.range n).map (ChanName.dest · pathConds)) ++
-      ((Vector.range m).map (ChanName.tail_arg · pathConds))
+      ((Vector.range n).map λ i => ChanName.dest i pathConds) ++
+      ((Vector.range m).map λ i => ChanName.tail_arg i pathConds)
     brMerge m n condName condBuf pathConds :=
       let leftConds := (true, condName) :: pathConds
       let rightConds := (false, condName) :: pathConds
@@ -93,12 +100,11 @@ Most of the compiled process should be a DAG, except for the back
 edges of channels with the name `.tail_cond []` or `.tail_arg i []`.
 -/
 def compileFn
-  (hnz : m > 0 ∧ n > 0)
   (fn : Fn Op χ m n) : Proc Op (ChanName χ) V m n
   :=
   {
     inputs,
-    outputs := .empty _ ((Vector.range n).map .final_tail_arg),
+    outputs := (Vector.range n).map λ i => .empty _ (.final_tail_arg i),
     atoms := initCarry false :: (bodyComp ++ resultSteers m n)
   }
   where
@@ -109,19 +115,19 @@ def compileFn
         (.empty _ (.tail_cond []))
         (.empty _ inputs)
         (.empty _ ((Vector.range m).map .final_tail_arg))
-        (fn.params.map λ v => .var v [])
-    bodyComp := compileExpr Op χ V S hnz fn.params [] fn.body
+        (fn.params.map λ v => .var v 1 [])
+    bodyComp := compileExpr Op χ V S fn.NonEmptyIO fn.params.toList [] fn.body
     resultSteers m n := [
       -- If tail condition is true, discard the junk return values
       .steer false
         (.empty _ (.tail_cond []))
-        (.empty _ ((Vector.range n).map (.dest · [])))
-        ((Vector.range n).map .final_dest),
+        ((Vector.range n).map λ i => .empty _ (.dest i []))
+        ((Vector.range n).map λ i => .final_dest i),
       -- If tail condition is false, discard the junk tail arguments
       .steer true
         (.empty _ (.tail_cond []))
-        (.empty _ ((Vector.range m).map (.tail_arg · [])))
-        ((Vector.range m).map .final_tail_arg),
+        ((Vector.range m).map λ i => .empty _ (.tail_arg i []))
+        ((Vector.range m).map λ i => .final_tail_arg i),
     ]
 
 end Wavelet.Compile

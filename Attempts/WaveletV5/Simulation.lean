@@ -5,13 +5,12 @@ import Wavelet.Op
 import Wavelet.Seq
 import Wavelet.Dataflow
 import Wavelet.Compile
-import Wavelet.Lemmas
 
 open Wavelet.Op
 
 universe u
 variable (Op : Type u) (χ : Type u) (V S)
-variable [instArity : Arity Op] [DecidableEq χ] [instInterp : Interp Op V S]
+variable [Arity Op] [DecidableEq χ] [instInterp : Interp Op V S]
 
 /-! Simulation proofs. -/
 
@@ -73,7 +72,9 @@ def AtomicProc.MatchModBuffers : AtomicProc Op χ V → AtomicProc Op χ V → P
     c₁ = c₂ ∧ act₁.1 = act₂.1 ∧
     outputs₁.toList = outputs₂.toList
   | _, _ => False
-  where MatchBuf := ChanBuf.MatchModBuffer _ _
+  where
+    @[simp]
+    MatchBuf := ChanBuf.MatchModBuffer _ _
 
 def AtomicProcs.MatchModBuffers (aps₁ aps₂ : AtomicProcs Op χ V) : Prop :=
   List.Forall₂ (AtomicProc.MatchModBuffers Op χ V) aps₁ aps₂
@@ -118,25 +119,10 @@ def SeqRefinesDataflow
   (R : Seq.Config Op χ₁ V S m n → Dataflow.Config Op χ₂ V S m n → Prop) : Prop :=
   Refines c₁ c₂ R (Config.Step Op χ₁ V S) (Config.StepPlus Op χ₂ V S)
 
-def SimR.Basic
-  (hnz : m > 0 ∧ n > 0)
-  (ec : Seq.Config Op χ V S m n)
-  (pc : Dataflow.Config Op (ChanName χ) V S m n) : Prop :=
+def SimR.Basic (ec : Seq.Config Op χ V S m n) (pc : Dataflow.Config Op (ChanName χ) V S m n) : Prop :=
   ec.estate.state = pc.state ∧
   -- The process matches the compiled function in shape
-  AtomicProcs.MatchModBuffers _ _ _
-    pc.proc.atoms (compileFn Op χ V S hnz ec.estate.fn).atoms
-
-/-- Invariants for the current continuation expression. -/
-def SimR.CtxCurrent
-  (hnz : m > 0 ∧ n > 0)
-  (ec : Seq.Config Op χ V S m n)
-  (cont : Expr Op χ m n)
-  (ctxCurrent : AtomicProcs Op (ChanName χ) V) : Prop :=
-  cont.WellFormed _ _ ec.definedVars.toList ∧
-  ctxCurrent = AtomicProcs.push _ _ _
-    ec.definedVarsAsNames ec.definedVals
-    (compileExpr Op χ V S hnz ec.definedVars ec.estate.pathConds cont)
+  AtomicProcs.MatchModBuffers _ _ _ pc.proc.atoms (compileFn Op χ V S ec.estate.fn).atoms
 
 /--
 The remaining processes in `ctxRight` should be of the form
@@ -176,12 +162,30 @@ def SimR.CtxRight
       chunks
       (Vector.finRange ec.estate.pathConds.length).toList)
 
-/-- The main invariant for proving forward simulation of compilation. -/
-def SimR
-  (hnz : m > 0 ∧ n > 0)
+def SimR.CtxCurrent
   (ec : Seq.Config Op χ V S m n)
-  (pc : Dataflow.Config Op (ChanName χ) V S m n) : Prop :=
-  SimR.Basic _ _ _ _ hnz ec pc ∧
+  (cont : Expr Op χ m n)
+  (ctxCurrent : AtomicProcs Op (ChanName χ) V) : Prop :=
+  cont.WellFormed _ _ ec.estate.definedVars ∧
+  -- The current fragment corresponds to the compilation results
+  AtomicProcs.MatchModBuffers _ _ _
+    ctxCurrent
+    (compileExpr Op χ V S ec.estate.fn.NonEmptyIO ec.estate.definedVars ec.estate.pathConds cont) ∧
+  -- Some constraints about live variables
+  (∀ ap ∈ ctxCurrent, ∀ inp ∈ ap.inputs,
+    -- Check if the channel name corresponds to a live variable
+    -- in the current branch
+    let IsLiveVar (name : ChanName χ) val := ∃ var,
+      ec.estate.vars var = some val ∧
+      name = .var var ec.estate.pathConds
+    -- If it's a live var, the channel buffer should have the corresponding value
+    (∀ val, IsLiveVar inp.1 val → inp.2 = [val]) ∧
+    -- Otherwise it's empty.
+    ((∀ val, ¬ IsLiveVar inp.1 val) → inp.2 = []))
+
+/-- The main invariant for proving forward simulation of compilation. -/
+def SimR (ec : Seq.Config Op χ V S m n) (pc : Dataflow.Config Op (ChanName χ) V S m n) : Prop :=
+  SimR.Basic _ _ _ _ ec pc ∧
   ∃ (rest : AtomicProcs Op (ChanName χ) V)
     (carryInLoop : Bool)
     (ctxLeft ctxCurrent ctxRight : AtomicProcs Op (ChanName χ) V),
@@ -193,16 +197,16 @@ def SimR
     ctxLeft.HasEmptyInputs _ _ _ ∧
     -- If we have reached the end of execution, nothing else should be executable
     (∀ vals, ec.expr = .ret vals →
-      ¬ carryInLoop ∧
       ctxCurrent = [] ∧
       ctxRight = [] ∧
+      ¬ carryInLoop ∧
       -- Same return value in the proc side
       List.Forall₂ (λ v (_, buf) => buf = [v])
         vals.toList pc.proc.outputs.toList) ∧
     -- If we still have a continuation
     (∀ expr, ec.expr = .cont expr →
       carryInLoop ∧
-      SimR.CtxCurrent _ _ _ _ hnz ec expr ctxCurrent ∧
+      SimR.CtxCurrent _ _ _ _ ec expr ctxCurrent ∧
       SimR.CtxRight _ _ _ _ ec ctxRight)
 
 theorem aps_match_refl :
@@ -236,13 +240,13 @@ theorem aps_push_commutes_append :
 
 /-- The result of compilation should be a DAG except for the first carry process. -/
 theorem fn_compile_dag :
-  AtomicProcs.IsDAG Op _ V ((compileFn Op χ V S hnz fn).atoms.tail) := sorry
+  AtomicProcs.IsDAG Op _ V ((compileFn Op χ V S fn).atoms.tail) := sorry
 
 theorem expr_compile_dag
   (hwf : m > 0 ∧ n > 0) :
   AtomicProcs.IsDAG Op _ V (compileExpr Op χ V S hwf definedVars pathConds expr) := sorry
 
-theorem aps_match_commutes_with_cons
+theorem aps_match_cons_implies_exists_ap_match
   (hmatch : AtomicProcs.MatchModBuffers Op χ V aps (ap' :: rest')) :
   ∃ ap rest,
     aps = ap :: rest ∧
@@ -250,14 +254,6 @@ theorem aps_match_commutes_with_cons
     AtomicProcs.MatchModBuffers _ _ _ rest rest'
   := sorry
 
-theorem aps_match_commutes_with_append
-  left' right'
-  (hmatch : AtomicProcs.MatchModBuffers Op χ V aps (left' ++ right')) :
-  ∃ left right,
-    aps = left ++ right ∧
-    AtomicProcs.MatchModBuffers _ _ _ left left' ∧
-    AtomicProcs.MatchModBuffers _ _ _ right right'
-  := sorry
 
 theorem bufs_forall₂_implies_pop_some
   {bufs bufs' : ChanBufs χ V n}
@@ -331,272 +327,214 @@ theorem step_plus_frame_left
     { pc with proc := { pc.proc with atoms := frame ++ pc.proc.atoms } }
     { pc' with proc := { pc'.proc with atoms := frame ++ pc'.proc.atoms } } := sorry
 
-theorem ap_match_steer_destruct
-  (hmatch : AtomicProc.MatchModBuffers Op χ V ap
-    (AtomicProc.steer flavor
-      (ChanBuf.empty χ deciderName)
-      (ChanBufs.empty χ inputNames)
-      outputNames)) :
-  ∃ deciderBuf inputBufs,
-    ap = AtomicProc.steer flavor
-      (ChanBuf.withBuf _ deciderBuf deciderName)
-      (ChanBufs.withBufs _ inputBufs inputNames)
-      outputNames := sorry
+/-- Initial configs satisfy the simulation relation. -/
+theorem sim_init_config
+  (f : Fn Op χ m n)
+  (p : Proc Op (ChanName χ) V m n)
+  (hcomp : compileFn Op χ V S f = p)
+  (s : S)
+  (args : Vector V m) :
+  SimR _ _ _ _
+    (Seq.Config.init _ _ _ _ f s args)
+    (Dataflow.Config.init _ _ _ _ p s args) := by
+  simp only [← hcomp]
+  and_intros
+  · rfl
+  · apply aps_push_preserves_shape
+  · generalize hcompInputs : (compileFn Op χ V S f).inputs = compInputs
+    exists
+      (Proc.push Op _ _ compInputs args p).atoms.tail,
+      false,
+      (.empty _ (.tail_cond [])),
+      (f.params.map λ v => (ChanBuf.empty _ (.input v)).push _ compInputs args),
+      ((Vector.range m).map λ i => .empty _ (.final_tail_arg i)),
+      (f.params.map λ v => .var v []),
+      [],
+      AtomicProcs.push Op _ _ compInputs args (compileFn.bodyComp Op χ V S f),
+      AtomicProcs.push Op _ _ compInputs args (compileFn.resultSteers Op χ V m n)
+    and_intros
+    · simp [Dataflow.Config.init, Proc.push, ← hcomp]
+      cases h : (compileFn Op χ V S f).atoms with
+      | nil => simp [compileFn] at h
+      | cons carry rest =>
+        simp [List.tail, hcompInputs]
+        -- TODO: Reason about carry substitution
+        simp [compileFn, compileFn.initCarry] at h
+        simp only [← h.1]
+        congr 1
+        · sorry
+        · sorry
+        · sorry
+    · simp [Proc.push, ← hcomp]
+      apply aps_push_preserves_dag
+      apply fn_compile_dag
+    · simp
+      -- Some facts about push
+      sorry
+    · simp
+    · simp [Proc.push, ← hcomp, compileFn, aps_push_commutes_tail, aps_push_commutes_append]
+    · simp [AtomicProcs.HasEmptyInputs]
+    · simp [Seq.Config.init]
+    · intros expr hexpr
+      simp [Seq.Config.init] at hexpr
+      simp only [← hexpr]
+      and_intros
+      · exact f.WellFormedBody
+      · simp only [compileFn.bodyComp, Seq.Config.init, ExprState.init]
+        apply aps_push_preserves_shape
+      · intros ap hap inp hinp
+        constructor
+        · intros val hval
+          have ⟨var, hvar_lookup, hvar_name⟩ := hval
+          simp [Seq.Config.init, ExprState.init] at hvar_lookup
+          sorry
+        · sorry
+      · exists [], AtomicProcs.push Op _ _ compInputs args (compileFn.resultSteers Op χ V m n)
+        simp [joinM]
+        and_intros
+        · -- TODO: reason about steer pushes
+          sorry
+        · -- TODO: reason about HasDiffPathSuffix
+          sorry
+        · constructor
 
-theorem sim_step_br
-  {cond}
-  (hnz : m > 0 ∧ n > 0)
+theorem sim_step
   (ec ec' : Seq.Config Op χ V S m n)
   (pc : Dataflow.Config Op (ChanName χ) V S m n)
-  (hsim : SimR _ _ _ _ hnz ec pc)
-  (hstep : Config.Step Op χ V S ec ec')
-  (hbr : ec.expr = .cont (.br cond left right)) :
+  (hsim : SimR _ _ _ _ ec pc)
+  (hstep : Config.Step Op χ V S ec ec') :
   ∃ pc',
     Config.StepPlus Op (ChanName χ) V S pc pc' ∧
-    SimR _ _ _ _ hnz ec' pc' := by
+    SimR _ _ _ _ ec' pc' := by
   have ⟨
-    ⟨heq_states, hmatch_global⟩,
+    heq_state,
+    hmatch_fn,
     ⟨
       rest,
       carryInLoop,
+      carryDecider,
+      carryInputs₁,
+      carryInputs₂,
+      carryOutputs,
       ctxLeft,
       ctxCurrent,
       ctxRight,
       hatoms,
       hdag,
+      hcarry_false,
+      hcarry_true,
       hrest,
-      hleft_empty,
-      _,
+      hempty_ctxLeft,
+      hret,
       hcont,
-    ⟩
+    ⟩,
   ⟩ := hsim
-  have ⟨
-    hcarry_inLoop,
-    hcurrent,
-    hright,
-  ⟩ := hcont (.br cond left right) hbr
-  replace ⟨hwf, hcurrent⟩ := hcurrent
-  simp [compileExpr, AtomicProcs.push, compileExpr.brMerge] at hcurrent
-  -- Short-hands for some complex terms
   generalize hcarry :
-    compileFn.initCarry Op χ V ec.estate.fn carryInLoop = carry
+    @AtomicProc.carry Op _ _ V m
+      carryInLoop carryDecider
+      carryInputs₁ carryInputs₂
+      carryOutputs = carry
   simp only [hcarry] at hatoms
-  generalize hleftConds :
-    (true, (ChanBuf.empty (ChanName χ) (V := V) (compileExpr.varName χ ec.estate.pathConds cond)).fst) ::
-    ec.estate.pathConds = leftConds
-  generalize hrightConds :
-    (false, (ChanBuf.empty (ChanName χ) (V := V) (compileExpr.varName χ ec.estate.pathConds cond)).fst) ::
-    ec.estate.pathConds = rightConds
-  generalize hallVars : compileExpr.allVars χ (Config.definedVars Op χ V S ec) ec.estate.pathConds = allVars
-  generalize hallVarsLeft : compileExpr.allVars χ (Config.definedVars Op χ V S ec) leftConds = allVarsLeft
-  generalize hallVarsRight : compileExpr.allVars χ (Config.definedVars Op χ V S ec) rightConds = allVarsRight
-  generalize hcondName : compileExpr.varName χ ec.estate.pathConds cond = condName
-  simp only [hleftConds, hrightConds, hallVars,
-    hallVarsLeft, hallVarsRight] at hcurrent
-  simp only [hcondName] at hcurrent
-  simp [AtomicProc.push] at hcurrent
-  generalize hsteer₁ :
-    AtomicProc.steer (instArity := instArity) true
-      (ChanBuf.push _ ec.definedVarsAsNames ec.definedVals
-        (ChanBuf.empty _ condName))
-      (ChanBufs.push _ ec.definedVarsAsNames ec.definedVals
-        (ChanBufs.empty _ allVars))
-      allVarsLeft
-    = steer₁
-  generalize hsteer₂ :
-    AtomicProc.steer (instArity := instArity) false
-      (ChanBuf.push _ ec.definedVarsAsNames ec.definedVals
-        (ChanBuf.empty _ condName))
-      (ChanBufs.push _ ec.definedVarsAsNames ec.definedVals
-        (ChanBufs.empty _ allVars))
-      allVarsRight
-    = steer₂
-  generalize hforward :
-    AtomicProc.forward (instArity := instArity)
-      (.push _ ec.definedVarsAsNames ec.definedVals
-        #v[.empty _ condName])
-      #v[(ChanBuf.empty (V := V) _ condName).fst.merge_cond]
-    = forward
-  generalize hleftComp :
-    List.map
-      (AtomicProc.push Op (ChanName χ) V ec.definedVarsAsNames ec.definedVals)
-      (compileExpr Op χ V S hnz (Config.definedVars Op χ V S ec) leftConds left)
-    = leftComp
-  generalize hrightComp :
-    List.map
-      (AtomicProc.push Op (ChanName χ) V ec.definedVarsAsNames ec.definedVals)
-      (compileExpr Op χ V S hnz (Config.definedVars Op χ V S ec) rightConds right)
-    = rightComp
-  generalize hmerge :
-    AtomicProc.merge (instArity := instArity)
-      (ChanBuf.push (ChanName χ) ec.definedVarsAsNames ec.definedVals
-        ((ChanBuf.empty (V := V) (ChanName χ) condName).fst.merge_cond, []))
-      (ChanBufs.push (ChanName χ) ec.definedVarsAsNames ec.definedVals
-        (ChanBufs.empty (V := V) (ChanName χ) (compileExpr.exprOutputs χ m n leftConds)))
-      (ChanBufs.push (ChanName χ) ec.definedVarsAsNames ec.definedVals
-        (ChanBufs.empty (V := V) (ChanName χ) (compileExpr.exprOutputs χ m n rightConds)))
-      (compileExpr.exprOutputs χ m n ec.estate.pathConds)
-    = merge
-  simp only [hsteer₁, hsteer₂, hforward, hleftComp, hrightComp, hmerge] at hcurrent
-  -- Simplify some pushes
-  have hpush_allVars :
-    ChanBufs.push _
-      ec.definedVarsAsNames ec.definedVals
-      (ChanBufs.empty _ allVars)
-    = ChanBufs.singleton _ allVars ec.definedVals
-  := sorry
-  simp only [hpush_allVars] at hsteer₁ hsteer₂
   cases hstep with
-  | step_ret hexpr => simp [hbr] at hexpr
-  | step_tail hexpr => simp [hbr] at hexpr
-  | step_op hexpr => simp [hbr] at hexpr
-  | step_br hexpr hcond =>
-    rename_i condVal _ _ cond'
-    simp [hbr] at hexpr
-    have heq_cond' := hexpr.1
-    subst heq_cond'
-    have hpush_cond :
-      ChanBuf.push _
-        ec.definedVarsAsNames ec.definedVals
-        (.empty _ condName)
-      = ChanBuf.singleton _ condName condVal
-    := sorry
-    simp only [hpush_cond] at hsteer₁ hsteer₂
-    simp only [hcurrent] at hrest
-    simp only [hrest] at hatoms
-    -- generalize hctxLeft₁ :
-    --   compileFn.initCarry Op χ V ec.estate.fn carryInLoop :: ctxLeft = ctxLeft₁
-    if hcondVal : Interp.asBool Op S condVal then
-      -- Make one step with the first steer...
-      have hstep₁ :
-        Dataflow.Config.Step _ _ _ _ pc {
-          pc with
-          proc := { pc.proc with
-            outputs := pc.proc.outputs,
-            atoms :=
-              (carry :: ctxLeft) ++ [
-                AtomicProc.steer true
-                  (ChanBuf.empty (ChanName χ) condName)
-                  (ChanBufs.empty (ChanName χ) allVars)
-                  allVarsLeft
-              ] ++ (
-                steer₂ :: forward ::
-                (AtomicProcs.push _ _ _ allVarsLeft ec.definedVals leftComp) ++
-                rightComp ++
-                [merge] ++
-                ctxRight
-              ),
-          }
-        }
-      := by
-        apply step_eq
-        apply Dataflow.Config.Step.step_steer (instInterp := instInterp)
-          (ctxLeft := carry :: ctxLeft)
-          (ctxRight := steer₂ :: forward :: leftComp ++ rightComp ++ [merge] ++ ctxRight)
-          (steer := steer₁)
-          (by grind)
-          hsteer₁.symm
-          (buf_pop_singleton (var := condName) (val := condVal))
-          (bufs_pop_singleton (vars := allVars) (vals := ec.definedVals))
-        simp [AtomicProcs.push, hcondVal]
+  | step_op hexpr hinputs hop =>
+    rename_i o inputVals outputVals state' args rets cont
+    have ⟨
+      hwf_expr,
+      hmatch,
+      hlive_vars,
+      hctxRight,
+    ⟩ := hcont _ hexpr
+    simp [compileExpr] at hmatch
+    have ⟨
+      ap, ctxRest,
+      hctxCurrent,
+      hmatch_ap,
+      hmatch_ctxRest,
+    ⟩ := aps_match_cons_implies_exists_ap_match _ _ _ hmatch
+    simp [AtomicProc.MatchModBuffers] at hmatch_ap
+    cases ap <;> simp at hmatch_ap
+    rename_i o' inputs outputs
+    have ⟨heq_o, hap_match_inputs, hap_match_outputs⟩ := hmatch_ap
+    replace heq_o := heq_o.symm
+    subst heq_o
+    have hatoms' : pc.proc.atoms = ([carry] ++ ctxLeft) ++ [AtomicProc.op o inputs outputs] ++ (ctxRest ++ ctxRight) := by
+      grind
+    have ⟨inputs', hinputs'⟩ : ∃ inputs', inputs.pop _ = some (inputVals, inputs') :=
+      sorry
+    simp only [heq_state] at hop
+    have : Dataflow.Config.StepPlus _ _ _ _ pc _ := .single (.step_op hatoms' hinputs' hop)
+    simp only at this
+    constructor
+    constructor
+    · exact this
+    · -- Prove the simulation relation after the step
+      and_intros
+      · rfl
+      · simp
+        apply aps_match_trans
+        · sorry -- apply aps_push_preserves_shape
+        · apply aps_match_trans _ _ _ _ hmatch_fn
+          -- simp [hatoms']
+          -- TODO: prove AtomicProcs.MatchModBuffers
+          all_goals sorry
+        all_goals sorry
+      · exists
+          AtomicProcs.push Op (ChanName χ) V outputs outputVals
+            (ctxLeft ++ [AtomicProc.op o inputs' outputs] ++ (ctxRest ++ ctxRight)),
+          carryInLoop,
+          carryDecider,
+          carryInputs₁,
+          carryInputs₂,
+          carryOutputs,
+          ctxLeft ++ [AtomicProc.op o inputs' outputs],
+          AtomicProcs.push Op (ChanName χ) V outputs outputVals ctxRest,
+          ctxRight
         and_intros
+        · simp
+          -- TODO: need to prove that the push does not affect
+          -- carry, ctxLeft, the current .op, and ctxRight
+          sorry
+        · apply aps_push_preserves_dag
+          -- TODO: prove that poping preserves DAG.
+          sorry
+        · grind
+        · grind
         · sorry
-        · sorry
-        · sorry
-      simp at hstep₁
-      -- Make one step with the second steer...
-      have hstep₂ :
-        Dataflow.Config.Step _ _ _ _ {
-          pc with
-          proc := { pc.proc with
-            outputs := pc.proc.outputs,
-            atoms :=
-              (carry :: ctxLeft) ++ [
-                AtomicProc.steer true
-                  (ChanBuf.empty (ChanName χ) condName)
-                  (ChanBufs.empty (ChanName χ) allVars)
-                  allVarsLeft
-              ] ++ (
-                steer₂ :: forward ::
-                (AtomicProcs.push _ _ _ allVarsLeft ec.definedVals leftComp) ++
-                rightComp ++
-                [merge] ++
-                ctxRight
-              ),
-          }
-        } {
-          pc with
-          proc := { pc.proc with
-            outputs := pc.proc.outputs,
-            atoms :=
-              (carry :: ctxLeft) ++ [
-                AtomicProc.steer true
-                  (ChanBuf.empty (ChanName χ) condName)
-                  (ChanBufs.empty (ChanName χ) allVars)
-                  allVarsLeft
-              ] ++ (
-                AtomicProc.steer false
-                  (ChanBuf.empty (ChanName χ) condName)
-                  (ChanBufs.empty (ChanName χ) allVars)
-                  allVarsRight ::
-                forward ::
-                (AtomicProcs.push _ _ _ allVarsLeft ec.definedVals leftComp) ++
-                rightComp ++
-                [merge] ++
-                ctxRight
-              ),
-          }
-        }
-      := by
-        apply step_eq
-        apply Dataflow.Config.Step.step_steer (instInterp := instInterp)
-          (ctxLeft := carry :: ctxLeft ++ [
-                AtomicProc.steer true
-                  (ChanBuf.empty (ChanName χ) condName)
-                  (ChanBufs.empty (ChanName χ) allVars)
-                  allVarsLeft
-              ])
-          (ctxRight := forward ::
-                (AtomicProcs.push _ _ _ allVarsLeft ec.definedVals leftComp) ++
-                rightComp ++
-                [merge] ++
-                ctxRight)
-          (steer := steer₂)
-          (by grind)
-          hsteer₂.symm
-          (buf_pop_singleton (var := condName) (val := condVal))
-          (bufs_pop_singleton (vars := allVars) (vals := ec.definedVals))
-        simp [AtomicProcs.push, hcondVal]
-      simp at hstep₂
+        · -- TODO: prove that input' have empty buffers
+          sorry
+        · simp
+        · intros expr' hexpr'
+          simp at hexpr'
+          subst hexpr'
+          and_intros
+          · cases hwf_expr
+            assumption
+          · simp
+            sorry
+          · simp
+            -- TODO: variable mapping
+            sorry
+          · -- TODO: invariants about tail
+            sorry
+  | _ => sorry
 
-      sorry
-    else
-      sorry
-    -- A bunch of simplifications to make the resulting config look sane...
-    -- simp at hstep₁
-    -- have :
-    --   ChanBufs.push (ChanName χ) allVarsLeft (VarMap.valsAsVector χ V ec.estate.vars) pc.proc.outputs
-    --   = pc.proc.outputs := sorry
-    -- simp only [this] at hstep₁
-    -- simp [AtomicProcs.push] at hstep₁
-    -- have :
-    --   AtomicProc.push Op (ChanName χ) V allVarsLeft (VarMap.valsAsVector χ V ec.estate.vars) carry
-    --   = carry := sorry
-    -- simp only [this] at hstep₁
-    -- have :
-    --   List.map (AtomicProc.push Op (ChanName χ) V allVarsLeft (VarMap.valsAsVector χ V ec.estate.vars)) ctxLeft
-    --   = ctxLeft := sorry
-    -- simp only [this] at hstep₁
-
-theorem sim_step
-  (hnz : m > 0 ∧ n > 0)
-  (ec ec' : Seq.Config Op χ V S m n)
-  (pc : Dataflow.Config Op (ChanName χ) V S m n)
-  (hsim : SimR _ _ _ _ hnz ec pc)
-  (hstep : Config.Step Op χ V S ec ec') :
-  ∃ pc',
-    Config.StepPlus Op (ChanName χ) V S pc pc' ∧
-    SimR _ _ _ _ hnz ec' pc' := by
-  sorry
+theorem compile_refines
+  (f : Fn Op χ m n)
+  (p : Proc Op (ChanName χ) V m n)
+  (hcomp : compileFn Op χ V S f = p)
+  (s : S)
+  (args : Vector V m) :
+  Refines
+    (Config.init _ _ _ _ f s args)
+    (Config.init _ _ _ _ p s args)
+    (SimR _ _ _ _)
+    (Config.Step Op χ V S)
+    (Config.StepPlus Op (ChanName χ) V S) := by
+  constructor
+  · apply sim_init_config
+    exact hcomp
+  · intros ec pc ec' hstep
+    apply sim_step _ _ _ _ ec ec'
+    exact hstep
 
 end Wavelet.Simulation

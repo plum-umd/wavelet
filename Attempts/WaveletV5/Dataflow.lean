@@ -9,7 +9,7 @@ open Op
 
 universe u
 variable (Op : Type u) (χ : Type u)
-variable [instArity : Arity Op]
+variable [Arity Op]
 variable [DecidableEq χ]
 
 /- A channel name attached with a value buffer. -/
@@ -31,8 +31,6 @@ def ChanBuf.pop (buf : ChanBuf χ V) : Option (V × ChanBuf χ V) :=
   | [] => none
   | v :: vs => some (v, (buf.1, vs))
 
-def ChanBuf.withBuf (buf : List V) (var : χ) : ChanBuf χ V := (var, buf)
-
 def ChanBufs.empty (vars : Vector χ n) : ChanBufs χ V n :=
   vars.map (ChanBuf.empty _)
 
@@ -46,9 +44,6 @@ def ChanBufs.push (vars : Vector χ m) (vals : Vector V m)
 def ChanBufs.pop (bufs : ChanBufs χ V n) : Option (Vector V n × ChanBufs χ V n) := do
   let res ← bufs.mapM (ChanBuf.pop _)
   return (res.map Prod.fst, res.map Prod.snd)
-
-def ChanBufs.withBufs (bufs : Vector (List V) n) (vars : Vector χ n) : ChanBufs χ V n :=
-  vars.zipWith (λ var buf => (var, buf)) bufs
 
 /-- Dataflow operators. -/
 inductive AtomicProc V where
@@ -94,6 +89,7 @@ structure Proc V (m : Nat) (n : Nat) where
 /- From this point onwards, assume a fixed operator semantics. -/
 variable (V S) [instInterp : Interp Op V S]
 
+@[simp]
 def AtomicProc.push (vars : Vector χ n) (vals : Vector V n) : AtomicProc Op χ V → AtomicProc Op χ V
   | .op o inputs outputs => .op o (pushAll inputs) outputs
   | .steer flavor decider inputs outputs => .steer flavor (pushOne decider) (pushAll inputs) outputs
@@ -107,6 +103,7 @@ def AtomicProc.push (vars : Vector χ n) (vals : Vector V n) : AtomicProc Op χ 
     @[simp] pushOne (buf : ChanBuf χ V) := ChanBuf.push _ vars vals buf
     @[simp] pushAll {m} (bufs : ChanBufs χ V m) := ChanBufs.push _ vars vals bufs
 
+@[simp]
 def AtomicProcs.push
   (vars : Vector χ n)
   (vals : Vector V n)
@@ -114,6 +111,7 @@ def AtomicProcs.push
   AtomicProcs Op χ V :=
   aps.map (AtomicProc.push _ _ _ vars vals)
 
+@[simp]
 def Proc.push
   (vars : Vector χ k)
   (vals : Vector V k)
@@ -152,8 +150,7 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
         state := state',
       }
   | step_steer :
-    c.proc.atoms = ctxLeft ++ [steer] ++ ctxRight →
-    steer = .steer flavor decider inputs outputs →
+    c.proc.atoms = ctxLeft ++ [.steer flavor decider inputs outputs] ++ ctxRight →
     decider.pop _ = some (deciderVal, decider') →
     inputs.pop _ = some (inputVals, inputs') →
     Step c { c with
@@ -250,11 +247,54 @@ def Config.StepStar {m n} := @Relation.ReflTransGen (Config Op χ V S m n) (Step
 
 /- Some alternative forms of stepping. -/
 
-theorem step_eq
-  (hstep : Config.Step Op χ V S c₁ c₂)
-  (heq : c₂ = c₂') :
-  Config.Step _ _ _ _ c₁ c₂' := by
-  simp [heq] at hstep
-  exact hstep
+theorem step_eq :
+  Config.Step Op χ V S c₁ c₂ →
+  c₂ = c₂' →
+  Config.Step _ _ _ _ c₁ c₂' := sorry
+
+theorem step_forward_alt₁
+  ctxLeft inputVals inputs' :
+  c.proc.atoms = ctxLeft ++ [.forward inputs outputs] ++ ctxRight →
+  inputs.pop _ = some (inputVals, inputs') →
+  Config.Step Op χ V S c { c with
+    proc := { c.proc with
+      outputs := c.proc.outputs.push _ outputs inputVals,
+      atoms := .push _ _ _ outputs inputVals
+        (ctxLeft ++ [.forward inputs' outputs] ++ ctxRight),
+    },
+  } := by apply Config.Step.step_forward
+
+theorem step_const_alt₁
+  ctxLeft :
+  c.proc.atoms = ctxLeft ++ [.const val act outputs] ++ ctxRight →
+  act.pop _ = some (inputVal, act') →
+  Config.Step Op χ V S c { c with
+    proc := { c.proc with
+      outputs := c.proc.outputs.push _ outputs (Vector.replicate _ val),
+      atoms := .push _ _ _ outputs (Vector.replicate _ val)
+        (ctxLeft ++ [.const val act' outputs] ++ ctxRight),
+    },
+  } := sorry
+
+/-- The step relation does not depend on the input annotations. -/
+theorem step_inputs_indep
+  (inputs : Vector χ m)
+  (h : Config.Step Op χ V S c₁ c₂) :
+  Config.Step Op χ V S
+    { c₁ with proc := { c₁.proc with inputs } }
+    { c₂ with proc := { c₂.proc with inputs } } := sorry
+
+-- def Proc.Computes (p : Proc Op χ V m n) (f : Vector V m → StateM S (Vector V n)) : Prop :=
+--   ∀ state inputs,
+--     Dataflow.Config.StepStar Op χ V S
+--     (Dataflow.Config.init _ _ _ _ p state inputs)
+--     {
+--       proc := {
+--         p with
+--         outputs := (p.outputs.zip ((f inputs).run state).1).map
+--           λ (buf, val) => (buf.1, [val]),
+--       },
+--       state := ((f inputs).run state).2,
+--     }
 
 end Wavelet.Dataflow
