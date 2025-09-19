@@ -225,7 +225,8 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
       },
     }
   | step_forward :
-    c.proc.atoms = ctxLeft ++ [.forward inputs outputs] ++ ctxRight →
+    c.proc.atoms = ctxLeft ++ [forward] ++ ctxRight →
+    forward = .forward inputs outputs →
     inputs.pop _ = some (inputVals, inputs') →
     Step c { c with
       proc := { c.proc with
