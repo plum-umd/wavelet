@@ -59,9 +59,9 @@ def compileExpr
       .fork condChan #v[.switch_cond condChan, .merge_cond condChan],
       -- Steer all live variables
       .switch (.switch_cond condChan)
-        (allVars pathConds)
-        (allVars leftConds)
-        (allVars rightConds),
+        (allVarsExcept cond pathConds)
+        (allVarsExcept cond leftConds)
+        (allVarsExcept cond rightConds),
     ] ++ leftComp ++ rightComp ++ [
       -- Merge tail call conditions, return values and tail call arguments
       -- from both branches. This is done at the end so that we can keep
@@ -74,7 +74,7 @@ def compileExpr
     varNames {n} (vars : Vector χ n) := vars.map varName
     retChans := (Vector.range n).map (.dest · pathConds)
     tailArgs := (Vector.range m).map (.tail_arg · pathConds)
-    allVars pathConds := definedVars.toVector.map (.var · pathConds)
+    allVarsExcept v pathConds := (definedVars.erase v).toVector.map (.var · pathConds)
     exprOutputs m n pathConds := #v[ChanName.tail_cond pathConds] ++
       ((Vector.range n).map (ChanName.dest · pathConds)) ++
       ((Vector.range m).map (ChanName.tail_arg · pathConds))
