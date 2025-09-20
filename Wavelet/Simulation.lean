@@ -52,6 +52,12 @@ def SimR.varsToChans
       if (true, v) ∈ ec.pathConds ∨ (false, v) ∈ ec.pathConds then
         [instInterp.trueVal]
       else []
+    | .final_dest i =>
+      -- Corresponding final return values
+      if let .ret vals := ec.expr then
+        if _ : i < n then [vals[i]]
+        else []
+      else []
     | _ => []
 
 def SimR
@@ -68,7 +74,7 @@ def SimR
     rest = ctxLeft ++ ctxCurrent ++ ctxRight ∧
     (∀ i, (h : i < ec.pathConds.length) →
       compileExpr.brMerge _ _ _ m n (ec.pathConds[i]'h).2 (ec.pathConds.drop i) ∈ pc.proc.atoms) ∧
-    -- (∀ vals, ec.expr = .ret vals → ¬ carryInLoop ∧ ctxCurrent = [] ∧ ctxRight = []) ∧
+    (∀ vals, ec.expr = .ret vals → ¬ carryInLoop ∧ ctxCurrent = [] ∧ ctxRight = []) ∧
     (∀ expr, ec.expr = .cont expr → carryInLoop ∧
       expr.WellFormed _ _ ec.definedVars ∧
       compileExpr Op χ V S hnz ec.definedVars ec.pathConds expr = ctxCurrent) ∧
@@ -76,26 +82,43 @@ def SimR
     pc.chans = SimR.varsToChans _ _ _ _ ec ∧
     (∀ var, var ∈ ec.definedVars ↔ ∃ val, ec.vars.getVar _ _ var = some val)
 
-theorem pop_singleton {chans : ChanMap χ V}
-  (hsingleton : chans.IsSingleton _ _ name val) :
-  ∃ chans',
-    chans.popVal _ _ name = some (val, chans') ∧
-    chans'.getBuf _ _ name = [] ∧
-    ∀ name', name' ≠ name → chans'.getBuf _ _ name' = chans.getBuf _ _ name'
-:= sorry
+theorem push_vars_lookup_diff
+  {map : ChanMap χ V}
+  (hdiff : ∀ v ∈ names, v ≠ name) :
+  map.pushVals _ _ names vals name = map name := sorry
 
-theorem pop_singletons
-  {chans : ChanMap χ V}
+theorem push_vars_lookup_singleton
+  {map : ChanMap χ V}
   {names : Vector χ n}
-  (prop : χ → V → Prop)
-  (hsingletons : ∀ name ∈ names, ∃ val, chans.IsSingleton _ _ name val ∧ prop name val)
-  (hdisj : names.toList.Nodup) :
-  ∃ vals chans',
-    chans.popVals _ _ names = some (vals, chans') ∧
-    List.Forall₂ prop names.toList vals.toList ∧
-    (∀ name ∈ names, chans'.IsEmpty _ _ name) ∧
-    (∀ name, name ∉ names → chans'.getBuf _ _ name = chans.getBuf _ _ name)
-:= sorry
+  (i : Fin n)
+  (hempty : map names[i] = [])
+  (hdisj : names.toList.Nodup)
+  (hval : val = vals[i])
+  (hname : name = names[i]) :
+  map.pushVals _ _ names vals name = [val] := sorry
+
+theorem push_var_lookup_singleton
+  {map : ChanMap χ V}
+  (hempty : map name = []) :
+  map.pushVal _ _ name val name = [val] := sorry
+
+theorem pop_vars_lookup_diff
+  {map : ChanMap χ V}
+  (hpop : map.popVals _ _ names = some (vals, map'))
+  (hdiff : ∀ v ∈ names, v ≠ name) :
+  map' name = map name := sorry
+
+theorem pop_var_lookup_diff
+  {map : ChanMap χ V}
+  (hpop : map.popVal _ _ name' = some (val, map'))
+  (hdiff : name' ≠ name) :
+  map' name = map name := sorry
+
+theorem pop_var_lookup_singleton
+  {map : ChanMap χ V}
+  (hpop : map.popVal _ _ name = some (val, map'))
+  (hsingleton : map name = [val]) :
+  map' name = [] := sorry
 
 theorem sim_step_br
   {cond}
@@ -116,6 +139,7 @@ theorem sim_step_br
       hcomp_fn,
       hrest,
       hmerges,
+      hret,
       hcont,
       hlive_vars,
       hdefined_vars,
@@ -131,8 +155,9 @@ theorem sim_step_br
   | step_br hexpr hcond =>
     rename_i condVal _ _ cond'
     simp [hbr] at hexpr
-    have heq_cond' := hexpr.1
-    subst heq_cond'
+    have heq_cond' := hexpr.1; subst heq_cond'
+    have heq_left' := hexpr.2.1; subst heq_left'
+    have heq_right' := hexpr.2.2; subst heq_right'
     -- Some abbreviations
     generalize hcondName :
       compileExpr.varName χ ec.pathConds cond = condName
@@ -151,7 +176,7 @@ theorem sim_step_br
     -- Step 1: Pop `cond` and run the first `fork`.
     have hcondVal : pc.chans condName = [condVal]
     := by simp [hlive_vars, SimR.varsToChans, hcond, ← hcondName]
-    have ⟨chans₁, hpop_condVal⟩ :
+    have ⟨chans₁, hchans₁⟩ :
       ∃ chans₁, pc.chans.popVal _ _ condName = some (condVal, chans₁)
     := by simp [ChanMap.popVal, hlive_vars, SimR.varsToChans, hcond, ← hcondName]
     have hmem_fork :
@@ -168,7 +193,7 @@ theorem sim_step_br
       Dataflow.Config.Step _ _ _ _ pc pc₁
     := by
       apply step_eq
-      apply Dataflow.Config.Step.step_fork hmem_fork hpop_condVal
+      apply Dataflow.Config.Step.step_fork hmem_fork hchans₁
       simp [← hpc₁]
     -- Step 2: Run the switch
     have hmem_switch :
@@ -241,12 +266,87 @@ theorem sim_step_br
         else
           [compileExpr.brMerge Op χ V m n condName ec.pathConds] ++ ctxRight
       and_intros
-      · grind
-      · grind
-      · grind
-      · sorry
-      · sorry
-      · sorry
-      · sorry
+      · grind only
+      · grind only
+      · grind only [List.length_cons, =_ List.cons_append, = List.append_assoc, List.length_nil,
+          Array.size_empty, = Vector.toArray_empty, List.nil_append, Vector.replicate_zero,
+          List.append_nil, List.eq_or_mem_of_mem_cons, = List.cons_append, Vector.replicate_succ,
+          List.mem_cons_of_mem, =_ List.append_assoc, List.mem_cons_self,
+          → List.eq_nil_of_append_eq_nil, List.size_toArray, List.mem_append, cases Or]
+      · simp
+        -- TODO: prove after checking that this invariant is enough for .ret
+        sorry
+      · split <;> simp
+      · simp [hcarryInLoop]
+        intros expr hcont'
+        cases hwf_expr with | wf_br hwf_left hwf_right =>
+        grind only [List.length_cons, =_ List.cons_append, = List.append_assoc, List.length_nil,
+          Array.size_empty, = Vector.toArray_empty, List.nil_append, Vector.replicate_zero,
+          List.eq_or_mem_of_mem_cons, = List.cons_append, Vector.replicate_succ,
+          List.mem_cons_of_mem, =_ List.append_assoc, List.mem_cons_self,
+          → List.eq_nil_of_append_eq_nil, List.size_toArray, List.mem_append, cases Or]
+      · funext name
+        simp only [← hpc₂, SimR.varsToChans]
+        cases name with
+        | var v pathConds => sorry
+        | merge_cond v =>
+          simp
+          split
+          all_goals
+            rename_i hcondValBool
+            simp [hcondValBool]
+
+            sorry
+        | switch_cond v =>
+          simp
+          split
+          all_goals
+            rw [push_vars_lookup_diff]
+            · rw [pop_vars_lookup_diff _ _ hchans₃]
+              · if hv : condName = v then
+                  -- rw [pop_var_lookup_singleton _ _ hchans₂]
+                  simp only [← hv]
+                  rw [pop_var_lookup_singleton _ _ hchans₂]
+                  simp only [← hpc₁]
+                  rw [push_vars_lookup_singleton _ _ 0]
+                  · simp
+                    rw [pop_var_lookup_diff _ _ hchans₁]
+                    · simp only [hlive_vars, SimR.varsToChans]
+                    · simp [← hcondName]
+                  · simp
+                  · simp
+                  · simp
+                else
+                  rw [pop_var_lookup_diff _ _ hchans₂]
+                  · simp only [← hpc₁]
+                    rw [push_vars_lookup_diff]
+                    · rw [pop_var_lookup_diff _ _ hchans₁]
+                      · simp only [hlive_vars, SimR.varsToChans]
+                      · simp [← hcondName]
+                    · simp [hv]
+                  · simp [hv]
+              · simp [compileExpr.allVars]
+            · simp [compileExpr.allVars]
+        | _ =>
+          simp
+          split
+          all_goals
+            rw [push_vars_lookup_diff]
+            · rw [pop_vars_lookup_diff _ _ hchans₃]
+              · rw [pop_var_lookup_diff _ _ hchans₂]
+                · simp only [← hpc₁]
+                  rw [push_vars_lookup_diff]
+                  · rw [pop_var_lookup_diff _ _ hchans₁]
+                    · simp only [hlive_vars, SimR.varsToChans, hbr]
+                    · simp [← hcondName]
+                  · simp
+                · simp
+              · simp [compileExpr.allVars]
+            · simp [compileExpr.allVars]
+      · simp
+        intros var
+        constructor
+        · sorry
+        · sorry
 
 end Wavelet.Simulation
