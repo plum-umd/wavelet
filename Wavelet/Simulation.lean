@@ -138,19 +138,6 @@ theorem pop_vars_lookup_singleton
   (hsingleton : (map name).length = 1) :
   map' name = [] := sorry
 
-theorem pop_push_diff
-  {map : ChanMap χ V}
-  (hdiff : name' ≠ name) :
-  (map.pushVal _ _ name' val).popVal _ _ name =
-  map.popVal _ _ name >>= λ (v, m) => (v, m.pushVal _ _ name' val) := sorry
-
--- theorem pop_pushes
---   {map : ChanMap χ V}
---   {names : Vector χ n}
---   {i : Fin n}
---   (hdiff : ∀ v ∈ names, v ≠ name) :
---   (map.pushVals _ _ names vals).popVal _ _ name = .some (vals[i], _) := sorry
-
 theorem pop_singleton
   {map : ChanMap χ V}
   (hsingleton : map name = [val]) :
@@ -159,8 +146,11 @@ theorem pop_singleton
 theorem pops_singleton
   {map : ChanMap χ V}
   {names : Vector χ n}
-  (hsingletons : ∀ name ∈ names, ¬ (map name).isEmpty) :
-  ∃ vals map', map.popVals _ _ names = some (vals, map') := sorry
+  (prop : χ → V → Prop)
+  (hsingletons : ∀ name ∈ names, ∃ val, map name = [val] ∧ prop name val) :
+  ∃ vals map',
+    map.popVals _ _ names = some (vals, map') ∧
+    List.Forall₂ prop names.toList vals.toList := sorry
 
 set_option maxHeartbeats 300000
 
@@ -263,11 +253,18 @@ theorem sim_step_br
       · simp
       · simp
       · simp
-    have ⟨inputVals, chans₃, hchans₃⟩ :
+    have ⟨inputVals, chans₃, hchans₃, hinputVals⟩ :
       ∃ inputVals chans₃,
         chans₂.popVals _ _
           (compileExpr.allVarsExcept χ ec.definedVars cond ec.pathConds) =
-          some (inputVals, chans₃)
+          some (inputVals, chans₃) ∧
+        List.Forall₂
+          (λ name val =>
+            ∃ var,
+              name = .var var ec.pathConds ∧
+              ec.vars.getVar _ _ var = some val)
+          (compileExpr.allVarsExcept χ ec.definedVars cond ec.pathConds).toList
+          inputVals.toList
     := by
       apply pops_singleton
       intros name hname
@@ -439,29 +436,34 @@ theorem sim_step_br
               rename_i h; simp [h]
           simp only [this.symm]
           split
-          · if hmem_v : v ∈ ec.definedVars.erase cond then
-              -- have ⟨val, hval⟩ := (hdefined_vars v).mp (List.mem_of_mem_erase hmem_v)
-              -- have ⟨hne_cond, _⟩ := (List.Nodup.mem_erase_iff hdefined_vars_no_dup).mp hmem_v
-              -- have ⟨i, hi⟩ := List.mem_iff_get.mp hmem_v
-              -- unfold VarMap.removeVar VarMap.getVar
-              -- simp
-              sorry
-              -- rw [push_vars_lookup_singleton _ _ i (val := val)]
-              -- · grind only [VarMap.getVar]
-              -- ·
-              --   sorry
-              -- · simp [compileExpr.allVarsExcept, Vector.toList, List.toVector]
-              --   apply (List.nodup_map_iff _).mpr
-              --   · grind only [=_ List.cons_append, = List.append_assoc, = List.nodup_iff_count,
-              --     List.mem_erase_of_ne, =_ List.contains_iff_mem, Vector.replicate_succ,
-              --     List.Nodup.erase, = List.nodup_iff_pairwise_ne, List.mem_cons_of_mem,
-              --     = List.get_eq_getElem, =_ List.append_assoc, usr List.length_pos_of_mem,
-              --     = List.length_erase, → List.eq_nil_of_append_eq_nil, List.size_toArray,
-              --     → List.mem_of_mem_erase]
-              --   · simp [Function.Injective]
-              -- ·
-              --   sorry
-              -- · sorry
+          · rename_i hpath_conds
+            if hmem_v : v ∈ ec.definedVars.erase cond then
+              have ⟨val, hval⟩ := (hdefined_vars v).mp (List.mem_of_mem_erase hmem_v)
+              have ⟨hne_cond, _⟩ := (List.Nodup.mem_erase_iff hdefined_vars_no_dup).mp hmem_v
+              have ⟨i, hi⟩ := List.mem_iff_get.mp hmem_v
+              simp at hi
+              unfold VarMap.removeVar VarMap.getVar
+              simp
+              rw [push_vars_lookup_singleton _ _ i (val := val)]
+              · grind only [VarMap.getVar]
+              · simp only [compileExpr.allVarsExcept]
+                grind
+              · simp [compileExpr.allVarsExcept, Vector.toList, List.toVector]
+                apply (List.nodup_map_iff _).mpr
+                · grind only [=_ List.cons_append, = List.append_assoc, = List.nodup_iff_count,
+                  List.mem_erase_of_ne, =_ List.contains_iff_mem, Vector.replicate_succ,
+                  List.Nodup.erase, = List.nodup_iff_pairwise_ne, List.mem_cons_of_mem,
+                  = List.get_eq_getElem, =_ List.append_assoc, usr List.length_pos_of_mem,
+                  = List.length_erase, → List.eq_nil_of_append_eq_nil, List.size_toArray,
+                  → List.mem_of_mem_erase]
+                · simp [Function.Injective]
+              · simp [compileExpr.allVarsExcept, List.toVector] at hinputVals
+                have ⟨_, h⟩ := (List.forall₂_iff_get).mp hinputVals
+                specialize h i (by simp) (by simp)
+                simp [hi, hval] at h
+                simp [h]
+              · simp [compileExpr.allVarsExcept, List.toVector, hpath_conds]
+                simp [hi]
             else
               rw [push_vars_lookup_diff]
               · simp [hchans₃_no_var]
@@ -635,11 +637,7 @@ theorem sim_step_br
           Vector.replicate_succ, List.Nodup.erase, = List.nodup_iff_pairwise_ne,
           List.mem_cons_of_mem, =_ List.append_assoc, = List.length_erase,
           → List.eq_nil_of_append_eq_nil, List.size_toArray]
-      · simp
-        intros var
-        constructor
-        · sorry
-        · sorry
+      · grind [VarMap.getVar, VarMap.removeVar]
       · grind
 
 end Wavelet.Simulation
