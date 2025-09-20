@@ -20,5 +20,7 @@ class Interp (V S : Type u) where
   trueVal : V
   falseVal : V
   junkVal : V
+  unique_true_val : ∀ v, asBool v ↔ v = trueVal
+  unique_false_val : ∀ v, ¬ asBool v ↔ v = falseVal
 
 end Wavelet.Op

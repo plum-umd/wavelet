@@ -99,16 +99,15 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
       chans := chans'.pushVals _ _ outputs outputVals,
       state := state',
     }
-  | step_switch :
+  | step_switch
+    {outputs₁ outputs₂ : Vector χ n} :
     .switch decider inputs outputs₁ outputs₂ ∈ c.proc.atoms →
     c.chans.popVal _ _ decider = some (deciderVal, chans') →
     chans'.popVals _ _ inputs = some (inputVals, chans'') →
     Step c { c with
       chans :=
-        if instInterp.asBool deciderVal then
-          chans''.pushVals _ _ outputs₁ inputVals
-        else
-          chans''.pushVals _ _ outputs₂ inputVals,
+        let outputs := if instInterp.asBool deciderVal then outputs₁ else outputs₂
+        chans''.pushVals _ _ outputs inputVals
     }
   | step_steer :
     .steer flavor decider inputs outputs ∈ c.proc.atoms →

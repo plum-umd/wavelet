@@ -49,8 +49,10 @@ def SimR.varsToChans
         else []
       else []
     | .merge_cond v =>
-      if (true, v) ∈ ec.pathConds ∨ (false, v) ∈ ec.pathConds then
+      if (true, v) ∈ ec.pathConds then
         [instInterp.trueVal]
+      else if (false, v) ∈ ec.pathConds then
+        [instInterp.falseVal]
       else []
     | .final_dest i =>
       -- Corresponding final return values
@@ -80,7 +82,9 @@ def SimR
       compileExpr Op χ V S hnz ec.definedVars ec.pathConds expr = ctxCurrent) ∧
     -- Some invariants about the correspondence between variables and channels
     pc.chans = SimR.varsToChans _ _ _ _ ec ∧
-    (∀ var, var ∈ ec.definedVars ↔ ∃ val, ec.vars.getVar _ _ var = some val)
+    (∀ var, var ∈ ec.definedVars ↔ ∃ val, ec.vars.getVar _ _ var = some val) ∧
+    (∀ b var pathConds, (b, .var var pathConds) ∈ ec.pathConds →
+      pathConds.length < ec.pathConds.length)
 
 theorem push_vars_lookup_diff
   {map : ChanMap χ V}
@@ -143,6 +147,7 @@ theorem sim_step_br
       hcont,
       hlive_vars,
       hdefined_vars,
+      hpath_conds_order,
     ⟩,
   ⟩ := hsim
   have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont (.br cond left right) hbr
@@ -166,7 +171,7 @@ theorem sim_step_br
     generalize hleftConds : (true, condName) :: ec.pathConds = leftConds
     generalize hrightConds : (false, condName) :: ec.pathConds = rightConds
     simp only [hleftConds, hrightConds] at hcurrent
-    generalize hcondValBool :
+    generalize hcondValInterp :
       Interp.asBool Op S condVal = condValBool
     generalize hleftComp :
       compileExpr Op χ V S hnz (ec.definedVars.erase cond) leftConds left = leftComp
@@ -214,22 +219,18 @@ theorem sim_step_br
     := sorry
     generalize hpc₂ :
       { pc with
-        chans :=
-          if condValBool then
-            ChanMap.pushVals (ChanName χ) V
-              (compileExpr.allVars χ ec.definedVars leftConds)
-              inputVals chans₃
-          else
-            ChanMap.pushVals (ChanName χ) V
-              (compileExpr.allVars χ ec.definedVars rightConds)
-              inputVals chans₃
+        chans := ChanMap.pushVals (ChanName χ) V
+          (compileExpr.allVars χ ec.definedVars
+            (if condValBool then leftConds else rightConds))
+          inputVals chans₃
       } = pc₂
     have hstep₂ :
       Dataflow.Config.Step _ _ _ _ pc₁ pc₂
     := by
       apply step_eq
       apply Dataflow.Config.Step.step_switch hmem_switch hchans₂ hchans₃
-      simp [← hpc₁, ← hpc₂, ← hcondValBool]
+      simp [← hpc₁, ← hpc₂, ← hcondValInterp]
+      split <;> simp
     -- Prove the preservation of invariants
     have hsteps : Dataflow.Config.StepPlus _ _ _ _ pc pc₂
     := by
@@ -288,15 +289,117 @@ theorem sim_step_br
       · funext name
         simp only [← hpc₂, SimR.varsToChans]
         cases name with
-        | var v pathConds => sorry
-        | merge_cond v =>
+        | var v pathConds =>
           simp
-          split
-          all_goals
-            rename_i hcondValBool
-            simp [hcondValBool]
 
-            sorry
+          sorry
+        | merge_cond name =>
+          cases hname : condName == name
+          simp
+          all_goals
+            simp at hname
+            split -- split on `condValBool`
+            all_goals
+              rename_i hcondValBool
+              simp [hcondValBool]
+          · rw [push_vars_lookup_diff]
+            · rw [pop_vars_lookup_diff _ _ hchans₃]
+              · rw [pop_var_lookup_diff _ _ hchans₂]
+                · simp only [← hpc₁]
+                  rw [push_vars_lookup_diff]
+                  · rw [pop_var_lookup_diff _ _ hchans₁]
+                    · simp only [← hcondName] at hname
+                      have : name ≠ ChanName.var cond ec.pathConds := by
+                        intros h; exact hname (h.symm)
+                      simp [hlive_vars, SimR.varsToChans, this]
+                    · simp [← hcondName]
+                  · simp [hname]
+                · simp
+              · simp [compileExpr.allVars]
+            · simp [compileExpr.allVars]
+          -- NOTE: same as above, simplify...
+          · rw [push_vars_lookup_diff]
+            · rw [pop_vars_lookup_diff _ _ hchans₃]
+              · rw [pop_var_lookup_diff _ _ hchans₂]
+                · simp only [← hpc₁]
+                  rw [push_vars_lookup_diff]
+                  · rw [pop_var_lookup_diff _ _ hchans₁]
+                    · simp only [← hcondName] at hname
+                      have : name ≠ ChanName.var cond ec.pathConds := by
+                        intros h; exact hname (h.symm)
+                      simp [hlive_vars, SimR.varsToChans, this]
+                    · simp [← hcondName]
+                  · simp [hname]
+                · simp
+              · simp [compileExpr.allVars]
+            · simp [compileExpr.allVars]
+          · simp only [← hcondName] at hname
+            simp [← hname]
+            rw [push_vars_lookup_diff]
+            · rw [pop_vars_lookup_diff _ _ hchans₃]
+              · rw [pop_var_lookup_diff _ _ hchans₂]
+                · simp only [← hpc₁]
+                  rw [push_vars_lookup_singleton _ _ 1]
+                  · simp
+                    rw [pop_var_lookup_diff _ _ hchans₁]
+                    · simp only [hlive_vars, SimR.varsToChans]
+                      split
+                      · rename_i h
+                        simp only [← hcondName] at h
+                        have := hpath_conds_order true cond ec.pathConds h
+                        simp at this
+                      · split
+                        · rename_i h
+                          simp only [← hcondName] at h
+                          have := hpath_conds_order false cond ec.pathConds h
+                          simp at this
+                        · rfl
+                    · grind only
+                  · simp
+                  · simp
+                    simp only [← hcondValInterp] at hcondValBool
+                    have := (instInterp.unique_true_val condVal).mp hcondValBool
+                    simp [this]
+                  · simp [hname, ← hcondName]
+                · simp
+              · simp [compileExpr.allVars]
+            · simp [compileExpr.allVars]
+          -- TODO: mostly the same as above, refactor...
+          · simp only [← hcondName] at hname
+            simp [← hname]
+            rw [push_vars_lookup_diff]
+            · rw [pop_vars_lookup_diff _ _ hchans₃]
+              · split
+                · rename_i h
+                  have := hpath_conds_order true cond ec.pathConds h
+                  simp at this
+                rw [pop_var_lookup_diff _ _ hchans₂]
+                · simp only [← hpc₁]
+                  rw [push_vars_lookup_singleton _ _ 1]
+                  · simp
+                    rw [pop_var_lookup_diff _ _ hchans₁]
+                    · simp only [hlive_vars, SimR.varsToChans]
+                      split
+                      · rename_i h
+                        simp only [← hcondName] at h
+                        have := hpath_conds_order true cond ec.pathConds h
+                        simp at this
+                      · split
+                        · rename_i h
+                          simp only [← hcondName] at h
+                          have := hpath_conds_order false cond ec.pathConds h
+                          simp at this
+                        · rfl
+                    · grind only
+                  · simp
+                  · simp
+                    simp only [← hcondValInterp] at hcondValBool
+                    have := (instInterp.unique_false_val condVal).mp hcondValBool
+                    simp [this]
+                  · simp [hname, ← hcondName]
+                · simp
+              · simp [compileExpr.allVars]
+            · simp [compileExpr.allVars]
         | switch_cond v =>
           simp
           split
@@ -348,5 +451,6 @@ theorem sim_step_br
         constructor
         · sorry
         · sorry
+      · grind
 
 end Wavelet.Simulation
