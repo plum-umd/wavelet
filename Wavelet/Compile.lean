@@ -106,20 +106,25 @@ def compileFn
     inputs := fn.params.map .input
     initCarry inLoop :=
       .carry inLoop
-        (.tail_cond [])
+        .tail_cond_carry
         inputs
         ((Vector.range m).map .final_tail_arg)
         (fn.params.map λ v => .var v [])
     bodyComp := compileExpr Op χ V S hnz fn.params.toList [] fn.body
     resultSteers m n := [
+      .fork (.tail_cond []) #v[
+        .tail_cond_carry,
+        .tail_cond_steer_dests,
+        .tail_cond_steer_tail_args,
+      ],
       -- If tail condition is true, discard the junk return values
       .steer false
-        (.tail_cond [])
+        .tail_cond_steer_dests
         ((Vector.range n).map (.dest · []))
         ((Vector.range n).map .final_dest),
       -- If tail condition is false, discard the junk tail arguments
       .steer true
-        (.tail_cond [])
+        .tail_cond_steer_tail_args
         ((Vector.range m).map (.tail_arg · []))
         ((Vector.range m).map .final_tail_arg),
     ]

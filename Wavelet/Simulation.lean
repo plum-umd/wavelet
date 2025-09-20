@@ -38,6 +38,22 @@ def SeqRefinesDataflow
   (R : Seq.Config Op χ₁ V S m n → Dataflow.Config Op χ₂ V S m n → Prop) : Prop :=
   Refines c₁ c₂ R (Config.Step Op χ₁ V S) (Config.StepPlus Op χ₂ V S)
 
+def SimR.varsToChans
+  (ec : Seq.Config Op χ V S m n) : ChanMap (ChanName χ) V :=
+  λ name =>
+    match name with
+    | .var v pathConds =>
+      if pathConds = ec.pathConds then
+        if let some val := ec.vars.getVar _ _ v then
+          [val]
+        else []
+      else []
+    | .merge_cond v =>
+      if (true, v) ∈ ec.pathConds ∨ (false, v) ∈ ec.pathConds then
+        [instInterp.trueVal]
+      else []
+    | _ => []
+
 def SimR
   (hnz : m > 0 ∧ n > 0)
   (ec : Seq.Config Op χ V S m n)
@@ -46,25 +62,19 @@ def SimR
   ∃ (rest : AtomicProcs Op (ChanName χ) V)
     (carryInLoop : Bool)
     (ctxLeft ctxCurrent ctxRight : AtomicProcs Op (ChanName χ) V),
-    -- Some invariants about the form of the processes
+    -- Some invariants about the "shape" of the processes
     pc.proc.atoms = compileFn.initCarry _ _ _ ec.fn carryInLoop :: rest ∧
     (compileFn Op χ V S hnz ec.fn).atoms = compileFn.initCarry _ _ _ ec.fn false :: rest ∧
     rest = ctxLeft ++ ctxCurrent ++ ctxRight ∧
-    -- TODO: include this
+    (∀ i, (h : i < ec.pathConds.length) →
+      compileExpr.brMerge _ _ _ m n (ec.pathConds[i]'h).2 (ec.pathConds.drop i) ∈ pc.proc.atoms) ∧
     -- (∀ vals, ec.expr = .ret vals → ¬ carryInLoop ∧ ctxCurrent = [] ∧ ctxRight = []) ∧
     (∀ expr, ec.expr = .cont expr → carryInLoop ∧
       expr.WellFormed _ _ ec.definedVars ∧
       compileExpr Op χ V S hnz ec.definedVars ec.pathConds expr = ctxCurrent) ∧
-    (∀ var val, ec.vars.getVar _ _ var = some val →
-      pc.chans.IsSingleton _ _ (.var var ec.pathConds) val) ∧
-    (∀ cond ∈ ec.pathConds, pc.chans.IsSingleton _ _ (.merge_cond cond.2) instInterp.trueVal) ∧
-    (∀ i, (h : i < ec.pathConds.length) →
-      compileExpr.brMerge _ _ _ m n (ec.pathConds[i]'h).2 (ec.pathConds.drop i) ∈ pc.proc.atoms) ∧
-    (∀ var ∈ ec.definedVars, ∃ val, ec.vars.getVar _ _ var = some val) ∧
-    (∀ name : ChanName χ, match name with
-      | .var _ pathConds => pathConds ≠ ec.pathConds → pc.chans.IsEmpty _ _ name
-      | .merge_cond v => (∀ cond ∈ ec.pathConds, v ≠ cond.2) → pc.chans.IsEmpty _ _ name
-      | _ => pc.chans.IsEmpty _ _ name)
+    -- Some invariants about the correspondence between variables and channels
+    pc.chans = SimR.varsToChans _ _ _ _ ec ∧
+    (∀ var, var ∈ ec.definedVars ↔ ∃ val, ec.vars.getVar _ _ var = some val)
 
 theorem pop_singleton {chans : ChanMap χ V}
   (hsingleton : chans.IsSingleton _ _ name val) :
@@ -105,17 +115,14 @@ theorem sim_step_br
       hatoms,
       hcomp_fn,
       hrest,
+      hmerges,
       hcont,
       hlive_vars,
-      hpath_conds,
-      hmerges,
       hdefined_vars,
-      hempty_names,
     ⟩,
   ⟩ := hsim
   have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont (.br cond left right) hbr
   simp [compileExpr] at hcurrent
-
   -- Deduce some facts from `hstep`
   cases hstep with
   | step_ret hexpr => simp [hbr] at hexpr
@@ -126,29 +133,36 @@ theorem sim_step_br
     simp [hbr] at hexpr
     have heq_cond' := hexpr.1
     subst heq_cond'
-
-    -- Pop `cond` and run the first `fork`
-    have hcondVal : pc.chans.IsSingleton _ _ (.var cond ec.pathConds) condVal
-      := hlive_vars cond condVal hcond
-    have ⟨chans', hpop_condVal, hchans'⟩ := pop_singleton _ _ hcondVal
+    -- Some abbreviations
+    generalize hcondName :
+      compileExpr.varName χ ec.pathConds cond = condName
+    simp only [hcondName] at hcurrent
+    simp only [compileExpr.varName] at hcondName
+    generalize hleftConds : (true, condName) :: ec.pathConds = leftConds
+    generalize hrightConds : (false, condName) :: ec.pathConds = rightConds
+    simp only [hleftConds, hrightConds] at hcurrent
+    generalize hcondValBool :
+      Interp.asBool Op S condVal = condValBool
+    generalize hleftComp :
+      compileExpr Op χ V S hnz (ec.definedVars.erase cond) leftConds left = leftComp
+    generalize hrightComp :
+      compileExpr Op χ V S hnz (ec.definedVars.erase cond) rightConds right = rightComp
+    simp only [hleftComp, hrightComp] at hcurrent
+    -- Step 1: Pop `cond` and run the first `fork`.
+    have hcondVal : pc.chans condName = [condVal]
+    := by simp [hlive_vars, SimR.varsToChans, hcond, ← hcondName]
+    have ⟨chans₁, hpop_condVal⟩ :
+      ∃ chans₁, pc.chans.popVal _ _ condName = some (condVal, chans₁)
+    := by simp [ChanMap.popVal, hlive_vars, SimR.varsToChans, hcond, ← hcondName]
     have hmem_fork :
-      .fork (compileExpr.varName χ ec.pathConds cond)
-        #v[
-          .switch_cond (compileExpr.varName χ ec.pathConds cond),
-          .merge_cond (compileExpr.varName χ ec.pathConds cond),
-        ]
-      ∈ pc.proc.atoms
+      .fork condName #v[.switch_cond condName, .merge_cond condName] ∈ pc.proc.atoms
     := by grind
     generalize hpc₁ :
       { pc with
-        chans :=
-          .pushVals _ _
-            #v[
-              .switch_cond (compileExpr.varName χ ec.pathConds cond),
-              (compileExpr.varName χ ec.pathConds cond).merge_cond,
-            ]
-            (Vector.replicate 2 condVal)
-            chans',
+        chans := .pushVals _ _
+          #v[.switch_cond condName, .merge_cond condName]
+          (Vector.replicate 2 condVal)
+          chans₁,
         : Dataflow.Config _ _ _ _ _ _ } = pc₁
     have hstep₁ :
       Dataflow.Config.Step _ _ _ _ pc pc₁
@@ -156,72 +170,83 @@ theorem sim_step_br
       apply step_eq
       apply Dataflow.Config.Step.step_fork hmem_fork hpop_condVal
       simp [← hpc₁]
-
-    -- Run the switch
+    -- Step 2: Run the switch
     have hmem_switch :
-      .switch
-        (.switch_cond (compileExpr.varName χ ec.pathConds cond))
+      .switch (.switch_cond condName)
         (compileExpr.allVars χ ec.definedVars ec.pathConds)
-        (compileExpr.allVars χ ec.definedVars
-          ((true, compileExpr.varName χ ec.pathConds cond) :: ec.pathConds))
-        (compileExpr.allVars χ ec.definedVars
-          ((false, compileExpr.varName χ ec.pathConds cond) :: ec.pathConds))
+        (compileExpr.allVars χ ec.definedVars leftConds)
+        (compileExpr.allVars χ ec.definedVars rightConds)
       ∈ pc₁.proc.atoms
     := by grind
-    have hcondVal₁ :
-      pc₁.chans.IsSingleton _ _ (.switch_cond (compileExpr.varName χ ec.pathConds cond)) condVal
+    have ⟨chans₂, hchans₂⟩ :
+      ∃ chans₂, pc₁.chans.popVal _ _ (.switch_cond condName) = some (condVal, chans₂)
     := sorry
-    have ⟨chans'', hpop_condVal₁, hchans''⟩ := pop_singleton _ _ hcondVal₁
-
-    have hallVars_lookup :
-      ∀ name ∈ compileExpr.allVars χ ec.definedVars ec.pathConds,
-        ∃ val, chans''.IsSingleton _ _ name val ∧
-          (∃ var, name = .var var ec.pathConds ∧ ec.vars var = some val)
+    have ⟨inputVals, chans₃, hchans₃⟩ :
+      ∃ inputVals chans₃,
+        chans₂.popVals _ _
+          (compileExpr.allVars χ ec.definedVars ec.pathConds) =
+          some (inputVals, chans₃)
     := sorry
-    have hallVars_disj :
-      (compileExpr.allVars χ ec.definedVars ec.pathConds).toList.Nodup
-    := sorry -- from well-formedness
-
-    have ⟨inputVals, chans''', hpop_inputVals, _⟩ := pop_singletons _ _ _ hallVars_lookup hallVars_disj
-
     generalize hpc₂ :
       { pc with
         chans :=
-          if Interp.asBool Op S condVal = true then
+          if condValBool then
             ChanMap.pushVals (ChanName χ) V
-              (compileExpr.allVars χ ec.definedVars ((true, compileExpr.varName χ ec.pathConds cond) :: ec.pathConds))
-              inputVals chans'''
+              (compileExpr.allVars χ ec.definedVars leftConds)
+              inputVals chans₃
           else
             ChanMap.pushVals (ChanName χ) V
-              (compileExpr.allVars χ ec.definedVars ((false, compileExpr.varName χ ec.pathConds cond) :: ec.pathConds))
-              inputVals chans'''
+              (compileExpr.allVars χ ec.definedVars rightConds)
+              inputVals chans₃
       } = pc₂
     have hstep₂ :
       Dataflow.Config.Step _ _ _ _ pc₁ pc₂
     := by
       apply step_eq
-      apply Dataflow.Config.Step.step_switch hmem_switch hpop_condVal₁ hpop_inputVals
-      simp [← hpc₁, ← hpc₂]
-
-    -- have pc₁.IsSingleton _ _ (.var cond ec.pathConds) condVal
-    -- := by
-    --   simp [hpc₁]
-    --   exact hchans' _ rfl
-
-    -- have hmem_steer₂ :
-    --   AtomicProc.steer false
-    --     (compileExpr.varName χ ec.pathConds cond)
-    --     (compileExpr.allVars χ ec.definedVars ec.pathConds)
-    --     (compileExpr.allVars χ ec.definedVars ((false, compileExpr.varName χ ec.pathConds cond) :: ec.pathConds))
-    --   ∈ pc.proc.atoms
-    -- := by grind
-
-    -- have :
-    --   Dataflow.Config.Step _ _ _ _ pc
-    --     { pc with
-
-    --     }
-    -- := sorry
-    sorry
+      apply Dataflow.Config.Step.step_switch hmem_switch hchans₂ hchans₃
+      simp [← hpc₁, ← hpc₂, ← hcondValBool]
+    -- Prove the preservation of invariants
+    have hsteps : Dataflow.Config.StepPlus _ _ _ _ pc pc₂
+    := by
+      apply Relation.TransGen.trans
+      apply Relation.TransGen.single hstep₁
+      apply Relation.TransGen.single hstep₂
+    exists pc₂
+    simp only [hsteps, true_and]
+    and_intros
+    · simp [← hpc₂, heq_state]
+    · exists rest, carryInLoop
+      exists -- ctxLeft
+        if condValBool then
+          ctxLeft ++ [
+            .fork condName #v[.switch_cond condName, .merge_cond condName],
+            .switch (.switch_cond condName)
+              (compileExpr.allVars χ ec.definedVars ec.pathConds)
+              (compileExpr.allVars χ ec.definedVars leftConds)
+              (compileExpr.allVars χ ec.definedVars rightConds)
+          ]
+        else
+          ctxLeft ++ [
+            .fork condName #v[.switch_cond condName, .merge_cond condName],
+            .switch (.switch_cond condName)
+              (compileExpr.allVars χ ec.definedVars ec.pathConds)
+              (compileExpr.allVars χ ec.definedVars leftConds)
+              (compileExpr.allVars χ ec.definedVars rightConds)
+          ] ++ compileExpr Op χ V S hnz (ec.definedVars.erase cond) leftConds left
+      exists -- ctxCurrent
+        if condValBool then leftComp else rightComp
+      exists -- ctxRight
+        if condValBool then
+          rightComp ++ [compileExpr.brMerge Op χ V m n condName ec.pathConds] ++ ctxRight
+        else
+          [compileExpr.brMerge Op χ V m n condName ec.pathConds] ++ ctxRight
+      and_intros
+      · grind
+      · grind
+      · grind
+      · sorry
+      · sorry
+      · sorry
+      · sorry
 
 end Wavelet.Simulation

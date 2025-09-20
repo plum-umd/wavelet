@@ -70,6 +70,9 @@ inductive ChanName where
   | tail_arg (i : Nat) (pathConds : List (Bool × ChanName))
   -- Only sent during ret/tail
   | tail_cond (pathConds : List (Bool × ChanName))
+  | tail_cond_carry
+  | tail_cond_steer_dests
+  | tail_cond_steer_tail_args
   -- Only sent during the final steers
   | final_dest (i : Nat)
   | final_tail_arg (i : Nat)
