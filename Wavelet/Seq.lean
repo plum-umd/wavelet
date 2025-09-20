@@ -62,6 +62,7 @@ inductive ChanName where
   | input (base : χ)
   | var (base : χ) (pathConds : List (Bool × ChanName))
   -- Only sent during branching
+  | switch_cond (chan : ChanName)
   | merge_cond (chan : ChanName)
   -- Only sent during ret/tail
   | dest (i : Nat) (pathConds : List (Bool × ChanName))
@@ -116,6 +117,7 @@ structure Config m n where
   vars : VarMap χ V
   state : S
   -- Ghost state for the simulation relation
+  definedVars : List χ
   pathConds : List (Bool × ChanName χ)
 
 /-- Initialize an expression configuration. -/
@@ -128,6 +130,7 @@ def Config.init
     fn,
     vars := .fromList _ _ (fn.params.zip args).toList,
     state,
+    definedVars := fn.params.toList,
     pathConds := [],
   }
 
@@ -139,6 +142,7 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     Step c { c with
       expr := .ret inputVals,
       vars := c.vars.removeVars _ _ args.toList,
+      definedVars := c.definedVars.removeAll args.toList,
     }
   | step_tail :
     c.expr = .cont (.tail args) →
@@ -155,6 +159,7 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
       expr := .cont cont,
       vars := (c.vars.removeVars _ _ args.toList).insertVars _ _ rets outputVals,
       state := state',
+      definedVars := (c.definedVars.removeAll args.toList) ++ rets.toList,
     }
   | step_br {cond} :
     c.expr = .cont (.br cond left right) →
@@ -162,6 +167,7 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     Step c { c with
       expr := if instInterp.asBool condVal then .cont left else .cont right,
       vars := c.vars.removeVar _ _ cond,
+      definedVars := c.definedVars.erase cond,
       pathConds :=
         (
           instInterp.asBool condVal,

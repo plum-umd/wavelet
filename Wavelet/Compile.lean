@@ -55,12 +55,13 @@ def compileExpr
     let leftComp := compileExpr hnz (definedVars.erase cond) leftConds left
     let rightComp := compileExpr hnz (definedVars.erase cond) rightConds right
     [
+      -- Copy condition variables
+      .fork condChan #v[.switch_cond condChan, .merge_cond condChan],
       -- Steer all live variables
-      .steer true condChan (allVars pathConds) (allVars leftConds),
-      .steer false condChan (allVars pathConds) (allVars rightConds),
-      -- Forward the condition again to the merge
-      -- (extra forward for a simpler simulation relation)
-      .forward #v[condChan] #v[.merge_cond condChan],
+      .switch (.switch_cond condChan)
+        (allVars pathConds)
+        (allVars leftConds)
+        (allVars rightConds),
     ] ++ leftComp ++ rightComp ++ [
       -- Merge tail call conditions, return values and tail call arguments
       -- from both branches. This is done at the end so that we can keep

@@ -15,6 +15,7 @@ variable [DecidableEq χ]
 /-- Dataflow operators. -/
 inductive AtomicProc (V : Type u) where
   | op (op : Op) (inputs : Vector χ (Arity.ι op)) (outputs : Vector χ (Arity.ω op))
+  | switch (decider : χ) (inputs : Vector χ n) (outputs₁ : Vector χ n) (outputs₂ : Vector χ n)
   | steer (flavor : Bool) (decider : χ) (inputs : Vector χ n) (outputs : Vector χ n)
   | carry (inLoop : Bool)
     (decider : χ)
@@ -24,6 +25,7 @@ inductive AtomicProc (V : Type u) where
     (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
     (outputs : Vector χ n)
   | forward (inputs : Vector χ n) (outputs : Vector χ n)
+  | fork (input : χ) (outputs : Vector χ n)
   | const (c : V) (act : χ) (outputs : Vector χ n)
 
 abbrev AtomicProcs V := List (AtomicProc Op χ V)
@@ -66,6 +68,12 @@ def ChanMap.popVals
     let (vs, map'') ← map'.popVals names.tail
     pure (cast (by simp; congr 1; omega) (#v[v] ++ vs), map'')
 
+def ChanMap.IsSingleton (name : χ) (val : V) (map : ChanMap χ V) : Prop := map name = [val]
+
+def ChanMap.IsEmpty (name : χ) (map : ChanMap χ V) : Prop := map name = []
+
+def ChanMap.getBuf (name : χ) (map : ChanMap χ V) : List V := map name
+
 structure Config m n where
   proc : Proc Op χ V m n
   chans : ChanMap χ V
@@ -90,6 +98,17 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     Step c { c with
       chans := chans'.pushVals _ _ outputs outputVals,
       state := state',
+    }
+  | step_switch :
+    .switch decider inputs outputs₁ outputs₂ ∈ c.proc.atoms →
+    c.chans.popVal _ _ decider = some (deciderVal, chans') →
+    chans'.popVals _ _ inputs = some (inputVals, chans'') →
+    Step c { c with
+      chans :=
+        if instInterp.asBool deciderVal then
+          chans''.pushVals _ _ outputs₁ inputVals
+        else
+          chans''.pushVals _ _ outputs₂ inputVals,
     }
   | step_steer :
     .steer flavor decider inputs outputs ∈ c.proc.atoms →
@@ -145,6 +164,12 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     c.chans.popVals _ _ inputs = some (inputVals, chans') →
     Step c { c with
       chans := chans'.pushVals _ _ outputs inputVals,
+    }
+  | step_fork :
+    .fork input outputs ∈ c.proc.atoms →
+    c.chans.popVal _ _ input = some (inputVal, chans') →
+    Step c { c with
+      chans := chans'.pushVals _ _ outputs (Vector.replicate _ inputVal),
     }
   | step_const :
     .const val act outputs ∈ c.proc.atoms →
