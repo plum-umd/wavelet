@@ -1,3 +1,5 @@
+import Batteries.Data.Vector.Lemmas
+
 import Wavelet.Dataflow
 
 /-! Some lemmas for `ChanMap`s. -/
@@ -77,7 +79,13 @@ theorem pop_vals_singleton
 theorem push_val_empty_rewrite
   {map : ChanMap χ V}
   (hempty : map name = []) :
-  map.pushVal _ _ name val = λ n => if n = name then [val] else map n := sorry
+  map.pushVal _ _ name val = λ n => if n = name then [val] else map n := by
+  funext name'
+  simp [ChanMap.pushVal]
+  split
+  · rename_i h
+    simp [h, hempty]
+  · rfl
 
 theorem push_vals_empty_rewrite
   {map : ChanMap χ V}
@@ -87,14 +95,29 @@ theorem push_vals_empty_rewrite
   (hempty : ∀ name ∈ names, map name = []) :
   map.pushVals _ _ names vals =
     λ n => if let some i := names.finIdxOf? n then [vals[i]]
-    else map n := sorry
+    else map n := by
+  funext name'
+  simp [ChanMap.pushVals]
+  unfold ChanMap.pushVal
+  induction n with
+  | zero =>
+    have : names.zip vals = #v[] := by simp
+    simp [this, Vector.finIdxOf?_empty]
+  | succ n' ih =>
+    have : names.zip vals = ((names.pop.zip vals.pop)).push (names.zip vals).back
+    := by
+      simp [Vector.zip_eq_zipWith]
+      sorry
+    rw [this, Vector.foldl_push]
+    sorry
 
 theorem pop_val_singleton_rewrite
   {map : ChanMap χ V}
   (hsingleton : map name = [val]) :
   ∃ map',
     map.popVal _ _ name = some (val, map') ∧
-    map' = λ n => if n = name then [] else map n := sorry
+    map' = λ n => if n = name then [] else map n := by
+  simp [ChanMap.popVal, hsingleton]
 
 theorem pop_vals_singleton_rewrite
   {map : ChanMap χ V}
