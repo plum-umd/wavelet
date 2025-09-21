@@ -168,7 +168,7 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     c.expr = .cont (.br cond left right) →
     c.vars.getVar _ _ cond = some condVal →
     Step c { c with
-      expr := if instInterp.asBool condVal then .cont left else .cont right,
+      expr := .cont (if instInterp.asBool condVal then left else right),
       vars := c.vars.removeVar _ _ cond,
       definedVars := c.definedVars.erase cond,
       pathConds :=
