@@ -490,8 +490,6 @@ theorem sim_step_ret
       · -- varsToChans
         sorry
       · simp
-        apply List.Nodup.filter
-        exact hdefined_vars_no_dup
       · simp
         -- TODO: should be easy
         sorry

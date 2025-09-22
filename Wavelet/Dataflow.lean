@@ -32,6 +32,7 @@ inductive AtomicProc (V : Type u) where
   -- to the last `m` outputs.
   | forwardc
     (inputs : Vector χ n) (consts : Vector V m) (outputs : Vector χ (n + m))
+  | sink (inputs : Vector χ n)
 
 abbrev AtomicProcs V := List (AtomicProc Op χ V)
 
@@ -185,6 +186,10 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     Step c { c with
       chans := chans'.pushVals _ _ outputs (inputVals ++ consts),
     }
+  | step_sink :
+    .sink inputs ∈ c.proc.atoms →
+    c.chans.popVals _ _ inputs = some (inputVals, chans') →
+    Step c { c with chans := chans' }
 
 def Config.StepPlus {m n} := @Relation.TransGen (Config Op χ V S m n) (Step Op χ V S)
 def Config.StepStar {m n} := @Relation.ReflTransGen (Config Op χ V S m n) (Step Op χ V S)

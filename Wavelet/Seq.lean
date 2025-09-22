@@ -145,7 +145,7 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     Step c { c with
       expr := .ret inputVals,
       vars := c.vars.removeVars _ _ args.toList,
-      definedVars := c.definedVars.removeAll args.toList,
+      definedVars := [],
       pathConds := [],
     }
   | step_tail :
