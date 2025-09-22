@@ -234,19 +234,21 @@ theorem sim_step_ret_merges
                 · grind
                 · rfl))
 
-/- TODO: Fix proof performance -/
-set_option maxHeartbeats 300000
-
-theorem sim_step_ret
+/-- Fires `forwardc` and `sink` to get an intermediate state. -/
+theorem sim_step_ret_forwardc_sink
   (hnz : m > 0 ∧ n > 0)
   (ec ec' : Seq.Config Op χ V S m n)
   (pc : Dataflow.Config Op (ChanName χ) V S m n)
   (hsim : SimR _ _ _ _ hnz ec pc)
   (hstep : Config.Step Op χ V S ec ec')
   (hexpr : ec.expr = .cont (.ret vars)) :
-  ∃ pc',
-    Config.StepPlus Op (ChanName χ) V S pc pc' ∧
-    SimR _ _ _ _ hnz ec' pc' := by
+  ∃ retVals,
+    VarMap.getVars χ V vars ec.vars = some retVals ∧
+    Dataflow.Config.StepPlus Op (ChanName χ) V S pc
+    { proc := pc.proc,
+      chans := intermChans _ _ _ _ ec pc vars retVals ec.pathConds
+      state := pc.state }
+:= by
   have ⟨
     heq_state,
     hlive_vars,
@@ -264,12 +266,6 @@ theorem sim_step_ret
       hcont,
     ⟩,
   ⟩ := hsim
-  -- An alternative description of `rest`
-  have hrest' :
-    compileFn.bodyComp Op χ V S hnz ec.fn ++ compileFn.resultSteers Op χ V m n = rest
-  := by
-    simp [compileFn] at hcomp_fn
-    exact hcomp_fn
   have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont (.ret vars) hexpr
   simp [compileExpr] at hcurrent
   -- Deduce some facts from `hstep`
@@ -277,7 +273,7 @@ theorem sim_step_ret
   | step_br hexpr' | step_tail hexpr' | step_op hexpr' =>
     simp [hexpr] at hexpr'
   | step_ret hexpr' hvars =>
-    rename_i inputVals vars'
+    rename_i retVals vars'
     simp [hexpr] at hexpr'
     subst hexpr'
     cases hwf_expr with | wf_ret hvars_nodup =>
@@ -297,7 +293,7 @@ theorem sim_step_ret
       = forwardcOutputs
     simp only [hvar_names, hret_chans, hjunk, hfalse, hforwardc_outputs] at hcurrent
     -- Step 1: Fire `forwardc`.
-    have ⟨chans₁, retVals, hpop_ret_vals, hchans₁, hret_vals⟩ :=
+    have ⟨chans₁, retVals', hpop_ret_vals, hchans₁, hret_vals⟩ :=
       pop_vals_singleton_rewrite _ _
       (map := pc.chans)
       (names := varNames)
@@ -317,6 +313,18 @@ theorem sim_step_ret
         have ⟨val, _, hval⟩ := this v hmem_v
         exists val
         simp [VarMap.getVar, hval])
+    have heq_ret_vals :
+      retVals'.toList = retVals.toList
+    := by
+      apply List.right_unique_forall₂' _ hret_vals
+      · simp [← hvar_names, compileExpr.varNames, compileExpr.varName,
+          Vector.toList_map, VarMap.getVar]
+        apply List.mapM_some_iff_forall₂.mp (Vector.mapM_toList hvars)
+      · simp [Relator.RightUnique, VarMap.getVar]
+        grind
+    simp [Vector.toList] at heq_ret_vals
+    replace heq_ret_vals := heq_ret_vals.symm
+    subst heq_ret_vals
     have hmem_forwardc :
       AtomicProc.forwardc
         varNames ((Vector.replicate m junk).push falseVal)
@@ -365,15 +373,10 @@ theorem sim_step_ret
     have hsteps₂ : Dataflow.Config.StepPlus _ _ _ _ pc _
       := Relation.TransGen.tail hsteps₁
         (Dataflow.Config.Step.step_sink hmem_sink hpop_other_vals)
-    -- Step 3: Fire the sequence of `merge`s (through `SimR.HasMerges`)
-    -- so that `dest i []`, `tail_arg i []`, `tail_cond []` channels are ready.
-    have hmerge_init :
-      Dataflow.Config.StepPlus Op (ChanName χ) V S pc
-      { proc := pc.proc,
-        chans := intermChans _ _ _ _ ec pc vars retVals ec.pathConds
-        state := pc.state }
-    := by
-      apply step_plus_eq
+    exists retVals
+    constructor
+    · exact hvars
+    · apply step_plus_eq
       apply hsteps₂
       simp [hpc₁]
       funext name
@@ -401,138 +404,177 @@ theorem sim_step_ret
               · rfl
             | merge_cond condName => rfl
             | _ => simp [hexpr]
-    have hsteps₂ := sim_step_ret_merges _ _ _ _ ec pc
-      hlive_vars hmerges (by simp)
-      hpath_conds_nodup hmerge_init
-    -- Step 4: Fire the `fork` in `compileFn`.
-    simp only [compileFn, compileFn.resultSteers] at hcomp_fn
-    have ⟨chans₂, hpop_tail_cond, hchans₂⟩ := pop_val_singleton_rewrite _ _
-      (map := intermChans _ _ _ _ ec pc vars retVals [])
-      (name := .tail_cond [])
-      (val := instInterp.fromBool false)
-      (by simp [intermChans, final_exprOutputs_finIdxOf?_tail_cond])
-    have hmem_fork :
-      .fork (ChanName.tail_cond [])
-        #v[.tail_cond_carry, .tail_cond_steer_dests, .tail_cond_steer_tail_args]
-      ∈ pc.proc.atoms
-    := by grind
-    have hsteps₃ : Dataflow.Config.StepPlus _ _ _ _ pc _
-      := Relation.TransGen.tail hsteps₂
-        (Dataflow.Config.Step.step_fork hmem_fork hpop_tail_cond)
-    -- Simplify pushes
-    rw [push_vals_empty_rewrite] at hsteps₃
-    rotate_left
-    · simp
-    · sorry -- should be easy
-    simp at hsteps₃
-    replace ⟨pc₁, hpc₁, hsteps₃⟩ := exists_eq_left.mpr hsteps₃
-    -- Step 5: Fire the first `steer` in `compileFn` for return values.
-    have ⟨chans₃, hpop_tail_cond_steer_dests, hchans₃⟩ := pop_val_singleton_rewrite _ _
-      (map := pc₁.chans)
-      (name := .tail_cond_steer_dests)
-      (val := instInterp.fromBool false)
-      (by simp [hpc₁, List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go])
-    have ⟨chans₄, destVals, hpop_dest_vals, hchans₄, hdest_vals⟩ :=
-      pop_vals_singleton_rewrite _ _
-      (map := chans₃)
-      (names := (Vector.range n).map (.dest · []))
-      (λ name val =>
-        match name with
-        | .dest i _ => ∃ (h : i < n), val = retVals[i]
-        | _ => False)
-      (by
-        simp [Vector.toList_map, Vector.toList_range]
-        apply List.Nodup.map _ List.nodup_range
-        simp [Function.Injective])
-      (by sorry)
-    have hmem_steer_dests :
-      .steer false
-        .tail_cond_steer_dests
-        ((Vector.range n).map (.dest · []))
-        ((Vector.range n).map .final_dest)
-      ∈ pc₁.proc.atoms
-    := by grind
-    have hsteps₄ : Dataflow.Config.StepPlus _ _ _ _ pc _
-      := Relation.TransGen.tail hsteps₃
-        (Dataflow.Config.Step.step_steer
-          hmem_steer_dests
-          hpop_tail_cond_steer_dests
-          hpop_dest_vals
-          (instInterp.unique_fromBool_toBool _))
-    -- Simplify pushes
-    rw [push_vals_empty_rewrite] at hsteps₄
-    rotate_left
-    · simp [Vector.toList_map, Vector.toList_range]
+
+theorem sim_step_ret
+  (hnz : m > 0 ∧ n > 0)
+  (ec ec' : Seq.Config Op χ V S m n)
+  (pc : Dataflow.Config Op (ChanName χ) V S m n)
+  (hsim : SimR _ _ _ _ hnz ec pc)
+  (hstep : Config.Step Op χ V S ec ec')
+  (hexpr : ec.expr = .cont (.ret vars)) :
+  ∃ pc',
+    Config.StepPlus Op (ChanName χ) V S pc pc' ∧
+    SimR _ _ _ _ hnz ec' pc' := by
+  have ⟨
+    heq_state,
+    hlive_vars,
+    hdefined_vars_no_dup,
+    hdefined_vars,
+    hpath_conds_order,
+    hpath_conds_nodup,
+    hmerges,
+    ⟨
+      rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
+      hatoms,
+      hcomp_fn,
+      hrest,
+      hret,
+      hcont,
+    ⟩,
+  ⟩ := hsim
+  have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont (.ret vars) hexpr
+  have ⟨retVals, hret_vals, hsteps₁⟩ :=
+    sim_step_ret_forwardc_sink _ _ _ _ hnz _ _ _ hsim hstep hexpr
+  have hsteps₂ := sim_step_ret_merges _ _ _ _ ec pc
+    hlive_vars hmerges (by simp)
+    hpath_conds_nodup hsteps₁
+  -- Step 4: Fire the `fork` in `compileFn`.
+  simp only [compileFn, compileFn.resultSteers] at hcomp_fn
+  have ⟨chans₂, hpop_tail_cond, hchans₂⟩ := pop_val_singleton_rewrite _ _
+    (map := intermChans _ _ _ _ ec pc vars retVals [])
+    (name := .tail_cond [])
+    (val := instInterp.fromBool false)
+    (by simp [intermChans, final_exprOutputs_finIdxOf?_tail_cond])
+  have hmem_fork :
+    .fork (ChanName.tail_cond [])
+      #v[.tail_cond_carry, .tail_cond_steer_dests, .tail_cond_steer_tail_args]
+    ∈ pc.proc.atoms
+  := by grind
+  have hsteps₃ : Dataflow.Config.StepPlus _ _ _ _ pc _
+    := Relation.TransGen.tail hsteps₂
+      (Dataflow.Config.Step.step_fork hmem_fork hpop_tail_cond)
+  -- Simplify pushes
+  rw [push_vals_empty_rewrite] at hsteps₃
+  rotate_left
+  · simp
+  · sorry -- should be easy
+  simp at hsteps₃
+  replace ⟨pc₁, hpc₁, hsteps₃⟩ := exists_eq_left.mpr hsteps₃
+  -- Step 5: Fire the first `steer` in `compileFn` for return values.
+  have ⟨chans₃, hpop_tail_cond_steer_dests, hchans₃⟩ := pop_val_singleton_rewrite _ _
+    (map := pc₁.chans)
+    (name := .tail_cond_steer_dests)
+    (val := instInterp.fromBool false)
+    (by simp [hpc₁, List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go])
+  have ⟨chans₄, destVals, hpop_dest_vals, hchans₄, hdest_vals⟩ :=
+    pop_vals_singleton_rewrite _ _
+    (map := chans₃)
+    (names := (Vector.range n).map (.dest · []))
+    (λ name val =>
+      match name with
+      | .dest i _ => ∃ (h : i < n), val = retVals[i]
+      | _ => False)
+    (by
+      simp [Vector.toList_map, Vector.toList_range]
       apply List.Nodup.map _ List.nodup_range
-      simp [Function.Injective]
-    · sorry -- TODO: some map simplification
-    simp at hsteps₄
-    replace ⟨pc₂, hpc₂, hsteps₄⟩ := exists_eq_left.mpr hsteps₄
-    -- Step 6: Fire the second `steer` in `compileFn` for tail call args.
-    have ⟨chans₅, hpop_tail_cond_steer_tail_args, hchans₅⟩ := pop_val_singleton_rewrite _ _
-      (map := pc₂.chans)
-      (name := .tail_cond_steer_tail_args)
-      (val := instInterp.fromBool false)
-      (by
-        simp [hpc₂, hchans₄, hchans₃, hpc₁,
-          List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go])
-    have ⟨chans₆, tailArgVals, hpop_tail_arg_vals, hchans₆, htail_arg_vals⟩ :=
-      pop_vals_singleton_rewrite _ _
-      (map := chans₅)
-      (names := (Vector.range m).map (.tail_arg · []))
-      (λ name val => True)
-      (by
-        simp [Vector.toList_map, Vector.toList_range]
-        apply List.Nodup.map _ List.nodup_range
-        simp [Function.Injective])
-      (by
-        simp
-        intros i hi
-        simp [hchans₅, hpc₂, hchans₄, hchans₃, hpc₁,
-          List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go,
-          hchans₂, intermChans,
-          final_exprOutputs_finIdxOf?_tail_args hi])
-    have hmem_steer_tail_args :
-      .steer true
-        .tail_cond_steer_tail_args
-        ((Vector.range m).map (.tail_arg · []))
-        ((Vector.range m).map .final_tail_arg)
-      ∈ pc₂.proc.atoms
-    := by grind
-    have hsteps₅ : Dataflow.Config.StepPlus _ _ _ _ pc _
-      := Relation.TransGen.tail hsteps₄
-        (Dataflow.Config.Step.step_steer
-          hmem_steer_tail_args
-          hpop_tail_cond_steer_tail_args
-          hpop_tail_arg_vals
-          (instInterp.unique_fromBool_toBool _))
-    simp at hsteps₅
-    replace ⟨pc₃, hpc₃, hsteps₅⟩ := exists_eq_left.mpr hsteps₅
-    -- Step 7: Fire the first `carry` in `compileFn`.
-    have ⟨chans₆, hpop_tail_cond_steer_tail_args, hchans₆⟩ := pop_val_singleton_rewrite _ _
-      (map := pc₃.chans)
-      (name := .tail_cond_carry)
-      (val := instInterp.fromBool false)
-      (by
-        simp [hpc₃, hchans₆, hchans₅, hpc₂, hchans₄, hchans₃, hpc₁,
-          List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go])
-    have hmem_carry :
-      pc₃.proc.atoms = [] ++ [compileFn.initCarry _ _ _ ec.fn carryInLoop] ++ rest
-    := by simp [hpc₃, hpc₂, hpc₁, hatoms]
-    simp only [compileFn.initCarry, hcarryInLoop] at hmem_carry
-    have hsteps₆ : Dataflow.Config.StepPlus _ _ _ _ pc _
-      := Relation.TransGen.tail hsteps₅
-        (Dataflow.Config.Step.step_carry_false
-          hmem_carry
-          hpop_tail_cond_steer_tail_args
-          (instInterp.unique_fromBool_toBool _))
-    simp at hsteps₆
-    replace ⟨pc', hpc', hsteps₆⟩ := exists_eq_left.mpr hsteps₆
-    -- Step 8: Prove preservation of invariants.
-    exists pc'
-    constructor
-    · exact hsteps₆
-    · and_intros
+      simp [Function.Injective])
+    (by sorry)
+  have hmem_steer_dests :
+    .steer false
+      .tail_cond_steer_dests
+      ((Vector.range n).map (.dest · []))
+      ((Vector.range n).map .final_dest)
+    ∈ pc₁.proc.atoms
+  := by grind
+  have hsteps₄ : Dataflow.Config.StepPlus _ _ _ _ pc _
+    := Relation.TransGen.tail hsteps₃
+      (Dataflow.Config.Step.step_steer
+        hmem_steer_dests
+        hpop_tail_cond_steer_dests
+        hpop_dest_vals
+        (instInterp.unique_fromBool_toBool _))
+  -- Simplify pushes
+  rw [push_vals_empty_rewrite] at hsteps₄
+  rotate_left
+  · simp [Vector.toList_map, Vector.toList_range]
+    apply List.Nodup.map _ List.nodup_range
+    simp [Function.Injective]
+  · sorry -- TODO: some map simplification
+  simp at hsteps₄
+  replace ⟨pc₂, hpc₂, hsteps₄⟩ := exists_eq_left.mpr hsteps₄
+  -- Step 6: Fire the second `steer` in `compileFn` for tail call args.
+  have ⟨chans₅, hpop_tail_cond_steer_tail_args, hchans₅⟩ := pop_val_singleton_rewrite _ _
+    (map := pc₂.chans)
+    (name := .tail_cond_steer_tail_args)
+    (val := instInterp.fromBool false)
+    (by
+      simp [hpc₂, hchans₄, hchans₃, hpc₁,
+        List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go])
+  have ⟨chans₆, tailArgVals, hpop_tail_arg_vals, hchans₆, htail_arg_vals⟩ :=
+    pop_vals_singleton_rewrite _ _
+    (map := chans₅)
+    (names := (Vector.range m).map (.tail_arg · []))
+    (λ name val => True)
+    (by
+      simp [Vector.toList_map, Vector.toList_range]
+      apply List.Nodup.map _ List.nodup_range
+      simp [Function.Injective])
+    (by
+      simp
+      intros i hi
+      simp [hchans₅, hpc₂, hchans₄, hchans₃, hpc₁,
+        List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go,
+        hchans₂, intermChans,
+        final_exprOutputs_finIdxOf?_tail_args hi])
+  have hmem_steer_tail_args :
+    .steer true
+      .tail_cond_steer_tail_args
+      ((Vector.range m).map (.tail_arg · []))
+      ((Vector.range m).map .final_tail_arg)
+    ∈ pc₂.proc.atoms
+  := by grind
+  have hsteps₅ : Dataflow.Config.StepPlus _ _ _ _ pc _
+    := Relation.TransGen.tail hsteps₄
+      (Dataflow.Config.Step.step_steer
+        hmem_steer_tail_args
+        hpop_tail_cond_steer_tail_args
+        hpop_tail_arg_vals
+        (instInterp.unique_fromBool_toBool _))
+  simp at hsteps₅
+  replace ⟨pc₃, hpc₃, hsteps₅⟩ := exists_eq_left.mpr hsteps₅
+  -- Step 7: Fire the first `carry` in `compileFn`.
+  have ⟨chans₆, hpop_tail_cond_steer_tail_args, hchans₆⟩ := pop_val_singleton_rewrite _ _
+    (map := pc₃.chans)
+    (name := .tail_cond_carry)
+    (val := instInterp.fromBool false)
+    (by
+      simp [hpc₃, hchans₆, hchans₅, hpc₂, hchans₄, hchans₃, hpc₁,
+        List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go])
+  have hmem_carry :
+    pc₃.proc.atoms = [] ++ [compileFn.initCarry _ _ _ ec.fn carryInLoop] ++ rest
+  := by simp [hpc₃, hpc₂, hpc₁, hatoms]
+  simp only [compileFn.initCarry, hcarryInLoop] at hmem_carry
+  have hsteps₆ : Dataflow.Config.StepPlus _ _ _ _ pc _
+    := Relation.TransGen.tail hsteps₅
+      (Dataflow.Config.Step.step_carry_false
+        hmem_carry
+        hpop_tail_cond_steer_tail_args
+        (instInterp.unique_fromBool_toBool _))
+  simp at hsteps₆
+  replace ⟨pc', hpc', hsteps₆⟩ := exists_eq_left.mpr hsteps₆
+  -- Step 8: Prove preservation of invariants.
+  exists pc'
+  constructor
+  · exact hsteps₆
+  · cases hstep with
+    | step_br hexpr' | step_tail hexpr' | step_op hexpr' =>
+      simp [hexpr] at hexpr'
+    | step_ret hexpr' hvars =>
+      rename_i inputVals vars'
+      simp [hexpr] at hexpr'
+      subst hexpr'
+      cases hwf_expr with | wf_ret hvars_nodup =>
+      and_intros
       · simp only [hpc', hpc₃, hpc₂, hpc₁, heq_state]
       · -- varsToChans
         sorry
@@ -544,6 +586,7 @@ theorem sim_step_ret
       · simp
       · simp [SimR.HasMerges]
       · simp [hpc', compileFn.initCarry, compileFn]
-        exact hrest'
+        simp at hcomp_fn
+        exact hcomp_fn
 
 end Wavelet.Simulation.Ret
