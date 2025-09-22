@@ -15,12 +15,11 @@ variable [Arity Op]
 /-- Interpretation of an operator set as concrete values. -/
 class Interp (V S : Type u) where
   interp : (op : Op) → Vector V (Arity.ι op) → StateT S Option (Vector V (Arity.ω op))
-  asBool : V → Bool
+  toBool : V → Option Bool
+  fromBool : Bool → V
   -- Some constants used in compilation
-  trueVal : V
-  falseVal : V
   junkVal : V
-  unique_true_val : ∀ v, asBool v ↔ v = trueVal
-  unique_false_val : ∀ v, ¬ asBool v ↔ v = falseVal
+  unique_fromBool_toBool : ∀ b, toBool (fromBool b) = some b
+  unique_toBool_fromBool : ∀ b v, toBool v = some b → v = fromBool b
 
 end Wavelet.Op

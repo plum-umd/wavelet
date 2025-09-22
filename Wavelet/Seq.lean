@@ -167,15 +167,13 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
   | step_br {cond} :
     c.expr = .cont (.br cond left right) →
     c.vars.getVar _ _ cond = some condVal →
+    instInterp.toBool condVal = some condBool →
     Step c { c with
-      expr := .cont (if instInterp.asBool condVal then left else right),
+      expr := .cont (if condBool then left else right),
       vars := c.vars.removeVar _ _ cond,
       definedVars := c.definedVars.erase cond,
       pathConds :=
-        (
-          instInterp.asBool condVal,
-          .var cond c.pathConds,
-        ) :: c.pathConds,
+        (condBool, .var cond c.pathConds) :: c.pathConds,
     }
 
 def Config.StepPlus {m n} := @Relation.TransGen (Config Op χ V S m n) (Step Op χ V S)

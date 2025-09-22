@@ -46,9 +46,9 @@ def SimR.varsToChans
       else []
     | .merge_cond v =>
       if (true, v) ∈ ec.pathConds then
-        [instInterp.trueVal]
+        [instInterp.fromBool true]
       else if (false, v) ∈ ec.pathConds then
-        [instInterp.falseVal]
+        [instInterp.fromBool false]
       else []
     | .final_dest i =>
       -- Corresponding final return values
@@ -78,6 +78,8 @@ def SimR
   (∀ var, var ∈ ec.definedVars ↔ ∃ val, ec.vars.getVar _ _ var = some val) ∧
   (∀ b var pathConds, (b, .var var pathConds) ∈ ec.pathConds →
     pathConds.length < ec.pathConds.length) ∧
+  -- No path condition are pushed twice
+  (∀ var, ¬ ((true, var) ∈ ec.pathConds ∧ (false, var) ∈ ec.pathConds)) ∧
   -- Some invariants about the "shape" of the processes
   SimR.HasMerges _ _ _ m n pc.proc.atoms ec.pathConds ∧
   ∃ (rest : AtomicProcs Op (ChanName χ) V)

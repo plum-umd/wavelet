@@ -8,7 +8,21 @@ theorem all_some_implies_mapM_some {α β} {f : α → Option β} {xs : List α}
   ∃ ys, List.mapM f xs = some ys
 := sorry
 
+theorem mapM_some_implies_all_some {α β} {f : α → Option β} {xs : List α} {ys : List β} :
+  List.mapM f xs = some ys →
+  (∀ x ∈ xs, ∃ y ∈ ys, f x = some y)
+:= sorry
+
 theorem mem_iff_mem_eraseDups [BEq α] {xs : List α}
   : x ∈ xs ↔ x ∈ xs.eraseDups := sorry
 
 end List
+
+namespace Vector
+
+theorem mapM_some_implies_all_some {α β} {f : α → Option β} {xs : Vector α n} {ys : Vector β n} :
+  Vector.mapM f xs = some ys →
+  (∀ x ∈ xs, ∃ y ∈ ys, f x = some y)
+:= sorry
+
+end Vector

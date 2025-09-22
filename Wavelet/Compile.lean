@@ -28,21 +28,23 @@ def compileExpr
   : Expr Op χ m n → AtomicProcs Op (ChanName χ) V
   | .ret vars =>
     let chans := varNames vars
-    let act := chans[0] -- Use the first return value as an activation signal
+    let junks : Vector V m := Vector.replicate m (Interp.junkVal Op S)
+    let falseVal : V := Interp.fromBool Op S false
+    let consts : Vector V (m + 1) := junks ++ #v[falseVal]
     [
-      .forward chans retChans,
-      -- No tail recursion, so we send junk values for the tail arguments
-      -- and send `false` on the tail condition channel.
-      .const (Interp.junkVal Op S) act tailArgs,
-      .const (Interp.falseVal Op S) act #v[.tail_cond pathConds]
+      .forwardc
+        chans consts
+        (retChans ++ (tailArgs ++ #v[ChanName.tail_cond pathConds]))
     ]
   | .tail vars =>
     let chans := varNames vars
-    let act := chans[0]
+    let junks : Vector V n := Vector.replicate n (Interp.junkVal Op S)
+    let trueVal : V := Interp.fromBool Op S true
+    let consts : Vector V (n + 1) := junks ++ #v[trueVal]
     [
-      .const (Interp.junkVal Op S) act retChans,
-      .forward chans tailArgs,
-      .const (Interp.trueVal Op S) act #v[.tail_cond pathConds]
+      .forwardc
+        chans consts
+        (tailArgs ++ (retChans ++ #v[ChanName.tail_cond pathConds]))
     ]
   | .op o args rets cont =>
     let inputChans := varNames args
@@ -72,12 +74,13 @@ def compileExpr
     -- Current variable names
     varName v := .var v pathConds
     varNames {n} (vars : Vector χ n) := vars.map varName
-    retChans := (Vector.range n).map (.dest · pathConds)
-    tailArgs := (Vector.range m).map (.tail_arg · pathConds)
+    retChans := (Vector.range n).map (ChanName.dest · pathConds)
+    tailArgs := (Vector.range m).map (ChanName.tail_arg · pathConds)
     allVarsExcept v pathConds := (definedVars.erase v).toVector.map (.var · pathConds)
-    exprOutputs m n pathConds := #v[ChanName.tail_cond pathConds] ++
+    exprOutputs m n pathConds :=
       ((Vector.range n).map (ChanName.dest · pathConds)) ++
-      ((Vector.range m).map (ChanName.tail_arg · pathConds))
+      (((Vector.range m).map (ChanName.tail_arg · pathConds)).push
+       (ChanName.tail_cond pathConds))
     brMerge m n condName pathConds :=
       let leftConds := (true, condName) :: pathConds
       let rightConds := (false, condName) :: pathConds

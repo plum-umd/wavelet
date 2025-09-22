@@ -10,12 +10,12 @@ import Wavelet.Compile
 import Wavelet.Lemmas
 
 import Wavelet.Simulation.Relation
-import Wavelet.Simulation.ChanMap
+import Wavelet.Simulation.Lemmas
 
 namespace Wavelet.Simulation.Br
 
 open Wavelet.Op Wavelet.Seq Wavelet.Dataflow Wavelet.Compile
-open ChanMap Relation
+open Relation Lemmas
 
 universe u
 variable (Op : Type u) (χ : Type u) (V S)
@@ -41,6 +41,7 @@ theorem sim_step_br
     hdefined_vars_no_dup,
     hdefined_vars,
     hpath_conds_order,
+    hpath_conds_nodup,
     hmerges,
     ⟨
       rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
@@ -57,8 +58,8 @@ theorem sim_step_br
   cases hstep with
   | step_ret hexpr | step_tail hexpr | step_op hexpr =>
     simp [hbr] at hexpr
-  | step_br hexpr hcond =>
-    rename_i condVal _ _ cond'
+  | step_br hexpr hcond hcondBool =>
+    rename_i condVal condBool _ _ cond'
     simp [hbr] at hexpr
     have heq_cond' := hexpr.1; subst heq_cond'
     have heq_left' := hexpr.2.1; subst heq_left'
@@ -73,8 +74,6 @@ theorem sim_step_br
     generalize hleftConds : (true, condName) :: ec.pathConds = leftConds
     generalize hrightConds : (false, condName) :: ec.pathConds = rightConds
     simp only [hleftConds, hrightConds] at hcurrent
-    generalize hcondValInterp :
-      Interp.asBool Op S condVal = condValBool
     generalize hleftComp :
       compileExpr Op χ V S hnz (ec.definedVars.erase cond) leftConds left = leftComp
     generalize hrightComp :
@@ -142,6 +141,7 @@ theorem sim_step_br
             (by grind)
             hpop_switch_cond
             hpop_all_vals
+            hcondBool
             (decider := .switch_cond condName)
             (inputs := compileExpr.allVarsExcept χ ec.definedVars cond ec.pathConds)
             (outputs₁ := compileExpr.allVarsExcept χ ec.definedVars cond leftConds)
@@ -200,15 +200,15 @@ theorem sim_step_br
               simp [h₁ this h₃.symm]
           · rfl
         have :
-          (if Interp.asBool Op S condVal = true then
+          (if condBool = true then
             compileExpr.allVarsExcept χ ec.definedVars cond leftConds
           else
             compileExpr.allVarsExcept χ ec.definedVars cond rightConds)
           = compileExpr.allVarsExcept χ ec.definedVars cond
-          ((condValBool, ChanName.var cond ec.pathConds) :: ec.pathConds)
+          ((condBool, ChanName.var cond ec.pathConds) :: ec.pathConds)
         := by
-          simp only [← hcondValInterp, ← hleftConds, ← hrightConds, ← hcondName]
-          cases Interp.asBool Op S condVal <;> simp
+          simp only [← hleftConds, ← hrightConds, ← hcondName]
+          cases condBool <;> simp
         rw [this]
         clear this
         if h₁ : v = cond then
@@ -267,37 +267,38 @@ theorem sim_step_br
                 simp [h₂ this]
               · simp
       | merge_cond name =>
-        simp [← hcondValInterp, hchans₃, hchans₂, hpc₁, hchans₁,
+        simp [hcondBool, hchans₃, hchans₂, hpc₁, hchans₁,
           compileExpr.allVarsExcept, List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
         if h₁ : condName = name then
           simp [h₁]
           simp [hcondName, Eq.symm h₁]
-          if h₂ : Interp.asBool Op S condVal then
-            simp [h₂]
-            exact (instInterp.unique_true_val condVal).mp h₂
+          have := instInterp.unique_toBool_fromBool _ _ hcondBool
+          if h₂ : condBool then
+            simp [h₂] at this ⊢
+            exact this
           else
-            simp [h₂]
+            simp [h₂] at this ⊢
             split
             · rename_i h
               simp only [← hcondName] at h
               have := hpath_conds_order _ _ _ h
               omega
-            · simp [(instInterp.unique_false_val condVal).mp h₂]
+            · simp [this]
         else
-          cases Interp.asBool Op S condVal
+          cases condBool
           all_goals
           simp [h₁]
           simp [hcondName, Ne.symm h₁]
           simp [← hcondName, hlive_vars, SimR.varsToChans]
       | switch_cond name =>
-        cases Interp.asBool Op S condVal
+        cases condBool
         all_goals
           simp [compileExpr.allVarsExcept, hchans₃, hchans₂, hpc₁, hchans₁]
           intro h
           simp [Ne.symm h, hlive_vars, SimR.varsToChans,
             List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
       | _ =>
-        cases Interp.asBool Op S condVal
+        cases condBool
         all_goals
           simp [compileExpr.allVarsExcept, hchans₃, hchans₂, hchans₁, hpc₁]
           try rw [(Vector.finIdxOf?_eq_none_iff).mpr _]
@@ -307,10 +308,11 @@ theorem sim_step_br
     · simp; grind [VarMap.getVar, VarMap.removeVar]
     · simp; grind
     · simp; grind
+    · simp; grind
     · simp only [hmerges]
     · exists rest, carryInLoop
       exists -- ctxLeft
-        if condValBool then
+        if condBool then
           ctxLeft ++ [
             .fork condName #v[.switch_cond condName, .merge_cond condName],
             .switch (.switch_cond condName)
@@ -327,9 +329,9 @@ theorem sim_step_br
               (compileExpr.allVarsExcept χ ec.definedVars cond rightConds)
           ] ++ compileExpr Op χ V S hnz (ec.definedVars.erase cond) leftConds left
       exists -- ctxCurrent
-        if condValBool then leftComp else rightComp
+        if condBool then leftComp else rightComp
       exists -- ctxRight
-        if condValBool then
+        if condBool then
           rightComp ++ [compileExpr.brMerge Op χ V m n condName ec.pathConds] ++ ctxRight
         else
           [compileExpr.brMerge Op χ V m n condName ec.pathConds] ++ ctxRight

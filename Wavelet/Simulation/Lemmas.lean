@@ -2,9 +2,9 @@ import Batteries.Data.Vector.Lemmas
 
 import Wavelet.Dataflow
 
-/-! Some lemmas for `ChanMap`s. -/
+/-! Some lemmas for proving the simulation. -/
 
-namespace Wavelet.Simulation.ChanMap
+namespace Wavelet.Simulation.Lemmas
 
 open Wavelet.Dataflow
 
@@ -129,4 +129,4 @@ theorem pop_vals_singleton_rewrite
     map' = (λ n => if n ∈ names then [] else map n) ∧
     List.Forall₂ prop names.toList vals.toList := sorry
 
-end Wavelet.Simulation.ChanMap
+end Wavelet.Simulation.Lemmas

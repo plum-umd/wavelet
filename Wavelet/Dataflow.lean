@@ -27,6 +27,11 @@ inductive AtomicProc (V : Type u) where
   | forward (inputs : Vector χ n) (outputs : Vector χ n)
   | fork (input : χ) (outputs : Vector χ n)
   | const (c : V) (act : χ) (outputs : Vector χ n)
+  -- A combination of `forward` and `const` to wait for inputs to arrive
+  -- then forward the inputs to the first `n` outputs, and then send constants
+  -- to the last `m` outputs.
+  | forwardc
+    (inputs : Vector χ n) (consts : Vector V m) (outputs : Vector χ (n + m))
 
 abbrev AtomicProcs V := List (AtomicProc Op χ V)
 
@@ -104,33 +109,31 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     .switch decider inputs outputs₁ outputs₂ ∈ c.proc.atoms →
     c.chans.popVal _ _ decider = some (deciderVal, chans') →
     chans'.popVals _ _ inputs = some (inputVals, chans'') →
+    instInterp.toBool deciderVal = some deciderBool →
     Step c { c with
       chans :=
-        let outputs := if instInterp.asBool deciderVal then outputs₁ else outputs₂
+        let outputs := if deciderBool then outputs₁ else outputs₂
         chans''.pushVals _ _ outputs inputVals
     }
   | step_steer :
     .steer flavor decider inputs outputs ∈ c.proc.atoms →
     c.chans.popVal _ _ decider = some (deciderVal, chans') →
     chans'.popVals _ _ inputs = some (inputVals, chans'') →
+    instInterp.toBool deciderVal = some deciderBool →
     Step c { c with
       chans :=
-        if instInterp.asBool deciderVal = flavor then
+        if deciderBool = flavor then
           chans''.pushVals _ _ outputs inputVals
         else
           chans'',
     }
-  | step_merge_true :
+  | step_merge :
     .merge decider inputs₁ inputs₂ outputs ∈ c.proc.atoms →
     c.chans.popVal _ _ decider = some (deciderVal, chans') →
-    instInterp.asBool deciderVal →
-    chans'.popVals _ _ inputs₁ = some (inputVals, chans'') →
-    Step c { c with chans := chans''.pushVals _ _ outputs inputVals }
-  | step_merge_false :
-    .merge decider inputs₁ inputs₂ outputs ∈ c.proc.atoms →
-    c.chans.popVal _ _ decider = some (deciderVal, chans') →
-    ¬ instInterp.asBool deciderVal →
-    chans'.popVals _ _ inputs₂ = some (inputVals, chans'') →
+    instInterp.toBool deciderVal = some deciderBool →
+    chans'.popVals _ _
+      (if deciderBool then inputs₁ else inputs₂)
+      = some (inputVals, chans'') →
     Step c { c with chans := chans''.pushVals _ _ outputs inputVals }
   | step_carry_init :
     c.proc.atoms = ctxLeft ++ [.carry false decider inputs₁ inputs₂ outputs] ++ ctxRight →
@@ -144,7 +147,7 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
   | step_carry_true :
     c.proc.atoms = ctxLeft ++ [.carry true decider inputs₁ inputs₂ outputs] ++ ctxRight →
     c.chans.popVal _ _ decider = some (deciderVal, chans') →
-    instInterp.asBool deciderVal →
+    instInterp.toBool deciderVal = some true →
     chans'.popVals _ _ inputs₂ = some (inputVals, chans'') →
     Step c { c with
       chans := chans''.pushVals _ _ outputs inputVals,
@@ -152,7 +155,7 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
   | step_carry_false :
     c.proc.atoms = ctxLeft ++ [.carry true decider inputs₁ inputs₂ outputs] ++ ctxRight →
     c.chans.popVal _ _ decider = some (deciderVal, chans') →
-    ¬ instInterp.asBool deciderVal →
+    instInterp.toBool deciderVal = some false →
     Step c { c with
       proc := { c.proc with
         atoms := ctxLeft ++ [.carry false decider' inputs₁ inputs₂ outputs] ++ ctxRight,
@@ -176,6 +179,12 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     Step c { c with
       chans := chans'.pushVals _ _ outputs (Vector.replicate _ val),
     }
+  | step_forwardc :
+    .forwardc inputs consts outputs ∈ c.proc.atoms →
+    c.chans.popVals _ _ inputs = some (inputVals, chans') →
+    Step c { c with
+      chans := chans'.pushVals _ _ outputs (inputVals ++ consts),
+    }
 
 def Config.StepPlus {m n} := @Relation.TransGen (Config Op χ V S m n) (Step Op χ V S)
 def Config.StepStar {m n} := @Relation.ReflTransGen (Config Op χ V S m n) (Step Op χ V S)
@@ -186,6 +195,13 @@ theorem step_eq
   (hstep : Config.Step Op χ V S c₁ c₂)
   (heq : c₂ = c₂') :
   Config.Step _ _ _ _ c₁ c₂' := by
+  simp [heq] at hstep
+  exact hstep
+
+theorem step_plus_eq
+  (hstep : Config.StepPlus Op χ V S c₁ c₂)
+  (heq : c₂ = c₂') :
+  Config.StepPlus _ _ _ _ c₁ c₂' := by
   simp [heq] at hstep
   exact hstep
 
