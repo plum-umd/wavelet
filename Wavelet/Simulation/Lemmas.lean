@@ -1,12 +1,14 @@
 import Batteries.Data.Vector.Lemmas
+import Mathlib.Data.List.Nodup
 
 import Wavelet.Dataflow
+import Wavelet.Compile
 
 /-! Some lemmas for proving the simulation. -/
 
 namespace Wavelet.Simulation.Lemmas
 
-open Wavelet.Dataflow
+open Wavelet.Dataflow Wavelet.Compile
 
 variable (χ V)
 variable [DecidableEq χ]
@@ -128,5 +130,39 @@ theorem pop_vals_singleton_rewrite
     map.popVals _ _ names = some (vals, map') ∧
     map' = (λ n => if n ∈ names then [] else map n) ∧
     List.Forall₂ prop names.toList vals.toList := sorry
+
+theorem mem_allVarsExcept
+  (hmem : name ∈ compileExpr.allVarsExcept χ definedVars vars pathConds) :
+  ∃ var,
+    name = .var var pathConds ∧
+    var ∈ definedVars ∧
+    var ∉ vars
+:= by
+  simp [compileExpr.allVarsExcept] at hmem
+  have ⟨var, hvar₁, hvar₂⟩ := hmem
+  exists var
+  simp [hvar₂]
+  simp [List.removeAll, List.toVector] at hvar₁
+  exact hvar₁
+
+theorem allVarsExcept_nodup
+  (hnodup : definedVars.Nodup) :
+  (compileExpr.allVarsExcept χ definedVars vars pathConds).toList.Nodup
+:= by
+  simp [compileExpr.allVarsExcept, Vector.toList_map]
+  apply List.Nodup.map
+  simp [Function.Injective]
+  apply List.Nodup.filter
+  exact hnodup
+
+theorem mem_to_mem_removeAll
+  [DecidableEq α]
+  {x : α} {l₁ l₂ : List α}
+  (h₁ : x ∈ l₁)
+  (h₂ : x ∉ l₂) :
+  x ∈ (l₁.removeAll l₂)
+  := by
+  simp [List.removeAll]
+  grind
 
 end Wavelet.Simulation.Lemmas

@@ -75,9 +75,9 @@ theorem sim_step_br
     generalize hrightConds : (false, condName) :: ec.pathConds = rightConds
     simp only [hleftConds, hrightConds] at hcurrent
     generalize hleftComp :
-      compileExpr Op χ V S hnz (ec.definedVars.erase cond) leftConds left = leftComp
+      compileExpr Op χ V S hnz (ec.definedVars.removeAll [cond]) leftConds left = leftComp
     generalize hrightComp :
-      compileExpr Op χ V S hnz (ec.definedVars.erase cond) rightConds right = rightComp
+      compileExpr Op χ V S hnz (ec.definedVars.removeAll [cond]) rightConds right = rightComp
     simp only [hleftComp, hrightComp] at hcurrent
     -- Step 1: Pop `cond` and fire the first `fork`.
     have hcondVal : pc.chans condName = [condVal]
@@ -114,7 +114,7 @@ theorem sim_step_br
     have ⟨chans₃, allVals, hpop_all_vals, hchans₃, hall_vals⟩ :=
       pop_vals_singleton_rewrite _ _
       (map := chans₂)
-      (names := compileExpr.allVarsExcept χ ec.definedVars cond ec.pathConds)
+      (names := compileExpr.allVarsExcept χ ec.definedVars [cond] ec.pathConds)
       (λ name val =>
         ∃ var,
           name = .var var ec.pathConds ∧
@@ -123,17 +123,15 @@ theorem sim_step_br
         simp [compileExpr.allVarsExcept, List.toVector]
         apply List.Nodup.map
         · simp [Function.Injective]
-        · exact List.Nodup.erase _ hdefined_vars_no_dup)
+        · exact List.Nodup.filter _ hdefined_vars_no_dup)
       (by
         intros name hname
-        simp [compileExpr.allVarsExcept] at hname
-        replace ⟨var, hvar, hname⟩ := hname
-        simp [List.toVector] at hvar
-        have := (List.Nodup.mem_erase_iff hdefined_vars_no_dup).mp hvar
-        simp [hchans₁, hchans₂, hpc₁, this.1, ← hname, ← hcondName, hlive_vars,
+        have ⟨var, hvar, hmem_var, hnot_mem_var⟩ := mem_allVarsExcept _ hname
+        simp at hnot_mem_var
+        simp [compileExpr.allVarsExcept, List.removeAll] at hname
+        simp [hchans₁, hchans₂, hpc₁, hvar, hnot_mem_var, ← hcondName, hlive_vars,
           SimR.varsToChans, List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
-        have := List.mem_of_mem_erase hvar
-        have ⟨_, h⟩ := (hdefined_vars var).mp this
+        have ⟨_, h⟩ := (hdefined_vars var).mp hmem_var
         simp [h])
     have hsteps₂ : Dataflow.Config.StepPlus _ _ _ _ pc _
       := Relation.TransGen.tail hsteps₁
@@ -143,9 +141,9 @@ theorem sim_step_br
             hpop_all_vals
             hcondBool
             (decider := .switch_cond condName)
-            (inputs := compileExpr.allVarsExcept χ ec.definedVars cond ec.pathConds)
-            (outputs₁ := compileExpr.allVarsExcept χ ec.definedVars cond leftConds)
-            (outputs₂ := compileExpr.allVarsExcept χ ec.definedVars cond rightConds))
+            (inputs := compileExpr.allVarsExcept χ ec.definedVars [cond] ec.pathConds)
+            (outputs₁ := compileExpr.allVarsExcept χ ec.definedVars [cond] leftConds)
+            (outputs₂ := compileExpr.allVarsExcept χ ec.definedVars [cond] rightConds))
     simp at hsteps₂
     -- Simplify pushes
     rw [push_vals_empty_rewrite] at hsteps₂
@@ -155,7 +153,7 @@ theorem sim_step_br
         simp [compileExpr.allVarsExcept, List.toVector]
         apply List.Nodup.map
         · simp [Function.Injective]
-        · exact List.Nodup.erase _ hdefined_vars_no_dup
+        · exact List.Nodup.filter _ hdefined_vars_no_dup
     · split
       all_goals
         intros name hname
@@ -196,15 +194,14 @@ theorem sim_step_br
             if h₅ : var = cond then
               simp [h₂ h₅ h₃]
             else
-              have := (List.Nodup.mem_erase_iff hdefined_vars_no_dup).mpr ⟨h₅, this⟩
-              simp [h₁ this h₃.symm]
+              simp [h₁ (List.mem_filter.mpr ⟨this, by simp [h₅]⟩) h₃.symm]
           · rfl
         have :
           (if condBool = true then
-            compileExpr.allVarsExcept χ ec.definedVars cond leftConds
+            compileExpr.allVarsExcept χ ec.definedVars [cond] leftConds
           else
-            compileExpr.allVarsExcept χ ec.definedVars cond rightConds)
-          = compileExpr.allVarsExcept χ ec.definedVars cond
+            compileExpr.allVarsExcept χ ec.definedVars [cond] rightConds)
+          = compileExpr.allVarsExcept χ ec.definedVars [cond]
           ((condBool, ChanName.var cond ec.pathConds) :: ec.pathConds)
         := by
           simp only [← hleftConds, ← hrightConds, ← hcondName]
@@ -219,7 +216,10 @@ theorem sim_step_br
               List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
             intros
             contradiction
-          · simp [List.toVector, List.Nodup.mem_erase_iff hdefined_vars_no_dup]
+          · simp [List.toVector]
+            intros h₂
+            have := List.mem_filter.mp h₂
+            simp at this
         else
           if h₂ : v ∈ ec.definedVars then
             simp [compileExpr.allVarsExcept]
@@ -240,10 +240,9 @@ theorem sim_step_br
               simp at this
               simp [List.toVector] at this
               split
-              · have h₄ := (List.Nodup.mem_erase_iff hdefined_vars_no_dup).mpr ⟨h₁, h₂⟩
+              · have := this (List.mem_filter.mpr ⟨h₂, by simp [h₁]⟩)
                 intros h₅
                 simp [h₅] at this
-                simp [this h₄]
               · simp
           else
             simp [compileExpr.allVarsExcept]
@@ -251,10 +250,10 @@ theorem sim_step_br
             · rename_i i h₃
               simp at h₃
               simp [List.toVector] at h₃
-              have ⟨_, h₄⟩ := (List.Nodup.mem_erase_iff hdefined_vars_no_dup).mp
-                (List.get_mem (ec.definedVars.erase cond) i)
-              simp [h₃.1.1] at h₄
-              simp [h₂ h₄]
+              have := List.get_mem (ec.definedVars.removeAll [cond]) i
+              simp [h₃.1.1] at this
+              have := List.mem_filter.mp this
+              simp [h₂ this.1]
             · rename_i h₃
               simp [hchans₃_no_var]
               have := Option.eq_none_iff_forall_ne_some.mpr h₃
@@ -304,7 +303,7 @@ theorem sim_step_br
           try rw [(Vector.finIdxOf?_eq_none_iff).mpr _]
           simp [← hcondName, hlive_vars, hbr, SimR.varsToChans,
             List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
-    · exact List.Nodup.erase _ hdefined_vars_no_dup
+    · exact List.Nodup.filter _ hdefined_vars_no_dup
     · simp; grind [VarMap.getVar, VarMap.removeVar]
     · simp; grind
     · simp; grind
@@ -316,18 +315,18 @@ theorem sim_step_br
           ctxLeft ++ [
             .fork condName #v[.switch_cond condName, .merge_cond condName],
             .switch (.switch_cond condName)
-              (compileExpr.allVarsExcept χ ec.definedVars cond ec.pathConds)
-              (compileExpr.allVarsExcept χ ec.definedVars cond leftConds)
-              (compileExpr.allVarsExcept χ ec.definedVars cond rightConds)
+              (compileExpr.allVarsExcept χ ec.definedVars [cond] ec.pathConds)
+              (compileExpr.allVarsExcept χ ec.definedVars [cond] leftConds)
+              (compileExpr.allVarsExcept χ ec.definedVars [cond] rightConds)
           ]
         else
           ctxLeft ++ [
             .fork condName #v[.switch_cond condName, .merge_cond condName],
             .switch (.switch_cond condName)
-              (compileExpr.allVarsExcept χ ec.definedVars cond ec.pathConds)
-              (compileExpr.allVarsExcept χ ec.definedVars cond leftConds)
-              (compileExpr.allVarsExcept χ ec.definedVars cond rightConds)
-          ] ++ compileExpr Op χ V S hnz (ec.definedVars.erase cond) leftConds left
+              (compileExpr.allVarsExcept χ ec.definedVars [cond] ec.pathConds)
+              (compileExpr.allVarsExcept χ ec.definedVars [cond] leftConds)
+              (compileExpr.allVarsExcept χ ec.definedVars [cond] rightConds)
+          ] ++ compileExpr Op χ V S hnz (ec.definedVars.removeAll [cond]) leftConds left
       exists -- ctxCurrent
         if condBool then leftComp else rightComp
       exists -- ctxRight

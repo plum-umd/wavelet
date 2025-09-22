@@ -34,7 +34,9 @@ def compileExpr
     [
       .forwardc
         chans consts
-        (retChans ++ (tailArgs ++ #v[ChanName.tail_cond pathConds]))
+        (retChans ++ (tailArgs ++ #v[ChanName.tail_cond pathConds])),
+      -- Discard all other variables
+      .sink (allVarsExcept vars.toList pathConds),
     ]
   | .tail vars =>
     let chans := varNames vars
@@ -44,7 +46,9 @@ def compileExpr
     [
       .forwardc
         chans consts
-        (tailArgs ++ (retChans ++ #v[ChanName.tail_cond pathConds]))
+        (tailArgs ++ (retChans ++ #v[ChanName.tail_cond pathConds])),
+      -- Discard all other variables
+      .sink (allVarsExcept vars.toList pathConds),
     ]
   | .op o args rets cont =>
     let inputChans := varNames args
@@ -54,16 +58,16 @@ def compileExpr
     let condChan := varName cond
     let leftConds := (true, condChan) :: pathConds
     let rightConds := (false, condChan) :: pathConds
-    let leftComp := compileExpr hnz (definedVars.erase cond) leftConds left
-    let rightComp := compileExpr hnz (definedVars.erase cond) rightConds right
+    let leftComp := compileExpr hnz (definedVars.removeAll [cond]) leftConds left
+    let rightComp := compileExpr hnz (definedVars.removeAll [cond]) rightConds right
     [
       -- Copy condition variables
       .fork condChan #v[.switch_cond condChan, .merge_cond condChan],
       -- Steer all live variables
       .switch (.switch_cond condChan)
-        (allVarsExcept cond pathConds)
-        (allVarsExcept cond leftConds)
-        (allVarsExcept cond rightConds),
+        (allVarsExcept [cond] pathConds)
+        (allVarsExcept [cond] leftConds)
+        (allVarsExcept [cond] rightConds),
     ] ++ leftComp ++ rightComp ++ [
       -- Merge tail call conditions, return values and tail call arguments
       -- from both branches. This is done at the end so that we can keep
@@ -76,7 +80,7 @@ def compileExpr
     varNames {n} (vars : Vector χ n) := vars.map varName
     retChans := (Vector.range n).map (ChanName.dest · pathConds)
     tailArgs := (Vector.range m).map (ChanName.tail_arg · pathConds)
-    allVarsExcept v pathConds := (definedVars.erase v).toVector.map (.var · pathConds)
+    allVarsExcept vs pathConds := (definedVars.removeAll vs).toVector.map (.var · pathConds)
     exprOutputs m n pathConds :=
       ((Vector.range n).map (ChanName.dest · pathConds)) ++
       (((Vector.range m).map (ChanName.tail_arg · pathConds)).push

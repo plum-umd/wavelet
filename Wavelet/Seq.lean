@@ -42,8 +42,8 @@ inductive Expr.WellFormed : List χ → Expr Op χ n m → Prop where
     WellFormed ((definedVars.removeAll args.toList) ++ rets.toList) cont →
     WellFormed definedVars (.op o args rets cont)
   | wf_br :
-    WellFormed (definedVars.erase c) left →
-    WellFormed (definedVars.erase c) right →
+    WellFormed (definedVars.removeAll [c]) left →
+    WellFormed (definedVars.removeAll [c]) right →
     WellFormed definedVars (.br c left right)
 
 /-- `Fn m n` is a function with `m` inputs and `n` outputs. -/
@@ -172,7 +172,7 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     Step c { c with
       expr := .cont (if condBool then left else right),
       vars := c.vars.removeVar _ _ cond,
-      definedVars := c.definedVars.erase cond,
+      definedVars := c.definedVars.removeAll [cond],
       pathConds :=
         (condBool, .var cond c.pathConds) :: c.pathConds,
     }
