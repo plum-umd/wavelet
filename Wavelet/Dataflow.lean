@@ -158,7 +158,7 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     instInterp.toBool deciderVal = some false →
     Step c { c with
       proc := { c.proc with
-        atoms := ctxLeft ++ [.carry false decider' inputs₁ inputs₂ outputs] ++ ctxRight,
+        atoms := ctxLeft ++ [.carry false decider inputs₁ inputs₂ outputs] ++ ctxRight,
       },
     }
   | step_forward :
