@@ -267,7 +267,7 @@ theorem sim_step_br
                 simp [h₂ this]
               · simp
       | merge_cond name =>
-        simp [hcondBool, hchans₃, hchans₂, hpc₁, hchans₁,
+        simp [hchans₃, hchans₂, hpc₁, hchans₁,
           compileExpr.allVarsExcept, List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
         if h₁ : condName = name then
           simp [h₁]

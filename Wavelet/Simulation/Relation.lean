@@ -79,7 +79,7 @@ def SimR
   (∀ b var pathConds, (b, .var var pathConds) ∈ ec.pathConds →
     pathConds.length < ec.pathConds.length) ∧
   -- No path condition are pushed twice
-  (∀ var, ¬ ((true, var) ∈ ec.pathConds ∧ (false, var) ∈ ec.pathConds)) ∧
+  (ec.pathConds.map Prod.snd).Nodup ∧
   -- Some invariants about the "shape" of the processes
   SimR.HasMerges _ _ _ m n pc.proc.atoms ec.pathConds ∧
   ∃ (rest : AtomicProcs Op (ChanName χ) V)
