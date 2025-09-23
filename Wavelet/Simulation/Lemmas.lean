@@ -131,6 +131,20 @@ theorem pop_vals_singleton_rewrite
     map' = (λ n => if n ∈ names then [] else map n) ∧
     List.Forall₂ prop names.toList vals.toList := sorry
 
+/-- Popping the same names pushed before -/
+theorem pop_vals_singleton_exact
+  {map map' : ChanMap χ V}
+  (names names' : Vector χ n)
+  (vals : Vector V n)
+  (hnames : names = names')
+  (hmap : ∀ name, map name =
+    match names.finIdxOf? name with
+    | some i => [vals[i]]
+    | none => map' name) :
+  ∃ map'',
+    map.popVals _ _ names = some (vals, map'') ∧
+    map'' = λ n => if n ∈ names then [] else map n := sorry
+
 theorem mem_allVarsExcept
   (hmem : name ∈ compileExpr.allVarsExcept χ definedVars vars pathConds) :
   ∃ var,

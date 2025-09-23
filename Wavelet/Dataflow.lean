@@ -161,6 +161,7 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
       proc := { c.proc with
         atoms := ctxLeft ++ [.carry false decider inputs₁ inputs₂ outputs] ++ ctxRight,
       },
+      chans := chans',
     }
   | step_forward :
     .forward inputs outputs ∈ c.proc.atoms →

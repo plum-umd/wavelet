@@ -87,6 +87,8 @@ instance : DecidableEq (ChanName χ) := sorry
 /-- Partial map from variables. -/
 abbrev VarMap := χ → Option V
 
+def VarMap.empty : VarMap χ V := λ _ => none
+
 def VarMap.insertVars
   (vars : Vector χ n)
   (vals : Vector V n)
@@ -144,7 +146,7 @@ inductive Config.Step : Config Op χ V S m n → Config Op χ V S m n → Prop w
     c.vars.getVars _ _ args = some inputVals →
     Step c { c with
       expr := .ret inputVals,
-      vars := c.vars.removeVars _ _ args.toList,
+      vars := VarMap.empty _ _,
       definedVars := [],
       pathConds := [],
     }
