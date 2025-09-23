@@ -25,6 +25,21 @@ theorem mapM_some_iff_forall₂
   Forall₂ (λ x y => f x = .some y) xs ys
 := sorry
 
+theorem disjoint_implies_filter_disjoint_left
+  {l₁ l₂ : List α}
+  (hdisj : Disjoint l₁ l₂) :
+  Disjoint (l₁.filter f) l₂
+:= by
+  intros x h₁ h₂
+  have := List.mem_of_mem_filter h₁
+  exact hdisj this h₂
+
+theorem to_append_cons
+  {l : List α} {i : Nat}
+  (hi : i < l.length) :
+  l = l.take i ++ l[i] :: l.drop (i + 1)
+:= sorry
+
 end List
 
 namespace Array
@@ -83,6 +98,12 @@ theorem nodup_implies_back_not_mem_pop
   {xs : Vector α (n + 1)}
   (h : xs.toList.Nodup) :
   xs.back ∉ xs.pop
+:= sorry
+
+theorem mem_implies_mem_zip_left
+  {xs : Vector α n} {ys : Vector β n}
+  (h : x ∈ xs) :
+  ∃ y, (x, y) ∈ xs.zip ys
 := sorry
 
 end Vector

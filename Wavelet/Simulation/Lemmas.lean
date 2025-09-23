@@ -182,4 +182,12 @@ theorem mem_to_mem_removeAll
   simp [List.removeAll]
   grind
 
+omit [DecidableEq χ] in theorem vars_nodup_to_var_names_nodup
+  (hnodup : vars.toList.Nodup) :
+  (compileExpr.varNames χ pathConds vars).toList.Nodup
+:= by
+  simp only [compileExpr.varNames, Vector.toList_map]
+  apply List.Nodup.map _ hnodup
+  simp [Function.Injective, compileExpr.varName]
+
 end Wavelet.Simulation.Lemmas
