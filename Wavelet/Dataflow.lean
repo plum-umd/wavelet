@@ -66,13 +66,11 @@ def ChanMap.popVal
 
 def ChanMap.popVals
   (names : Vector χ n)
-  (map : ChanMap χ V) : Option (Vector V n × ChanMap χ V) :=
-  match h : n with
-  | 0 => some (#v[], map)
-  | n + 1 => do
-    let (v, map') ← map.popVal _ _ names[0]
-    let (vs, map'') ← map'.popVals names.tail
-    pure (cast (by simp; congr 1; omega) (#v[v] ++ vs), map'')
+  (map : ChanMap χ V) : Option (Vector V n × ChanMap χ V)
+  := (names.mapM popValM).run map
+  where
+    @[simp]
+    popValM : χ → StateT (ChanMap χ V) Option V := popVal χ V
 
 def ChanMap.IsSingleton (name : χ) (val : V) (map : ChanMap χ V) : Prop := map name = [val]
 

@@ -13,71 +13,6 @@ open Wavelet.Dataflow Wavelet.Compile
 variable (χ V)
 variable [DecidableEq χ]
 
-theorem push_vals_lookup_diff
-  {map : ChanMap χ V}
-  (hdiff : ∀ v ∈ names, v ≠ name) :
-  map.pushVals _ _ names vals name = map name := sorry
-
-theorem push_vals_lookup_singleton
-  {map : ChanMap χ V}
-  {names : Vector χ n}
-  (i : Fin n)
-  (hempty : map names[i] = [])
-  (hdisj : names.toList.Nodup)
-  (hval : val = vals[i])
-  (hname : name = names[i]) :
-  map.pushVals _ _ names vals name = [val] := sorry
-
-theorem push_val_lookup_diff
-  {map : ChanMap χ V}
-  (hdiff : name' ≠ name) :
-  map.pushVal _ _ name' val name = map name := sorry
-
-theorem push_val_lookup_singleton
-  {map : ChanMap χ V}
-  (hempty : map name = []) :
-  map.pushVal _ _ name val name = [val] := sorry
-
-theorem pop_vals_lookup_diff
-  {map : ChanMap χ V}
-  (hpop : map.popVals _ _ names = some (vals, map'))
-  (hdiff : ∀ v ∈ names, v ≠ name) :
-  map' name = map name := sorry
-
-theorem pop_val_lookup_diff
-  {map : ChanMap χ V}
-  (hpop : map.popVal _ _ name' = some (val, map'))
-  (hdiff : name' ≠ name) :
-  map' name = map name := sorry
-
-theorem pop_val_lookup_singleton
-  {map : ChanMap χ V}
-  (hpop : map.popVal _ _ name = some (val, map'))
-  (hsingleton : map name = [val]) :
-  map' name = [] := sorry
-
-theorem pop_vals_lookup_singleton
-  {map : ChanMap χ V}
-  (hpop : map.popVals _ _ names = some (val, map'))
-  (hmem : name ∈ names)
-  (hsingleton : (map name).length = 1) :
-  map' name = [] := sorry
-
-theorem pop_val_singleton
-  {map : ChanMap χ V}
-  (hsingleton : map name = [val]) :
-  ∃ map', map.popVal _ _ name = some (val, map') := by
-  simp [ChanMap.popVal, hsingleton]
-
-theorem pop_vals_singleton
-  {map : ChanMap χ V}
-  {names : Vector χ n}
-  (prop : χ → V → Prop)
-  (hsingletons : ∀ name ∈ names, ∃ val, map name = [val] ∧ prop name val) :
-  ∃ vals map',
-    map.popVals _ _ names = some (vals, map') ∧
-    List.Forall₂ prop names.toList vals.toList := sorry
-
 theorem push_val_empty_rewrite
   {map : ChanMap χ V}
   (hempty : map name = []) :
@@ -123,27 +58,51 @@ theorem pop_val_singleton_rewrite
 
 theorem pop_vals_singleton_rewrite
   {map : ChanMap χ V}
+  {names : Vector χ n}
   (prop : χ → V → Prop)
-  (hdisj : names.toList.Nodup)
+  (hnodup : names.toList.Nodup)
   (hsingletons : ∀ name ∈ names, ∃ val, map name = [val] ∧ prop name val) :
   ∃ map' vals,
     map.popVals _ _ names = some (vals, map') ∧
     map' = (λ n => if n ∈ names then [] else map n) ∧
-    List.Forall₂ prop names.toList vals.toList := sorry
-
-/-- Popping the same names pushed before -/
-theorem pop_vals_singleton_exact
-  {map map' : ChanMap χ V}
-  (names names' : Vector χ n)
-  (vals : Vector V n)
-  (hnames : names = names')
-  (hmap : ∀ name, map name =
-    match names.finIdxOf? name with
-    | some i => [vals[i]]
-    | none => map' name) :
-  ∃ map'',
-    map.popVals _ _ names = some (vals, map'') ∧
-    map'' = λ n => if n ∈ names then [] else map n := sorry
+    List.Forall₂ prop names.toList vals.toList
+  := by
+  simp [ChanMap.popVals]
+  induction n with
+  | zero => simp [StateT.run, StateT.pure, Vector.eq_empty, pure]
+  | succ n' ih =>
+    have : names = names.pop.push names.back := by simp
+    rw [this, Vector.mapM_push]
+    simp [StateT.run, StateT.bind, Option.bind, bind]
+    specialize ih (Vector.nodup_implies_pop_nodup hnodup) _
+    · intros name hname
+      exact hsingletons name (Vector.mem_pop_implies_mem hname)
+    · have ⟨map'', vals', h₁, h₂, h₃⟩ := ih
+      simp only [StateT.run] at h₁
+      have ⟨val, h₄, h₅⟩ := hsingletons names.back (by simp)
+      have h₆ : names.back ∉ names.pop :=
+        Vector.nodup_implies_back_not_mem_pop hnodup
+      simp [h₁, ChanMap.popVal, h₂, h₄, h₆, pure, StateT.pure]
+      constructor
+      · funext name'
+        split <;> rename_i h₇
+        · simp [h₇]
+        · split <;> rename_i h₈
+          · simp [Vector.mem_pop_implies_mem h₈]
+          · simp [Vector.mem_pop_iff, h₇, h₈]
+      · rw [← Vector.push_pop_back names]
+        simp only [Vector.toList_push]
+        apply List.forall₂_iff_get.mpr
+        constructor
+        · simp
+        · intros i _ _
+          simp [List.getElem_append]
+          split <;> rename_i h₈
+          · have := (List.forall₂_iff_get.mp h₃).2 i
+              (by simp; assumption) (by simp; assumption)
+            simp at this
+            exact this
+          · exact h₅
 
 theorem mem_allVarsExcept
   (hmem : name ∈ compileExpr.allVarsExcept χ definedVars vars pathConds) :
