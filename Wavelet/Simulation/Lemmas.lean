@@ -13,7 +13,7 @@ open Wavelet.Dataflow Wavelet.Compile
 variable (χ V)
 variable [DecidableEq χ]
 
-theorem push_val_empty_rewrite
+theorem push_val_empty
   {map : ChanMap χ V}
   (hempty : map name = []) :
   map.pushVal _ _ name val = λ n => if n = name then [val] else map n := by
@@ -24,11 +24,11 @@ theorem push_val_empty_rewrite
     simp [h, hempty]
   · rfl
 
-theorem push_vals_empty_rewrite
+theorem push_vals_empty
   {map : ChanMap χ V}
   {names : Vector χ n}
   {vals : Vector V n}
-  (hdisj : names.toList.Nodup)
+  (hnodup : names.toList.Nodup)
   (hempty : ∀ name ∈ names, map name = []) :
   map.pushVals _ _ names vals =
     λ n => if let some i := names.finIdxOf? n then [vals[i]]
@@ -41,14 +41,58 @@ theorem push_vals_empty_rewrite
     have : names.zip vals = #v[] := by simp
     simp [this, Vector.finIdxOf?_empty]
   | succ n' ih =>
-    have : names.zip vals = ((names.pop.zip vals.pop)).push (names.zip vals).back
+    have : names.zip vals = (names.pop.zip vals.pop).push (names.back, vals.back)
     := by
-      simp [Vector.zip_eq_zipWith]
-      sorry
+      apply Vector.toList_inj.mp
+      simp [Vector.zip_eq_zipWith, Vector.toList_zipWith,
+        Vector.toList_push, Vector.toList_pop]
+      have :
+        [(names.back, vals.back)] =
+        [names.back].zipWith Prod.mk [vals.back]
+      := by simp
+      rw [this, ← List.zipWith_append (by simp)]
+      simp [← Vector.toList_pop, ← Vector.toList_push]
     rw [this, Vector.foldl_push]
-    sorry
+    simp
+    specialize ih
+      (vals := vals.pop)
+      (Vector.nodup_implies_pop_nodup hnodup)
+      _
+    · intros name hname
+      apply hempty name (Vector.mem_pop_implies_mem hname)
+    · simp only [ih]
+      split_ifs <;> rename_i h₁
+      · split <;> rename_i h₂
+        · have := Vector.nodup_implies_back_not_mem_pop hnodup
+          simp [Vector.finIdxOf?_eq_none_iff.mpr this, h₁] at h₂
+        · simp [hempty name' (by simp [h₁])]
+          simp [h₁, Vector.back]
+          rw [(Vector.finIdxOf?_eq_some_iff (i := ⟨n', by omega⟩)).mpr _]
+          simp [Vector.get]
+          intros j hj h
+          rw [← Vector.getElem_toList (by simp)] at h
+          rw [← Vector.getElem_toList (by simp)] at h
+          have := (List.Nodup.getElem_inj_iff hnodup).mp h
+          omega
+      · simp
+        split <;> rename_i h₂
+        · rename_i i
+          simp [Vector.get] at h₂
+          rw [(Vector.finIdxOf?_eq_some_iff (i := ⟨↑i, by omega⟩) (a := name')).mpr]
+          constructor
+          · simp [Vector.get, h₂]
+          · simp [Vector.get]
+            intros j hj
+            have := h₂.2 ⟨↑j, (by omega)⟩ hj
+            simp at this
+            exact this
+        · have := Option.eq_none_iff_forall_ne_some.mpr h₂
+          simp at this
+          have : name' ∉ names := by
+            simp [Vector.mem_pop_iff, h₁, this]
+          simp [Vector.finIdxOf?_eq_none_iff.mpr this]
 
-theorem pop_val_singleton_rewrite
+theorem pop_val_singleton
   {map : ChanMap χ V}
   (hsingleton : map name = [val]) :
   ∃ map',
@@ -56,7 +100,7 @@ theorem pop_val_singleton_rewrite
     map' = λ n => if n = name then [] else map n := by
   simp [ChanMap.popVal, hsingleton]
 
-theorem pop_vals_singleton_rewrite
+theorem pop_vals_singleton
   {map : ChanMap χ V}
   {names : Vector χ n}
   (prop : χ → V → Prop)

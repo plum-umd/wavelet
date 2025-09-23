@@ -82,7 +82,7 @@ theorem sim_step_br
     -- Step 1: Pop `cond` and fire the first `fork`.
     have hcondVal : pc.chans condName = [condVal]
       := by simp [hlive_vars, SimR.varsToChans, hcond, ← hcondName]
-    have ⟨chans₁, hpop_cond, hchans₁⟩ := pop_val_singleton_rewrite _ _
+    have ⟨chans₁, hpop_cond, hchans₁⟩ := pop_val_singleton _ _
       (map := pc.chans)
       (name := condName)
       (val := condVal)
@@ -93,7 +93,7 @@ theorem sim_step_br
     have hsteps₁ : Dataflow.Config.StepPlus _ _ _ _ pc _
       := Relation.TransGen.single (Dataflow.Config.Step.step_fork hmem_fork hpop_cond)
     -- Simplify pushes
-    rw [push_vals_empty_rewrite] at hsteps₁
+    rw [push_vals_empty] at hsteps₁
     rotate_left
     · simp
     · simp [hchans₁, ← hcondName, hlive_vars, SimR.varsToChans]
@@ -106,13 +106,13 @@ theorem sim_step_br
         · rfl
     replace ⟨pc₁, hpc₁, hsteps₁⟩ := exists_eq_left.mpr hsteps₁
     -- Step 2: Pop `switch_cond` and all live variable, and fire the `switch` operator
-    have ⟨chans₂, hpop_switch_cond, hchans₂⟩ := pop_val_singleton_rewrite _ _
+    have ⟨chans₂, hpop_switch_cond, hchans₂⟩ := pop_val_singleton _ _
       (map := pc₁.chans)
       (val := condVal)
       (name := .switch_cond condName)
       (by simp [hpc₁, List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go])
     have ⟨chans₃, allVals, hpop_all_vals, hchans₃, hall_vals⟩ :=
-      pop_vals_singleton_rewrite _ _
+      pop_vals_singleton _ _
       (map := chans₂)
       (names := compileExpr.allVarsExcept χ ec.definedVars [cond] ec.pathConds)
       (λ name val =>
@@ -146,7 +146,7 @@ theorem sim_step_br
             (outputs₂ := compileExpr.allVarsExcept χ ec.definedVars [cond] rightConds))
     simp at hsteps₂
     -- Simplify pushes
-    rw [push_vals_empty_rewrite] at hsteps₂
+    rw [push_vals_empty] at hsteps₂
     rotate_left
     · split
       all_goals

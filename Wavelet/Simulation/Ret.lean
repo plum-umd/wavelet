@@ -229,7 +229,7 @@ theorem sim_step_ret_merges
       List.Sublist.mem (by simp) hpath_conds
     have hnot_mem_cond_tail_conds {b} : (b, condName) ∉ tailConds :=
       path_conds_nodup_alt hpath_conds_nodup hpath_conds
-    have ⟨chans₁, hpop_cond, hchans₁⟩ := pop_val_singleton_rewrite _ _
+    have ⟨chans₁, hpop_cond, hchans₁⟩ := pop_val_singleton _ _
       (map := intermChans _ _ _ _ ec pc vars retVals ((condBool, condName) :: tailConds))
       (name := .merge_cond condName)
       (val := instInterp.fromBool condBool)
@@ -246,7 +246,7 @@ theorem sim_step_ret_merges
         · simp [compileExpr.retChans, compileExpr.tailArgs])
     -- Pop `compileExpr.exprOutputs`
     have ⟨chans₂, exprOutputs, hpop_expr_outputs, hchans₂, hexpr_outputs⟩ :=
-      pop_vals_singleton_rewrite _ _
+      pop_vals_singleton _ _
       (map := chans₁)
       (names := compileExpr.exprOutputs χ m n ((condBool, condName) :: tailConds))
       (λ name val =>
@@ -311,7 +311,7 @@ theorem sim_step_ret_merges
         (instInterp.unique_fromBool_toBool _)
         hpop_expr_outputs
     -- Simplify pushes
-    rw [push_vals_empty_rewrite] at hstep
+    rw [push_vals_empty] at hstep
     rotate_left
     · apply expr_outputs_nodup
     · intros name hname
@@ -414,7 +414,7 @@ theorem sim_step_ret_forwardc_sink
   simp only [hvar_names, hret_chans, hjunk, hfalse, hforwardc_outputs] at hcurrent
   -- Step 1: Fire `forwardc`.
   have ⟨chans₁, retVals', hpop_ret_vals, hchans₁, hret_vals⟩ :=
-    pop_vals_singleton_rewrite _ _
+    pop_vals_singleton _ _
     (map := pc.chans)
     (names := varNames)
     (λ name val =>
@@ -454,7 +454,7 @@ theorem sim_step_ret_forwardc_sink
   have hsteps₁ : Dataflow.Config.StepPlus _ _ _ _ pc _
     := Relation.TransGen.single (Dataflow.Config.Step.step_forwardc hmem_forwardc hpop_ret_vals)
   -- Simplify pushes
-  rw [push_vals_empty_rewrite] at hsteps₁
+  rw [push_vals_empty] at hsteps₁
   rotate_left
   · simp only [← hforwardc_outputs, ← hret_chans, compileExpr.tailArgs, compileExpr.retChans]
     apply expr_outputs_nodup
@@ -471,7 +471,7 @@ theorem sim_step_ret_forwardc_sink
   replace ⟨pc₁, hpc₁, hsteps₁⟩ := exists_eq_left.mpr hsteps₁
   -- Step 2: Fire `sink` to consume all unused channels in the current context.
   have ⟨chans₂, otherVals, hpop_other_vals, hchans₂, hother_vals⟩ :=
-    pop_vals_singleton_rewrite _ _
+    pop_vals_singleton _ _
     (map := pc₁.chans)
     (names := compileExpr.allVarsExcept χ ec.definedVars vars.toList ec.pathConds)
     (λ name val => True)
@@ -567,7 +567,7 @@ theorem sim_step_ret
       hpath_conds_nodup hsteps₁
     -- Step 4: Fire the `fork` in `compileFn`.
     simp only [compileFn, compileFn.resultSteers] at hcomp_fn
-    have ⟨chans₁, hpop_tail_cond, hchans₁⟩ := pop_val_singleton_rewrite _ _
+    have ⟨chans₁, hpop_tail_cond, hchans₁⟩ := pop_val_singleton _ _
       (map := intermChans _ _ _ _ ec pc vars retVals [])
       (name := .tail_cond [])
       (val := instInterp.fromBool false)
@@ -581,7 +581,7 @@ theorem sim_step_ret
       := Relation.TransGen.tail hsteps₂
         (Dataflow.Config.Step.step_fork hmem_fork hpop_tail_cond)
     -- Simplify pushes
-    rw [push_vals_empty_rewrite] at hsteps₃
+    rw [push_vals_empty] at hsteps₃
     rotate_left
     · simp
     · simp [hchans₁, intermChans,
@@ -591,13 +591,13 @@ theorem sim_step_ret
     simp at hsteps₃
     replace ⟨pc₁, hpc₁, hsteps₃⟩ := exists_eq_left.mpr hsteps₃
     -- Step 5: Fire the first `steer` in `compileFn` for return values.
-    have ⟨chans₂, hpop_tail_cond_steer_dests, hchans₂⟩ := pop_val_singleton_rewrite _ _
+    have ⟨chans₂, hpop_tail_cond_steer_dests, hchans₂⟩ := pop_val_singleton _ _
       (map := pc₁.chans)
       (name := .tail_cond_steer_dests)
       (val := instInterp.fromBool false)
       (by simp [hpc₁, List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go])
     have ⟨chans₃, destVals, hpop_dest_vals, hchans₃, hdest_vals⟩ :=
-      pop_vals_singleton_rewrite _ _
+      pop_vals_singleton _ _
       (map := chans₂)
       (names := (Vector.range n).map (.dest · []))
       (λ name val =>
@@ -642,7 +642,7 @@ theorem sim_step_ret
           hpop_dest_vals
           (instInterp.unique_fromBool_toBool _))
     -- Simplify pushes
-    rw [push_vals_empty_rewrite] at hsteps₄
+    rw [push_vals_empty] at hsteps₄
     rotate_left
     · simp [Vector.toList_map, Vector.toList_range]
       apply List.Nodup.map _ List.nodup_range
@@ -653,7 +653,7 @@ theorem sim_step_ret
     simp at hsteps₄
     replace ⟨pc₂, hpc₂, hsteps₄⟩ := exists_eq_left.mpr hsteps₄
     -- Step 6: Fire the second `steer` in `compileFn` for tail call args.
-    have ⟨chans₄, hpop_tail_cond_steer_tail_args, hchans₄⟩ := pop_val_singleton_rewrite _ _
+    have ⟨chans₄, hpop_tail_cond_steer_tail_args, hchans₄⟩ := pop_val_singleton _ _
       (map := pc₂.chans)
       (name := .tail_cond_steer_tail_args)
       (val := instInterp.fromBool false)
@@ -661,7 +661,7 @@ theorem sim_step_ret
         simp [hpc₂, hchans₃, hchans₂, hpc₁,
           List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go])
     have ⟨chans₅, tailArgVals, hpop_tail_arg_vals, hchans₅, htail_arg_vals⟩ :=
-      pop_vals_singleton_rewrite _ _
+      pop_vals_singleton _ _
       (map := chans₄)
       (names := (Vector.range m).map (.tail_arg · []))
       (λ name val => True)
@@ -693,7 +693,7 @@ theorem sim_step_ret
     simp at hsteps₅
     replace ⟨pc₃, hpc₃, hsteps₅⟩ := exists_eq_left.mpr hsteps₅
     -- Step 7: Fire the first `carry` in `compileFn`.
-    have ⟨chans₆, hpop_tail_cond_steer_tail_args, hchans₆⟩ := pop_val_singleton_rewrite _ _
+    have ⟨chans₆, hpop_tail_cond_steer_tail_args, hchans₆⟩ := pop_val_singleton _ _
       (map := pc₃.chans)
       (name := .tail_cond_carry)
       (val := instInterp.fromBool false)

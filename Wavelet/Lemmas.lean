@@ -1,4 +1,5 @@
 import Batteries.Data.List.Basic
+import Mathlib.Data.List.Infix
 
 namespace List
 
@@ -61,7 +62,11 @@ theorem mapM_push [Monad m] [LawfulMonad m]
 theorem mem_pop_implies_mem
   {xs : Vector α (n + 1)}
   (h : x ∈ xs.pop) : x ∈ xs
-:= sorry
+:= by
+  simp [Vector.pop, Array.pop] at h
+  apply Vector.mem_toList_iff.mp
+  simp only [Vector.toList]
+  exact List.mem_of_mem_dropLast h
 
 theorem mem_pop_iff
   {xs : Vector α (n + 1)} :
