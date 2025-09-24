@@ -89,7 +89,11 @@ def SimR
     pc.proc.atoms = compileFn.initCarry _ _ _ ec.fn carryInLoop :: rest ∧
     (compileFn Op χ V S hnz ec.fn).atoms = compileFn.initCarry _ _ _ ec.fn false :: rest ∧
     rest = ctxLeft ++ ctxCurrent ++ ctxRight ∧
-    (∀ vals, ec.expr = .ret vals → ¬ carryInLoop ∧ ctxCurrent = [] ∧ ctxRight = []) ∧
+    (∀ vals, ec.expr = .ret vals → ¬ carryInLoop ∧
+      ctxCurrent = [] ∧
+      ctxRight = [] ∧
+      ec.definedVars = [] ∧
+      ec.pathConds = []) ∧
     (∀ expr, ec.expr = .cont expr → carryInLoop ∧
       expr.WellFormed _ _ ec.definedVars ∧
       compileExpr Op χ V S hnz ec.definedVars ec.pathConds expr = ctxCurrent)
