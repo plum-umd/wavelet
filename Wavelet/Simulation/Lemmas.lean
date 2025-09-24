@@ -410,6 +410,19 @@ theorem path_conds_nodup_alt
   (hpath_conds : ((b, condName) :: tailConds).Sublist pathConds) :
   (b', condName) ∉ tailConds := by grind
 
+theorem input_finIdxOf?_index
+  {vars : Vector χ n} {i : Nat} {hlt : i < n}
+  (hnodup : vars.toList.Nodup) :
+  (Vector.map ChanName.input vars).finIdxOf? (ChanName.input vars[i])
+  = some (⟨i, by omega⟩)
+:= by
+  apply Vector.finIdxOf?_eq_some_iff.mpr
+  simp [Vector.get]
+  intros j hj hget
+  have := (List.Nodup.get_inj_iff hnodup).mp hget
+  simp at this
+  simp [← this] at hj
+
 end Compile
 
 end Wavelet.Simulation.Lemmas
