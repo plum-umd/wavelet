@@ -27,7 +27,7 @@ private def exprOutputVals
   tailArgs.push
   (Interp.fromBool Op S true)
 
-set_option maxHeartbeats 500000
+set_option maxHeartbeats 1000000
 
 /-- Fires `forwardc` and `sink` to get an intermediate state. -/
 theorem sim_step_tail_forwardc_sink
@@ -408,6 +408,20 @@ theorem sim_step_tail
         · have := Option.eq_none_iff_forall_ne_some.mpr h₁
           simp at this
           omega)
+    have : tailArgs = tailArgs' := by
+      symm
+      apply Vector.toList_inj.mp
+      apply List.right_unique_forall₂' _ hfinal_tail_args
+      · simp [Vector.toList_map, Vector.toList_range]
+        apply List.forall₂_iff_get.mpr
+        simp
+      · simp [Relator.RightUnique]
+        intros a b c hb hc
+        split at hb <;> simp at hc
+        replace ⟨_, hb⟩ := hb
+        replace ⟨_, hc⟩ := hc
+        simp [hc, hb]
+    subst this
     have hmem_carry :
       pc₃.proc.atoms = [] ++ [compileFn.initCarry _ _ _ ec.fn carryInLoop] ++ rest
     := by simp [hpc₃, hpc₂, hpc₁, hatoms]
@@ -419,6 +433,19 @@ theorem sim_step_tail
           hpop_tail_cond_steer_tail_args
           (instInterp.unique_fromBool_toBool _)
           hpop_final_tail_args)
+    -- Simplify pushes
+    rw [push_vals_empty] at hsteps₆
+    rotate_left
+    · simp [Vector.toList_map]
+      apply List.Nodup.map _ hwf_fn.1
+      simp [Function.Injective]
+    · intros name hname
+      simp at hname
+      have ⟨var, hmem_var, hname⟩ := hname
+      simp [← hname, hchans₇, hchans₆, hpc₃, hchans₅, hchans₄, hpc₂,
+        hchans₃, hchans₂, hpc₁,
+        List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go,
+        hchans₁, intermChans]
     simp at hsteps₆
     replace ⟨pc', hpc', hsteps₆⟩ := exists_eq_left.mpr hsteps₆
     -- Step 8: Prove preservation of invariants.
@@ -429,10 +456,71 @@ theorem sim_step_tail
       · simp only [Seq.Config.init, heq_state, hpc', hpc₃, hpc₂, hpc₁]
       · -- varsToChans
         funext name
-        sorry
+        simp [SimR.varsToChans, Seq.Config.init]
+        cases name with
+        | var v pathConds =>
+          simp [hpc', hchans₇, hchans₆, hpc₃, hchans₅, hchans₄, hpc₂,
+            hchans₃, hchans₂, hpc₁]
+          if h₁ : pathConds = [] then
+            simp [h₁]
+            split <;> rename_i h₂
+            · rename_i i
+              simp at h₂
+              simp [Vector.get] at h₂
+              simp [← h₂.1]
+              simp [var_map_fromList_get_vars_index hwf_fn.1]
+            · have := Option.eq_none_iff_forall_ne_some.mpr h₂
+              simp at this
+              simp [List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go,
+                hchans₁, intermChans]
+              split <;> rename_i h₃
+              · have h₄ := var_map_fromList_get_vars.mpr ⟨_, h₃⟩
+                exact False.elim (this h₄)
+              · rfl
+          else
+            simp [h₁, List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go,
+              hchans₁, intermChans]
+        | dest =>
+          simp [hpc', hchans₇, hchans₆, hpc₃, hchans₅, hchans₄, hpc₂,
+            hchans₃, hchans₂, hpc₁,
+            List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go,
+            hchans₁, intermChans]
+          intros h₁
+          simp [exprOutputs_finIdxOf?_no_match_dest h₁]
+        | tail_arg =>
+          simp [hpc', hchans₇, hchans₆, hpc₃, hchans₅, hchans₄, hpc₂,
+            hchans₃, hchans₂, hpc₁,
+            List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go,
+            hchans₁, intermChans]
+          intros h₁
+          simp [exprOutputs_finIdxOf?_no_match_tail_args h₁]
+        | tail_cond =>
+          simp [hpc', hchans₇, hchans₆, hpc₃, hchans₅, hchans₄, hpc₂,
+            hchans₃, hchans₂, hpc₁,
+            List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go,
+            hchans₁, intermChans]
+          intros h₁
+          simp [exprOutputs_finIdxOf?_no_match_tail_cond h₁]
+        | input | switch_cond | merge_cond
+        | tail_cond_carry | tail_cond_steer_dests | tail_cond_steer_tail_args
+        | final_dest =>
+          simp [hpc', hchans₇, hchans₆, hpc₃, hchans₅, hchans₄, hpc₂,
+            hchans₃, hchans₂, hpc₁,
+            List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go,
+            hchans₁, intermChans]
+        | final_tail_arg =>
+          simp [hpc', hchans₇, hchans₆, hpc₃, hchans₅, hchans₄, hpc₂,
+            hchans₃, hchans₂, hpc₁,
+            List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go,
+            hchans₁, intermChans]
+          split <;> rename_i h₁
+          · simp at h₁
+            omega
+          · simp
       · simp [Seq.Config.init, hwf_fn.1]
-      · simp [Seq.Config.init, VarMap.getVar, VarMap.fromList]
-        sorry
+      · simp [Seq.Config.init]
+        intros var
+        apply var_map_fromList_get_vars
       · simp [Seq.Config.init]
       · simp [Seq.Config.init]
       · simp [Seq.Config.init, SimR.HasMerges]

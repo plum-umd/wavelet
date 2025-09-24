@@ -154,6 +154,26 @@ theorem pop_vals_singleton
 
 end ChanMap
 
+/-! Some lemmas about `VarMap`s. -/
+section VarMap
+
+theorem var_map_fromList_get_vars
+  [DecidableEq χ]
+  {var : χ} {vars : Vector χ n} {vals : Vector V n} :
+  var ∈ vars ↔
+  ∃ val, (VarMap.fromList χ V (vars.zip vals).toList).getVar χ V var = some val
+:= sorry
+
+theorem var_map_fromList_get_vars_index
+  [DecidableEq χ]
+  {vars : Vector χ n} {vals : Vector V n}
+  {i : Nat} {hlt : i < n}
+  (hnodup : vars.toList.Nodup) :
+  (VarMap.fromList χ V (vars.zip vals).toList).getVar χ V vars[i] = some vals[i]
+:= sorry
+
+end VarMap
+
 /-! Lemmas about various `compileExpr` components. -/
 section Compile
 
@@ -371,6 +391,18 @@ theorem exprOutputs_finIdxOf?_no_match_final_dest :
 theorem exprOutputs_finIdxOf?_no_match_final_tail_arg :
   (compileExpr.exprOutputs _ m n pathConds).finIdxOf?
     (.final_tail_arg i) = none
+  := by simp [compileExpr.exprOutputs]
+
+@[simp]
+theorem exprOutputs_finIdxOf?_no_match_input :
+  (compileExpr.exprOutputs _ m n pathConds).finIdxOf?
+    (.input i) = none
+  := by simp [compileExpr.exprOutputs]
+
+@[simp]
+theorem exprOutputs_finIdxOf?_no_match_switch_cond :
+  (compileExpr.exprOutputs _ m n pathConds).finIdxOf?
+    (.switch_cond i) = none
   := by simp [compileExpr.exprOutputs]
 
 theorem path_conds_nodup_alt
