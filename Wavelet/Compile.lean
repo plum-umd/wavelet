@@ -46,7 +46,7 @@ def compileExpr
     [
       .forwardc
         chans consts
-        (tailArgs ++ (retChans ++ #v[ChanName.tail_cond pathConds])),
+        (exprOutputs' m n pathConds),
       -- Discard all other variables
       .sink (allVarsExcept vars.toList pathConds),
     ]
@@ -78,13 +78,16 @@ def compileExpr
     -- Current variable names
     varName v := .var v pathConds
     varNames {n} (vars : Vector χ n) := vars.map varName
-    retChans := (Vector.range n).map (ChanName.dest · pathConds)
-    tailArgs := (Vector.range m).map (ChanName.tail_arg · pathConds)
     allVarsExcept vs pathConds := (definedVars.removeAll vs).toVector.map (.var · pathConds)
     exprOutputs m n pathConds :=
-      ((Vector.range n).map (ChanName.dest · pathConds)) ++
+      (Vector.range n).map (ChanName.dest · pathConds) ++
       (((Vector.range m).map (ChanName.tail_arg · pathConds)).push
        (ChanName.tail_cond pathConds))
+    -- Similar to `exprOutputs` but with `tail_arg`s and `dest`s swapped.
+    exprOutputs' m n pathConds :=
+      (Vector.range m).map (ChanName.tail_arg · pathConds) ++
+      ((Vector.range n).map (ChanName.dest · pathConds)).push
+        (ChanName.tail_cond pathConds)
     brMerge m n condName pathConds :=
       let leftConds := (true, condName) :: pathConds
       let rightConds := (false, condName) :: pathConds

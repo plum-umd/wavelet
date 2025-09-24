@@ -126,7 +126,7 @@ theorem sim_step_br
         · exact List.Nodup.filter _ hdefined_vars_no_dup)
       (by
         intros name hname
-        have ⟨var, hvar, hmem_var, hnot_mem_var⟩ := mem_allVarsExcept _ hname
+        have ⟨var, hvar, hmem_var, hnot_mem_var⟩ := mem_allVarsExcept hname
         simp at hnot_mem_var
         simp [compileExpr.allVarsExcept, List.removeAll] at hname
         simp [hchans₁, hchans₂, hpc₁, hvar, hnot_mem_var, ← hcondName, hlive_vars,

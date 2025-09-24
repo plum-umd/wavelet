@@ -40,6 +40,16 @@ theorem to_append_cons
   l = l.take i ++ l[i] :: l.drop (i + 1)
 := sorry
 
+theorem mem_to_mem_removeAll
+  [DecidableEq α]
+  {x : α} {l₁ l₂ : List α}
+  (h₁ : x ∈ l₁)
+  (h₂ : x ∉ l₂) :
+  x ∈ (l₁.removeAll l₂)
+  := by
+  simp [List.removeAll]
+  grind
+
 end List
 
 namespace Array

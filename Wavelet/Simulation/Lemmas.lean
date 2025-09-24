@@ -1,6 +1,7 @@
 import Batteries.Data.Vector.Lemmas
 import Mathlib.Data.List.Nodup
 
+import Wavelet.Seq
 import Wavelet.Dataflow
 import Wavelet.Compile
 
@@ -8,7 +9,10 @@ import Wavelet.Compile
 
 namespace Wavelet.Simulation.Lemmas
 
-open Wavelet.Dataflow Wavelet.Compile
+open Wavelet.Seq Wavelet.Dataflow Wavelet.Compile
+
+/-! Lemmas about `ChanMap`. -/
+section ChanMap
 
 variable (χ V)
 variable [DecidableEq χ]
@@ -148,7 +152,13 @@ theorem pop_vals_singleton
             exact this
           · exact h₅
 
+end ChanMap
+
+/-! Lemmas about various `compileExpr` components. -/
+section Compile
+
 theorem mem_allVarsExcept
+  [DecidableEq χ]
   (hmem : name ∈ compileExpr.allVarsExcept χ definedVars vars pathConds) :
   ∃ var,
     name = .var var pathConds ∧
@@ -163,6 +173,7 @@ theorem mem_allVarsExcept
   exact hvar₁
 
 theorem allVarsExcept_nodup
+  [DecidableEq χ]
   (hnodup : definedVars.Nodup) :
   (compileExpr.allVarsExcept χ definedVars vars pathConds).toList.Nodup
 := by
@@ -172,22 +183,195 @@ theorem allVarsExcept_nodup
   apply List.Nodup.filter
   exact hnodup
 
-theorem mem_to_mem_removeAll
-  [DecidableEq α]
-  {x : α} {l₁ l₂ : List α}
-  (h₁ : x ∈ l₁)
-  (h₂ : x ∉ l₂) :
-  x ∈ (l₁.removeAll l₂)
-  := by
-  simp [List.removeAll]
-  grind
-
-omit [DecidableEq χ] in theorem vars_nodup_to_var_names_nodup
+theorem vars_nodup_to_var_names_nodup
   (hnodup : vars.toList.Nodup) :
   (compileExpr.varNames χ pathConds vars).toList.Nodup
 := by
   simp only [compileExpr.varNames, Vector.toList_map]
   apply List.Nodup.map _ hnodup
   simp [Function.Injective, compileExpr.varName]
+
+theorem exprOutputs_nodup :
+  (compileExpr.exprOutputs χ m n pathConds).toList.Nodup
+:= by
+  simp only [
+    compileExpr.exprOutputs, Vector.toList_append, Vector.toList_push,
+    Vector.toList_map, Vector.toList_range]
+  apply List.Nodup.append
+  · apply List.Nodup.map _ List.nodup_range
+    simp [Function.Injective]
+  · apply List.Nodup.append
+    · apply List.Nodup.map _ List.nodup_range
+      simp [Function.Injective]
+    · simp
+    · simp
+  · simp
+    apply List.disjoint_iff_ne.mpr
+    simp
+
+theorem exprOutputs'_nodup :
+  (compileExpr.exprOutputs' χ m n pathConds).toList.Nodup
+:= by
+  simp only [
+    compileExpr.exprOutputs', Vector.toList_append, Vector.toList_push,
+    Vector.toList_map, Vector.toList_range]
+  apply List.Nodup.append
+  · apply List.Nodup.map _ List.nodup_range
+    simp [Function.Injective]
+  · apply List.Nodup.append
+    · apply List.Nodup.map _ List.nodup_range
+      simp [Function.Injective]
+    · simp
+    · simp
+  · simp
+    apply List.disjoint_iff_ne.mpr
+    simp
+
+theorem exprOutputs'_finIdxOf?_none_to_exprOutputs :
+  (compileExpr.exprOutputs' χ m n pathConds).finIdxOf? name = none →
+  (compileExpr.exprOutputs χ m n pathConds).finIdxOf? name = none
+:= sorry
+
+/-- Converts indices found in `exprOutputs'` to those in `exprOutputs` -/
+theorem exprOutputs'_finIdxOf?_some_to_exprOutputs
+  (h : (compileExpr.exprOutputs' χ m n pathConds).finIdxOf? name = some i) :
+  (compileExpr.exprOutputs χ m n pathConds).finIdxOf? name = some (
+    if _ : i < m then ⟨n + i, by omega⟩
+    else if i < n + m then ⟨i - m, by omega⟩
+    else ⟨n + m, by omega⟩
+  )
+:= sorry
+
+theorem exprOutputs_finIdxOf?_tail_cond :
+  (compileExpr.exprOutputs _ m n pathConds).finIdxOf?
+    (.tail_cond pathConds) = some (⟨n + m, by simp⟩)
+  := by
+  simp only [compileExpr.exprOutputs]
+  apply Vector.finIdxOf?_eq_some_iff.mpr
+  constructor
+  · simp [Vector.get_eq_getElem]
+  · intros j hj hget
+    simp [Vector.get_eq_getElem, Vector.getElem_append] at hget
+    split at hget
+    · simp at hget
+    · simp [Vector.getElem_push] at hget
+      omega
+
+theorem exprOutputs_finIdxOf?_tail_args
+  (hi : i < m) :
+  (compileExpr.exprOutputs _ m n pathConds).finIdxOf?
+    (.tail_arg i pathConds) = some (⟨n + i, by omega⟩)
+  := by
+  simp [compileExpr.exprOutputs]
+  constructor
+  · simp [Vector.get_eq_getElem, hi]
+  · intros j hj hget
+    simp [Vector.get_eq_getElem, Vector.getElem_append] at hget
+    split at hget <;> rename_i h
+    · simp at hget
+    · simp [Vector.getElem_push] at hget
+      split at hget
+      · simp [Fin.lt_def] at hj
+        simp at hget
+        omega
+      · simp at hget
+
+theorem exprOutputs_finIdxOf?_dest
+  (hi : i < n) :
+  (compileExpr.exprOutputs _ m n pathConds).finIdxOf?
+    (.dest i pathConds) = some (⟨i, by omega⟩)
+  := by
+  simp [compileExpr.exprOutputs]
+  constructor
+  · simp [Vector.get_eq_getElem, hi]
+  · intros j hj hget
+    simp [Vector.get_eq_getElem, Vector.getElem_append] at hget
+    split at hget <;> rename_i h
+    · simp [Fin.lt_def] at hj
+      simp at hget
+      omega
+    · simp [Vector.getElem_push] at hget
+      split at hget
+      · simp [Fin.lt_def] at hj
+        simp at hget
+      · simp at hget
+
+theorem exprOutputs_finIdxOf?_no_match_dest
+  {pathConds pathConds' : List (Bool × ChanName χ)}
+  (hi : i < n → pathConds' ≠ pathConds) :
+  (compileExpr.exprOutputs _ m n pathConds).finIdxOf?
+    (.dest i pathConds') = none
+  := by
+  if h : i < n then
+    simp [compileExpr.exprOutputs, Ne.symm (hi h)]
+  else
+    simp [compileExpr.exprOutputs, h]
+
+theorem exprOutputs_finIdxOf?_no_match_tail_args
+  {pathConds pathConds' : List (Bool × ChanName χ)}
+  (hi : i < m → pathConds' ≠ pathConds) :
+  (compileExpr.exprOutputs _ m n pathConds).finIdxOf?
+    (.tail_arg i pathConds') = none
+  := by
+  if h : i < m then
+    simp [compileExpr.exprOutputs, Ne.symm (hi h)]
+  else
+    simp [compileExpr.exprOutputs, h]
+
+theorem exprOutputs_finIdxOf?_no_match_tail_cond
+  {pathConds pathConds' : List (Bool × ChanName χ)}
+  (h : pathConds' ≠ pathConds) :
+  (compileExpr.exprOutputs _ m n pathConds).finIdxOf?
+    (.tail_cond pathConds') = none
+  := by simp [compileExpr.exprOutputs, h]
+
+@[simp]
+theorem exprOutputs_finIdxOf?_no_match_var :
+  (compileExpr.exprOutputs _ m n pathConds).finIdxOf?
+    (.var v pathConds') = none
+  := by simp [compileExpr.exprOutputs]
+
+@[simp]
+theorem exprOutputs'_finIdxOf?_no_match_var :
+  (compileExpr.exprOutputs' _ m n pathConds).finIdxOf?
+    (.var v pathConds') = none
+  := by simp [compileExpr.exprOutputs']
+
+@[simp]
+theorem exprOutputs_finIdxOf?_no_match_merge_cond :
+  (compileExpr.exprOutputs _ m n pathConds).finIdxOf?
+    (.merge_cond condName) = none
+  := by simp [compileExpr.exprOutputs]
+
+@[simp]
+theorem exprOutputs_finIdxOf?_no_match_tail_cond_carry :
+  (compileExpr.exprOutputs _ m n pathConds).finIdxOf?
+    .tail_cond_carry = none
+  := by simp [compileExpr.exprOutputs]
+
+@[simp]
+theorem exprOutputs_finIdxOf?_no_match_tail_cond_steer_dests :
+  (compileExpr.exprOutputs _ m n pathConds).finIdxOf?
+    .tail_cond_steer_dests = none
+  := by simp [compileExpr.exprOutputs]
+
+@[simp]
+theorem exprOutputs_finIdxOf?_no_match_tail_cond_steer_tail_args :
+  (compileExpr.exprOutputs _ m n pathConds).finIdxOf?
+    .tail_cond_steer_tail_args = none
+  := by simp [compileExpr.exprOutputs]
+
+@[simp]
+theorem exprOutputs_finIdxOf?_no_match_final_dest :
+  (compileExpr.exprOutputs _ m n pathConds).finIdxOf?
+    (.final_dest i) = none
+  := by simp [compileExpr.exprOutputs]
+
+theorem path_conds_nodup_alt
+  (hnodup : (pathConds.map Prod.snd).Nodup)
+  (hpath_conds : ((b, condName) :: tailConds).Sublist pathConds) :
+  (b', condName) ∉ tailConds := by grind
+
+end Compile
 
 end Wavelet.Simulation.Lemmas

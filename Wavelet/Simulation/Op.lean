@@ -159,7 +159,7 @@ theorem sim_step_op
         match name with
         | .var v _ => ec.vars.getVar _ _ v = some val
         | _ => False)
-      (vars_nodup_to_var_names_nodup _ hargs_nodup)
+      (vars_nodup_to_var_names_nodup hargs_nodup)
       (by
         intros name hname
         simp [compileExpr.varNames, compileExpr.varName] at hname
@@ -194,7 +194,7 @@ theorem sim_step_op
     -- Simplify pushes
     rw [push_vals_empty] at hsteps
     rotate_left
-    · exact vars_nodup_to_var_names_nodup _ hrets_nodup
+    · exact vars_nodup_to_var_names_nodup hrets_nodup
     · intros name hname
       simp [hchans₁]
       intros hname₂
