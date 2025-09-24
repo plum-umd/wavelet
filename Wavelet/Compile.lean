@@ -34,7 +34,7 @@ def compileExpr
     [
       .forwardc
         chans consts
-        (retChans ++ (tailArgs ++ #v[ChanName.tail_cond pathConds])),
+        (exprOutputs m n pathConds),
       -- Discard all other variables
       .sink (allVarsExcept vars.toList pathConds),
     ]
