@@ -127,6 +127,7 @@ theorem sim_step_op
     hpath_conds_order,
     hpath_conds_nodup,
     hmerges,
+    hwf_fn,
     ⟨
       rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
       hatoms,
@@ -296,6 +297,8 @@ theorem sim_step_op
       · grind
       · exact hpath_conds_nodup
       · simp [hpc', hmerges]
+      · exact hwf_fn.1
+      · exact hwf_fn.2
       · exists rest, carryInLoop
         -- ctxLeft
         exists

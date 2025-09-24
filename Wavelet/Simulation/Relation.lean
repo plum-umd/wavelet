@@ -82,6 +82,7 @@ def SimR
   (ec.pathConds.map Prod.snd).Nodup ∧
   -- Some invariants about the "shape" of the processes
   SimR.HasMerges _ _ _ m n pc.proc.atoms ec.pathConds ∧
+  ec.fn.WellFormed ∧
   ∃ (rest : AtomicProcs Op (ChanName χ) V)
     (carryInLoop : Bool)
     (ctxLeft ctxCurrent ctxRight : AtomicProcs Op (ChanName χ) V),

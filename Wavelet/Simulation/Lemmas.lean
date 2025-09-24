@@ -367,6 +367,12 @@ theorem exprOutputs_finIdxOf?_no_match_final_dest :
     (.final_dest i) = none
   := by simp [compileExpr.exprOutputs]
 
+@[simp]
+theorem exprOutputs_finIdxOf?_no_match_final_tail_arg :
+  (compileExpr.exprOutputs _ m n pathConds).finIdxOf?
+    (.final_tail_arg i) = none
+  := by simp [compileExpr.exprOutputs]
+
 theorem path_conds_nodup_alt
   (hnodup : (pathConds.map Prod.snd).Nodup)
   (hpath_conds : ((b, condName) :: tailConds).Sublist pathConds) :

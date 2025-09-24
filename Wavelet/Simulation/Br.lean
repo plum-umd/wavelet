@@ -43,6 +43,7 @@ theorem sim_step_br
     hpath_conds_order,
     hpath_conds_nodup,
     hmerges,
+    hwf_fn,
     ⟨
       rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
       hatoms,
@@ -52,7 +53,7 @@ theorem sim_step_br
       hcont,
     ⟩,
   ⟩ := hsim
-  have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont (.br cond left right) hbr
+  have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont _ hbr
   simp [compileExpr] at hcurrent
   -- Deduce some facts from `hstep`
   cases hstep with
@@ -309,6 +310,8 @@ theorem sim_step_br
     · simp; grind
     · simp; grind
     · simp only [hmerges]
+    · exact hwf_fn.1
+    · exact hwf_fn.2
     · exists rest, carryInLoop
       exists -- ctxLeft
         if condBool then
