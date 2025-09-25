@@ -49,7 +49,7 @@ theorem sim_compile_fn
         | ret => exact Simulation.Ret.sim_step_ret Op χ V S hnz ec ec' pc hsim hstep hcont
         | tail => exact Simulation.Tail.sim_step_tail Op χ V S hnz ec ec' pc hsim hstep hcont
         | op => exact Simulation.Op.sim_step_op Op χ V S hnz ec ec' pc hsim hstep hcont
-        | br => exact Simulation.Br.sim_step_br Op χ V S hnz ec ec' pc hsim hstep hcont
+        | br => exact Simulation.Br.sim_step_br hnz hsim hstep hcont
 
 /-- Converts a trace of `Seq` to a trace of `Dataflow` with
 related final configurations. -/

@@ -17,17 +17,21 @@ namespace Wavelet.Simulation.Br
 open Wavelet.Op Wavelet.Seq Wavelet.Dataflow Wavelet.Compile
 open Relation Lemmas
 
-theorem sim_step_br
+/-- Helper lemma to run relevant dataflow operators. -/
+theorem sim_step_br_chans
   [Arity Op] [DecidableEq χ] [instInterp : Interp Op V S]
   {cond left right}
   {ec ec' : Seq.Config Op χ V S m n}
   {pc : Dataflow.Config Op (ChanName χ) V S m n}
+  (hnz : m > 0 ∧ n > 0)
   (hsim : SimR _ _ _ _ hnz ec pc)
   (hstep : Config.Step Op χ V S ec ec')
   (hbr : ec.expr = .cont (.br cond left right)) :
-  ∃ pc',
-    Config.StepPlus Op (ChanName χ) V S pc pc' ∧
-    SimR _ _ _ _ hnz ec' pc' := by
+  Dataflow.Config.StepPlus Op (ChanName χ) V S pc {
+    proc := pc.proc,
+    chans := SimR.varsToChans _ _ _ _ ec',
+    state := pc.state,
+  } := by
   have ⟨
     heq_state,
     hlive_vars,
@@ -169,130 +173,154 @@ theorem sim_step_br
       simp only [← hleftConds, ← hrightConds, ← hcondName]
       cases condBool <;> simp
     rw [this] at hsteps₂; clear this
-    replace ⟨pc', hpc', hsteps₂⟩ := exists_eq_left.mpr hsteps₂
-    -- Prove simulation
+    apply step_plus_eq _ _ _ _ hsteps₂
+    simp [hpc₁]
+    funext name
+    simp only [SimR.varsToChans]
+    cases name with
+    | var v pathConds =>
+      simp
+      if h₁ : v = cond then
+        rw [allVarsExcept_finIdxOf?_none_if_removed (by simp [h₁])]
+        simp [h₁, VarMap.getVar, VarMap.removeVar, hchans₃, hchans₂, hpc₁, hchans₁,
+          hlive_vars, SimR.varsToChans, ← hcondName,
+          List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
+        intros _ h₂ h₃
+        exact False.elim (h₂ h₃)
+      else
+        if h₂ : v ∈ ec.definedVars then
+          if h₃ : pathConds = (condBool, ChanName.var cond ec.pathConds) :: ec.pathConds then
+            have ⟨i, h₄⟩ := allVarsExcept_finIdxOf?_some (removedVars := [cond])
+              h₂ (by simp [h₁]) h₃
+            simp [h₄]
+            simp [compileExpr.allVarsExcept] at h₄
+            simp [List.toVector] at h₄
+            simp [h₄.1.2, Ne.symm h₁, VarMap.getVar, VarMap.removeVar]
+            have ⟨_, h₅⟩ := (hdefined_vars v).mp h₂
+            simp only [VarMap.getVar] at h₅
+            have := List.forall₂_iff_get.mp hall_vals
+            have := this.2 i (by simp) (by simp)
+            simp [List.toVector, VarMap.getVar, compileExpr.allVarsExcept, h₄.1.1] at this
+            simp [this]
+          else
+            rw [allVarsExcept_finIdxOf?_none_if_diff_path_conds (by simp [Ne.symm h₃])]
+            simp [hchans₃_no_var, h₃]
+        else
+          rw [allVarsExcept_finIdxOf?_none_if_not_defined (by simp [h₂])]
+          simp [hchans₃_no_var]
+          split
+          · rename_i h₃
+            simp [VarMap.getVar, VarMap.removeVar] at h₃
+            have := (hdefined_vars v).mpr ⟨_, h₃.2⟩
+            simp [h₂ this]
+          · simp
+    | merge_cond name =>
+      simp [hchans₃, hchans₂, hpc₁, hchans₁,
+        compileExpr.allVarsExcept, List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
+      if h₁ : condName = name then
+        simp [h₁]
+        simp [hcondName, Eq.symm h₁]
+        have := instInterp.unique_toBool_fromBool _ _ hcondBool
+        if h₂ : condBool then
+          simp [h₂] at this ⊢
+          exact this
+        else
+          simp [h₂] at this ⊢
+          split
+          · rename_i h
+            simp only [← hcondName] at h
+            have := hpath_conds_order _ _ _ h
+            omega
+          · simp [this]
+      else
+        cases condBool
+        all_goals
+        simp [h₁]
+        simp [hcondName, Ne.symm h₁]
+        simp [← hcondName, hlive_vars, SimR.varsToChans]
+    | switch_cond name =>
+      cases condBool
+      all_goals
+        simp [compileExpr.allVarsExcept, hchans₃, hchans₂, hpc₁, hchans₁]
+        intro h
+        simp [Ne.symm h, hlive_vars, SimR.varsToChans,
+          List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
+    | _ =>
+      cases condBool
+      all_goals
+        simp [compileExpr.allVarsExcept, hchans₃, hchans₂, hchans₁, hpc₁]
+        try rw [(Vector.finIdxOf?_eq_none_iff).mpr _]
+        simp [← hcondName, hlive_vars, hbr, SimR.varsToChans,
+          List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
+
+theorem sim_step_br
+  [Arity Op] [DecidableEq χ] [instInterp : Interp Op V S]
+  {cond left right}
+  {ec ec' : Seq.Config Op χ V S m n}
+  {pc : Dataflow.Config Op (ChanName χ) V S m n}
+  (hnz : m > 0 ∧ n > 0)
+  (hsim : SimR _ _ _ _ hnz ec pc)
+  (hstep : Config.Step Op χ V S ec ec')
+  (hbr : ec.expr = .cont (.br cond left right)) :
+  ∃ pc',
+    Config.StepPlus Op (ChanName χ) V S pc pc' ∧
+    SimR _ _ _ _ hnz ec' pc' := by
+  have ⟨
+    heq_state,
+    hlive_vars,
+    hdefined_vars_no_dup,
+    hdefined_vars,
+    hpath_conds_order,
+    hpath_conds_nodup,
+    hmerges,
+    hwf_fn,
+    ⟨
+      rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
+      hatoms,
+      hcomp_fn,
+      hrest,
+      hret,
+      hcont,
+    ⟩,
+  ⟩ := hsim
+  have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont _ hbr
+  simp only [compileExpr] at hcurrent
+  have hsteps := sim_step_br_chans hnz hsim hstep hbr
+  replace ⟨pc', hpc', hsteps⟩ := exists_eq_left.mpr hsteps
+  -- Deduce some facts from `hstep`
+  cases hstep with
+  | step_ret hexpr | step_tail hexpr | step_op hexpr =>
+    simp [hbr] at hexpr
+  | step_br hexpr hcond hcondBool =>
+    rename_i condVal condBool _ _ cond'
+    simp only [hbr, ExprResult.cont.injEq, Expr.br.injEq] at hexpr
+    have heq_cond' := hexpr.1; subst heq_cond'
+    have heq_left' := hexpr.2.1; subst heq_left'
+    have heq_right' := hexpr.2.2; subst heq_right'
+    clear hexpr
+    cases hwf_expr with | wf_br hwf_left hwf_right =>
     exists pc'
     constructor
-    · exact hsteps₂
-    · simp only [hpc', hpc₁]
+    · exact hsteps
+    · simp only [hpc']
       and_intros
       · simp [heq_state]
-      · funext name
-        simp only [SimR.varsToChans]
-        cases name with
-        | var v pathConds =>
-          simp
-          if h₁ : v = cond then
-            rw [allVarsExcept_finIdxOf?_none_if_removed (by simp [h₁])]
-            simp [h₁, VarMap.getVar, VarMap.removeVar, hchans₃, hchans₂, hpc₁, hchans₁,
-              hlive_vars, SimR.varsToChans, ← hcondName,
-              List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
-            intros _ h₂ h₃
-            exact False.elim (h₂ h₃)
-          else
-            if h₂ : v ∈ ec.definedVars then
-              if h₃ : pathConds = (condBool, ChanName.var cond ec.pathConds) :: ec.pathConds then
-                have ⟨i, h₄⟩ := allVarsExcept_finIdxOf?_some (removedVars := [cond])
-                  h₂ (by simp [h₁]) h₃
-                simp [h₄]
-                simp [compileExpr.allVarsExcept] at h₄
-                simp [List.toVector] at h₄
-                simp [h₄.1.2, Ne.symm h₁, VarMap.getVar, VarMap.removeVar]
-                have ⟨_, h₅⟩ := (hdefined_vars v).mp h₂
-                simp only [VarMap.getVar] at h₅
-                have := List.forall₂_iff_get.mp hall_vals
-                have := this.2 i (by simp) (by simp)
-                simp [List.toVector, VarMap.getVar, compileExpr.allVarsExcept, h₄.1.1] at this
-                simp [this]
-              else
-                rw [allVarsExcept_finIdxOf?_none_if_diff_path_conds (by simp [Ne.symm h₃])]
-                simp [hchans₃_no_var, h₃]
-            else
-              rw [allVarsExcept_finIdxOf?_none_if_not_defined (by simp [h₂])]
-              simp [hchans₃_no_var]
-              split
-              · rename_i h₃
-                simp [VarMap.getVar, VarMap.removeVar] at h₃
-                have := (hdefined_vars v).mpr ⟨_, h₃.2⟩
-                simp [h₂ this]
-              · simp
-        | merge_cond name =>
-          simp [hchans₃, hchans₂, hpc₁, hchans₁,
-            compileExpr.allVarsExcept, List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
-          if h₁ : condName = name then
-            simp [h₁]
-            simp [hcondName, Eq.symm h₁]
-            have := instInterp.unique_toBool_fromBool _ _ hcondBool
-            if h₂ : condBool then
-              simp [h₂] at this ⊢
-              exact this
-            else
-              simp [h₂] at this ⊢
-              split
-              · rename_i h
-                simp only [← hcondName] at h
-                have := hpath_conds_order _ _ _ h
-                omega
-              · simp [this]
-          else
-            cases condBool
-            all_goals
-            simp [h₁]
-            simp [hcondName, Ne.symm h₁]
-            simp [← hcondName, hlive_vars, SimR.varsToChans]
-        | switch_cond name =>
-          cases condBool
-          all_goals
-            simp [compileExpr.allVarsExcept, hchans₃, hchans₂, hpc₁, hchans₁]
-            intro h
-            simp [Ne.symm h, hlive_vars, SimR.varsToChans,
-              List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
-        | _ =>
-          cases condBool
-          all_goals
-            simp [compileExpr.allVarsExcept, hchans₃, hchans₂, hchans₁, hpc₁]
-            try rw [(Vector.finIdxOf?_eq_none_iff).mpr _]
-            simp [← hcondName, hlive_vars, hbr, SimR.varsToChans,
-              List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
+      · simp
       · exact List.Nodup.filter _ hdefined_vars_no_dup
       · simp; grind [VarMap.getVar, VarMap.removeVar]
       · simp; grind [SimR.OrderedPathConds]
       · simp; grind [SimR.OrderedPathConds]
-      · simp; grind
+      · simp; grind [compileExpr.varName]
       · simp only [hmerges]
       · exact hwf_fn.1
       · exact hwf_fn.2
       · simp
-        exists rest
-        simp only [hatoms, hcarryInLoop, hrest, List.append_assoc, hcomp_fn, true_and]
-        constructor
-        · exists -- ctxLeft
-            ctxLeft ++ if condBool then
-              [
-                .fork condName #v[.switch_cond condName, .merge_cond condName],
-                .switch (.switch_cond condName)
-                  (compileExpr.allVarsExcept χ ec.definedVars [cond] ec.pathConds)
-                  (compileExpr.allVarsExcept χ ec.definedVars [cond] leftConds)
-                  (compileExpr.allVarsExcept χ ec.definedVars [cond] rightConds)
-              ]
-            else
-              [
-                .fork condName #v[.switch_cond condName, .merge_cond condName],
-                .switch (.switch_cond condName)
-                  (compileExpr.allVarsExcept χ ec.definedVars [cond] ec.pathConds)
-                  (compileExpr.allVarsExcept χ ec.definedVars [cond] leftConds)
-                  (compileExpr.allVarsExcept χ ec.definedVars [cond] rightConds)
-              ] ++ leftComp
-          exists -- ctxRight
-            if condBool then
-              rightComp ++ [compileExpr.brMerge Op χ V m n condName ec.pathConds] ++ ctxRight
-            else
-              [compileExpr.brMerge Op χ V m n condName ec.pathConds] ++ ctxRight
-          split <;> rename_i h
-          · simp [h, ← hleftComp, ← hrightComp, ← hcurrent, ← hleftConds, ← hcondName]
-          · simp [h, ← hleftComp, ← hrightComp, ← hcurrent, ← hrightConds, ← hcondName]
-        · split
-          · exact hwf_left
-          · exact hwf_right
+        grind only [compileExpr.varName,
+          List.length_cons, =_ List.cons_append, usr List.length_filter_le,
+          = List.removeAll_nil, = List.removeAll_cons, = List.append_assoc,
+          =_ List.countP_eq_length_filter, = List.nodup_iff_count, List.length_nil, List.nil_append,
+          List.append_nil, = List.cons_append, List.Pairwise.map, = List.nodup_iff_pairwise_ne,
+          =_ List.append_assoc, = List.pairwise_map, = List.countP_eq_length_filter',
+          → List.eq_nil_of_append_eq_nil, List.size_toArray, → List.eq_nil_of_map_eq_nil, cases Or]
 
 end Wavelet.Simulation.Br
