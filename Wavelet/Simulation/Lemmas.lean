@@ -4,12 +4,14 @@ import Mathlib.Data.List.Nodup
 import Wavelet.Seq
 import Wavelet.Dataflow
 import Wavelet.Compile
+import Wavelet.Simulation.Relation
 
 /-! Some lemmas for proving the simulation. -/
 
 namespace Wavelet.Simulation.Lemmas
 
 open Wavelet.Seq Wavelet.Dataflow Wavelet.Compile
+open Relation
 
 /-! Lemmas about `ChanMap`. -/
 section ChanMap
@@ -162,7 +164,19 @@ theorem var_map_fromList_get_vars
   {var : χ} {vars : Vector χ n} {vals : Vector V n} :
   var ∈ vars ↔
   ∃ val, (VarMap.fromList χ V (vars.zip vals).toList).getVar χ V var = some val
-:= sorry
+:= by
+  constructor
+  · intros hmem_var
+    suffices h :
+      ((VarMap.fromList χ V (vars.zip vals).toList).getVar χ V var).isSome by
+      exact Option.isSome_iff_exists.mp h
+    simp [VarMap.getVar, VarMap.fromList,
+      Vector.zip_eq_zipWith,
+      Vector.toList_zipWith,
+      ← List.zip_eq_zipWith]
+    sorry
+  · intros hget_var
+    sorry
 
 theorem var_map_fromList_get_vars_index
   [DecidableEq χ]
@@ -202,6 +216,44 @@ theorem allVarsExcept_nodup
   simp [Function.Injective]
   apply List.Nodup.filter
   exact hnodup
+
+theorem allVarsExcept_finIdxOf?_none_if_removed
+  [DecidableEq χ]
+  (hmem_var : var ∈ removedVars) :
+  (compileExpr.allVarsExcept χ definedVars removedVars pathConds).finIdxOf?
+    (.var var pathConds') = none
+:= by
+  simp [compileExpr.allVarsExcept, List.removeAll]
+  intros hmem
+  simp [List.toVector] at hmem
+  exact False.elim (hmem.2 hmem_var)
+
+theorem allVarsExcept_finIdxOf?_none_if_not_defined
+  [DecidableEq χ]
+  (hnot_mem_var : var ∉ definedVars) :
+  (compileExpr.allVarsExcept χ definedVars removedVars pathConds).finIdxOf?
+    (.var var pathConds') = none
+:= by
+  sorry
+
+theorem allVarsExcept_finIdxOf?_none_if_diff_path_conds
+  [DecidableEq χ]
+  (hneq : pathConds ≠ pathConds') :
+  (compileExpr.allVarsExcept χ definedVars removedVars pathConds).finIdxOf?
+    (.var var pathConds') = none
+:= by
+  sorry
+
+theorem allVarsExcept_finIdxOf?_some
+  [DecidableEq χ]
+  (h₁ : var ∈ definedVars)
+  (h₂ : var ∉ removedVars)
+  (h₃ : pathConds' = pathConds) :
+  ∃ i,
+    (compileExpr.allVarsExcept χ definedVars removedVars pathConds).finIdxOf?
+      (.var var pathConds') = some i
+:= by
+  sorry
 
 theorem vars_nodup_to_var_names_nodup
   (hnodup : vars.toList.Nodup) :
@@ -424,5 +476,19 @@ theorem input_finIdxOf?_index
   simp [← this] at hj
 
 end Compile
+
+/-! Some facts about the simulation relation. -/
+section Sim
+
+theorem path_conds_acyclic
+  {pathConds : List (Bool × ChanName χ)}
+  (horder : SimR.OrderedPathConds _ pathConds):
+  (b, .var v pathConds) ∉ pathConds
+:= by
+  intros h
+  have := horder _ _ _ h
+  simp at this
+
+end Sim
 
 end Wavelet.Simulation.Lemmas

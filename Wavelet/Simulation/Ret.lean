@@ -607,7 +607,7 @@ theorem sim_step_ret
             · simp [h₁]
       · simp
       · simp [VarMap.empty, VarMap.getVar]
-      · simp
+      · simp [SimR.OrderedPathConds]
       · simp
       · simp [SimR.HasMerges]
       · exact hwf_fn.1

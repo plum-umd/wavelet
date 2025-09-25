@@ -452,11 +452,12 @@ theorem sim_step_tail
     exists pc'
     constructor
     · exact hsteps₆
-    · and_intros
-      · simp only [Seq.Config.init, heq_state, hpc', hpc₃, hpc₂, hpc₁]
+    · simp only [Seq.Config.init]
+      and_intros
+      · simp only [heq_state, hpc', hpc₃, hpc₂, hpc₁]
       · -- varsToChans
         funext name
-        simp [SimR.varsToChans, Seq.Config.init]
+        simp [SimR.varsToChans]
         cases name with
         | var v pathConds =>
           simp [hpc', hchans₇, hchans₆, hpc₃, hchans₅, hchans₄, hpc₂,
@@ -517,13 +518,13 @@ theorem sim_step_tail
           · simp at h₁
             omega
           · simp
-      · simp [Seq.Config.init, hwf_fn.1]
-      · simp [Seq.Config.init]
+      · simp [hwf_fn.1]
+      · simp []
         intros var
         apply var_map_fromList_get_vars
-      · simp [Seq.Config.init]
-      · simp [Seq.Config.init]
-      · simp [Seq.Config.init, SimR.HasMerges]
+      · simp [SimR.OrderedPathConds]
+      · simp
+      · simp [SimR.HasMerges]
       · exact hwf_fn.1
       · exact hwf_fn.2
       · exists rest, true
@@ -534,7 +535,7 @@ theorem sim_step_tail
         -- ctxRight
         exists compileFn.resultSteers Op χ V m n
         simp [hrest] at hcomp_fn
-        simp [Seq.Config.init, hpc', hpc₃, hpc₂, hpc₁,
+        simp [hpc', hpc₃, hpc₂, hpc₁,
           compileFn.initCarry, compileFn, hatoms,
           compileFn.initCarry, hcarryInLoop, hrest,
           hwf_fn.2, compileFn.bodyComp, compileFn.resultSteers,

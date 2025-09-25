@@ -67,6 +67,10 @@ def SimR.HasMerges
     (compileExpr.brMerge _ _ _ m n chan rest ∈ atoms) ∧
     SimR.HasMerges m n atoms rest
 
+def SimR.OrderedPathConds (pathConds : List (Bool × ChanName χ)) : Prop :=
+  (∀ b var pathConds', (b, ChanName.var var pathConds') ∈ pathConds →
+    pathConds'.length < pathConds.length)
+
 def SimR
   (hnz : m > 0 ∧ n > 0)
   (ec : Seq.Config Op χ V S m n)
@@ -76,8 +80,7 @@ def SimR
   pc.chans = SimR.varsToChans _ _ _ _ ec ∧
   ec.definedVars.Nodup ∧
   (∀ var, var ∈ ec.definedVars ↔ ∃ val, ec.vars.getVar _ _ var = some val) ∧
-  (∀ b var pathConds, (b, .var var pathConds) ∈ ec.pathConds →
-    pathConds.length < ec.pathConds.length) ∧
+  SimR.OrderedPathConds _ ec.pathConds ∧
   -- No path condition are pushed twice
   (ec.pathConds.map Prod.snd).Nodup ∧
   -- Some invariants about the "shape" of the processes

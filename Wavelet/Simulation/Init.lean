@@ -149,7 +149,7 @@ theorem sim_step_init
     · simp
       intros var
       apply var_map_fromList_get_vars
-    · simp
+    · simp [SimR.OrderedPathConds]
     · simp
     · simp [SimR.HasMerges]
     · exact hwf_fn.1
