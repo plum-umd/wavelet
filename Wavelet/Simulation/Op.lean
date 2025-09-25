@@ -24,10 +24,10 @@ theorem sim_step_op_defined_vars
   {definedVars args : List χ}
   {map : VarMap χ V}
   (hrets_disj : definedVars.Disjoint rets.toList)
-  (hdefined_vars : ∀ var, var ∈ definedVars ↔ ∃ val, map.getVar χ V var = some val) :
+  (hdefined_vars : ∀ var, var ∈ definedVars ↔ ∃ val, map.getVar var = some val) :
   var ∈ definedVars.removeAll args ∨ var ∈ rets ↔
   ∃ val,
-    ((map.removeVars χ V args).insertVars χ V rets outputVals).getVar χ V var =
+    ((map.removeVars args).insertVars rets outputVals).getVar var =
       some val
 := by
   constructor
@@ -80,16 +80,16 @@ theorem sim_step_op_defined_vars
       simp [this, h₃]
 
 theorem sim_step_op
-  [Arity Op] [DecidableEq χ] [Interp Op V S]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [InterpOp Op V S]
   {args rets cont}
   {ec ec' : Seq.Config Op χ V S m n}
   {pc : Dataflow.Config Op (ChanName χ) V S m n}
   {hnz : m > 0 ∧ n > 0}
   (hsim : SimRel hnz ec pc)
-  (hstep : Config.Step Op χ V S ec ec')
+  (hstep : Config.Step ec ec')
   (hop : ec.expr = .cont (.op o args rets cont)) :
   ∃ pc',
-    Config.StepPlus Op (ChanName χ) V S pc pc' ∧
+    Config.StepPlus pc pc' ∧
     SimRel hnz ec' pc' := by
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
@@ -113,15 +113,15 @@ theorem sim_step_op
     have ⟨chans₁, inputVals', hpop_input_vals, hchans₁, hinput_vals⟩ :=
       pop_vals_singleton _ _
       (map := pc.chans)
-      (names := compileExpr.varNames χ ec.pathConds args)
+      (names := args.map (.var · ec.pathConds))
       (λ name val =>
         match name with
-        | .var v _ => ec.vars.getVar _ _ v = some val
+        | .var v _ => ec.vars.getVar v = some val
         | _ => False)
       (vars_nodup_to_var_names_nodup hargs_nodup)
       (by
         intros name hname
-        simp [compileExpr.varNames, compileExpr.varName] at hname
+        simp at hname
         replace ⟨var, hmem_var, hname⟩ := hname
         replace hmem_var := Vector.mem_toList_iff.mpr hmem_var
         have := hargs_subset hmem_var
@@ -131,7 +131,7 @@ theorem sim_step_op
       symm
       apply Vector.toList_inj.mp
       apply List.right_unique_forall₂' _ hinput_vals
-      · simp [compileExpr.varNames, Vector.toList_map, compileExpr.varName]
+      · simp [Vector.toList_map]
         exact List.mapM_some_iff_forall₂.mp (Vector.mapM_toList hargs)
       · simp [Relator.RightUnique]
         intros a b c hb hc
@@ -142,12 +142,12 @@ theorem sim_step_op
     subst this; clear hinput_vals
     have hmem_op :
       .op o
-        (compileExpr.varNames χ ec.pathConds args)
-        (compileExpr.varNames χ ec.pathConds rets)
+        (args.map (.var · ec.pathConds))
+        (rets.map (.var · ec.pathConds))
       ∈ pc.proc.atoms
     := by grind
     simp [hsim.eq_state] at hinterp
-    have hsteps : Dataflow.Config.StepPlus _ _ _ _ pc _
+    have hsteps : Dataflow.Config.StepPlus pc _
       := Relation.TransGen.single
         (Dataflow.Config.Step.step_op hmem_op hpop_input_vals hinterp)
     -- Simplify pushes
@@ -157,7 +157,7 @@ theorem sim_step_op
     · intros name hname
       simp [hchans₁]
       intros hname₂
-      simp [compileExpr.varNames, compileExpr.varName] at hname
+      simp at hname
       replace ⟨var, hvar, hname⟩ := hname
       simp [← hname, hsim.vars_to_chans, varsToChans]
       have : var ∉ ec.definedVars := List.disjoint_right.mp hrets_disj
@@ -180,7 +180,7 @@ theorem sim_step_op
           simp
           split <;> rename_i h₁
           · rename_i i
-            simp [compileExpr.varNames, compileExpr.varName, Vector.get] at h₁
+            simp [Vector.get] at h₁
             have ⟨⟨hvar, h₂⟩, h₃⟩ := h₁
             simp [h₂, VarMap.getVar, VarMap.removeVars, VarMap.insertVars]
             have :
@@ -210,10 +210,8 @@ theorem sim_step_op
             simp [this]
           · have := Option.eq_none_iff_forall_ne_some.mpr h₁
             simp at this
-            simp [compileExpr.varNames, compileExpr.varName] at this
             split <;> rename_i h₂
-            · simp [compileExpr.varNames, compileExpr.varName] at h₂
-              simp [h₂.2]
+            · simp [h₂.2]
               simp [h₂.1, VarMap.getVar, VarMap.removeVars, VarMap.insertVars]
               split <;> rename_i h₃
               · simp at h₃
@@ -226,21 +224,21 @@ theorem sim_step_op
                 simp only [h₄] at h₅
                 simp [this h₅.1 h₂.2]
               · rfl
-            · simp [compileExpr.varNames, compileExpr.varName] at h₂
+            · simp at h₂
               split <;> rename_i h₃
               · simp [hsim.vars_to_chans, varsToChans, h₃]
                 have : var ∉ rets := by
                   intros h
                   exact this h h₃.symm
-                simp [var_map_insert_vars_disj this]
+                rw [var_map_insert_vars_disj this]
                 have : var ∉ args.toList := by
                   intros h
                   replace h := Vector.mem_toList_iff.mp h
                   exact h₂ h h₃.symm
-                simp [var_map_remove_vars_disj this]
+                rw [var_map_remove_vars_disj this]
               · simp [hsim.vars_to_chans, varsToChans, h₃]
         | _ =>
-          simp [compileExpr.varNames, compileExpr.varName, hsim.vars_to_chans, varsToChans, hop]
+          simp [hsim.vars_to_chans, varsToChans, hop]
       · simp
         apply List.Nodup.append
         · apply List.Nodup.filter
@@ -263,12 +261,12 @@ theorem sim_step_op
         exists
           ctxLeft ++ [
             .op o
-              (compileExpr.varNames χ ec.pathConds args)
-              (compileExpr.varNames χ ec.pathConds rets)
+              (args.map (.var · ec.pathConds))
+              (rets.map (.var · ec.pathConds))
           ]
         -- ctxCurrent
         exists
-          compileExpr Op χ V S hnz (ec.definedVars.removeAll args.toList ++ rets.toList) ec.pathConds cont
+          compileExpr hnz (ec.definedVars.removeAll args.toList ++ rets.toList) ec.pathConds cont
         -- ctxRight
         exists ctxRight
         grind

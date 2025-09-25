@@ -31,25 +31,25 @@ def Refines
 /-- Specific case for a Seq config to refine a dataflow config. -/
 def SeqRefinesDataflow
   [DecidableEq χ₁] [DecidableEq χ₂]
-  [Arity Op] [Interp Op V S]
+  [Arity Op] [InterpConsts V] [InterpOp Op V S]
   (c₁ : Seq.Config Op χ₁ V S m n)
   (c₂ : Dataflow.Config Op χ₂ V S m n)
   (R : Seq.Config Op χ₁ V S m n → Dataflow.Config Op χ₂ V S m n → Prop) : Prop :=
-  Refines c₁ c₂ R (Config.Step Op χ₁ V S) (Config.StepPlus Op χ₂ V S)
+  Refines c₁ c₂ R Config.Step Config.StepPlus
 
 /-- Main simulation theorem from `Fn` to compiled `Proc`. -/
 theorem sim_compile_fn
-  [Arity Op] [Interp Op V S] [DecidableEq χ]
+  [Arity Op] [InterpConsts V] [InterpOp Op V S] [DecidableEq χ]
   (fn : Fn Op χ m n)
   (args : Vector V m)
   (state : S)
   (hnz : m > 0 ∧ n > 0)
   (hwf_fn : fn.WellFormed) :
   ∃ pc',
-    Dataflow.Config.StepStar Op (ChanName χ) V S
-      (Dataflow.Config.init _ _ _ _ (compileFn Op χ V S hnz fn) state args) pc' ∧
+    Dataflow.Config.StepStar
+      (Dataflow.Config.init (compileFn hnz fn) state args) pc' ∧
     SeqRefinesDataflow
-      (Seq.Config.init _ _ _ _ fn state args) pc'
+      (Seq.Config.init fn state args) pc'
       (SimRel hnz)
 := by
   have ⟨pc', hsteps, hsim_init⟩ := Init.sim_step_init fn args state hnz hwf_fn
@@ -74,15 +74,14 @@ theorem sim_compile_fn
 related final configurations. -/
 theorem SeqRefinesDataflow_steps_to_steps
   [DecidableEq χ₁] [DecidableEq χ₂]
-  [Arity Op] [Interp Op V S]
+  [Arity Op] [InterpConsts V] [InterpOp Op V S]
   {ec ec' : Seq.Config Op χ₁ V S m n}
   {pc : Dataflow.Config Op χ₂ V S m n}
-  {R : Seq.Config Op χ₁ V S m n → Dataflow.Config Op χ₂ V S m n → Prop}
+  {R : _ → _ → Prop}
   (href : SeqRefinesDataflow ec pc R)
-  (hsteps : Seq.Config.StepStar Op χ₁ V S ec ec') :
+  (hsteps : Seq.Config.StepStar ec ec') :
   ∃ pc',
-    Dataflow.Config.StepStar Op χ₂ V S pc pc' ∧
-    R ec' pc'
+    Dataflow.Config.StepStar pc pc' ∧ R ec' pc'
 := by
   induction hsteps with
   | refl =>
@@ -108,18 +107,18 @@ def finalChans (retVals : Vector V n) : ChanMap (ChanName χ) V :=
 
 /-- Same results at termination. -/
 theorem sim_compile_fn_forward_results
-  [Arity Op] [Interp Op V S] [DecidableEq χ]
+  [Arity Op] [InterpConsts V] [InterpOp Op V S] [DecidableEq χ]
   {ec : Seq.Config Op χ V S m n}
   (fn : Fn Op χ m n)
   (args : Vector V m)
   (state : S)
   (hnz : m > 0 ∧ n > 0)
   (hwf_fn : fn.WellFormed)
-  (hsteps : Seq.Config.StepStar Op χ V S (Seq.Config.init _ _ _ _ fn state args) ec)
+  (hsteps : Seq.Config.StepStar (Seq.Config.init fn state args) ec)
   (hterm : ec.expr = .ret retVals) :
   ∃ pc',
-    Dataflow.Config.StepStar Op (ChanName χ) V S
-      (Dataflow.Config.init _ _ _ _ (compileFn Op χ V S hnz fn) state args) pc' ∧
+    Dataflow.Config.StepStar
+      (Dataflow.Config.init (compileFn hnz fn) state args) pc' ∧
     pc'.state = ec.state ∧
     pc'.chans = finalChans retVals
 := by

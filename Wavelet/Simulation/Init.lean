@@ -19,28 +19,29 @@ Initial `Seq` and `Dataflow` configurations satisfy
 the simulation relation (modulo some setup steps).
 -/
 theorem sim_step_init
-  [Arity Op] [DecidableEq χ] [Interp Op V S]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [InterpOp Op V S]
   (fn : Fn Op χ m n)
   (args : Vector V m)
   (state : S)
   (hnz : m > 0 ∧ n > 0)
   (hwf_fn : fn.WellFormed) :
   ∃ pc',
-    Dataflow.Config.StepStar Op (ChanName χ) V S
-      (Dataflow.Config.init _ _ _ _ (compileFn Op χ V S hnz fn) state args) pc' ∧
+    Dataflow.Config.StepStar
+      (Dataflow.Config.init (compileFn hnz fn) state args) pc' ∧
     SimRel hnz
-      (Seq.Config.init _ _ _ _ fn state args)
+      (Seq.Config.init fn state args)
       pc'
 := by
   -- Abbreviations
   generalize hpc₀ :
-    Dataflow.Config.init Op (ChanName χ) V S (compileFn Op χ V S hnz fn) state args = pc₀
-  simp [Dataflow.Config.init, compileFn] at hpc₀
+    Dataflow.Config.init (compileFn hnz fn) state args = pc₀
+  simp [Dataflow.Config.init] at hpc₀
   generalize hchans₀ :
-    ChanMap.pushVals (ChanName χ) V (compileFn.inputs Op χ fn) args (ChanMap.empty (ChanName χ) V)
+    ChanMap.pushVals (compileFn.inputs fn) args ChanMap.empty
     = chans₀
   replace hpc₀ := hpc₀.symm
   replace hchans₀ := hchans₀.symm
+  simp [compileFn] at hpc₀
   rw [← hchans₀] at hpc₀
   -- Simplify initial pushes to the carry gate
   rw [push_vals_empty] at hchans₀
@@ -54,7 +55,7 @@ theorem sim_step_init
   have ⟨chans₁, args', hpop_args, hchans₁, hargs⟩ :=
     pop_vals_singleton _ _
     (map := pc₀.chans)
-    (names := compileFn.inputs Op χ fn)
+    (names := compileFn.inputs fn)
     (λ name val => chans₀ name = [val])
     (by
       simp [compileFn.inputs, Vector.toList_map]
@@ -87,12 +88,12 @@ theorem sim_step_init
   subst this
   have hmem_carry :
     pc₀.proc.atoms =
-      [] ++ [compileFn.initCarry _ _ _ fn false]
-      ++ (compileFn.bodyComp Op χ V S hnz fn ++ compileFn.resultSteers _ _ _ m n)
+      [] ++ [compileFn.initCarry fn false]
+      ++ (compileFn.bodyComp hnz fn ++ compileFn.resultSteers m n)
   := by simp [hpc₀]
   simp only [compileFn.initCarry] at hmem_carry
   have hsteps :
-    Dataflow.Config.StepStar Op (ChanName χ) V S pc₀ _
+    Dataflow.Config.StepStar pc₀ _
   := Relation.ReflTransGen.single
     (Dataflow.Config.Step.step_carry_init
       hmem_carry
