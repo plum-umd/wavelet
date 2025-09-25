@@ -6,23 +6,20 @@ import Wavelet.Dataflow
 import Wavelet.Compile
 import Wavelet.Lemmas
 
-import Wavelet.Simulation.Relation
+import Wavelet.Simulation.Invariants
 import Wavelet.Simulation.Lemmas
 
 namespace Wavelet.Simulation.Init
 
 open Wavelet.Op Wavelet.Seq Wavelet.Dataflow Wavelet.Compile
-open Relation Lemmas
-
-universe u
-variable (Op : Type u) (χ : Type u) (V S)
-variable [instArity : Arity Op] [DecidableEq χ] [instInterp : Interp Op V S]
+open Invariants Lemmas
 
 /--
 Initial `Seq` and `Dataflow` configurations satisfy
 the simulation relation (modulo some setup steps).
 -/
 theorem sim_step_init
+  [Arity Op] [DecidableEq χ] [Interp Op V S]
   (fn : Fn Op χ m n)
   (args : Vector V m)
   (state : S)
@@ -31,7 +28,7 @@ theorem sim_step_init
   ∃ pc',
     Dataflow.Config.StepStar Op (ChanName χ) V S
       (Dataflow.Config.init _ _ _ _ (compileFn Op χ V S hnz fn) state args) pc' ∧
-    SimR _ _ _ _ hnz
+    SimRel hnz
       (Seq.Config.init _ _ _ _ fn state args)
       pc'
 := by
@@ -120,7 +117,7 @@ theorem sim_step_init
     and_intros
     · simp
     · funext name
-      simp [SimR.varsToChans]
+      simp [varsToChans]
       cases name with
       | var v pathConds =>
         simp
@@ -149,12 +146,12 @@ theorem sim_step_init
     · simp
       intros var
       apply var_map_fromList_get_vars
-    · simp [SimR.OrderedPathConds]
+    · simp [OrderedPathConds]
     · simp
-    · simp [SimR.HasMerges]
+    · simp [HasMerges]
     · exact hwf_fn.1
     · exact hwf_fn.2
-    · simp [compileFn, compileFn.initCarry, compileFn.bodyComp]
+    · simp [HasCompiledProcs, compileFn, compileFn.initCarry, compileFn.bodyComp]
       constructor
       · exists []
         simp

@@ -4,14 +4,12 @@ import Mathlib.Data.List.Nodup
 import Wavelet.Seq
 import Wavelet.Dataflow
 import Wavelet.Compile
-import Wavelet.Simulation.Relation
 
 /-! Some lemmas for proving the simulation. -/
 
 namespace Wavelet.Simulation.Lemmas
 
 open Wavelet.Seq Wavelet.Dataflow Wavelet.Compile
-open Relation
 
 /-! Lemmas about `ChanMap`. -/
 section ChanMap
@@ -185,6 +183,35 @@ theorem var_map_fromList_get_vars_index
   (hnodup : vars.toList.Nodup) :
   (VarMap.fromList χ V (vars.zip vals).toList).getVar χ V vars[i] = some vals[i]
 := sorry
+
+theorem var_map_insert_vars_disj
+  [DecidableEq χ]
+  {map : VarMap χ V}
+  (hnot_mem : var ∉ vars) :
+  (map.insertVars χ V vars vals).getVar χ V var
+  = map.getVar χ V var
+:= by
+  simp [VarMap.getVar, VarMap.insertVars]
+  suffices h :
+    List.find? (fun x => decide (x.fst = var)) (vars.zip vals).toList = none
+    by simp [h]
+  simp
+  intros a b h h'
+  have := Vector.of_mem_zip h
+  simp [h'] at this
+  simp [hnot_mem this.1]
+
+theorem var_map_remove_vars_disj
+  [DecidableEq χ]
+  {map : VarMap χ V}
+  (hnot_mem : var ∉ vars) :
+  (map.removeVars χ V vars).getVar χ V var
+  = map.getVar χ V var
+:= by
+  simp [VarMap.getVar, VarMap.removeVars]
+  intros h
+  exfalso
+  exact hnot_mem h
 
 end VarMap
 
@@ -476,19 +503,5 @@ theorem input_finIdxOf?_index
   simp [← this] at hj
 
 end Compile
-
-/-! Some facts about the simulation relation. -/
-section Sim
-
-theorem path_conds_acyclic
-  {pathConds : List (Bool × ChanName χ)}
-  (horder : SimR.OrderedPathConds _ pathConds):
-  (b, .var v pathConds) ∉ pathConds
-:= by
-  intros h
-  have := horder _ _ _ h
-  simp at this
-
-end Sim
 
 end Wavelet.Simulation.Lemmas

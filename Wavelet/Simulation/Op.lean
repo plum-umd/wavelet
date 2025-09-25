@@ -9,21 +9,18 @@ import Wavelet.Dataflow
 import Wavelet.Compile
 import Wavelet.Lemmas
 
-import Wavelet.Simulation.Relation
+import Wavelet.Simulation.Invariants
 import Wavelet.Simulation.Lemmas
 
 namespace Wavelet.Simulation.Op
 
 open Wavelet.Op Wavelet.Seq Wavelet.Dataflow Wavelet.Compile
-open Relation Lemmas
-
-universe u
-variable (Op : Type u) (χ : Type u) (V S)
-variable [instArity : Arity Op] [DecidableEq χ] [instInterp : Interp Op V S]
+open Invariants Lemmas
 
 /-- Proves that the correspondence between `definedVars` and `ec.vars`
 is preserved after execution of an operator. -/
 theorem sim_step_op_defined_vars
+  [DecidableEq χ]
   {definedVars args : List χ}
   {map : VarMap χ V}
   (hrets_disj : definedVars.Disjoint rets.toList)
@@ -82,61 +79,22 @@ theorem sim_step_op_defined_vars
       apply List.mem_filter.mpr
       simp [this, h₃]
 
-theorem var_map_insert_vars_disj
-  {map : VarMap χ V}
-  (hnot_mem : var ∉ vars) :
-  (map.insertVars χ V vars vals).getVar χ V var
-  = map.getVar χ V var
-:= by
-  simp [VarMap.getVar, VarMap.insertVars]
-  suffices h :
-    List.find? (fun x => decide (x.fst = var)) (vars.zip vals).toList = none
-    by simp [h]
-  simp
-  intros a b h h'
-  have := Vector.of_mem_zip h
-  simp [h'] at this
-  simp [hnot_mem this.1]
-
-theorem var_map_remove_vars_disj
-  {map : VarMap χ V}
-  (hnot_mem : var ∉ vars) :
-  (map.removeVars χ V vars).getVar χ V var
-  = map.getVar χ V var
-:= by
-  simp [VarMap.getVar, VarMap.removeVars]
-  intros h
-  exfalso
-  exact hnot_mem h
-
 theorem sim_step_op
-  (hnz : m > 0 ∧ n > 0)
-  (ec ec' : Seq.Config Op χ V S m n)
-  (pc : Dataflow.Config Op (ChanName χ) V S m n)
-  (hsim : SimR _ _ _ _ hnz ec pc)
+  [Arity Op] [DecidableEq χ] [Interp Op V S]
+  {args rets cont}
+  {ec ec' : Seq.Config Op χ V S m n}
+  {pc : Dataflow.Config Op (ChanName χ) V S m n}
+  {hnz : m > 0 ∧ n > 0}
+  (hsim : SimRel hnz ec pc)
   (hstep : Config.Step Op χ V S ec ec')
   (hop : ec.expr = .cont (.op o args rets cont)) :
   ∃ pc',
     Config.StepPlus Op (ChanName χ) V S pc pc' ∧
-    SimR _ _ _ _ hnz ec' pc' := by
+    SimRel hnz ec' pc' := by
   have ⟨
-    heq_state,
-    hlive_vars,
-    hdefined_vars_no_dup,
-    hdefined_vars,
-    hpath_conds_order,
-    hpath_conds_nodup,
-    hmerges,
-    hwf_fn,
-    ⟨
-      rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
-      hatoms,
-      hcomp_fn,
-      hrest,
-      hret,
-      hcont,
-    ⟩,
-  ⟩ := hsim
+    rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
+    hatoms, hcomp_fn, hrest, hret, hcont,
+  ⟩ := hsim.has_compiled_procs
   have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont _ hop
   simp [compileExpr] at hcurrent
   -- Deduce some facts from `hstep` and `hwf_expr`
@@ -167,8 +125,8 @@ theorem sim_step_op
         replace ⟨var, hmem_var, hname⟩ := hname
         replace hmem_var := Vector.mem_toList_iff.mpr hmem_var
         have := hargs_subset hmem_var
-        have ⟨_, h⟩ := (hdefined_vars var).mp this
-        simp [hlive_vars, SimR.varsToChans, ← hname, h])
+        have ⟨_, h⟩ := hsim.defined_vars_to_get_var this
+        simp [hsim.vars_to_chans, varsToChans, ← hname, h])
     have : inputVals = inputVals' := by
       symm
       apply Vector.toList_inj.mp
@@ -188,7 +146,7 @@ theorem sim_step_op
         (compileExpr.varNames χ ec.pathConds rets)
       ∈ pc.proc.atoms
     := by grind
-    simp [heq_state] at hinterp
+    simp [hsim.eq_state] at hinterp
     have hsteps : Dataflow.Config.StepPlus _ _ _ _ pc _
       := Relation.TransGen.single
         (Dataflow.Config.Step.step_op hmem_op hpop_input_vals hinterp)
@@ -201,11 +159,11 @@ theorem sim_step_op
       intros hname₂
       simp [compileExpr.varNames, compileExpr.varName] at hname
       replace ⟨var, hvar, hname⟩ := hname
-      simp [← hname, hlive_vars, SimR.varsToChans]
+      simp [← hname, hsim.vars_to_chans, varsToChans]
       have : var ∉ ec.definedVars := List.disjoint_right.mp hrets_disj
         (Vector.mem_toList_iff.mpr hvar)
       split <;> rename_i h
-      · have h' := (hdefined_vars var).mpr ⟨_, h⟩
+      · have h' := hsim.get_var_to_defined_vars ⟨_, h⟩
         simp [this h']
       · rfl
     replace ⟨pc', hpc', hsteps⟩ := exists_eq_left.mpr hsteps
@@ -216,7 +174,7 @@ theorem sim_step_op
     · and_intros
       · simp [hpc']
       · funext name
-        simp [hpc', SimR.varsToChans, hchans₁]
+        simp [hpc', varsToChans, hchans₁]
         cases name with
         | var var pathConds =>
           simp
@@ -270,35 +228,36 @@ theorem sim_step_op
               · rfl
             · simp [compileExpr.varNames, compileExpr.varName] at h₂
               split <;> rename_i h₃
-              · simp [hlive_vars, SimR.varsToChans, h₃]
+              · simp [hsim.vars_to_chans, varsToChans, h₃]
                 have : var ∉ rets := by
                   intros h
                   exact this h h₃.symm
-                simp [var_map_insert_vars_disj _ _ this]
+                simp [var_map_insert_vars_disj this]
                 have : var ∉ args.toList := by
                   intros h
                   replace h := Vector.mem_toList_iff.mp h
                   exact h₂ h h₃.symm
-                simp [var_map_remove_vars_disj _ _ this]
-              · simp [hlive_vars, SimR.varsToChans, h₃]
+                simp [var_map_remove_vars_disj this]
+              · simp [hsim.vars_to_chans, varsToChans, h₃]
         | _ =>
-          simp [compileExpr.varNames, compileExpr.varName, hlive_vars, SimR.varsToChans, hop]
+          simp [compileExpr.varNames, compileExpr.varName, hsim.vars_to_chans, varsToChans, hop]
       · simp
         apply List.Nodup.append
         · apply List.Nodup.filter
-          exact hdefined_vars_no_dup
+          exact hsim.defined_vars_nodup
         · exact hrets_nodup
         · apply List.disjoint_implies_filter_disjoint_left hrets_disj
       · simp
         intros var
         apply sim_step_op_defined_vars
         · exact hrets_disj
-        · exact hdefined_vars
+        · intros v
+          apply hsim.defined_vars_iff_get_var
       · grind
-      · exact hpath_conds_nodup
-      · simp [hpc', hmerges]
-      · exact hwf_fn.1
-      · exact hwf_fn.2
+      · exact hsim.path_conds_nodup
+      · simp [hpc', hsim.has_merges]
+      · exact hsim.wf_fn.1
+      · exact hsim.wf_fn.2
       · exists rest, carryInLoop
         -- ctxLeft
         exists
