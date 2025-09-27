@@ -97,8 +97,7 @@ def SimRel
 /-! Utility functions to extract facts from the simulation relation. -/
 section Utilities
 
-variable {Op χ : Type*}
-variable {V S : Type u}
+variable {Op χ V S : Type*}
 variable [Arity Op] [DecidableEq χ] [InterpConsts V]
 variable {ec : Seq.Config Op χ V S m n}
 variable {pc : Dataflow.Config Op (ChanName χ) V S m n}

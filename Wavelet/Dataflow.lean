@@ -22,8 +22,8 @@ inductive AtomicProc (Op χ V : Type*) [Arity Op] where
   | forward (inputs : Vector χ n) (outputs : Vector χ n)
   | fork (input : χ) (outputs : Vector χ n)
   | const (c : V) (act : χ) (outputs : Vector χ n)
-  -- A combination of `forward` and `const` to wait for inputs to arrive
-  -- then forward the inputs to the first `n` outputs, and then send constants
+  -- A combination of `forward` and `const` to wait for inputs to arrive,
+  -- forward the inputs to the first `n` outputs, and then send constants
   -- to the last `m` outputs.
   | forwardc
     (inputs : Vector χ n) (consts : Vector V m) (outputs : Vector χ (n + m))
@@ -31,7 +31,7 @@ inductive AtomicProc (Op χ V : Type*) [Arity Op] where
 
 abbrev AtomicProcs Op χ V [Arity Op] := List (AtomicProc Op χ V)
 
-/-- `Proc _ m n` is a process with `m` inputs and `n` outputs. -/
+/-- `Proc ... m n` is a process with `m` inputs and `n` outputs. -/
 structure Proc Op χ V [Arity Op] (m : Nat) (n : Nat) where
   inputs : Vector χ m
   outputs : Vector χ n
@@ -73,7 +73,7 @@ def ChanMap.IsEmpty (name : χ) (map : ChanMap χ V) : Prop := map name = []
 
 def ChanMap.getBuf (name : χ) (map : ChanMap χ V) : List V := map name
 
-structure Config Op [Arity Op] χ V S m n where
+structure Config Op χ V S [Arity Op] m n where
   proc : Proc Op χ V m n
   chans : ChanMap χ V
   state : S
@@ -96,10 +96,15 @@ inductive Config.Step
   [InterpConsts V]
   [InterpOp Op V S]
   : Config Op χ V S m n → Config Op χ V S m n → Prop where
-  | step_op {inputs : Vector χ (Arity.ι o)} :
+  | step_op_trans {inputs : Vector χ (Arity.ι o)} :
     .op o inputs outputs ∈ c.proc.atoms →
     c.chans.popVals inputs = some (inputVals, chans') →
-    (InterpOp.interp o inputVals).run c.state = some (outputVals, state') →
+    InterpOp.trans o inputVals c.state (.inl state') →
+    Step c { c with state := state' } -- NOTE: channels are not updated here
+  | step_op_final {inputs : Vector χ (Arity.ι o)} :
+    .op o inputs outputs ∈ c.proc.atoms →
+    c.chans.popVals inputs = some (inputVals, chans') →
+    InterpOp.trans o inputVals c.state (.inr (state', outputVals)) →
     Step c { c with
       chans := chans'.pushVals outputs outputVals,
       state := state',

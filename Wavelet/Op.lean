@@ -18,10 +18,15 @@ class InterpConsts (V : Type v) where
   unique_toBool_fromBool : ∀ b v, toBool v = some b → v = fromBool b
 
 /--
-Interpretation of operators.
-TODO: `V` and `S` are in the same universe due to the type of `StateT`.
+Operators are interpreted as potentially non-deterministic state machines
+that can take multiple transitions, before terminating with some output values.
+
+In the dataflow semantics, these transitions can interleave
+with rest of the dataflow graph; but in the sequential semantics,
+we are blocked on the state machine until it reaches a final state.
 -/
-class InterpOp Op (V S : Type v) [Arity Op] where
-  interp : (op : Op) → Vector V (Arity.ι op) → StateT S Option (Vector V (Arity.ω op))
+class InterpOp Op (V : Type u) (S : Type v) [Arity Op] where
+  trans (op : Op) (inputs : Vector V (Arity.ι op)) :
+    S → S ⊕ (S × Vector V (Arity.ω op)) → Prop
 
 end Wavelet.Op

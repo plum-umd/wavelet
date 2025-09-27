@@ -101,7 +101,8 @@ theorem sim_step_op
   cases hstep with
   | step_ret hexpr | step_tail hexpr | step_br hexpr =>
     simp [hop] at hexpr
-  | step_op hexpr hargs hinterp =>
+  | step_op_trans hexpr => sorry -- TODO: slightly different than `step_op_final`
+  | step_op_final hexpr hargs hinterp =>
     rename_i o' inputVals outputVals state' args' rets' cont'
     simp [hop] at hexpr
     have ⟨h₁, h₂, h₃, h₄⟩ := hexpr
@@ -149,7 +150,7 @@ theorem sim_step_op
     simp [hsim.eq_state] at hinterp
     have hsteps : Dataflow.Config.StepPlus pc _
       := Relation.TransGen.single
-        (Dataflow.Config.Step.step_op hmem_op hpop_input_vals hinterp)
+        (Dataflow.Config.Step.step_op_final hmem_op hpop_input_vals hinterp)
     -- Simplify pushes
     rw [push_vals_empty] at hsteps
     rotate_left

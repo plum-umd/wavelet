@@ -197,7 +197,8 @@ theorem sim_step_tail_exec_dataflow
   ⟩ := hsim.has_compiled_procs
   have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont _ hexpr
   cases hstep with
-  | step_br hexpr' | step_ret hexpr' | step_op hexpr' =>
+  | step_br hexpr' | step_ret hexpr'
+  | step_op_trans hexpr' | step_op_final hexpr' =>
     simp [hexpr] at hexpr'
   | step_tail hexpr' hvars =>
   rename_i tailArgs vars'
@@ -488,7 +489,8 @@ theorem sim_step_tail
   ⟩ := hsim.has_compiled_procs
   have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont _ hexpr
   cases hstep with
-  | step_br hexpr' | step_ret hexpr' | step_op hexpr' =>
+  | step_br hexpr' | step_ret hexpr'
+  | step_op_trans hexpr' | step_op_final hexpr' =>
     simp [hexpr] at hexpr'
   | step_tail hexpr' hvars =>
     rename_i tailArgs vars'

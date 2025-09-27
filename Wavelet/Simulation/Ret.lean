@@ -381,7 +381,8 @@ theorem sim_step_ret_exec_dataflow
     exact hpc_atoms.2.symm
   subst this
   cases hstep with
-  | step_br hexpr' | step_tail hexpr' | step_op hexpr' =>
+  | step_br hexpr' | step_tail hexpr'
+  | step_op_trans hexpr' | step_op_final hexpr' =>
     simp [hexpr] at hexpr'
   | step_ret hexpr' hvars =>
   rename_i retVals vars'
@@ -597,7 +598,8 @@ theorem sim_step_ret
   have hsteps := sim_step_ret_exec_dataflow hsim hstep hexpr hatoms
   replace ⟨pc', hpc', hsteps⟩ := exists_eq_left.mpr hsteps
   cases hstep with
-  | step_br hexpr' | step_tail hexpr' | step_op hexpr' =>
+  | step_br hexpr' | step_tail hexpr'
+  | step_op_trans hexpr' | step_op_final hexpr' =>
     simp [hexpr] at hexpr'
   | step_ret hexpr' hvars =>
     rename_i retVals vars'

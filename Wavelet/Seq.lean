@@ -7,22 +7,30 @@ namespace Wavelet.Seq
 
 open Op
 
+/-- `Expr ... m n` is an expression that can either return `n`
+output values, or trigger a tail call with `m` values. -/
 inductive Expr (Op : Type u) (χ : Type v) [Arity Op]
   : Nat → Nat → Type (max u v) where
   | ret (vars : Vector χ n) : Expr Op χ m n
   | tail (vars : Vector χ m) : Expr Op χ m n
   | op (op : Op)
     (args : Vector χ (Arity.ι op))
-    (bind : Vector χ (Arity.ω op))
+    (rets : Vector χ (Arity.ω op))
     (cont : Expr Op χ m n) : Expr Op χ m n
   | br
     (cond : χ)
     (left : Expr Op χ m n)
     (right : Expr Op χ m n) : Expr Op χ m n
+  -- | call
+  --   (args : Vector χ m')
+  --   (params : Vector χ m')
+  --   (body : Expr Op χ m' n')
+  --   (rets : Vector χ n')
+  --   (cont : Expr Op χ m n) : Expr Op χ m n
 
 /--
-Some static, non-typing constraints on expressions:
-1. Bounded variables are disjoint
+Some static constraints on expressions:
+1. Bound variables are disjoint
 2. Use of variables is affine
 3. No shadowing
 -/
@@ -45,9 +53,15 @@ inductive Expr.WellFormed [Arity Op] [DecidableEq χ]
     WellFormed (definedVars.removeAll [c]) left →
     WellFormed (definedVars.removeAll [c]) right →
     WellFormed definedVars (.br c left right)
+  -- | wf_iter :
+  --   args.toList.Nodup →
+  --   params.toList.Nodup →
+  --   WellFormed params.toList body →
+  --   WellFormed (definedVars.removeAll args.toList ++ rets.toList) cont →
+  --   WellFormed definedVars (.iter args params body rets cont)
 
 /-- `Fn m n` is a function with `m` inputs and `n` outputs. -/
-structure Fn (Op χ) [Arity Op] (m n : Nat) where
+structure Fn (Op χ) [Arity Op] m n where
   params : Vector χ m
   body : Expr Op χ m n
 
@@ -55,6 +69,7 @@ def Fn.WellFormed [Arity Op] [DecidableEq χ]
   (fn : Fn Op χ m n) : Prop :=
   fn.params.toList.Nodup ∧
   fn.body.WellFormed fn.params.toList
+
 
 /-- Consistently encoding Seq variables (`χ`) into channel names, used in
 the compiler and also semantics of Seq to keep useful ghost states. -/
@@ -157,13 +172,21 @@ inductive Config.Step
     c.expr = .cont (.tail args) →
     c.vars.getVars args = some inputVals →
     Step c (.init c.fn c.state inputVals)
-  | step_op
+  | step_op_trans
+    {o inputVals state'}
+    {args : Vector χ (Arity.ι o)}
+    {rets cont} :
+    c.expr = .cont (.op o args rets cont) →
+    c.vars.getVars args = some inputVals →
+    InterpOp.trans o inputVals c.state (.inl state') →
+    Step c { c with state := state' }
+  | step_op_final
     {o inputVals outputVals state'}
     {args : Vector χ (Arity.ι o)}
     {rets cont} :
     c.expr = .cont (.op o args rets cont) →
     c.vars.getVars args = some inputVals →
-    (InterpOp.interp o inputVals).run c.state = some (outputVals, state') →
+    InterpOp.trans o inputVals c.state (.inr (state', outputVals)) →
     Step c { c with
       expr := .cont cont,
       vars := (c.vars.removeVars args.toList).insertVars rets outputVals,

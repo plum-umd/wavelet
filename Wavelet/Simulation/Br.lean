@@ -43,7 +43,8 @@ theorem sim_step_br_exec_dataflow
   simp only [compileExpr] at hcurrent
   -- Deduce some facts from `hstep`
   cases hstep with
-  | step_ret hexpr | step_tail hexpr | step_op hexpr => simp [hbr] at hexpr
+  | step_ret hexpr | step_tail hexpr
+  | step_op_trans hexpr | step_op_final hexpr => simp [hbr] at hexpr
   | step_br hexpr hcond hcondBool =>
   rename_i condVal condBool _ _ cond'
   simp only [hbr, ExprResult.cont.injEq, Expr.br.injEq] at hexpr
@@ -252,14 +253,14 @@ theorem sim_step_br
   ⟩ := hsim.has_compiled_procs
   have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont _ hbr
   cases hstep with
-  | step_ret hexpr | step_tail hexpr | step_op hexpr =>
-    simp [hbr] at hexpr
+  | step_ret hexpr | step_tail hexpr
+  | step_op_trans hexpr | step_op_final hexpr => simp [hbr] at hexpr
   | step_br hexpr hcond hcondBool =>
     rename_i condVal condBool _ _ cond'
     simp only [hbr, ExprResult.cont.injEq, Expr.br.injEq] at hexpr
-    have heq_cond' := hexpr.1; subst heq_cond'
-    have heq_left' := hexpr.2.1; subst heq_left'
-    have heq_right' := hexpr.2.2; subst heq_right'
+    have h := hexpr.1; subst h
+    have h := hexpr.2.1; subst h
+    have h := hexpr.2.2; subst h
     clear hexpr
     cases hwf_expr with | wf_br hwf_left hwf_right =>
     exists pc'
