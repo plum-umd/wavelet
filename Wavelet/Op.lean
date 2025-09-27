@@ -26,7 +26,7 @@ with rest of the dataflow graph; but in the sequential semantics,
 we are blocked on the state machine until it reaches a final state.
 -/
 class InterpOp Op (V : Type u) (S : Type v) [Arity Op] where
-  trans (op : Op) (inputs : Vector V (Arity.ι op)) :
-    S → S ⊕ (S × Vector V (Arity.ω op)) → Prop
+  Step (op : Op) (inputs : Vector V (Arity.ι op)) :
+    S → S × Option (Vector V (Arity.ω op)) → Prop
 
 end Wavelet.Op

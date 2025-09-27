@@ -99,12 +99,12 @@ inductive Config.Step
   | step_op_trans {inputs : Vector χ (Arity.ι o)} :
     .op o inputs outputs ∈ c.proc.atoms →
     c.chans.popVals inputs = some (inputVals, chans') →
-    InterpOp.trans o inputVals c.state (.inl state') →
+    InterpOp.Step o inputVals c.state (state', none) →
     Step c { c with state := state' } -- NOTE: channels are not updated here
   | step_op_final {inputs : Vector χ (Arity.ι o)} :
     .op o inputs outputs ∈ c.proc.atoms →
     c.chans.popVals inputs = some (inputVals, chans') →
-    InterpOp.trans o inputVals c.state (.inr (state', outputVals)) →
+    InterpOp.Step o inputVals c.state (state', some outputVals) →
     Step c { c with
       chans := chans'.pushVals outputs outputVals,
       state := state',

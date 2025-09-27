@@ -130,7 +130,7 @@ inductive ExprResult Op χ V [Arity Op] (m n : Nat) where
   | cont (expr : Expr Op χ m n)
 
 /-- State of expression execution. -/
-structure Config Op χ V S [Arity Op] m n where
+structure Config (Op : Type u) (χ : Type v) (V : Type w) (S : Type x) [Arity Op] m n where
   expr : ExprResult Op χ V m n
   fn : Fn Op χ m n
   vars : VarMap χ V
@@ -178,7 +178,7 @@ inductive Config.Step
     {rets cont} :
     c.expr = .cont (.op o args rets cont) →
     c.vars.getVars args = some inputVals →
-    InterpOp.trans o inputVals c.state (.inl state') →
+    InterpOp.Step o inputVals c.state (state', none) →
     Step c { c with state := state' }
   | step_op_final
     {o inputVals outputVals state'}
@@ -186,7 +186,7 @@ inductive Config.Step
     {rets cont} :
     c.expr = .cont (.op o args rets cont) →
     c.vars.getVars args = some inputVals →
-    InterpOp.trans o inputVals c.state (.inr (state', outputVals)) →
+    InterpOp.Step o inputVals c.state (state', some outputVals) →
     Step c { c with
       expr := .cont cont,
       vars := (c.vars.removeVars args.toList).insertVars rets outputVals,
