@@ -157,7 +157,7 @@ def Config.init
 /-- Small-step operational semantics for Seq. -/
 inductive Config.Step
   {Op χ V S m n}
-  [Arity Op] [InterpConsts V] [InterpOp Op V S] [DecidableEq χ]
+  [Arity Op] [InterpConsts V] [interp : InterpOp Op V S] [DecidableEq χ]
   : Config Op χ V S m n → Config Op χ V S m n → Prop where
   | step_ret :
     c.expr = .cont (.ret args) →
