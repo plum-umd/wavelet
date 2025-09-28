@@ -9,7 +9,7 @@ open Op
 
 /-- `Expr ... m n` is an expression that can either return `n`
 output values, or trigger a tail call with `m` values. -/
-inductive Expr (Op : Type u) (χ : Type v) [Arity Op]
+inductive Expr (Op : Type u) (χ : Type v) [instArity : Arity Op]
   : Nat → Nat → Type (max u v) where
   | ret (vars : Vector χ n) : Expr Op χ m n
   | tail (vars : Vector χ m) : Expr Op χ m n
@@ -61,7 +61,7 @@ inductive Expr.WellFormed [Arity Op] [DecidableEq χ]
   --   WellFormed definedVars (.iter args params body rets cont)
 
 /-- `Fn m n` is a function with `m` inputs and `n` outputs. -/
-structure Fn (Op χ) [Arity Op] m n where
+structure Fn (Op χ) [instArity : Arity Op] m n where
   params : Vector χ m
   body : Expr Op χ m n
 
@@ -130,7 +130,7 @@ inductive ExprResult Op χ V [Arity Op] (m n : Nat) where
   | cont (expr : Expr Op χ m n)
 
 /-- State of expression execution. -/
-structure Config (Op : Type u) (χ : Type v) (V : Type w) (S : Type x) [Arity Op] m n where
+structure Config (Op : Type u₁) (χ : Type u₂) (V : Type u₃) (S : Type u₄) [Arity Op] m n where
   expr : ExprResult Op χ V m n
   fn : Fn Op χ m n
   vars : VarMap χ V
