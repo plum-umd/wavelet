@@ -4,6 +4,7 @@ import Mathlib.Logic.Relation
 import Batteries.Data.Vector.Lemmas
 
 import Wavelet.Op
+import Wavelet.LTS
 import Wavelet.Seq
 import Wavelet.Dataflow
 import Wavelet.Compile
@@ -14,7 +15,7 @@ import Wavelet.Simulation.Lemmas
 
 namespace Wavelet.Simulation.Op
 
-open Wavelet.Op Wavelet.Seq Wavelet.Dataflow Wavelet.Compile
+open Wavelet.Op Wavelet.LTS Wavelet.Seq Wavelet.Dataflow Wavelet.Compile
 open Invariants Lemmas
 
 /-- Proves that the correspondence between `definedVars` and `ec.vars`
@@ -80,16 +81,16 @@ theorem sim_step_op_defined_vars
       simp [this, h₃]
 
 theorem sim_step_op
-  [Arity Op] [DecidableEq χ] [InterpConsts V] [InterpOp Op V S]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [InterpOp Op V E S]
   {args rets cont}
   {ec ec' : Seq.Config Op χ V S m n}
   {pc : Dataflow.Config Op (ChanName χ) V S m n}
   {hnz : m > 0 ∧ n > 0}
   (hsim : SimRel hnz ec pc)
-  (hstep : Config.Step ec ec')
+  (hstep : Config.Step ec tr ec')
   (hop : ec.expr = .cont (.op o args rets cont)) :
   ∃ pc',
-    Config.StepPlus pc pc' ∧
+    Config.StepPlus E pc tr pc' ∧
     SimRel hnz ec' pc' := by
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
@@ -148,8 +149,8 @@ theorem sim_step_op
       ∈ pc.proc.atoms
     := by grind
     simp [hsim.eq_state] at hinterp
-    have hsteps : Dataflow.Config.StepPlus pc _
-      := Relation.TransGen.single
+    have hsteps : Dataflow.Config.StepPlus E pc _ _
+      := .single
         (Dataflow.Config.Step.step_op_final hmem_op hpop_input_vals hinterp)
     -- Simplify pushes
     rw [push_vals_empty] at hsteps

@@ -1,8 +1,10 @@
 import Wavelet.Op
+import Wavelet.LTS
 import Wavelet.Seq
 import Wavelet.Dataflow
 import Wavelet.Compile
 
+import Wavelet.Simulation.Defs
 import Wavelet.Simulation.Invariants
 import Wavelet.Simulation.Init
 import Wavelet.Simulation.Ret
@@ -13,53 +15,31 @@ import Wavelet.Simulation.Call
 
 namespace Wavelet.Simulation
 
-open Wavelet.Op Seq Dataflow Compile
-open Invariants
-
-/-- Defines refinement of two transition systems in general. -/
-def Refines
-  {T : Type v} {S : Type w}
-  (c₁ : T) (c₂ : S)
-  (R : T → S → Prop)
-  (Step₁ : T → T → Prop)
-  (Step₂ : S → S → Prop) :=
-  R c₁ c₂ ∧
-  (∀ c₁ c₂ c₁',
-    R c₁ c₂ →
-    Step₁ c₁ c₁' →
-    ∃ c₂', Step₂ c₂ c₂' ∧ R c₁' c₂')
-
-/-- Specific case for a Seq config to refine a dataflow config. -/
-def SeqRefinesDataflow
-  [DecidableEq χ₁] [DecidableEq χ₂]
-  [Arity Op] [InterpConsts V] [InterpOp Op V S]
-  (c₁ : Seq.Config Op χ₁ V S m n)
-  (c₂ : Dataflow.Config Op χ₂ V S m n)
-  (R : Seq.Config Op χ₁ V S m n → Dataflow.Config Op χ₂ V S m n → Prop) : Prop :=
-  Refines c₁ c₂ R Config.Step Config.StepPlus
+open Wavelet.Op LTS Seq Dataflow Compile
+open Defs Invariants
 
 /-- Main simulation theorem from `Fn` to compiled `Proc`. -/
 theorem sim_compile_fn
-  [Arity Op] [InterpConsts V] [InterpOp Op V S] [DecidableEq χ]
+  [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
   (fn : Fn Op χ m n)
   (args : Vector V m)
   (state : S)
   (hnz : m > 0 ∧ n > 0)
   (hwf_fn : fn.WellFormed) :
   ∃ pc',
-    Dataflow.Config.StepStar
-      (Dataflow.Config.init (compileFn hnz fn) state args) pc' ∧
-    SeqRefinesDataflow
+    Dataflow.Config.StepStar E
+      (Dataflow.Config.init (compileFn hnz fn) state args) .ε pc' ∧
+    Seq.RefinesDataflow (E := E)
       (Seq.Config.init fn state args) pc'
       (SimRel hnz)
 := by
-  have ⟨pc', hsteps, hsim_init⟩ := Init.sim_step_init fn args state hnz hwf_fn
+  have ⟨pc', hsteps, hsim_init⟩ := Init.sim_step_init (E := E) fn args state hnz hwf_fn
   exists pc'
   constructor
   · exact hsteps
   · constructor
     · exact hsim_init
-    · intros ec pc ec' hsim hstep
+    · intros ec pc ec' tr hsim hstep
       cases hcont : ec.expr with
       | ret =>
         -- Not possible to step from a final state
@@ -73,16 +53,16 @@ theorem sim_compile_fn
 
 /-- Converts a trace of `Seq` to a trace of `Dataflow` with
 related final configurations. -/
-theorem SeqRefinesDataflow_steps_to_steps
+theorem refines_steps_to_steps
   [DecidableEq χ₁] [DecidableEq χ₂]
-  [Arity Op] [InterpConsts V] [InterpOp Op V S]
+  [Arity Op] [InterpConsts V] [InterpOp Op V E S]
   {ec ec' : Seq.Config Op χ₁ V S m n}
   {pc : Dataflow.Config Op χ₂ V S m n}
   {R : _ → _ → Prop}
-  (href : SeqRefinesDataflow ec pc R)
-  (hsteps : Seq.Config.StepStar ec ec') :
+  (href : Seq.RefinesDataflow (E := E) ec pc R)
+  (hsteps : Seq.Config.StepStar E ec tr ec') :
   ∃ pc',
-    Dataflow.Config.StepStar pc pc' ∧ R ec' pc'
+    Dataflow.Config.StepStar E pc tr pc' ∧ R ec' pc'
 := by
   induction hsteps with
   | refl =>
@@ -91,11 +71,11 @@ theorem SeqRefinesDataflow_steps_to_steps
     · exact .refl
     · exact href.1
   | tail hsteps_ec hstep_ec₁ ih =>
-    rename_i ec₁ ec₂
-    have ⟨pc₁, hsteps_pc, hr⟩ := ih
-    have ⟨pc₂, hsteps_pc₁, hr'⟩ := href.2 ec₁ pc₁ ec₂ hr hstep_ec₁
-    exists pc₂
-    have hsteps := Relation.ReflTransGen.trans hsteps_pc hsteps_pc₁.to_reflTransGen
+    rename_i ec₁ tr₁ ec₂ tr₂ ec₃
+    have ⟨pc₂, hsteps_pc, hr⟩ := ih href
+    have ⟨pc₃, hsteps_pc₁, hr'⟩ := href.2 ec₂ pc₂ ec₃ tr₂ hr hstep_ec₁
+    exists pc₃
+    have hsteps := LTS.Star.trans hsteps_pc hsteps_pc₁.to_star
     simp [hr']
     exact hsteps
 
@@ -108,27 +88,27 @@ def finalChans (retVals : Vector V n) : ChanMap (ChanName χ) V :=
 
 /-- Same results at termination. -/
 theorem sim_compile_fn_forward_results
-  [Arity Op] [InterpConsts V] [InterpOp Op V S] [DecidableEq χ]
+  [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
   {ec : Seq.Config Op χ V S m n}
   (fn : Fn Op χ m n)
   (args : Vector V m)
   (state : S)
   (hnz : m > 0 ∧ n > 0)
   (hwf_fn : fn.WellFormed)
-  (hsteps : Seq.Config.StepStar (Seq.Config.init fn state args) ec)
+  (hsteps : Seq.Config.StepStar E (Seq.Config.init fn state args) tr ec)
   (hterm : ec.expr = .ret retVals) :
   ∃ pc',
-    Dataflow.Config.StepStar
-      (Dataflow.Config.init (compileFn hnz fn) state args) pc' ∧
+    Dataflow.Config.StepStar E
+      (Dataflow.Config.init (compileFn hnz fn) state args) tr pc' ∧
     pc'.state = ec.state ∧
     pc'.chans = finalChans retVals
 := by
   have ⟨pc', hsteps_pc, href⟩ :=
-    sim_compile_fn fn args state hnz hwf_fn
-  have ⟨pc₂, hsteps_pc', hsim⟩ := SeqRefinesDataflow_steps_to_steps href hsteps
+    sim_compile_fn (E := E) fn args state hnz hwf_fn
+  have ⟨pc₂, hsteps_pc', hsim⟩ := refines_steps_to_steps href hsteps
   exists pc₂
   and_intros
-  · exact Relation.ReflTransGen.trans hsteps_pc hsteps_pc'
+  · exact .trans hsteps_pc hsteps_pc'
   · simp [hsim.eq_state]
   · funext name
     simp [hsim.vars_to_chans, varsToChans, finalChans]

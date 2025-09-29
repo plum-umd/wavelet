@@ -1,11 +1,12 @@
 import Mathlib.Logic.Relation
 import Wavelet.Op
+import Wavelet.LTS
 
 /-! Syntax and semantics for a simple imperative language. -/
 
 namespace Wavelet.Seq
 
-open Op
+open Op LTS
 
 /-- `Expr ... m n` is an expression that can either return `n`
 output values, or trigger a tail call with `m` values. -/
@@ -156,13 +157,13 @@ def Config.init
 
 /-- Small-step operational semantics for Seq. -/
 inductive Config.Step
-  {Op χ V S m n}
-  [Arity Op] [InterpConsts V] [interp : InterpOp Op V S] [DecidableEq χ]
-  : Config Op χ V S m n → Config Op χ V S m n → Prop where
+  {Op χ V E S m n}
+  [Arity Op] [InterpConsts V] [interp : InterpOp Op V E S] [DecidableEq χ]
+  : LTS (Config Op χ V S m n) E where
   | step_ret :
     c.expr = .cont (.ret args) →
     c.vars.getVars args = some inputVals →
-    Step c { c with
+    Step c .ε { c with
       expr := .ret inputVals,
       vars := VarMap.empty,
       definedVars := [],
@@ -171,23 +172,23 @@ inductive Config.Step
   | step_tail :
     c.expr = .cont (.tail args) →
     c.vars.getVars args = some inputVals →
-    Step c (.init c.fn c.state inputVals)
+    Step c .ε (.init c.fn c.state inputVals)
   | step_op_trans
     {o inputVals state'}
     {args : Vector χ (Arity.ι o)}
     {rets cont} :
     c.expr = .cont (.op o args rets cont) →
     c.vars.getVars args = some inputVals →
-    InterpOp.Step o inputVals c.state (state', none) →
-    Step c { c with state := state' }
+    InterpOp.Step o inputVals c.state tr (state', none) →
+    Step c tr { c with state := state' }
   | step_op_final
     {o inputVals outputVals state'}
     {args : Vector χ (Arity.ι o)}
     {rets cont} :
     c.expr = .cont (.op o args rets cont) →
     c.vars.getVars args = some inputVals →
-    InterpOp.Step o inputVals c.state (state', some outputVals) →
-    Step c { c with
+    InterpOp.Step o inputVals c.state tr (state', some outputVals) →
+    Step c tr { c with
       expr := .cont cont,
       vars := (c.vars.removeVars args.toList).insertVars rets outputVals,
       state := state',
@@ -197,7 +198,7 @@ inductive Config.Step
     c.expr = .cont (.br cond left right) →
     c.vars.getVar cond = some condVal →
     InterpConsts.toBool condVal = some condBool →
-    Step c { c with
+    Step c .ε { c with
       expr := .cont (if condBool then left else right),
       vars := c.vars.removeVar cond,
       definedVars := c.definedVars.removeAll [cond],
@@ -206,13 +207,13 @@ inductive Config.Step
     }
 
 def Config.StepPlus
-  {Op χ V S m n}
-  [Arity Op] [InterpConsts V] [InterpOp Op V S] [DecidableEq χ] :=
-  @Relation.TransGen (Config Op χ V S m n) Step
+  {Op χ V S m n} E
+  [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
+  : LTS (Config Op χ V S m n) E := Step.Plus
 
 def Config.StepStar
-  {Op χ V S m n}
-  [Arity Op] [InterpConsts V] [InterpOp Op V S] [DecidableEq χ] :=
-  @Relation.ReflTransGen (Config Op χ V S m n) Step
+  {Op χ V S m n} E
+  [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
+  : LTS (Config Op χ V S m n) E := Step.Star
 
 end Wavelet.Seq

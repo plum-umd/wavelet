@@ -546,22 +546,4 @@ theorem input_finIdxOf?_index
 
 end Compile
 
-theorem step_eq
-  [Arity Op] [DecidableEq χ] [InterpConsts V] [InterpOp Op V S]
-  {c₁ c₂ c₂' : Dataflow.Config Op χ V S m n}
-  (hstep : Config.Step c₁ c₂)
-  (heq : c₂ = c₂') :
-  Config.Step c₁ c₂' := by
-  simp [heq] at hstep
-  exact hstep
-
-theorem step_plus_eq
-  [Arity Op] [DecidableEq χ] [InterpConsts V] [InterpOp Op V S]
-  {c₁ c₂ c₂' : Dataflow.Config Op χ V S m n}
-  (hstep : Config.StepPlus c₁ c₂)
-  (heq : c₂ = c₂') :
-  Config.StepPlus c₁ c₂' := by
-  simp [heq] at hstep
-  exact hstep
-
 end Wavelet.Simulation.Lemmas

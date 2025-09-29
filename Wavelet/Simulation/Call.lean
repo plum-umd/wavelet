@@ -3,222 +3,227 @@ import Wavelet.Seq
 import Wavelet.Dataflow
 import Wavelet.Compile
 
+import Wavelet.Simulation.Defs
+
 /-! Add (non-recursive) function calls by interpreting a function as an operator. -/
 
-namespace Wavelet.Seq
+-- namespace Wavelet.Seq
 
-open Op
+-- open Op
 
-/-- Interprets a function as an operator in the sequential semantics. -/
-inductive Fn.OpStep
-  [Arity Op] [InterpConsts V] [InterpOp Op V S] [DecidableEq χ]
-  (fn : Fn Op χ m n) (args : Vector V m) :
-  S × Option (Seq.Config Op χ V S m n) →
-  (S × Option (Seq.Config Op χ V S m n)) × Option (Vector V n) → Prop where
-  | step_fn_init :
-    Fn.OpStep fn args (state, none) ((state, Seq.Config.init fn state args), none)
-  | step_fn_cont :
-    Seq.Config.Step { c with state } c' →
-    Fn.OpStep fn args (state, some c) ((c'.state, some c'), none)
-  | step_fn_ret :
-    c.expr = .ret retVals →
-    Fn.OpStep fn args (state, some c) ((state, none), some retVals)
+-- /-- Interprets a function as an operator in the sequential semantics. -/
+-- inductive Fn.OpStep
+--   [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
+--   (fn : Fn Op χ m n) (args : Vector V m) :
+--   S × Option (Seq.Config Op χ V S m n) →
+--   Trace E →
+--   (S × Option (Seq.Config Op χ V S m n)) × Option (Vector V n) → Prop where
+--   | step_fn_init :
+--     Fn.OpStep fn args (state, none) .ε ((state, Seq.Config.init fn state args), none)
+--   | step_fn_cont :
+--     Seq.Config.Step { c with state } tr c' →
+--     Fn.OpStep fn args (state, some c) tr ((c'.state, some c'), none)
+--   | step_fn_ret :
+--     c.expr = .ret retVals →
+--     Fn.OpStep fn args (state, some c) .ε ((state, none), some retVals)
 
-end Wavelet.Seq
+-- end Wavelet.Seq
 
-namespace Wavelet.Dataflow
+-- namespace Wavelet.Dataflow
 
-open Op Seq
+-- open Op Seq
 
-/-- Interprets a process as an operator in the dataflow semantics. -/
-inductive Proc.OpStep
-  [Arity Op] [InterpConsts V] [InterpOp Op V S] [DecidableEq χ]
-  (proc : Proc Op (ChanName χ) V m n) (args : Vector V m) :
-  S × Option (Dataflow.Config Op (ChanName χ) V S m n) →
-  (S × Option (Dataflow.Config Op (ChanName χ) V S m n)) × Option (Vector V n) → Prop where
-  | step_proc_init :
-    Proc.OpStep proc args (state, none)
-      ((state, some (Dataflow.Config.init proc state args)), none)
-  | step_proc_cont :
-    Dataflow.Config.Step { c with state } c' →
-    Proc.OpStep proc args (state, some c) ((c'.state, some c'), none)
-  | step_proc_ret :
-    c.chans.popVals ((Vector.range n).map ChanName.final_dest) = some (retVals, chans') →
-    Proc.OpStep proc args (state, some c)
-      ((state, none), some retVals)
+-- /-- Interprets a process as an operator in the dataflow semantics. -/
+-- inductive Proc.OpStep
+--   [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
+--   (proc : Proc Op (ChanName χ) V m n) (args : Vector V m) :
+--   S × Option (Dataflow.Config Op (ChanName χ) V S m n) →
+--   Trace E →
+--   (S × Option (Dataflow.Config Op (ChanName χ) V S m n)) × Option (Vector V n) → Prop where
+--   | step_proc_init :
+--     Proc.OpStep proc args (state, none) .ε
+--       ((state, some (Dataflow.Config.init proc state args)), none)
+--   | step_proc_cont :
+--     Dataflow.Config.Step { c with state } tr c' →
+--     Proc.OpStep proc args (state, some c) tr ((c'.state, some c'), none)
+--   | step_proc_ret :
+--     c.chans.popVals ((Vector.range n).map ChanName.final_dest) = some (retVals, chans') →
+--     Proc.OpStep proc args (state, some c)
+--       .ε ((state, none), some retVals)
 
-end Wavelet.Dataflow
+-- end Wavelet.Dataflow
 
-namespace Wavelet.Seq
+-- namespace Wavelet.Seq
 
-open Op
+-- open Op
 
-/-- Augments the operator set with an uninterpreted set of function names. -/
-inductive WithFns Op (F : Type u) [Arity Op] where
-  | op (o : Op)
-  | call (f : F)
+-- /-- Augments the operator set with an uninterpreted set of function names. -/
+-- inductive WithFns Op (F : Type u) [Arity Op] where
+--   | op (o : Op)
+--   | call (f : F)
 
-infixl:65 " w/ " => WithFns
+-- infixl:65 " w/ " => WithFns
 
-abbrev WithFns.Interp Op F χ [Arity Op] [Arity F] :=
-  (f : F) → Fn Op χ (Arity.ι f) (Arity.ω f)
+-- abbrev WithFns.Interp Op F χ [Arity Op] [Arity F] :=
+--   (f : F) → Fn Op χ (Arity.ι f) (Arity.ω f)
 
-/-- States for the additional `k` functions. -/
-structure WithFns.State
-  Op χ V S
-  [Arity Op] [Arity F] [InterpConsts V]
-  [InterpOp Op V S] [DecidableEq χ]
-  (fns : WithFns.Interp Op F χ) where
-  innerState : S
-  fnStates : (f : F) → Option (Config Op χ V S (Arity.ι f) (Arity.ω f))
+-- /-- States for the additional `k` functions. -/
+-- structure WithFns.State
+--   Op χ V E S
+--   [Arity Op] [Arity F] [InterpConsts V]
+--   [InterpOp Op V E S] [DecidableEq χ]
+--   (fns : WithFns.Interp Op F χ) where
+--   innerState : S
+--   fnStates : (f : F) → Option (Config Op χ V S (Arity.ι f) (Arity.ω f))
 
-instance [Arity Op] [Arity F] : Arity (WithFns Op F) where
-  ι | .op o => Arity.ι o
-    | .call f => Arity.ι f
-  ω | .op o => Arity.ω o
-    | .call f => Arity.ω f
+-- instance [Arity Op] [Arity F] : Arity (WithFns Op F) where
+--   ι | .op o => Arity.ι o
+--     | .call f => Arity.ι f
+--   ω | .op o => Arity.ω o
+--     | .call f => Arity.ω f
 
-/-- Instantiate the function names with a list of functions -/
-inductive WithFns.Step
-  [Arity Op] [Arity F] [InterpConsts V]
-  [InterpOp Op V S] [DecidableEq χ]
-  (fns : WithFns.Interp Op F χ) :
-  (op : WithFns Op F) →
-  Vector V (Arity.ι op) →
-  WithFns.State Op χ V S fns →
-  WithFns.State Op χ V S fns × Option (Vector V (Arity.ω op)) →
-  Prop where
-  | step_op :
-    InterpOp.Step o inputVals state.innerState (innerState', outputVals) →
-    WithFns.Step fns (.op o) inputVals state
-      ({ state with innerState := innerState' }, outputVals)
-  -- /-- Initialize call state without producing any outputs. -/
-  -- | step_call_init :
-  --   state.fnStates i = none →
-  --   WithFns.Step fns (.call i) inputVals
-  --     state
-  --     ({
-  --       state with
-  --       fnStates := state.fnStates.set i
-  --         (some (EncapConfig.init fns[i] state.innerState inputVals))
-  --     }, none)
-  -- | step_call_cont :
-  --   state.fnStates[i] = some ec →
-  --   Seq.Config.Step ec.config config' →
-  --   WithFns.Step fns (.call i) inputVals
-  --     state
-  --     ({ state with
-  --       fnStates := state.fnStates.set i (some { ec with config := config' })
-  --     }, none)
-  -- | step_call_ret :
-  --   state.fnStates[i] = some ec →
-  --   (_ : ec.ω = fns[i].ω) →
-  --   ec.config.expr = .ret retVals →
-  --   WithFns.Step fns (.call i) inputVals
-  --     state
-  --     (
-  --       { state with fnStates := state.fnStates.set i none },
-  --       some (cast (by congr) retVals),
-  --     )
+-- /-- Instantiate the function names with a list of functions -/
+-- inductive WithFns.Step
+--   [Arity Op] [Arity F] [InterpConsts V]
+--   [InterpOp Op V E S] [DecidableEq χ]
+--   (fns : WithFns.Interp Op F χ) :
+--   (op : WithFns Op F) →
+--   Vector V (Arity.ι op) →
+--   WithFns.State Op χ V E S fns →
+--   Trace E →
+--   WithFns.State Op χ V E S fns × Option (Vector V (Arity.ω op)) →
+--   Prop where
+--   | step_op :
+--     InterpOp.Step o inputVals state.innerState tr (innerState', outputVals) →
+--     WithFns.Step fns (.op o) inputVals state tr
+--       ({ state with innerState := innerState' }, outputVals)
+--   -- /-- Initialize call state without producing any outputs. -/
+--   -- | step_call_init :
+--   --   state.fnStates i = none →
+--   --   WithFns.Step fns (.call i) inputVals
+--   --     state
+--   --     ({
+--   --       state with
+--   --       fnStates := state.fnStates.set i
+--   --         (some (EncapConfig.init fns[i] state.innerState inputVals))
+--   --     }, none)
+--   -- | step_call_cont :
+--   --   state.fnStates[i] = some ec →
+--   --   Seq.Config.Step ec.config config' →
+--   --   WithFns.Step fns (.call i) inputVals
+--   --     state
+--   --     ({ state with
+--   --       fnStates := state.fnStates.set i (some { ec with config := config' })
+--   --     }, none)
+--   -- | step_call_ret :
+--   --   state.fnStates[i] = some ec →
+--   --   (_ : ec.ω = fns[i].ω) →
+--   --   ec.config.expr = .ret retVals →
+--   --   WithFns.Step fns (.call i) inputVals
+--   --     state
+--   --     (
+--   --       { state with fnStates := state.fnStates.set i none },
+--   --       some (cast (by congr) retVals),
+--   --     )
 
-instance
-  [Arity Op] [Arity F] [InterpConsts V]
-  [InterpOp Op V S] [DecidableEq χ]
-  (fns : WithFns.Interp Op F χ)
-  : InterpOp (WithFns Op F) V (WithFns.State Op χ V S fns) where
-  Step := WithFns.Step fns
+-- instance
+--   [Arity Op] [Arity F] [InterpConsts V]
+--   [InterpOp Op V S] [DecidableEq χ]
+--   (fns : WithFns.Interp Op F χ)
+--   : InterpOp (WithFns Op F) V (WithFns.State Op χ V S fns) where
+--   Step := WithFns.Step fns
 
-end Wavelet.Seq
+-- end Wavelet.Seq
 
-namespace Wavelet.Dataflow
+-- namespace Wavelet.Dataflow
 
-open Op Seq
+-- open Op Seq
 
-structure EncapProc Op χ V [Arity Op] where
-  ι : Nat
-  ω : Nat
-  proc : Proc Op χ V ι ω
+-- structure EncapProc Op χ V [Arity Op] where
+--   ι : Nat
+--   ω : Nat
+--   proc : Proc Op χ V ι ω
 
-structure EncapConfig Op χ V S [Arity Op] where
-  ι : Nat
-  ω : Nat
-  config : Dataflow.Config Op χ V S ι ω
+-- structure EncapConfig Op χ V S [Arity Op] where
+--   ι : Nat
+--   ω : Nat
+--   config : Dataflow.Config Op χ V S ι ω
 
-def EncapConfig.init {Op χ V S}
-  [Arity Op]
-  [InterpConsts V]
-  [InterpOp Op V S]
-  [DecidableEq χ]
-  (ef : EncapProc Op χ V)
-  (state : S)
-  (args : Vector V ef.ι) :
-  EncapConfig Op χ V S :=
-  ⟨ef.ι, ef.ω, Dataflow.Config.init ef.proc state args⟩
+-- def EncapConfig.init {Op χ V S}
+--   [Arity Op]
+--   [InterpConsts V]
+--   [InterpOp Op V S]
+--   [DecidableEq χ]
+--   (ef : EncapProc Op χ V)
+--   (state : S)
+--   (args : Vector V ef.ι) :
+--   EncapConfig Op χ V S :=
+--   ⟨ef.ι, ef.ω, Dataflow.Config.init ef.proc state args⟩
 
-/-- Augments the operator set with a vector of custom processes. -/
-inductive WithProcs Op [Arity Op] {χ V k} (procs : Vector (EncapProc Op χ V) k) where
-  | op (o : Op)
-  | proc (k : Fin k)
+-- /-- Augments the operator set with a vector of custom processes. -/
+-- inductive WithProcs Op [Arity Op] {χ V k} (procs : Vector (EncapProc Op χ V) k) where
+--   | op (o : Op)
+--   | proc (k : Fin k)
 
-infixl:65 " w/ " => WithProcs
+-- infixl:65 " w/ " => WithProcs
 
-structure WithProcs.State
-  Op χ V S
-  [Arity Op] [InterpConsts V]
-  [InterpOp Op V S] [DecidableEq χ]
-  (fns : Vector (EncapProc Op χ V) k) where
-  innerState : S
-  procStates : Vector (Option (EncapConfig Op χ V S)) k
+-- structure WithProcs.State
+--   Op χ V S
+--   [Arity Op] [InterpConsts V]
+--   [InterpOp Op V E S] [DecidableEq χ]
+--   (fns : Vector (EncapProc Op χ V) k) where
+--   innerState : S
+--   procStates : Vector (Option (EncapConfig Op χ V S)) k
 
-instance
-  [Arity Op]
-  {procs : Vector (EncapProc Op χ V) k} : Arity (WithProcs Op procs) where
-  ι | .op o => Arity.ι o
-    | .proc i => procs[i].ι
-  ω | .op o => Arity.ω o
-    | .proc i => procs[i].ω
+-- instance
+--   [Arity Op]
+--   {procs : Vector (EncapProc Op χ V) k} : Arity (WithProcs Op procs) where
+--   ι | .op o => Arity.ι o
+--     | .proc i => procs[i].ι
+--   ω | .op o => Arity.ω o
+--     | .proc i => procs[i].ω
 
-inductive WithProcs.Step
-  [Arity Op] [InterpConsts V]
-  [InterpOp Op V S] [DecidableEq χ]
-  (procs : Vector (EncapProc Op χ V) k) :
-  (op : WithProcs Op procs) →
-  Vector V (Arity.ι op) →
-  WithProcs.State Op χ V S procs →
-  WithProcs.State Op χ V S procs × Option (Vector V (Arity.ω op)) →
-  Prop where
-  | step_op :
-    InterpOp.Step o inputVals state.innerState (innerState', outputVals) →
-    WithProcs.Step procs (.op o) inputVals state
-      ({ state with innerState := innerState' }, outputVals)
-  | step_proc_init :
-    state.procStates[i] = none →
-    WithProcs.Step procs (.proc i) inputVals
-      state
-      ({
-        state with
-        procStates := state.procStates.set i
-          (some (EncapConfig.init procs[i] state.innerState inputVals))
-      }, none)
-  | step_proc_cont :
-    state.procStates[i] = some pc →
-    Dataflow.Config.Step pc.config config' →
-    WithProcs.Step procs (.proc i) inputVals
-      state
-      ({ state with
-        procStates := state.procStates.set i (some { pc with config := config' })
-      }, none)
-  | step_proc_ret :
-    state.procStates[i] = some pc →
-    pc.config.chans.popVals procs[i].proc.outputs = some (retVals, chans') →
-    WithProcs.Step procs (.proc i) inputVals
-      state
-      (
-        { state with procStates := state.procStates.set i none },
-        some retVals,
-      )
+-- inductive WithProcs.Step
+--   [Arity Op] [InterpConsts V]
+--   [InterpOp Op V S] [DecidableEq χ]
+--   (procs : Vector (EncapProc Op χ V) k) :
+--   (op : WithProcs Op procs) →
+--   Vector V (Arity.ι op) →
+--   WithProcs.State Op χ V S procs →
+--   WithProcs.State Op χ V S procs × Option (Vector V (Arity.ω op)) →
+--   Prop where
+--   | step_op :
+--     InterpOp.Step o inputVals state.innerState (innerState', outputVals) →
+--     WithProcs.Step procs (.op o) inputVals state
+--       ({ state with innerState := innerState' }, outputVals)
+--   | step_proc_init :
+--     state.procStates[i] = none →
+--     WithProcs.Step procs (.proc i) inputVals
+--       state
+--       ({
+--         state with
+--         procStates := state.procStates.set i
+--           (some (EncapConfig.init procs[i] state.innerState inputVals))
+--       }, none)
+--   | step_proc_cont :
+--     state.procStates[i] = some pc →
+--     Dataflow.Config.Step pc.config config' →
+--     WithProcs.Step procs (.proc i) inputVals
+--       state
+--       ({ state with
+--         procStates := state.procStates.set i (some { pc with config := config' })
+--       }, none)
+--   | step_proc_ret :
+--     state.procStates[i] = some pc →
+--     pc.config.chans.popVals procs[i].proc.outputs = some (retVals, chans') →
+--     WithProcs.Step procs (.proc i) inputVals
+--       state
+--       (
+--         { state with procStates := state.procStates.set i none },
+--         some retVals,
+--       )
 
-end Wavelet.Dataflow
+-- end Wavelet.Dataflow
 
 namespace Wavelet.Op
 
@@ -233,6 +238,7 @@ end Wavelet.Op
 namespace Wavelet.Compile
 
 open Op Seq Dataflow
+open Simulation.Defs
 
 /-- Interpretation of symbols in `F` as sequential functions. -/
 abbrev FnInterps Op (F : Type u) χ [Arity Op] [Arity F] := (f : F) → Fn Op χ (Arity.ι f) (Arity.ω f)
@@ -296,6 +302,9 @@ inductive LinkName (χ : Type u) where
   | main (name : LinkName χ)
   | dep (i : Nat) (name : LinkName χ)
 
+/-- TODO: should be auto-derived -/
+instance [inst : DecidableEq χ] : DecidableEq (LinkName χ) := sorry
+
 def linkAtomicProc
   [Arity Op] [Arity (Fin k)]
   (procs : (i : Fin k) → Proc Op (LinkName χ) V (Arity.ι i) (Arity.ω i))
@@ -351,25 +360,26 @@ def compileProg
   linkProcs deps proc
 
 /-- Lifts an interpretation across different universe for the state type. -/
-instance [Arity Op] [InterpOp Op V S] : InterpOp Op V (ULift S) where
-  Step o inputs state res := InterpOp.Step o inputs state.down ⟨res.1.down, res.2⟩
+instance [Arity Op] [InterpOp Op V E S] : InterpOp Op V E (ULift S) where
+  Step o inputs state tr res := InterpOp.Step o inputs state.down tr ⟨res.1.down, res.2⟩
 
 inductive Prog.StepFn
   [Arity Op] [InterpConsts V]
-  [inst : InterpOp Op V S] [DecidableEq χ] :
+  [inst : InterpOp Op V E S] [DecidableEq χ] :
   (fn : Fn Op χ m n) →
   Vector V m →
   S × Option (Seq.Config Op χ V S m n) →
+  Trace E →
   (S × Option (Seq.Config Op χ V S m n)) × Option (Vector V n) →
   Prop where
   | step_fn_init :
-    Prog.StepFn fn args (state, none) ((state, some (Seq.Config.init fn state args)), none)
+    Prog.StepFn fn args (state, none) .ε ((state, some (Seq.Config.init fn state args)), none)
   | step_fn_cont :
-    Seq.Config.Step { c with state } c' →
-    Prog.StepFn fn args (state, some c) ((c'.state, some c'), none)
+    Seq.Config.Step { c with state } tr c' →
+    Prog.StepFn fn args (state, some c) tr ((c'.state, some c'), none)
   | step_fn_ret :
     c.expr = .ret retVals →
-    Prog.StepFn fn args (state, some c) ((state, none), some retVals)
+    Prog.StepFn fn args (state, some c) .ε ((state, none), some retVals)
 
 /--
 State type for interpreting the first `i` functions as operators.
@@ -377,7 +387,6 @@ State type for interpreting the first `i` functions as operators.
 It's essentially a stack of configurations, but formulated in a
 way that can be directly used with the existing stepping relation.
 -/
-@[inline]
 abbrev Prog.InterpStack
   (Op : Type u₁) (χ : Type u₂) (V : Type u₃) (S : Type u₄) k
   [Arity Op]
@@ -410,20 +419,19 @@ def Prog.InterpStack.base
 
 /-- Generate an `InterpOp` of the first `i` functions over `Prog.InterpStack`. -/
 instance Prog.instFnAsOp
-  {Op : Type u₁} {χ : Type u₂}
-  (V : Type u₃) (S : Type u₄)
+  {Op χ} (V S)
   [Arity Op] [sig : Arity (Fin k)]
   [DecidableEq χ] [InterpConsts V]
-  [baseInst : InterpOp Op V S]
+  [baseInst : InterpOp Op V E S]
   (prog : Prog Op χ k)
-  : (i : Fin k) → InterpOp (Op ⊕ Fin i) V (Prog.InterpStack Op χ V S k i)
+  : (i : Fin k) → InterpOp (Op ⊕ Fin i) V E (Prog.InterpStack Op χ V S k i)
   | ⟨0, _⟩ =>
     let : Arity (Fin 0) := _
     {
       Step
-        | .inl o, inputs, state, res =>
-          baseInst.Step o inputs state.base ⟨res.1.base, res.2⟩
-        | .inr f, inputs, state, res => Fin.elim0 f
+        | .inl o, inputs, state, tr, res =>
+          baseInst.Step o inputs state.base tr ⟨res.1.base, res.2⟩
+        | .inr f, inputs, state, tr, res => Fin.elim0 f
     }
   | ⟨i + 1, _⟩ =>
     let i' : Fin k := ⟨i, by omega⟩
@@ -432,11 +440,11 @@ instance Prog.instFnAsOp
     {
       Step
         -- Operators in `Op` are interpreted in the original semantics (`baseInst`).
-        | .inl o, inputs, state, res =>
-          inst.Step (.inl o) inputs state.1 ⟨res.1.1, res.2⟩
+        | .inl o, inputs, state, tr, res =>
+          inst.Step (.inl o) inputs state.1 tr ⟨res.1.1, res.2⟩
         -- Function calls are either interpreted by the IH `inst`
         -- or by the current function `prog i'`.
-        | .inr f, inputs, state, res =>
+        | .inr f, inputs, state, tr, res =>
           if h₁ : f.val = i then
             have h₂ : Arity.ι (Sum.inr (α := Op) f) = Arity.ι i'
               := by simp [← h₁, i']; rfl
@@ -447,25 +455,26 @@ instance Prog.instFnAsOp
               (prog i')
               (cast (by congr) inputs)
               (cast (by simp [i']; rfl) state)
+              tr
               (cast (by simp [i', h₃]; rfl) res)
           else
-            inst.Step (.inr ⟨↑f, by simp [i']; omega⟩) inputs state.1 ⟨res.1.1, res.2⟩
+            inst.Step (.inr ⟨↑f, by simp [i']; omega⟩) inputs state.1 tr ⟨res.1.1, res.2⟩
     }
 
 /-- Generates a transition relation for the `i`th function,
 which depends on the `InterpOp` for the previous functions
 generated by `Prog.AsInterpOp`. -/
 def Prog.Step
-  {Op : Type u₁} {χ : Type u₂}
-  (V : Type u₃) (S : Type u₄)
+  {Op χ} (V S)
   [Arity Op] [Arity (Fin k)]
   [InterpConsts V]
-  [InterpOp Op V S]
+  [InterpOp Op V E S]
   [DecidableEq χ]
   (prog : Prog Op χ k)
   (i : Fin k) :
   (
     Seq.Config (Op ⊕ Fin i) χ V (Prog.InterpStack Op χ V S k i) (Arity.ι i) (Arity.ω i) →
+    Trace E →
     Seq.Config (Op ⊕ Fin i) χ V (Prog.InterpStack Op χ V S k i) (Arity.ι i) (Arity.ω i) →
     Prop
   ) := Seq.Config.Step (interp := Prog.instFnAsOp V S prog i)
@@ -473,12 +482,42 @@ def Prog.Step
 def Prog.init
   [Arity Op] [Arity (Fin k)]
   [InterpConsts V]
-  [InterpOp Op V S]
+  [InterpOp Op V E S]
   [DecidableEq χ]
   (prog : Prog Op χ k) (i : Fin k)
   (state : S)
   (args : Vector V (Arity.ι i)) :
   Seq.Config (Op ⊕ Fin i) χ V (Prog.InterpStack Op χ V S k i) (Arity.ι i) (Arity.ω i) :=
   Seq.Config.init (prog i) (.inj state) args
+
+instance [Arity Op] [Arity (Fin k)] {i : Fin k}
+  : GetState (Seq.Config (Op ⊕ Fin i) χ V (Prog.InterpStack Op χ V S k i) (Arity.ι i) (Arity.ω i)) S where
+  getState config := config.state.base
+
+theorem really?
+  [Arity Op] [Arity (Fin k)]
+  [InterpConsts V]
+  [InterpOp Op V E S]
+  [DecidableEq χ]
+  (prog : Prog Op χ k)
+  (i : Fin k)
+  (state : S)
+  (args : Vector V (Arity.ι i))
+  (hnz : ∀ (i : Fin k), Arity.ι i > 0 ∧ Arity.ω i > 0) :
+  ∃ R, SPSimulation S V
+    (Prog.init (E := E) prog i state args)
+    (Dataflow.Config.init (compileProg prog hnz i) state args)
+    R
+    (Prog.Step V S prog i)
+    (Dataflow.Config.Step (E := E))
+  := by
+  replace ⟨i, hi⟩ := i
+  induction i with
+  | zero =>
+    simp [Prog.init, Prog.InterpStack.inj]
+    unfold compileProg
+    simp [linkProcs, Proc.mapChans]
+    sorry
+  | succ => sorry
 
 end Wavelet.Compile

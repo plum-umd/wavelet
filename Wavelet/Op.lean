@@ -17,6 +17,11 @@ class InterpConsts (V : Type v) where
   unique_fromBool_toBool : ∀ b, toBool (fromBool b) = some b
   unique_toBool_fromBool : ∀ b v, toBool v = some b → v = fromBool b
 
+abbrev Trace := List
+
+@[simp, grind]
+def Trace.ε : Trace E := []
+
 /--
 Operators are interpreted as potentially non-deterministic state machines
 that can take multiple transitions, before terminating with some output values.
@@ -25,8 +30,8 @@ In the dataflow semantics, these transitions can interleave
 with rest of the dataflow graph; but in the sequential semantics,
 we are blocked on the state machine until it reaches a final state.
 -/
-class InterpOp Op (V : Type u) (S : Type v) [Arity Op] where
+class InterpOp Op (V : Type u) (E : Type v) (S : Type w) [Arity Op] where
   Step (op : Op) (inputs : Vector V (Arity.ι op)) :
-    S → S × Option (Vector V (Arity.ω op)) → Prop
+    S → Trace E → S × Option (Vector V (Arity.ω op)) → Prop
 
 end Wavelet.Op

@@ -1,6 +1,7 @@
 import Mathlib.Data.Vector.Basic
 
 import Wavelet.Op
+import Wavelet.LTS
 import Wavelet.Seq
 import Wavelet.Dataflow
 import Wavelet.Compile
@@ -11,7 +12,7 @@ import Wavelet.Simulation.Lemmas
 
 namespace Wavelet.Simulation.Init
 
-open Wavelet.Op Wavelet.Seq Wavelet.Dataflow Wavelet.Compile
+open Wavelet.Op Wavelet.LTS Wavelet.Seq Wavelet.Dataflow Wavelet.Compile
 open Invariants Lemmas
 
 /--
@@ -19,15 +20,15 @@ Initial `Seq` and `Dataflow` configurations satisfy
 the simulation relation (modulo some setup steps).
 -/
 theorem sim_step_init
-  [Arity Op] [DecidableEq χ] [InterpConsts V] [InterpOp Op V S]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [InterpOp Op V E S]
   (fn : Fn Op χ m n)
   (args : Vector V m)
   (state : S)
   (hnz : m > 0 ∧ n > 0)
   (hwf_fn : fn.WellFormed) :
   ∃ pc',
-    Dataflow.Config.StepStar
-      (Dataflow.Config.init (compileFn hnz fn) state args) pc' ∧
+    Dataflow.Config.StepStar E
+      (Dataflow.Config.init (compileFn hnz fn) state args) .ε pc' ∧
     SimRel hnz
       (Seq.Config.init fn state args)
       pc'
@@ -93,8 +94,8 @@ theorem sim_step_init
   := by simp [hpc₀]
   simp only [compileFn.initCarry] at hmem_carry
   have hsteps :
-    Dataflow.Config.StepStar pc₀ _
-  := Relation.ReflTransGen.single
+    Dataflow.Config.StepStar E pc₀ _ _
+  := LTS.Star.single
     (Dataflow.Config.Step.step_carry_init
       hmem_carry
       hpop_args)

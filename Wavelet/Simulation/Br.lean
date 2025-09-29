@@ -4,6 +4,7 @@ import Mathlib.Logic.Relation
 import Batteries.Data.Vector.Lemmas
 
 import Wavelet.Op
+import Wavelet.LTS
 import Wavelet.Seq
 import Wavelet.Dataflow
 import Wavelet.Compile
@@ -16,20 +17,20 @@ import Wavelet.Simulation.Lemmas
 
 namespace Wavelet.Simulation.Br
 
-open Wavelet.Op Wavelet.Seq Wavelet.Dataflow Wavelet.Compile
+open Wavelet.Op Wavelet.LTS Wavelet.Seq Wavelet.Dataflow Wavelet.Compile
 open Invariants Lemmas
 
 /-- Helper lemma to run relevant dataflow operators. -/
 theorem sim_step_br_exec_dataflow
-  [Arity Op] [DecidableEq χ] [InterpConsts V] [InterpOp Op V S]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [InterpOp Op V E S]
   {cond left right}
   {ec ec' : Seq.Config Op χ V S m n}
   {pc : Dataflow.Config Op (ChanName χ) V S m n}
   {hnz : m > 0 ∧ n > 0}
   (hsim : SimRel hnz ec pc)
-  (hstep : Config.Step ec ec')
+  (hstep : Config.Step ec tr ec')
   (hbr : ec.expr = .cont (.br cond left right)) :
-  Dataflow.Config.StepPlus pc {
+  Dataflow.Config.StepPlus E pc tr {
     proc := pc.proc,
     chans := varsToChans ec',
     state := pc.state,
@@ -71,8 +72,8 @@ theorem sim_step_br_exec_dataflow
         .merge_cond (.var cond ec.pathConds),
       ] ∈ pc.proc.atoms
     := by simp [hatoms, hrest, ← hcurrent]
-  have hsteps₁ : Dataflow.Config.StepPlus pc _
-    := Relation.TransGen.single (Dataflow.Config.Step.step_fork hmem_fork hpop_cond)
+  have hsteps₁ : Dataflow.Config.StepPlus E pc _ _
+    := LTS.Plus.single (Dataflow.Config.Step.step_fork hmem_fork hpop_cond)
   -- Simplify pushes
   rw [push_vals_empty] at hsteps₁
   rotate_left
@@ -123,8 +124,8 @@ theorem sim_step_br_exec_dataflow
       (compileExpr.allVarsExcept ec.definedVars [cond] rightConds)
     ∈ pc₁.proc.atoms
   := by simp [hpc₁, hatoms, hrest, ← hcurrent, compileExpr.allVarsExcept]
-  have hsteps₂ : Dataflow.Config.StepPlus pc _
-    := Relation.TransGen.tail hsteps₁
+  have hsteps₂ : Dataflow.Config.StepPlus E pc _ _
+    := LTS.Plus.tail hsteps₁
         (Dataflow.Config.Step.step_switch
           hmem_switch
           hpop_switch_cond
@@ -162,7 +163,7 @@ theorem sim_step_br_exec_dataflow
     simp only [← hleft_conds, ← hright_conds, compileExpr.allVarsExcept]
     cases condBool <;> simp
   rw [this] at hsteps₂; clear this
-  apply step_plus_eq hsteps₂
+  apply LTS.step_eq_rhs hsteps₂
   simp [hpc₁]
   funext name
   simp only [varsToChans]
@@ -233,16 +234,16 @@ theorem sim_step_br_exec_dataflow
         List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
 
 theorem sim_step_br
-  [Arity Op] [DecidableEq χ] [InterpConsts V] [InterpOp Op V S]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [InterpOp Op V E S]
   {cond left right}
   {ec ec' : Seq.Config Op χ V S m n}
   {pc : Dataflow.Config Op (ChanName χ) V S m n}
   {hnz : m > 0 ∧ n > 0}
   (hsim : SimRel hnz ec pc)
-  (hstep : Config.Step ec ec')
+  (hstep : Config.Step ec tr ec')
   (hbr : ec.expr = .cont (.br cond left right)) :
   ∃ pc',
-    Config.StepPlus pc pc' ∧
+    Config.StepPlus E pc tr pc' ∧
     SimRel hnz ec' pc' := by
   have hsteps := sim_step_br_exec_dataflow hsim hstep hbr
   replace ⟨pc', hpc', hsteps⟩ := exists_eq_left.mpr hsteps

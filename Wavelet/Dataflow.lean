@@ -1,11 +1,12 @@
 import Mathlib.Logic.Relation
 import Wavelet.Op
+import Wavelet.LTS
 
 /-! Syntax and semantics for a simple dataflow calculus. -/
 
 namespace Wavelet.Dataflow
 
-open Op
+open Op LTS
 
 /-- Dataflow operators. -/
 inductive AtomicProc (Op χ V : Type*) [Arity Op] where
@@ -94,18 +95,18 @@ inductive Config.Step
   {χ : Type u}
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
-  [InterpOp Op V S]
-  : Config Op χ V S m n → Config Op χ V S m n → Prop where
+  [InterpOp Op V E S]
+  : LTS (Config Op χ V S m n) E where
   | step_op_trans {inputs : Vector χ (Arity.ι o)} :
     .op o inputs outputs ∈ c.proc.atoms →
     c.chans.popVals inputs = some (inputVals, chans') →
-    InterpOp.Step o inputVals c.state (state', none) →
-    Step c { c with state := state' } -- NOTE: channels are not updated here
+    InterpOp.Step o inputVals c.state tr (state', none) →
+    Step c tr { c with state := state' } -- NOTE: channels are not updated here
   | step_op_final {inputs : Vector χ (Arity.ι o)} :
     .op o inputs outputs ∈ c.proc.atoms →
     c.chans.popVals inputs = some (inputVals, chans') →
-    InterpOp.Step o inputVals c.state (state', some outputVals) →
-    Step c { c with
+    InterpOp.Step o inputVals c.state tr (state', some outputVals) →
+    Step c tr { c with
       chans := chans'.pushVals outputs outputVals,
       state := state',
     }
@@ -115,7 +116,7 @@ inductive Config.Step
     c.chans.popVal decider = some (deciderVal, chans') →
     chans'.popVals inputs = some (inputVals, chans'') →
     InterpConsts.toBool deciderVal = some deciderBool →
-    Step c { c with
+    Step c .ε { c with
       chans :=
         let outputs := if deciderBool then outputs₁ else outputs₂
         chans''.pushVals outputs inputVals
@@ -125,7 +126,7 @@ inductive Config.Step
     c.chans.popVal decider = some (deciderVal, chans') →
     chans'.popVals inputs = some (inputVals, chans'') →
     InterpConsts.toBool deciderVal = some deciderBool →
-    Step c { c with
+    Step c .ε { c with
       chans :=
         if deciderBool = flavor then
           chans''.pushVals outputs inputVals
@@ -139,11 +140,11 @@ inductive Config.Step
     chans'.popVals
       (if deciderBool then inputs₁ else inputs₂)
       = some (inputVals, chans'') →
-    Step c { c with chans := chans''.pushVals outputs inputVals }
+    Step c .ε { c with chans := chans''.pushVals outputs inputVals }
   | step_carry_init :
     c.proc.atoms = ctxLeft ++ [.carry false decider inputs₁ inputs₂ outputs] ++ ctxRight →
     c.chans.popVals inputs₁ = some (inputVals, chans') →
-    Step c { c with
+    Step c .ε { c with
       proc := { c.proc with
         atoms := ctxLeft ++ [.carry true decider inputs₁ inputs₂ outputs] ++ ctxRight,
       },
@@ -154,14 +155,14 @@ inductive Config.Step
     c.chans.popVal decider = some (deciderVal, chans') →
     InterpConsts.toBool deciderVal = some true →
     chans'.popVals inputs₂ = some (inputVals, chans'') →
-    Step c { c with
+    Step c .ε { c with
       chans := chans''.pushVals outputs inputVals,
     }
   | step_carry_false :
     c.proc.atoms = ctxLeft ++ [.carry true decider inputs₁ inputs₂ outputs] ++ ctxRight →
     c.chans.popVal decider = some (deciderVal, chans') →
     InterpConsts.toBool deciderVal = some false →
-    Step c { c with
+    Step c .ε { c with
       proc := { c.proc with
         atoms := ctxLeft ++ [.carry false decider inputs₁ inputs₂ outputs] ++ ctxRight,
       },
@@ -170,41 +171,41 @@ inductive Config.Step
   | step_forward :
     .forward inputs outputs ∈ c.proc.atoms →
     c.chans.popVals inputs = some (inputVals, chans') →
-    Step c { c with
+    Step c .ε { c with
       chans := chans'.pushVals outputs inputVals,
     }
   | step_fork :
     .fork input outputs ∈ c.proc.atoms →
     c.chans.popVal input = some (inputVal, chans') →
-    Step c { c with
+    Step c .ε { c with
       chans := chans'.pushVals outputs (Vector.replicate _ inputVal),
     }
   | step_const :
     .const val act outputs ∈ c.proc.atoms →
     c.chans.popVal act = some (actVal, chans') →
-    Step c { c with
+    Step c .ε { c with
       chans := chans'.pushVals outputs (Vector.replicate _ val),
     }
   | step_forwardc :
     .forwardc inputs consts outputs ∈ c.proc.atoms →
     c.chans.popVals inputs = some (inputVals, chans') →
-    Step c { c with
+    Step c .ε { c with
       chans := chans'.pushVals outputs (inputVals ++ consts),
     }
   | step_sink :
     .sink inputs ∈ c.proc.atoms →
     c.chans.popVals inputs = some (inputVals, chans') →
-    Step c { c with chans := chans' }
+    Step c .ε { c with chans := chans' }
 
 def Config.StepPlus
-  {Op χ V S m n}
-  [Arity Op] [InterpConsts V] [InterpOp Op V S] [DecidableEq χ] :=
-  @Relation.TransGen (Config Op χ V S m n) Step
+  {Op χ V S m n} E
+  [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
+  : LTS (Config Op χ V S m n) E := Step.Plus
 
 def Config.StepStar
-  {Op χ V S m n}
-  [Arity Op] [InterpConsts V] [InterpOp Op V S] [DecidableEq χ] :=
-  @Relation.ReflTransGen (Config Op χ V S m n) Step
+  {Op χ V S m n} E
+  [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
+  : LTS (Config Op χ V S m n) E := Step.Star
 
 def AtomicProc.mapChans [Arity Op] (f : χ → χ') : AtomicProc Op χ V → AtomicProc Op χ' V
   | .op o inputs outputs => .op o (inputs.map f) (outputs.map f)

@@ -1,6 +1,7 @@
 import Mathlib.Data.Vector.Basic
 
 import Wavelet.Op
+import Wavelet.LTS
 import Wavelet.Seq
 import Wavelet.Dataflow
 import Wavelet.Compile
@@ -12,7 +13,7 @@ import Wavelet.Simulation.Ret
 
 namespace Wavelet.Simulation.Tail
 
-open Wavelet.Op Wavelet.Seq Wavelet.Dataflow Wavelet.Compile
+open Wavelet.Op Wavelet.LTS Wavelet.Seq Wavelet.Dataflow Wavelet.Compile
 open Invariants Lemmas Ret
 
 /-- Values pushed to output channels in the case of a tail call. -/
@@ -24,7 +25,7 @@ def tailArgsToExprOutputs
 
 /-- Fires `forwardc` and `sink` to get an intermediate state. -/
 theorem sim_step_tail_forwardc_sink
-  [Arity Op] [InterpConsts V] [InterpOp Op V S] [DecidableEq χ]
+  [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
   {ec : Seq.Config Op χ V S m n}
   {pc : Dataflow.Config Op (ChanName χ) V S m n}
   {hnz : m > 0 ∧ n > 0}
@@ -32,7 +33,7 @@ theorem sim_step_tail_forwardc_sink
   (hexpr : ec.expr = .cont (.tail vars))
   (hvars : VarMap.getVars vars ec.vars = some tailArgs)
   (hvars_nodup : vars.toList.Nodup) :
-  Dataflow.Config.StepPlus pc
+  Dataflow.Config.StepPlus E pc .ε
   { proc := pc.proc,
     chans := intermChans ec pc vars
       (tailArgsToExprOutputs tailArgs)
@@ -89,8 +90,8 @@ theorem sim_step_tail_forwardc_sink
       (compileExpr.tailExprOutputs m n ec.pathConds)
       ∈ pc.proc.atoms
   := by grind
-  have hsteps₁ : Dataflow.Config.StepPlus pc _
-    := Relation.TransGen.single (Dataflow.Config.Step.step_forwardc hmem_forwardc hpop_tail_args)
+  have hsteps₁ : Dataflow.Config.StepPlus E pc _ _
+    := .single (Dataflow.Config.Step.step_forwardc hmem_forwardc hpop_tail_args)
   -- Simplify pushes
   rw [push_vals_empty] at hsteps₁
   rotate_left
@@ -126,10 +127,10 @@ theorem sim_step_tail_forwardc_sink
     .sink (compileExpr.allVarsExcept ec.definedVars vars.toList ec.pathConds)
     ∈ pc₁.proc.atoms
   := by grind
-  have hsteps₂ : Dataflow.Config.StepPlus pc _
-    := Relation.TransGen.tail hsteps₁
+  have hsteps₂ : Dataflow.Config.StepPlus E pc _ _
+    := .tail hsteps₁
       (Dataflow.Config.Step.step_sink hmem_sink hpop_other_vals)
-  apply step_plus_eq
+  apply LTS.step_eq_rhs
   apply hsteps₂
   simp [hpc₁]
   funext name
@@ -178,14 +179,14 @@ set_option maxHeartbeats 300000
 
 /-- Fires relevant operators on the dataflow side. -/
 theorem sim_step_tail_exec_dataflow
-  [Arity Op] [InterpConsts V] [InterpOp Op V S] [DecidableEq χ]
+  [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
   {ec ec' : Seq.Config Op χ V S m n}
   {pc : Dataflow.Config Op (ChanName χ) V S m n}
   {hnz : m > 0 ∧ n > 0}
   (hsim : SimRel hnz ec pc)
-  (hstep : Config.Step ec ec')
+  (hstep : Config.Step ec tr ec')
   (hexpr : ec.expr = .cont (.tail vars)) :
-  Dataflow.Config.StepPlus pc {
+  Dataflow.Config.StepPlus E pc tr {
     proc := pc.proc,
     chans := varsToChans ec',
     state := pc.state,
@@ -206,7 +207,7 @@ theorem sim_step_tail_exec_dataflow
   subst hexpr'
   cases hwf_expr with | wf_tail hvars_nodup =>
   -- Step 1: Fire `forwardc` and `sink`
-  have hsteps₁ := sim_step_tail_forwardc_sink hsim hexpr hvars hvars_nodup
+  have hsteps₁ := sim_step_tail_forwardc_sink (E := E) hsim hexpr hvars hvars_nodup
   -- Step 2: Fire final merges
   have hsteps₂ := sim_step_merges ec pc
     hsim.has_merges (by simp)
@@ -225,8 +226,8 @@ theorem sim_step_tail_exec_dataflow
       #v[.tail_cond_carry, .tail_cond_steer_dests, .tail_cond_steer_tail_args]
     ∈ pc.proc.atoms
   := by simp [hatoms, ← hcomp_fn]
-  have hsteps₃ : Dataflow.Config.StepPlus pc _
-    := Relation.TransGen.tail hsteps₂
+  have hsteps₃ : Dataflow.Config.StepPlus E pc _ _
+    := .tail hsteps₂
       (Dataflow.Config.Step.step_fork hmem_fork hpop_tail_cond)
   -- Simplify pushes
   rw [push_vals_empty] at hsteps₃
@@ -264,8 +265,8 @@ theorem sim_step_tail_exec_dataflow
       ((Vector.range n).map .final_dest)
     ∈ pc₁.proc.atoms
   := by simp [hpc₁, hatoms, ← hcomp_fn]
-  have hsteps₄ : Dataflow.Config.StepPlus pc _
-    := Relation.TransGen.tail hsteps₃
+  have hsteps₄ : Dataflow.Config.StepPlus E pc _ _
+    := .tail hsteps₃
       (Dataflow.Config.Step.step_steer
         hmem_steer_dests
         hpop_tail_cond_steer_dests
@@ -329,8 +330,8 @@ theorem sim_step_tail_exec_dataflow
       ((Vector.range m).map .final_tail_arg)
     ∈ pc₂.proc.atoms
   := by simp [hpc₂, hpc₁, hatoms, ← hcomp_fn]
-  have hsteps₅ : Dataflow.Config.StepPlus pc _
-    := Relation.TransGen.tail hsteps₄
+  have hsteps₅ : Dataflow.Config.StepPlus E pc _ _
+    := .tail hsteps₄
       (Dataflow.Config.Step.step_steer
         hmem_steer_tail_args
         hpop_tail_cond_steer_tail_args
@@ -396,8 +397,8 @@ theorem sim_step_tail_exec_dataflow
     pc₃.proc.atoms = [] ++ [compileFn.initCarry ec.fn carryInLoop] ++ rest
   := by simp [hpc₃, hpc₂, hpc₁, hatoms]
   simp only [compileFn.initCarry, hcarryInLoop] at hmem_carry
-  have hsteps₆ : Dataflow.Config.StepPlus pc _
-    := Relation.TransGen.tail hsteps₅
+  have hsteps₆ : Dataflow.Config.StepPlus E pc _ _
+    := .tail hsteps₅
       (Dataflow.Config.Step.step_carry_true
         hmem_carry
         hpop_tail_cond_steer_tail_args
@@ -418,7 +419,7 @@ theorem sim_step_tail_exec_dataflow
       hchans₁, intermChans]
   simp at hsteps₆
   replace ⟨pc', hpc', hsteps₆⟩ := exists_eq_left.mpr hsteps₆
-  apply step_plus_eq hsteps₆
+  apply LTS.step_eq_rhs hsteps₆
   simp [hpc', hpc₃, hpc₂, hpc₁,
     hchans₇, hchans₆, hchans₅, hchans₄, hchans₃, hchans₂, hchans₁,
     List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go, intermChans]
@@ -471,15 +472,15 @@ theorem sim_step_tail_exec_dataflow
 /-- TODO: these theorems are similar to `sim_step_ret`,
 figure out a way to share these proofs. -/
 theorem sim_step_tail
-  [Arity Op] [InterpConsts V] [InterpOp Op V S] [DecidableEq χ]
+  [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
   {ec ec' : Seq.Config Op χ V S m n}
   {pc : Dataflow.Config Op (ChanName χ) V S m n}
   {hnz : m > 0 ∧ n > 0}
   (hsim : SimRel hnz ec pc)
-  (hstep : Config.Step ec ec')
+  (hstep : Config.Step ec tr ec')
   (hexpr : ec.expr = .cont (.tail vars)) :
   ∃ pc',
-    Config.StepPlus pc pc' ∧
+    Config.StepPlus E pc tr pc' ∧
     SimRel hnz ec' pc' := by
   have hsteps := sim_step_tail_exec_dataflow hsim hstep hexpr
   replace ⟨pc', hpc', hsteps⟩ := exists_eq_left.mpr hsteps
