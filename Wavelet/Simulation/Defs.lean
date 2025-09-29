@@ -54,7 +54,7 @@ def Seq.RefinesDataflow
   (c₁ : Seq.Config Op χ₁ V S m n)
   (c₂ : Dataflow.Config Op χ₂ V S m n)
   (R : Seq.Config Op χ₁ V S m n → Dataflow.Config Op χ₂ V S m n → Prop) : Prop :=
-  Simulation c₁ c₂ R Config.Step (Config.StepPlus E)
+  Simulation (E := E) c₁ c₂ R Config.Step Config.StepPlus
 
 def Seq.SPRefinesDataflow
   [DecidableEq χ₁] [DecidableEq χ₂]
@@ -62,6 +62,6 @@ def Seq.SPRefinesDataflow
   (c₁ : Seq.Config Op χ₁ V S m n)
   (c₂ : Dataflow.Config Op χ₂ V S m n)
   (R : Seq.Config Op χ₁ V S m n → Dataflow.Config Op χ₂ V S m n → Prop) : Prop :=
-  SPSimulation S V c₁ c₂ R Config.Step (Config.StepPlus E)
+  SPSimulation (E := E) S V c₁ c₂ R Config.Step Config.StepPlus
 
 end Wavelet.Simulation.Defs

@@ -207,12 +207,10 @@ inductive Config.Step
     }
 
 def Config.StepPlus
-  {Op χ V S m n} E
   [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
   : LTS (Config Op χ V S m n) E := Step.Plus
 
 def Config.StepStar
-  {Op χ V S m n} E
   [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
   : LTS (Config Op χ V S m n) E := Step.Star
 

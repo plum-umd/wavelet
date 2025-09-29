@@ -33,7 +33,7 @@ theorem sim_step_tail_forwardc_sink
   (hexpr : ec.expr = .cont (.tail vars))
   (hvars : VarMap.getVars vars ec.vars = some tailArgs)
   (hvars_nodup : vars.toList.Nodup) :
-  Dataflow.Config.StepPlus E pc .ε
+  Dataflow.Config.StepPlus (E := E) pc .ε
   { proc := pc.proc,
     chans := intermChans ec pc vars
       (tailArgsToExprOutputs tailArgs)
@@ -90,7 +90,7 @@ theorem sim_step_tail_forwardc_sink
       (compileExpr.tailExprOutputs m n ec.pathConds)
       ∈ pc.proc.atoms
   := by grind
-  have hsteps₁ : Dataflow.Config.StepPlus E pc _ _
+  have hsteps₁ : Dataflow.Config.StepPlus (E := E) pc _ _
     := .single (Dataflow.Config.Step.step_forwardc hmem_forwardc hpop_tail_args)
   -- Simplify pushes
   rw [push_vals_empty] at hsteps₁
@@ -127,7 +127,7 @@ theorem sim_step_tail_forwardc_sink
     .sink (compileExpr.allVarsExcept ec.definedVars vars.toList ec.pathConds)
     ∈ pc₁.proc.atoms
   := by grind
-  have hsteps₂ : Dataflow.Config.StepPlus E pc _ _
+  have hsteps₂ : Dataflow.Config.StepPlus (E := E) pc _ _
     := .tail hsteps₁
       (Dataflow.Config.Step.step_sink hmem_sink hpop_other_vals)
   apply LTS.step_eq_rhs
@@ -180,13 +180,14 @@ set_option maxHeartbeats 300000
 /-- Fires relevant operators on the dataflow side. -/
 theorem sim_step_tail_exec_dataflow
   [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
+  {tr : Trace E}
   {ec ec' : Seq.Config Op χ V S m n}
   {pc : Dataflow.Config Op (ChanName χ) V S m n}
   {hnz : m > 0 ∧ n > 0}
   (hsim : SimRel hnz ec pc)
   (hstep : Config.Step ec tr ec')
   (hexpr : ec.expr = .cont (.tail vars)) :
-  Dataflow.Config.StepPlus E pc tr {
+  Dataflow.Config.StepPlus pc tr {
     proc := pc.proc,
     chans := varsToChans ec',
     state := pc.state,
@@ -226,7 +227,7 @@ theorem sim_step_tail_exec_dataflow
       #v[.tail_cond_carry, .tail_cond_steer_dests, .tail_cond_steer_tail_args]
     ∈ pc.proc.atoms
   := by simp [hatoms, ← hcomp_fn]
-  have hsteps₃ : Dataflow.Config.StepPlus E pc _ _
+  have hsteps₃ : Dataflow.Config.StepPlus (E := E) pc _ _
     := .tail hsteps₂
       (Dataflow.Config.Step.step_fork hmem_fork hpop_tail_cond)
   -- Simplify pushes
@@ -265,7 +266,7 @@ theorem sim_step_tail_exec_dataflow
       ((Vector.range n).map .final_dest)
     ∈ pc₁.proc.atoms
   := by simp [hpc₁, hatoms, ← hcomp_fn]
-  have hsteps₄ : Dataflow.Config.StepPlus E pc _ _
+  have hsteps₄ : Dataflow.Config.StepPlus (E := E) pc _ _
     := .tail hsteps₃
       (Dataflow.Config.Step.step_steer
         hmem_steer_dests
@@ -330,7 +331,7 @@ theorem sim_step_tail_exec_dataflow
       ((Vector.range m).map .final_tail_arg)
     ∈ pc₂.proc.atoms
   := by simp [hpc₂, hpc₁, hatoms, ← hcomp_fn]
-  have hsteps₅ : Dataflow.Config.StepPlus E pc _ _
+  have hsteps₅ : Dataflow.Config.StepPlus (E := E) pc _ _
     := .tail hsteps₄
       (Dataflow.Config.Step.step_steer
         hmem_steer_tail_args
@@ -397,7 +398,7 @@ theorem sim_step_tail_exec_dataflow
     pc₃.proc.atoms = [] ++ [compileFn.initCarry ec.fn carryInLoop] ++ rest
   := by simp [hpc₃, hpc₂, hpc₁, hatoms]
   simp only [compileFn.initCarry, hcarryInLoop] at hmem_carry
-  have hsteps₆ : Dataflow.Config.StepPlus E pc _ _
+  have hsteps₆ : Dataflow.Config.StepPlus (E := E) pc _ _
     := .tail hsteps₅
       (Dataflow.Config.Step.step_carry_true
         hmem_carry
@@ -473,6 +474,7 @@ theorem sim_step_tail_exec_dataflow
 figure out a way to share these proofs. -/
 theorem sim_step_tail
   [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
+  {tr : Trace E}
   {ec ec' : Seq.Config Op χ V S m n}
   {pc : Dataflow.Config Op (ChanName χ) V S m n}
   {hnz : m > 0 ∧ n > 0}
@@ -480,7 +482,7 @@ theorem sim_step_tail
   (hstep : Config.Step ec tr ec')
   (hexpr : ec.expr = .cont (.tail vars)) :
   ∃ pc',
-    Config.StepPlus E pc tr pc' ∧
+    Config.StepPlus pc tr pc' ∧
     SimRel hnz ec' pc' := by
   have hsteps := sim_step_tail_exec_dataflow hsim hstep hexpr
   replace ⟨pc', hpc', hsteps⟩ := exists_eq_left.mpr hsteps

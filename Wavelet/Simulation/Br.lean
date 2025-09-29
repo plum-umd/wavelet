@@ -24,13 +24,14 @@ open Invariants Lemmas
 theorem sim_step_br_exec_dataflow
   [Arity Op] [DecidableEq χ] [InterpConsts V] [InterpOp Op V E S]
   {cond left right}
+  {tr : Trace E}
   {ec ec' : Seq.Config Op χ V S m n}
   {pc : Dataflow.Config Op (ChanName χ) V S m n}
   {hnz : m > 0 ∧ n > 0}
   (hsim : SimRel hnz ec pc)
   (hstep : Config.Step ec tr ec')
   (hbr : ec.expr = .cont (.br cond left right)) :
-  Dataflow.Config.StepPlus E pc tr {
+  Dataflow.Config.StepPlus pc tr {
     proc := pc.proc,
     chans := varsToChans ec',
     state := pc.state,
@@ -72,7 +73,7 @@ theorem sim_step_br_exec_dataflow
         .merge_cond (.var cond ec.pathConds),
       ] ∈ pc.proc.atoms
     := by simp [hatoms, hrest, ← hcurrent]
-  have hsteps₁ : Dataflow.Config.StepPlus E pc _ _
+  have hsteps₁ : Dataflow.Config.StepPlus (E := E) pc _ _
     := LTS.Plus.single (Dataflow.Config.Step.step_fork hmem_fork hpop_cond)
   -- Simplify pushes
   rw [push_vals_empty] at hsteps₁
@@ -124,7 +125,7 @@ theorem sim_step_br_exec_dataflow
       (compileExpr.allVarsExcept ec.definedVars [cond] rightConds)
     ∈ pc₁.proc.atoms
   := by simp [hpc₁, hatoms, hrest, ← hcurrent, compileExpr.allVarsExcept]
-  have hsteps₂ : Dataflow.Config.StepPlus E pc _ _
+  have hsteps₂ : Dataflow.Config.StepPlus (E := E) pc _ _
     := LTS.Plus.tail hsteps₁
         (Dataflow.Config.Step.step_switch
           hmem_switch
@@ -236,6 +237,7 @@ theorem sim_step_br_exec_dataflow
 theorem sim_step_br
   [Arity Op] [DecidableEq χ] [InterpConsts V] [InterpOp Op V E S]
   {cond left right}
+  {tr : Trace E}
   {ec ec' : Seq.Config Op χ V S m n}
   {pc : Dataflow.Config Op (ChanName χ) V S m n}
   {hnz : m > 0 ∧ n > 0}
@@ -243,7 +245,7 @@ theorem sim_step_br
   (hstep : Config.Step ec tr ec')
   (hbr : ec.expr = .cont (.br cond left right)) :
   ∃ pc',
-    Config.StepPlus E pc tr pc' ∧
+    Config.StepPlus (E := _) pc tr pc' ∧
     SimRel hnz ec' pc' := by
   have hsteps := sim_step_br_exec_dataflow hsim hstep hbr
   replace ⟨pc', hpc', hsteps⟩ := exists_eq_left.mpr hsteps

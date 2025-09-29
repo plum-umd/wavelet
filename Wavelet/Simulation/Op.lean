@@ -83,6 +83,7 @@ theorem sim_step_op_defined_vars
 theorem sim_step_op
   [Arity Op] [DecidableEq χ] [InterpConsts V] [InterpOp Op V E S]
   {args rets cont}
+  {tr : Trace E}
   {ec ec' : Seq.Config Op χ V S m n}
   {pc : Dataflow.Config Op (ChanName χ) V S m n}
   {hnz : m > 0 ∧ n > 0}
@@ -90,7 +91,7 @@ theorem sim_step_op
   (hstep : Config.Step ec tr ec')
   (hop : ec.expr = .cont (.op o args rets cont)) :
   ∃ pc',
-    Config.StepPlus E pc tr pc' ∧
+    Config.StepPlus pc tr pc' ∧
     SimRel hnz ec' pc' := by
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
@@ -149,7 +150,7 @@ theorem sim_step_op
       ∈ pc.proc.atoms
     := by grind
     simp [hsim.eq_state] at hinterp
-    have hsteps : Dataflow.Config.StepPlus E pc _ _
+    have hsteps : Dataflow.Config.StepPlus (E := E) pc _ _
       := .single
         (Dataflow.Config.Step.step_op_final hmem_op hpop_input_vals hinterp)
     -- Simplify pushes

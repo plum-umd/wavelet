@@ -27,7 +27,7 @@ theorem sim_compile_fn
   (hnz : m > 0 ∧ n > 0)
   (hwf_fn : fn.WellFormed) :
   ∃ pc',
-    Dataflow.Config.StepStar E
+    Dataflow.Config.StepStar (E := E)
       (Dataflow.Config.init (compileFn hnz fn) state args) .ε pc' ∧
     Seq.RefinesDataflow (E := E)
       (Seq.Config.init fn state args) pc'
@@ -60,9 +60,9 @@ theorem refines_steps_to_steps
   {pc : Dataflow.Config Op χ₂ V S m n}
   {R : _ → _ → Prop}
   (href : Seq.RefinesDataflow (E := E) ec pc R)
-  (hsteps : Seq.Config.StepStar E ec tr ec') :
+  (hsteps : Seq.Config.StepStar (E := E) ec tr ec') :
   ∃ pc',
-    Dataflow.Config.StepStar E pc tr pc' ∧ R ec' pc'
+    Dataflow.Config.StepStar (E := E) pc tr pc' ∧ R ec' pc'
 := by
   induction hsteps with
   | refl =>
@@ -89,16 +89,17 @@ def finalChans (retVals : Vector V n) : ChanMap (ChanName χ) V :=
 /-- Same results at termination. -/
 theorem sim_compile_fn_forward_results
   [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
+  {tr : Trace E}
   {ec : Seq.Config Op χ V S m n}
   (fn : Fn Op χ m n)
   (args : Vector V m)
   (state : S)
   (hnz : m > 0 ∧ n > 0)
   (hwf_fn : fn.WellFormed)
-  (hsteps : Seq.Config.StepStar E (Seq.Config.init fn state args) tr ec)
+  (hsteps : Seq.Config.StepStar (Seq.Config.init fn state args) tr ec)
   (hterm : ec.expr = .ret retVals) :
   ∃ pc',
-    Dataflow.Config.StepStar E
+    Dataflow.Config.StepStar
       (Dataflow.Config.init (compileFn hnz fn) state args) tr pc' ∧
     pc'.state = ec.state ∧
     pc'.chans = finalChans retVals
