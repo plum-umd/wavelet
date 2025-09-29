@@ -35,6 +35,13 @@ theorem LTS.step_eq_rhs {R : LTS C E}
   simp [heq] at h
   exact h
 
+theorem LTS.step_eq_tr {R : LTS C E}
+  (h : R c₁ tr c₂)
+  (heq : tr = tr') :
+  R c₁ tr' c₂ := by
+  simp [heq] at h
+  exact h
+
 theorem LTS.step_eq_tr_rhs {R : LTS C E}
   (h : R c₁ tr c₂)
   (heq₁ : tr = tr')
@@ -54,11 +61,21 @@ theorem LTS.Star.trans
   {tr₁ tr₂ : Trace E}
   (h₁ : LTS.Star R c₁ tr₁ c₂)
   (h₂ : LTS.Star R c₂ tr₂ c₃) :
-  LTS.Star R c₁ (tr₁ ++ tr₂) c₃ := sorry
+  LTS.Star R c₁ (tr₁ ++ tr₂) c₃ := by
+  induction h₂ with
+  | refl => simp [h₁, Trace.ε]
+  | tail pre tail ih =>
+    rename_i c₂ tr₁ c₃ tr₂ c₄
+    have := ih h₁
+    apply LTS.step_eq_tr (Star.tail this tail)
+    simp
 
 theorem LTS.Plus.to_star
   {R : LTS C E}
   (h : LTS.Plus R c₁ tr c₂) :
-  LTS.Star R c₁ tr c₂ := sorry
+  LTS.Star R c₁ tr c₂ := by
+  induction h with
+  | single h => exact .single h
+  | tail _ tail ih => exact .tail ih tail
 
 end Wavelet.LTS
