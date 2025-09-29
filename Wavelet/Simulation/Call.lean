@@ -220,41 +220,13 @@ inductive WithProcs.Step
 
 end Wavelet.Dataflow
 
-namespace Wavelet.Compile
-
-open Op Seq Dataflow
-
--- /-- Flatten the use of nested processes to get a single dataflow graph. -/
--- def linkProcs
---   [Arity Op]
---   (procs : Vector (EncapProc Op χ V) k)
---   (main : Proc (Op w/ procs) χ V m n)
---   : Proc Op χ V m n := sorry
-
--- def linkFn
---   [Arity Op] [Arity F] [InterpConsts V]
---   [DecidableEq χ]
---   (fn : Fn (Op w/ F) χ m n)
---   (compiled : (f : F) → Proc Op χ V (Arity.ι f) (Arity.ω f))
---   : Proc (Op w/ F) χ V m n := sorry
-
-end Wavelet.Compile
-
 namespace Wavelet.Op
 
-instance instAritySum [l : Arity Op₁] [r : Arity Op₂] : Arity (Op₁ ⊕ Op₂) where
+instance [l : Arity Op₁] [r : Arity Op₂] : Arity (Op₁ ⊕ Op₂) where
   ι | .inl o => Arity.ι o
     | .inr o => Arity.ι o
   ω | .inl o => Arity.ω o
     | .inr o => Arity.ω o
-
-instance [Arity Op₁] [Arity Op₂]
-  [InterpOp Op₁ V S] [InterpOp Op₂ V S]
-  : InterpOp (Op₁ ⊕ Op₂) V S where
-  Step op inputs state res :=
-    match op with
-    | .inl o => InterpOp.Step o inputs state res
-    | .inr o => InterpOp.Step o inputs state res
 
 end Wavelet.Op
 
@@ -378,9 +350,6 @@ def compileProg
   -- Link everything into one dataflow graph
   linkProcs deps proc
 
-abbrev ProgConfig Op χ V S k [Arity Op] [sig : Arity (Fin k)] :=
-  (i : Fin k) → Seq.Config (Op ⊕ Fin k) χ V S (Arity.ι i) (Arity.ω i)
-
 /-- Lifts an interpretation across different universe for the state type. -/
 instance [Arity Op] [InterpOp Op V S] : InterpOp Op V (ULift S) where
   Step o inputs state res := InterpOp.Step o inputs state.down ⟨res.1.down, res.2⟩
@@ -403,56 +372,85 @@ inductive Prog.StepFn
     Prog.StepFn fn args (state, some c) ((state, none), some retVals)
 
 /--
-Given the base semantics of `Op` wrt. value type `V`
-and state type `S`, generates a semantics for `Op ⊕ Fin i`
-by interpreting the first `i` functions.
+State type for interpreting the first `i` functions as operators.
+
+It's essentially a stack of configurations, but formulated in a
+way that can be directly used with the existing stepping relation.
 -/
-def Prog.AsInterpOp
+@[inline]
+abbrev Prog.InterpStack
+  (Op : Type u₁) (χ : Type u₂) (V : Type u₃) (S : Type u₄) k
+  [Arity Op]
+  [sig : Arity (Fin k)]
+  : Fin k → Type (max u₁ u₂ u₃ u₄)
+  | ⟨0, _⟩ => ULift S
+  | ⟨i + 1, _⟩ =>
+    let i' : Fin k := ⟨i, by omega⟩
+    let S' := InterpStack Op χ V S k i'
+    let : Arity (Fin i') := instArityFin
+    S' × Option (Seq.Config (Op ⊕ Fin i') χ V S' (Arity.ι i') (Arity.ω i'))
+
+def Prog.InterpStack.inj
+  {Op χ V S k}
+  [Arity Op] [sig : Arity (Fin k)]
+  (s : S)
+  : {i : Fin k} → Prog.InterpStack Op χ V S k i
+  | ⟨0, _⟩ => ULift.up s
+  | ⟨_ + 1, _⟩ => (inj s, none)
+
+/-- Extracts the current state from the stack. -/
+def Prog.InterpStack.base
+  {Op χ V S k}
+  [Arity Op] [Arity (Fin k)]
+  {i : Fin k}
+  (stack : Prog.InterpStack Op χ V S k i) : S
+  := match i with
+    | ⟨0, _⟩ => stack.down
+    | ⟨_ + 1, _⟩ => InterpStack.base stack.1
+
+/-- Generate an `InterpOp` of the first `i` functions over `Prog.InterpStack`. -/
+instance Prog.instFnAsOp
   {Op : Type u₁} {χ : Type u₂}
   (V : Type u₃) (S : Type u₄)
   [Arity Op] [sig : Arity (Fin k)]
   [DecidableEq χ] [InterpConsts V]
-  [InterpOp Op V S]
+  [baseInst : InterpOp Op V S]
   (prog : Prog Op χ k)
-  : (i : Fin k) →
-    (S' : Type (max u₁ u₂ u₃ u₄)) ×
-    (S → S') ×
-    InterpOp (Op ⊕ Fin i) V S'
+  : (i : Fin k) → InterpOp (Op ⊕ Fin i) V (Prog.InterpStack Op χ V S k i)
   | ⟨0, _⟩ =>
     let : Arity (Fin 0) := _
-    ⟨
-      ULift S,
-      ULift.up,
-      {
-        Step
-          | .inl o => InterpOp.Step o
-          | .inr f => Fin.elim0 f
-      },
-    ⟩
-  | ⟨i' + 1, _⟩ =>
-    let i'fin := ⟨i', by omega⟩
-    let ⟨S', init, inst'⟩ := prog.AsInterpOp V S i'fin
-    let fn := prog i'fin
-    let : Arity (Fin (i' + 1)) := _
-    ⟨
-      S' × Option (Seq.Config (Op ⊕ Fin i') χ V S' (Arity.ι i'fin) (Arity.ω i'fin)),
-      λ s => (init s, none),
-      {
-        Step
-          | .inl o, inputs, state, res =>
-            inst'.Step (.inl o) inputs state.1 ⟨res.1.1, res.2⟩
-          | .inr f, inputs, state, res =>
-            if h : f.val = i' then
-              Prog.StepFn
-                (inst := inst')
-                fn
-                (cast (by simp [← h, i'fin]; rfl) inputs)
-                (cast (by simp [← h, i'fin]) state)
-                (cast (by simp [← h, i'fin]; rfl) res)
-            else
-              inst'.Step (.inr ⟨↑f, by simp [i'fin]; omega⟩) inputs state.1 ⟨res.1.1, res.2⟩
-      }
-    ⟩
+    {
+      Step
+        | .inl o, inputs, state, res =>
+          baseInst.Step o inputs state.base ⟨res.1.base, res.2⟩
+        | .inr f, inputs, state, res => Fin.elim0 f
+    }
+  | ⟨i + 1, _⟩ =>
+    let i' : Fin k := ⟨i, by omega⟩
+    let inst := instFnAsOp V S prog i'
+    let : Arity (Fin (i + 1)) := _
+    {
+      Step
+        -- Operators in `Op` are interpreted in the original semantics (`baseInst`).
+        | .inl o, inputs, state, res =>
+          inst.Step (.inl o) inputs state.1 ⟨res.1.1, res.2⟩
+        -- Function calls are either interpreted by the IH `inst`
+        -- or by the current function `prog i'`.
+        | .inr f, inputs, state, res =>
+          if h₁ : f.val = i then
+            have h₂ : Arity.ι (Sum.inr (α := Op) f) = Arity.ι i'
+              := by simp [← h₁, i']; rfl
+            have h₃ : Arity.ω (Sum.inr (α := Op) f) = Arity.ω i'
+              := by simp [← h₁, i']; rfl
+            Prog.StepFn
+              (inst := inst)
+              (prog i')
+              (cast (by congr) inputs)
+              (cast (by simp [i']; rfl) state)
+              (cast (by simp [i', h₃]; rfl) res)
+          else
+            inst.Step (.inr ⟨↑f, by simp [i']; omega⟩) inputs state.1 ⟨res.1.1, res.2⟩
+    }
 
 /-- Generates a transition relation for the `i`th function,
 which depends on the `InterpOp` for the previous functions
@@ -466,30 +464,21 @@ def Prog.Step
   [DecidableEq χ]
   (prog : Prog Op χ k)
   (i : Fin k) :
-  (S' : Type (max u₁ u₂ u₃ u₄)) ×
-  (S → S') ×
   (
-    Seq.Config (Op ⊕ Fin i) χ V S' (Arity.ι i) (Arity.ω i) →
-    Seq.Config (Op ⊕ Fin i) χ V S' (Arity.ι i) (Arity.ω i) →
+    Seq.Config (Op ⊕ Fin i) χ V (Prog.InterpStack Op χ V S k i) (Arity.ι i) (Arity.ω i) →
+    Seq.Config (Op ⊕ Fin i) χ V (Prog.InterpStack Op χ V S k i) (Arity.ι i) (Arity.ω i) →
     Prop
-  ) :=
-  let ⟨S', init, _⟩ := prog.AsInterpOp V S i
-  ⟨S', init, Seq.Config.Step⟩
+  ) := Seq.Config.Step (interp := Prog.instFnAsOp V S prog i)
 
 def Prog.init
-  {Op : Type u₁} {χ : Type u₂}
-  (V : Type u₃) (S : Type u₄)
   [Arity Op] [Arity (Fin k)]
   [InterpConsts V]
   [InterpOp Op V S]
   [DecidableEq χ]
-  (prog : Prog Op χ k)
-  (i : Fin k)
+  (prog : Prog Op χ k) (i : Fin k)
   (state : S)
   (args : Vector V (Arity.ι i)) :
-  (S' : Type (max u₁ u₂ u₃ u₄)) ×
-  Seq.Config (Op ⊕ Fin i) χ V S' (Arity.ι i) (Arity.ω i) :=
-  let ⟨S', init, _⟩ := prog.AsInterpOp V S i
-  ⟨S', Seq.Config.init (prog i) (init state) args⟩
+  Seq.Config (Op ⊕ Fin i) χ V (Prog.InterpStack Op χ V S k i) (Arity.ι i) (Arity.ω i) :=
+  Seq.Config.init (prog i) (.inj state) args
 
 end Wavelet.Compile
