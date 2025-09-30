@@ -28,6 +28,16 @@ def Simulation
       Step₂ c₂ tr c₂' ∧
       R c₁' c₂'
 
+def Simulation.base (hsim : Simulation c₁ c₂ R Step₁ Step₂) : R c₁ c₂ := hsim.1
+
+def Simulation.coind (hsim : Simulation c₁ c₂ R Step₁ Step₂) :
+  ∀ c₁ c₂ c₁' tr,
+    R c₁ c₂ →
+    Step₁ c₁ tr c₁' →
+    ∃ c₂',
+      Step₂ c₂ tr c₂' ∧
+      R c₁' c₂' := hsim.2
+
 theorem LTS.step_eq_rhs {R : LTS C E}
   (h : R c₁ tr c₂)
   (heq : c₂ = c₂') :
@@ -70,6 +80,21 @@ theorem LTS.Star.trans
     apply LTS.step_eq_tr (Star.tail this tail)
     simp
 
+theorem LTS.Plus.trans
+  {R : LTS C E}
+  {c₁ c₂ c₃ : C}
+  {tr₁ tr₂ : Trace E}
+  (h₁ : LTS.Plus R c₁ tr₁ c₂)
+  (h₂ : LTS.Plus R c₂ tr₂ c₃) :
+  LTS.Plus R c₁ (tr₁ ++ tr₂) c₃ := by
+  induction h₂ with
+  | single tail => exact .tail h₁ tail
+  | tail pre tail ih =>
+    rename_i c₂ tr₁ c₃ tr₂ c₄
+    have := ih h₁
+    apply LTS.step_eq_tr (Plus.tail this tail)
+    simp
+
 theorem LTS.Plus.to_star
   {R : LTS C E}
   (h : LTS.Plus R c₁ tr c₂) :
@@ -77,5 +102,18 @@ theorem LTS.Plus.to_star
   induction h with
   | single h => exact .single h
   | tail _ tail ih => exact .tail ih tail
+
+/-- Defines when an `LTS` is transitive. -/
+class LTS.Transitive (R : LTS C E) where
+  trans : ∀ {c₁ c₂ c₃ tr₁ tr₂},
+    R c₁ tr₁ c₂ →
+    R c₂ tr₂ c₃ →
+    R c₁ (tr₁ ++ tr₂) c₃
+
+instance {R : LTS C E} : LTS.Transitive (LTS.Star R) where
+  trans := by exact LTS.Star.trans
+
+instance {R : LTS C E} : LTS.Transitive (LTS.Plus R) where
+  trans := by exact LTS.Plus.trans
 
 end Wavelet.LTS

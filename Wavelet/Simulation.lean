@@ -124,4 +124,20 @@ theorem sim_compile_fn_forward_results
     | final_dest i => simp [hterm]
     | _ => simp [hsim.final_config_empty_path_conds hterm]
 
+/-- Semantics of `fn` and `compileFn fn` have a state-preserving simulation. -/
+theorem sp_sim_compile_fn
+  [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
+  (fn : Fn Op χ m n)
+  (args : Vector V m)
+  (state : S)
+  (hnz : m > 0 ∧ n > 0)
+  (hwf_fn : fn.WellFormed) :
+  ∃ pc',
+    Dataflow.Config.StepStar (E := E)
+      (Dataflow.Config.init (compileFn hnz fn) state args) .ε pc' ∧
+    Seq.SPRefinesDataflow (E := E)
+      (Seq.Config.init fn state args) pc'
+      (SimRel hnz)
+:= sorry
+
 end Wavelet.Simulation
