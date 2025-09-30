@@ -11,7 +11,6 @@ import Wavelet.Simulation.Ret
 import Wavelet.Simulation.Tail
 import Wavelet.Simulation.Op
 import Wavelet.Simulation.Br
-import Wavelet.Simulation.Call
 
 namespace Wavelet.Simulation
 
@@ -27,7 +26,7 @@ theorem sim_compile_fn
   (hnz : m > 0 ∧ n > 0)
   (hwf_fn : fn.WellFormed) :
   ∃ pc',
-    Dataflow.Config.StepStar (E := E)
+    Dataflow.Config.StepPlus (E := E)
       (Dataflow.Config.init (compileFn hnz fn) state args) .ε pc' ∧
     Seq.RefinesDataflow (E := E)
       (Seq.Config.init fn state args) pc'
@@ -109,7 +108,7 @@ theorem sim_compile_fn_forward_results
   have ⟨pc₂, hsteps_pc', hsim⟩ := refines_steps_to_steps href hsteps
   exists pc₂
   and_intros
-  · exact .trans hsteps_pc hsteps_pc'
+  · exact .trans hsteps_pc.to_star hsteps_pc'
   · simp [hsim.eq_state]
   · funext name
     simp [hsim.vars_to_chans, varsToChans, finalChans]

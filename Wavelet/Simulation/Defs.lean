@@ -48,7 +48,7 @@ instance [Arity Op] [DecidableEq χ] : FinalWithValues (Dataflow.Config Op χ V 
       vals'.toList = vals
 
 /-- Specific case for a Seq config to refine a dataflow config. -/
-def Seq.RefinesDataflow
+abbrev Seq.RefinesDataflow
   [DecidableEq χ₁] [DecidableEq χ₂]
   [Arity Op] [InterpConsts V] [InterpOp Op V E S]
   (c₁ : Seq.Config Op χ₁ V S m n)
@@ -56,7 +56,7 @@ def Seq.RefinesDataflow
   (R : Seq.Config Op χ₁ V S m n → Dataflow.Config Op χ₂ V S m n → Prop) : Prop :=
   Simulation (E := E) c₁ c₂ R Config.Step Config.StepPlus
 
-def Seq.SPRefinesDataflow
+abbrev Seq.SPRefinesDataflow
   [DecidableEq χ₁] [DecidableEq χ₂]
   [Arity Op] [InterpConsts V] [InterpOp Op V E S]
   (c₁ : Seq.Config Op χ₁ V S m n)

@@ -206,11 +206,11 @@ inductive Config.Step
         (condBool, .var cond c.pathConds) :: c.pathConds,
     }
 
-def Config.StepPlus
+abbrev Config.StepPlus
   [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
   : LTS (Config Op χ V S m n) E := Step.Plus
 
-def Config.StepStar
+abbrev Config.StepStar
   [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
   : LTS (Config Op χ V S m n) E := Step.Star
 

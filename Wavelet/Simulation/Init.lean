@@ -27,7 +27,7 @@ theorem sim_step_init
   (hnz : m > 0 ∧ n > 0)
   (hwf_fn : fn.WellFormed) :
   ∃ pc',
-    Dataflow.Config.StepStar (E := E)
+    Dataflow.Config.StepPlus (E := E)
       (Dataflow.Config.init (compileFn hnz fn) state args) .ε pc' ∧
     SimRel hnz
       (Seq.Config.init fn state args)
@@ -94,8 +94,8 @@ theorem sim_step_init
   := by simp [hpc₀]
   simp only [compileFn.initCarry] at hmem_carry
   have hsteps :
-    Dataflow.Config.StepStar (E := E) pc₀ _ _
-  := LTS.Star.single
+    Dataflow.Config.StepPlus (E := E) pc₀ _ _
+  := .single
     (Dataflow.Config.Step.step_carry_init
       hmem_carry
       hpop_args)

@@ -197,11 +197,11 @@ inductive Config.Step
     c.chans.popVals inputs = some (inputVals, chans') →
     Step c .ε { c with chans := chans' }
 
-def Config.StepPlus
+abbrev Config.StepPlus
   [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
   : LTS (Config Op χ V S m n) E := Step.Plus
 
-def Config.StepStar
+abbrev Config.StepStar
   [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
   : LTS (Config Op χ V S m n) E := Step.Star
 
