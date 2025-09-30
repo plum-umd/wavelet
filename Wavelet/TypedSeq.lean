@@ -1,3 +1,4 @@
+import Mathlib.Data.Finset.Basic
 import Wavelet.Seq
 
 namespace Wavelet.Seq
@@ -87,4 +88,142 @@ def Fn.Typed
       let Γ₀ := TyEnv.insertVars params inTys TyEnv.empty
       Expr.Typed Γ₀ body inTys outTys
 
+/-- A capability annotates an array with two finite sets of indices.
+    The set `shrd` tracks indices for which shared (read‑only)
+    permissions are available; the set `uniq` tracks indices for
+    which unique (read/write) permissions are available.  The
+    `disjoint` proof ensures that these regions do not overlap. -/
+structure Capability where
+  shrd : Finset ℕ
+  uniq : Finset ℕ
+  disjoint : Disjoint shrd uniq
+
+namespace Capability
+
+/-- The empty capability grants no permissions. -/
+def empty : Capability :=
+  { shrd := ∅, uniq := ∅, disjoint := by simp }
+
+/-- Remove a single index from the unique region of a capability. -/
+def removeUniq (i : ℕ) (c : Capability) : Capability :=
+  { shrd := c.shrd,
+    uniq := c.uniq.erase i,
+    disjoint := by
+      have h : Disjoint c.shrd c.uniq := c.disjoint
+      -- Erasing an element from `uniq` preserves disjointness.
+      exact h.mono_right (Finset.erase_subset _ _) }
+
+/-- Compose two capabilities when they are compatible.  Composition
+    merges the shared and unique regions if no conflict arises:
+    unique regions must be pairwise disjoint, and no unique region
+    may overlap with a shared region from the other side. -/
+def compose (c₁ c₂ : Capability) : Option Capability :=
+  if h₁ : Disjoint c₁.uniq c₂.uniq ∧ Disjoint c₁.uniq c₂.shrd ∧ Disjoint c₂.uniq c₁.shrd then
+    some
+      { shrd := c₁.shrd ∪ c₂.shrd,
+        uniq := c₁.uniq ∪ c₂.uniq,
+        disjoint := by
+          obtain ⟨h₁₁, h₁₂, h₁₃⟩ := h₁
+          apply Finset.disjoint_union_left.mpr
+          constructor
+          · apply Finset.disjoint_union_right.mpr
+            exact ⟨c₁.disjoint, h₁₃.symm⟩
+          · apply Finset.disjoint_union_right.mpr
+            exact ⟨h₁₂.symm, c₂.disjoint⟩
+      }
+  else
+    none
+
+/-- Capability ordering: `c₁ ≤ c₂` iff every read permission in
+    `c₁` is available as either a read or a write permission in `c₂`
+    and every write permission in `c₁` is available as a write
+    permission in `c₂`. -/
+def le (c₁ c₂ : Capability) : Prop :=
+  c₁.shrd ⊆ (c₂.shrd ∪ c₂.uniq) ∧ c₁.uniq ⊆ c₂.uniq
+
+instance : LE Capability := ⟨le⟩
+
+end Capability
+
+/-- A capability environment for arrays. -/
+abbrev CapEnv (χ : Type u) := χ → Option Capability
+
+namespace CapEnv
+
+def empty : CapEnv χ := λ _ => none
+
+def get (Δ : CapEnv χ) (A : χ) : Option Capability := Δ A
+
+def update [DecidableEq χ] (Δ : CapEnv χ) (A : χ) (cap : Capability) : CapEnv χ :=
+  λ B => if B = A then some cap else Δ B
+
+/-- Pointwise comparison on capability environments. -/
+def le (Δ₁ Δ₂ : CapEnv χ) : Prop :=
+  ∀ A c₁, Δ₁ A = some c₁ → ∃ c₂, Δ₂ A = some c₂ ∧ c₁ ≤ c₂
+
+instance : LE (CapEnv χ) := ⟨CapEnv.le⟩
+
+end CapEnv
+
+/-- A proposition context together with an entailment relation.  To
+    instantiate this class one must specify the type of propositions
+    and define what it means for a context to entail a proposition. -/
+class PropCtx (PCxt : Type) where
+  entails : PCxt → Prop → Prop
+
+class IntBaseTy (τ : Type w) extends BaseTy τ where
+  intTy : τ
+
+structure ArrayDecl (χ : Type u) where
+  name : χ
+  size : Nat
+
+structure FnSig (Op : Type v) (χ : Type u) (τ : Type w) [Arity Op] where
+  params : Vector χ m
+  paramTypes : Vector τ m
+  retTypes : Vector τ n
+  initCap : Vector χ m → CapEnv χ
+  body : Expr Op χ m n
+
+/-- Specification of primitive operators including resource usage. -/
+class OpSpec (τ : Type w) (Op : Type v) (PCxt : Type)
+  [Arity Op] [PropCtx PCxt] extends OpTy τ Op where
+  haveCap : (o : Op) → Vector χ (Arity.ι o) → CapEnv χ → PCxt → Prop
+  updateCap : (o : Op) → Vector χ (Arity.ι o) → CapEnv χ → CapEnv χ
+  updatePhi : (o : Op) → Vector χ (Arity.ι o) → PCxt → PCxt
+
+-- Θ; Γ; Δ; Φ ⊨ e: Θ.retTypes
+inductive Expr.TypedMem [Arity Op] [IntBaseTy τ] [OpTy τ Op]
+    [DecidableEq χ] {PCxt : Type} [PropCtx PCxt] [OpSpec τ Op PCxt]:
+    FnSig Op χ τ → TyEnv χ τ → CapEnv χ → PCxt → Expr Op χ m n → Prop
+  | ret
+      {Θ : FnSig Op χ τ} {Γ : TyEnv χ τ} {Δ : CapEnv χ} {Φ : PCxt}
+      {xs : Vector χ n} :
+      Γ.wellTypedVars xs Θ.retTypes →
+      Expr.TypedMem Θ Γ Δ Φ (.ret xs)
+  | tail
+      {Θ : FnSig Op χ τ} {Γ : TyEnv χ τ} {Δ : CapEnv χ} {Φ : PCxt}
+      {xs : Vector χ m} :
+      Γ.wellTypedVars xs Θ.paramTypes →
+      -- current capability in Δ should include needed capability
+      Θ.initCap xs ≤ Δ →
+      Expr.TypedMem Θ Γ Δ Φ (.tail xs)
+  | op
+      {Θ : FnSig Op χ τ} {Γ : TyEnv χ τ} {Δ : CapEnv χ} {Φ : PCxt}
+      {o : Op} {args : Vector χ (Arity.ι o)} {rets : Vector χ (Arity.ω o)}
+      {cont : Expr Op χ m n} :
+      Γ.wellTypedVars args (OpTy.inputTypes o) →
+      @OpSpec.haveCap τ Op PCxt _ _ _ _ o args Δ Φ →
+      (let Γ' := Γ.insertVars rets (OpTy.outputTypes o)
+      let Δ' := @OpSpec.updateCap τ Op PCxt _ _ _ _ o args Δ
+      let Φ' := @OpSpec.updatePhi τ Op PCxt _ _ _ _ o args Φ
+      Expr.TypedMem Θ Γ' Δ' Φ' cont) →
+      Expr.TypedMem Θ Γ Δ Φ (.op o args rets cont)
+  | br
+      {Θ : FnSig Op χ τ} {Γ : TyEnv χ τ} {Δ : CapEnv χ} {Φ : PCxt}
+      {b : χ} {eₗ eᵣ : Expr Op χ m n} :
+      TyEnv.getVar Γ b = some BaseTy.boolTy →
+      Expr.TypedMem Θ Γ Δ Φ eₗ →
+      Expr.TypedMem Θ Γ Δ Φ eᵣ →
+      Expr.TypedMem Θ Γ Δ Φ (.br b eₗ eᵣ)
 end Wavelet.Seq
