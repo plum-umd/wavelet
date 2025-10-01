@@ -492,6 +492,101 @@ instance [Arity Op] {i : Fin k}
   : GetState (Seq.Config (WithSigs Op sigs i) χ V (Prog.InterpStack Op χ V S sigs i) sigs[i].ι sigs[i].ω) S where
   getState config := config.state.base
 
+abbrev Proc.InterpStack
+  (Op : Type u₁) (χ : Type u₂) (V : Type u₃) (S : Type u₄)
+  [Arity Op]
+  (sigs : Vector Sig k)
+  : Fin k → Type (max u₁ u₂ u₃ u₄)
+  | ⟨0, _⟩ => ULift S
+  | ⟨i + 1, _⟩ =>
+    let i' : Fin k := ⟨i, by omega⟩
+    let S' := InterpStack Op χ V S sigs i'
+    S' × Option (Dataflow.Config (WithSigs Op sigs i') χ V S' sigs[i'].ι sigs[i'].ω)
+
+def Proc.InterpStack.inj
+  [Arity Op]
+  {sigs : Vector Sig k}
+  (s : S)
+  : {i : Fin k} → Proc.InterpStack Op χ V S sigs i
+  | ⟨0, _⟩ => ULift.up s
+  | ⟨_ + 1, _⟩ => (inj s, none)
+
+/-- Extracts the current state from the stack. -/
+def Proc.InterpStack.base
+  [Arity Op]
+  {sigs : Vector Sig k}
+  {i : Fin k}
+  (stack : InterpStack Op χ V S sigs i) : S
+  := match i with
+    | ⟨0, _⟩ => stack.down
+    | ⟨_ + 1, _⟩ => InterpStack.base stack.1
+
+instance Proc.instFnAsOp0
+  [Arity Op] [InterpConsts V]
+  [baseInst : InterpOp Op V E S]
+  : InterpOp
+    (WithSigs Op sigs ⟨0, hnz⟩) V E
+    (InterpStack Op χ V S sigs ⟨0, hnz⟩)
+  := {
+    Step
+      | .op o, inputs, state, tr, res =>
+        baseInst.Step o inputs state.base tr ⟨res.1.base, res.2⟩
+      | .call f, _, _, _, _ => Fin.elim0 f
+  }
+
+inductive Proc.StepProc
+  [Arity Op] [InterpConsts V]
+  [inst : InterpOp Op V E S] [DecidableEq χ]
+  (proc : Proc Op χ V m n) :
+  Vector V m →
+  S × Option (Dataflow.Config Op χ V S m n) →
+  Trace E →
+  (S × Option (Dataflow.Config Op χ V S m n)) × Option (Vector V n) →
+  Prop where
+  | step_proc_init :
+    StepProc proc args (state, none) .ε
+      ((state, some (Dataflow.Config.init proc state args)), none)
+  | step_proc_cont :
+    Dataflow.Config.Step { c with state } tr c' →
+    StepProc proc args (state, some c) tr ((c'.state, some c'), none)
+  | step_proc_ret :
+    c.chans.popVals proc.outputs = some (outputVals, chans') →
+    StepProc proc args (state, some c) .ε ((state, none), some outputVals)
+
+instance Proc.instProcAsOp
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  [baseInst : InterpOp Op V E S]
+  {sigs : Vector Sig k}
+  (procs : (i : Fin k) → Proc (WithSigs Op sigs i) χ V sigs[i].ι sigs[i].ω)
+  (i : Fin k)
+  : InterpOp (WithSigs Op sigs i) V E (InterpStack Op χ V S sigs i)
+  := match i with
+  | ⟨0, _⟩ => instFnAsOp0
+  | ⟨i + 1, _⟩ =>
+    let i' : Fin k := ⟨i, by omega⟩
+    let inst := instProcAsOp procs i'
+    {
+      Step
+        -- Operators in `Op` are interpreted in the original semantics (`baseInst`).
+        | .op o, inputs, state, tr, res =>
+          inst.Step (.op o) inputs state.1 tr ⟨res.1.1, res.2⟩
+        -- Function calls are either interpreted by the IH `inst`
+        -- or by the current function `prog i'`.
+        | .call f, inputs, state, tr, res =>
+          if h₁ : i = f.val then
+            have h₂ : instArityWithSigs.ω (WithSigs.call f) = sigs[i'].ω
+              := by simp [i', h₁]; rfl
+            Proc.StepProc
+              (inst := inst)
+              (procs i')
+              (cast (by simp [i', h₁]; rfl) inputs)
+              (cast (by simp [i']; rfl) state)
+              tr
+              (cast (by simp [i']; rw [h₂]; rfl) res)
+          else
+            inst.Step (.call ⟨↑f, by simp [i']; omega⟩) inputs state.1 tr ⟨res.1.1, res.2⟩
+    }
+
 /-- Converts a simulation result with initial setup steps to a simulation. -/
 theorem sim_with_init_to_sim
   (c₁ : C₁) (c₂ : C₂)
@@ -611,6 +706,25 @@ theorem cast_sigs0_preserves_wf
   (h : fn.WellFormed) :
   (Fn.castWithSigs0 fn).WellFormed := sorry
 
+theorem sim_compile_fn'
+  [Arity Op] [InterpConsts V]
+  [interp : InterpOp Op V E S] [DecidableEq χ]
+  (fn : Fn Op χ m n)
+  (hnz : m > 0 ∧ n > 0)
+  (hwf : fn.WellFormed)
+  : ∃ R,
+    Simulation (E := E)
+      (Seq.Config.init fn state args)
+      (Dataflow.Config.init (compileFn hnz fn) state args)
+      R
+      (Seq.Config.Step (V := V) (S := S))
+      Dataflow.Config.StepPlus
+  := by
+  constructor
+  apply sim_with_init_to_sim
+  apply sim_compile_fn fn args state hnz
+  apply hwf
+
 theorem lemma₁
   [Arity Op]
   [InterpConsts V]
@@ -629,13 +743,7 @@ theorem lemma₁
       R
       (Seq.Config.Step (V := V) (S := S))
       Dataflow.Config.StepPlus
-  := by
-  constructor
-  apply sim_with_init_to_sim
-  apply sim_compile_fn (Fn.castWithSigs0 fn) args state hnz
-  apply cast_sigs0_preserves_wf hwf
-
--- set_option pp.all true
+  := by apply sim_compile_fn' _ hnz (cast_sigs0_preserves_wf hwf)
 
 theorem compile_prog_0
   [Arity Op]
@@ -651,10 +759,10 @@ theorem compile_prog_0
   := sorry
 
 theorem sim_dataflow_chan_inj
-  (χ₁ χ₂ : Type u)
+  {χ₁ χ₂ : Type u}
   [Arity Op]
   [InterpConsts V]
-  [InterpOp Op V E S]
+  [interp : InterpOp Op V E S]
   [DecidableEq χ₁]
   [DecidableEq χ₂]
   {proc : Proc Op χ₁ V m n}
@@ -669,19 +777,93 @@ theorem sim_dataflow_chan_inj
       Dataflow.Config.StepPlus
   := sorry
 
+/-- Defines when two `InterpOp`s form a simulation. -/
+abbrev InterpOpSimulation
+  [Arity Op]
+  (R : S₁ → S₂ → Prop)
+  (s₁ : S₁) (s₂ : S₂)
+  (interp₁ : InterpOp Op V E S₁)
+  (interp₂ : InterpOp Op V E S₂)
+  : Prop :=
+  R s₁ s₂ ∧
+  ∀ o inputs s₁ s₂ s₁' tr res,
+    R s₁ s₂ →
+    interp₁.Step o inputs s₁ tr (s₁', res) →
+    ∃ s₂' ,
+      interp₂.Step o inputs s₂ tr (s₂', res) ∧
+      R s₁' s₂'
+
+theorem sim_interp_to_sim_proc
+  [Arity Op]
+  [InterpConsts V]
+  [DecidableEq χ]
+  (proc : Proc Op χ V m n)
+  (state₁ : S₁) (state₂ : S₂)
+  (interp₁ : InterpOp Op V E S₁)
+  (interp₂ : InterpOp Op V E S₂)
+  (hsim : ∃ R, InterpOpSimulation R state₁ state₂ interp₁ interp₂) :
+  ∃ R,
+    Simulation (E := E)
+      (Dataflow.Config.init proc state₁ args)
+      (Dataflow.Config.init proc state₂ args)
+      R
+      (Dataflow.Config.StepPlus (S := S₁))
+      (Dataflow.Config.StepPlus (S := S₂))
+  := sorry
+
+theorem sim_interp_to_sim_fn
+  [Arity Op]
+  [InterpConsts V]
+  [DecidableEq χ]
+  (fn : Fn Op χ m n)
+  (state₁ : S₁) (state₂ : S₂)
+  (interp₁ : InterpOp Op V E S₁)
+  (interp₂ : InterpOp Op V E S₂)
+  (hsim : ∃ R, InterpOpSimulation R state₁ state₂ interp₁ interp₂) :
+  ∃ R,
+    Simulation (E := E)
+      (Seq.Config.init fn state₁ args)
+      (Seq.Config.init fn state₂ args)
+      R
+      (Seq.Config.StepPlus (V := V) (S := S₁))
+      (Seq.Config.StepPlus (V := V) (S := S₂))
+  := sorry
+
+theorem sim_interp_fn_to_proc
+  [Arity Op] [DecidableEq χ₁] [DecidableEq χ₂] [InterpConsts V]
+  [InterpOp Op V E S]
+  {sigs : Vector Sig k}
+  (init : S)
+  (prog : Prog Op χ₁ sigs)
+  (procs : (i : Fin k) → Proc (WithSigs Op sigs i) χ₂ V sigs[i].ι sigs[i].ω)
+  (i : Fin k)
+  (hsim : ∀ i args,
+    ∃ R, Simulation (E := E)
+      (Seq.Config.init (prog i) (.inj init) args)
+      (Dataflow.Config.init (procs i) (.inj init) args)
+      R
+      (Seq.Config.Step (interp := Prog.instFnAsOp prog i))
+      (Dataflow.Config.StepPlus (interp := Proc.instProcAsOp procs i))) :
+  ∃ R, InterpOpSimulation (E := E) R
+    (.inj init) (.inj init)
+    (Prog.instFnAsOp prog i)
+    (Proc.instProcAsOp procs i)
+:= sorry
+
 /-- TODO: need to strengthen to SPSimulation. -/
 theorem really?
   -- {Op : Type u₁} {χ : Type u₂} {V : Type u₃} {S : Type u₄}
   [Arity Op]
   [InterpConsts V]
-  [InterpOp Op V E S]
+  [baseInst : InterpOp Op V E S]
   [DecidableEq χ]
   (sigs : Vector Sig k)
   (prog : Prog Op χ sigs)
   (i : Fin k)
   (state : S)
   (args : Vector V sigs[i].ι)
-  (hnz : ∀ (i : Fin k), sigs[i].ι > 0 ∧ sigs[i].ω > 0) :
+  (hnz : ∀ (i : Fin k), sigs[i].ι > 0 ∧ sigs[i].ω > 0)
+  (hwf : ∀ i, (prog i).WellFormed) :
   ∃ R,
     Simulation
       (Prog.init (E := E) sigs prog i state args)
@@ -693,55 +875,129 @@ theorem really?
   have ⟨i', hi⟩ := i
   induction i' with
   | zero =>
-    -- unfold compileProg
     simp [Prog.init, Prog.Step, Prog.instFnAsOp]
     simp [compile_prog_0]
     generalize hfn : prog ⟨0, hi⟩ = fn
-    have hwf : fn.WellFormed := sorry
+    have hwf : fn.WellFormed := by simp [← hfn]; apply hwf
     apply similarity_trans (lemma₀ fn)
     apply similarity_trans (lemma₁ fn (by apply hnz) hwf)
     apply sim_dataflow_chan_inj
     simp [Function.Injective]
-
-    -- have ⟨R, hsim⟩ := lemma₀ sigs hi
-    --   (state := state)
-    --   (args := args)
-    --   (fn := fn)
-    --   (E := E)
-    -- simp at hsim
-    -- constructor
-    -- apply sim_trans
-    -- · apply hsim
-    -- ·
-    --   sorry
-    -- · sorry
-
-    -- rewrite [this]
-    -- simp [this]
-    -- sorry
-    -- apply similarity_trans
-    -- · -- simp [Prog.InterpStack, WellFounded.fix, WellFounded.fixF]
-    --   apply lemma₀ sigs hi
-    --     (state := state)
-    --     (args := args)
-    --     (fn := fn)
-    --     (E := E)
-    --   sorry
-    -- · sorry
-    -- let : Arity (Fin 0) := instArityFin
-    -- let : Arity (Op ⊕ Fin 0) := instAritySum
-    -- let : Arity (Fin ↑(⟨0, hi⟩ : Fin k)) := instArityFinMem
-    -- have :
-    --   Simulation (E := E)
-    --     (Seq.Config.init fn { down := state : ULift S } args)
-    --     (Dataflow.Config.init (compileFn (by apply hnz) fn) { down := state : ULift S } args)
-    --     sorry
-    --     sorry
-    --     sorry
-    --   := sorry
-    -- sorry
-  | succ =>
-
+  | succ i'' =>
+    unfold compileProg
+    simp [Prog.init, Prog.Step]
+    generalize hfn : prog ⟨i'' + 1, hi⟩ = fn
+    apply similarity_trans (sim_compile_fn'
+      (interp := Prog.instFnAsOp prog ⟨i'' + 1, hi⟩)
+      fn
+      (by apply hnz ⟨i'' + 1, hi⟩)
+      (by simp [← hfn]; apply hwf))
+    simp
+    apply similarity_trans (sim_dataflow_chan_inj
+      (interp := Prog.instFnAsOp prog ⟨i'' + 1, hi⟩)
+      LinkName.base (by simp [Function.Injective]))
+    apply similarity_trans
+    · apply sim_interp_to_sim_proc
+        _
+        (Prog.InterpStack.inj state)
+        (Proc.InterpStack.inj state)
+        (Prog.instFnAsOp (S := S) (E := E) (sigs := sigs) (baseInst := baseInst) prog ⟨i'' + 1, hi⟩)
+        (Proc.instProcAsOp (S := S) (E := E) (sigs := sigs) (baseInst := baseInst)
+          (λ j : Fin k => (compileFn (by apply hnz) (prog j)).mapChans LinkName.base)
+          ⟨i'' + 1, hi⟩)
+      apply sim_interp_fn_to_proc (V := V)
+        (sigs := sigs)
+        state prog _
+        ⟨i'' + 1, hi⟩
+        (by
+          intros i args
+          apply similarity_trans
+          · apply sim_compile_fn' (interp := Prog.instFnAsOp prog i) _
+              (by apply hnz)
+              (by apply hwf)
+          ·
+            sorry)
     sorry
 
 end Wavelet.Compile
+
+namespace Wavelet.Op
+
+instance [Arity Op₁] [Arity Op₂] : Arity (Op₁ ⊕ Op₂) where
+  ι | .inl o => Arity.ι o
+    | .inr o => Arity.ι o
+  ω | .inl o => Arity.ω o
+    | .inr o => Arity.ω o
+
+def InterpTransformer Op Op' V E S S' [Arity Op] [Arity Op'] :=
+  InterpOp Op V E S →
+  InterpOp (Op ⊕ Op') V E (S × S')
+
+end Wavelet.Op
+
+/-
+Plan:
+
+More flattened structure:
+
+Program := (i : Fin k) → Fn (WithSigs Op sigs) χ sigs[i].ι sigs[i].ω
+
+==> compiled to (i : Fin k) → Proc (WithSigs Op sigs) χ V sigs[i].ι sigs[i].ω
+
+Linking at the program level:
+  Configuration: {
+    stack : List Seq.Config (encap m and n?)
+  }
+
+Linking at the proc level:
+  Configuration: {
+    stack : List Dataflow.Config (encap m and n?)
+  }
+
+-/
+
+-- /-! Version 2... -/
+-- namespace Wavelet.Compile
+
+-- open Op Seq Dataflow
+
+-- -- structure EncapFn Op [Arity Op] χ where
+-- --   Op' : Type u
+-- --   instArity : Arity Op'
+-- --   m : Nat
+-- --   n : Nat
+-- --   fn : Fn (Op ⊕ Op') χ m n
+
+-- -- abbrev EncapFns Op [Arity Op] χ k := Vector (EncapFn Op χ) k
+
+-- -- inductive WithFns Op [Arity Op] (fns : EncapFns Op χ k) where
+-- --   | op (o : Op) : WithFns Op fns
+-- --   | call (i : Fin k) : WithFns Op fns
+
+-- -- instance [Arity Op] {fns : EncapFns Op χ k} : Arity (WithFns Op fns) where
+-- --   ι | .op o => Arity.ι o
+-- --     | .call i => fns[i].m
+-- --   ω | .op o => Arity.ω o
+-- --     | .call i => fns[i].n
+
+-- -- abbrev Prog' Op [Arity Op] χ m n :=
+-- --   (k : Nat) × (fns : EncapFns Op χ k) × Fn (WithFns Op fns) χ m n
+
+-- structure EncapFn Op [Arity Op] χ V E S where
+--   Op' : Type u
+--   instArity : Arity Op'
+--   instInterp : InterpOp Op' V E S
+--   m : Nat
+--   n : Nat
+--   fn : Fn (Op ⊕ Op') χ m n
+
+-- inductive EncapFns (Op : Type u) (χ : Type v) [Arity Op] : Nat → Type (max u v) where
+--   | leaf m n : Fn Op χ m n → EncapFns Op χ 1
+--   | par_cons m n : EncapFns Op χ k → Fn Op χ m n → EncapFns Op χ (k + 1)
+--   | dep_cons :
+--       (fns : EncapFns Op χ k) →
+--       (m n : Nat) →
+--       (fn : Fn sorry χ m n) →
+--       EncapFns Op χ 1
+
+-- end Wavelet.Compile

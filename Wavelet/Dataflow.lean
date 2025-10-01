@@ -198,7 +198,7 @@ inductive Config.Step
     Step c .ε { c with chans := chans' }
 
 abbrev Config.StepPlus
-  [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
+  [Arity Op] [InterpConsts V] [interp : InterpOp Op V E S] [DecidableEq χ]
   : LTS (Config Op χ V S m n) E := Step.Plus
 
 abbrev Config.StepStar
