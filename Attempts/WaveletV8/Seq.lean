@@ -1,12 +1,12 @@
 import Mathlib.Logic.Relation
 import Wavelet.Op
-import Wavelet.Lts
+import Wavelet.LTS
 
 /-! Syntax and semantics for a simple imperative language. -/
 
 namespace Wavelet.Seq
 
-open Op Lts
+open Op LTS
 
 /-- `Expr ... m n` is an expression that can either return `n`
 output values, or trigger a tail call with `m` values. -/
@@ -22,6 +22,12 @@ inductive Expr (Op : Type u) (χ : Type v) [instArity : Arity Op]
     (cond : χ)
     (left : Expr Op χ m n)
     (right : Expr Op χ m n) : Expr Op χ m n
+  -- | call
+  --   (args : Vector χ m')
+  --   (params : Vector χ m')
+  --   (body : Expr Op χ m' n')
+  --   (rets : Vector χ n')
+  --   (cont : Expr Op χ m n) : Expr Op χ m n
 
 /--
 Some static constraints on expressions:
@@ -48,6 +54,12 @@ inductive Expr.WellFormed [Arity Op] [DecidableEq χ]
     WellFormed (definedVars.removeAll [c]) left →
     WellFormed (definedVars.removeAll [c]) right →
     WellFormed definedVars (.br c left right)
+  -- | wf_iter :
+  --   args.toList.Nodup →
+  --   params.toList.Nodup →
+  --   WellFormed params.toList body →
+  --   WellFormed (definedVars.removeAll args.toList ++ rets.toList) cont →
+  --   WellFormed definedVars (.iter args params body rets cont)
 
 /-- `Fn m n` is a function with `m` inputs and `n` outputs. -/
 structure Fn (Op χ) [instArity : Arity Op] m n where
@@ -58,6 +70,7 @@ def Fn.WellFormed [Arity Op] [DecidableEq χ]
   (fn : Fn Op χ m n) : Prop :=
   fn.params.toList.Nodup ∧
   fn.body.WellFormed fn.params.toList
+
 
 /-- Consistently encoding Seq variables (`χ`) into channel names, used in
 the compiler and also semantics of Seq to keep useful ghost states. -/
@@ -118,10 +131,11 @@ inductive ExprResult Op χ V [Arity Op] (m n : Nat) where
   | cont (expr : Expr Op χ m n)
 
 /-- State of expression execution. -/
-structure Config (Op : Type u₁) (χ : Type u₂) (V : Type u₃) [Arity Op] m n where
+structure Config (Op : Type u₁) (χ : Type u₂) (V : Type u₃) (S : Type u₄) [Arity Op] m n where
   expr : ExprResult Op χ V m n
   fn : Fn Op χ m n
   vars : VarMap χ V
+  state : S
   -- Ghost state for the simulation relation
   definedVars : List χ
   pathConds : List (Bool × ChanName χ)
@@ -130,23 +144,26 @@ structure Config (Op : Type u₁) (χ : Type u₂) (V : Type u₃) [Arity Op] m 
 def Config.init
   [Arity Op] [DecidableEq χ]
   (fn : Fn Op χ m n)
-  (args : Vector V m) : Config Op χ V m n
+  (state : S)
+  (args : Vector V m) : Config Op χ V S m n
   := {
     expr := .cont fn.body,
     fn,
     vars := .fromList (fn.params.zip args).toList,
+    state,
     definedVars := fn.params.toList,
     pathConds := [],
   }
 
 /-- Small-step operational semantics for Seq. -/
 inductive Config.Step
-  [Arity Op] [InterpConsts V] [DecidableEq χ]
-  : Lts (Config Op χ V m n) (Label Op V n) where
+  {Op χ V E S m n}
+  [Arity Op] [InterpConsts V] [interp : InterpOp Op V E S] [DecidableEq χ]
+  : LTS (Config Op χ V S m n) E where
   | step_ret :
     c.expr = .cont (.ret args) →
     c.vars.getVars args = some inputVals →
-    Step c .τ { c with
+    Step c .ε { c with
       expr := .ret inputVals,
       vars := VarMap.empty,
       definedVars := [],
@@ -155,22 +172,33 @@ inductive Config.Step
   | step_tail :
     c.expr = .cont (.tail args) →
     c.vars.getVars args = some inputVals →
-    Step c .τ (.init c.fn inputVals)
-  | step_op
-    {args : Vector χ (Arity.ι op)}
+    Step c .ε (.init c.fn c.state inputVals)
+  | step_op_trans
+    {o inputVals state'}
+    {args : Vector χ (Arity.ι o)}
     {rets cont} :
-    c.expr = .cont (.op op args rets cont) →
+    c.expr = .cont (.op o args rets cont) →
     c.vars.getVars args = some inputVals →
-    Step c (.yield op inputVals outputVals) { c with
+    InterpOp.Step o inputVals c.state tr (state', none) →
+    Step c tr { c with state := state' }
+  | step_op_final
+    {o inputVals outputVals state'}
+    {args : Vector χ (Arity.ι o)}
+    {rets cont} :
+    c.expr = .cont (.op o args rets cont) →
+    c.vars.getVars args = some inputVals →
+    InterpOp.Step o inputVals c.state tr (state', some outputVals) →
+    Step c tr { c with
       expr := .cont cont,
       vars := (c.vars.removeVars args.toList).insertVars rets outputVals,
+      state := state',
       definedVars := (c.definedVars.removeAll args.toList) ++ rets.toList,
     }
   | step_br {cond : χ} :
     c.expr = .cont (.br cond left right) →
     c.vars.getVar cond = some condVal →
     InterpConsts.toBool condVal = some condBool →
-    Step c .τ { c with
+    Step c .ε { c with
       expr := .cont (if condBool then left else right),
       vars := c.vars.removeVar cond,
       definedVars := c.definedVars.removeAll [cond],
@@ -178,13 +206,12 @@ inductive Config.Step
         (condBool, .var cond c.pathConds) :: c.pathConds,
     }
 
-/-- `Semantics` implementation of a function. -/
-def Fn.semantics
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
-  (fn : Fn Op χ m n) : Semantics Op V m n := {
-    S := Config Op χ V m n,
-    init := Config.init fn,
-    lts := Config.Step,
-  }
+abbrev Config.StepPlus
+  [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
+  : LTS (Config Op χ V S m n) E := Step.Plus
+
+abbrev Config.StepStar
+  [Arity Op] [InterpConsts V] [InterpOp Op V E S] [DecidableEq χ]
+  : LTS (Config Op χ V S m n) E := Step.Star
 
 end Wavelet.Seq
