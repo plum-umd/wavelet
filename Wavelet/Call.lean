@@ -275,6 +275,8 @@ example [Arity Op] : Prog (sigs := exampleSigs) Op String
     {
       params := #v["a", "b", "c"],
       body :=
+        -- let d = call 0 (b, c)
+        -- return (a, d)
         .op (.call ⟨0, by omega⟩)
           (cast (by rfl) #v["b", "c"])
           (cast (by rfl) #v["d"])
@@ -1001,3 +1003,267 @@ Linking at the proc level:
 --       EncapFns Op χ 1
 
 -- end Wavelet.Compile
+
+-- namespace Wavelet.Op
+
+-- inductive Empty
+
+-- def Empty.elim {α} (e : Empty) : α := by cases e
+
+-- instance : Arity Empty where
+--   ι e := e.elim
+--   ω e := e.elim
+
+-- /-- TODO: We can maybe unify `Yield` and `Step` into one LTS
+-- with three types of labels:
+-- - yield
+-- - output
+-- - silent -/
+-- class Semantics Op V E [Arity Op] m n where
+--   S : Type*
+--   init : Vector V m → S
+--   Yield : S → (op : Op) → Vector V (Arity.ι op) → Vector V (Arity.ω op) → S → Prop
+--   Step : S → Trace E → S → Option (Vector V n) → Prop
+--   IsYield s op inputs := ∃ outputs s', Yield s op inputs outputs s'
+
+-- structure Semantics.Simulates
+--   [Arity Op]
+--   (sem₁ sem₂ : Semantics Op V E m n)
+--   (R : sem₁.S → sem₂.S → Prop) : Prop where
+--   init : ∀ args, R (sem₁.init args) (sem₂.init args)
+--   sim_yield : ∀ s₁ s₂ op inputs outputs s₁',
+--     R s₁ s₂ →
+--     sem₁.Yield s₁ op inputs outputs s₁' →
+--     ∃ s₂' ,
+--       sem₂.Yield s₂ op inputs outputs s₂' ∧
+--       R s₁' s₂'
+--   sim_step : ∀ s₁ s₂ tr s₁' retVals,
+--     R s₁ s₂ →
+--     sem₁.Step s₁ tr s₁' retVals →
+--     ∃ s₂' ,
+--       sem₂.Step s₂ tr s₂' retVals ∧
+--       R s₁' s₂'
+
+-- abbrev PartInterp Op₀ Op V E [Arity Op₀] [Arity Op] :=
+--   (op : Op) → Semantics Op₀ V E (Arity.ι op) (Arity.ω op)
+
+-- abbrev FullInterp Op V E [Arity Op] := PartInterp Empty Op V E
+
+-- structure LinkState
+--   [Arity Op₀] [Arity Op₁]
+--   [DecidableEq Op₁]
+--   (deps : PartInterp Op₀ Op₁ V E)
+--   (main : Semantics (Op₀ ⊕ Op₁) V E m n) where
+--   mainState : main.S
+--   depStates : (op : Op₁) → Option (deps op).S
+
+-- def LinkState.init
+--   [Arity Op₀] [Arity Op₁]
+--   [DecidableEq Op₁]
+--   {deps : PartInterp Op₀ Op₁ V E}
+--   {main : Semantics (Op₀ ⊕ Op₁) V E m n}
+--   (args : Vector V m) : LinkState deps main := {
+--     mainState := main.init args,
+--     depStates := λ _ => none,
+--   }
+
+-- inductive LinkYield
+--   [Arity Op₀] [Arity Op₁]
+--   [DecidableEq Op₁]
+--   (deps : PartInterp Op₀ Op₁ V E)
+--   (main : Semantics (Op₀ ⊕ Op₁) V E m n)
+--   : LinkState deps main →
+--     (op : Op₀) → Vector V (Arity.ι op) → Vector V (Arity.ω op) →
+--     LinkState deps main → Prop where
+--   /-- Main semantics making a yield -/
+--   | yield_main :
+--     main.Yield s.mainState (.inl op) inputs outputs mainState' →
+--     LinkYield deps main s op inputs outputs { s with mainState := mainState' }
+--   /-- One of the dependencies making a yield -/
+--   | yield_dep {depState depState' : (deps depOp).S} :
+--     s.depStates depOp = some depState →
+--     (deps depOp).Yield depState op inputs outputs depState' →
+--     LinkYield deps main s op inputs outputs
+--       { s with depStates := Function.update s.depStates depOp (some depState') }
+
+-- inductive LinkStep
+--   [Arity Op₀] [Arity Op₁]
+--   [DecidableEq Op₁]
+--   (deps : PartInterp Op₀ Op₁ V E)
+--   (main : Semantics (Op₀ ⊕ Op₁) V E m n)
+--   : LinkState deps main →
+--     Trace E →
+--     LinkState deps main →
+--     Option (Vector V n) →
+--     Prop where
+--   /-- Main semantics making a step -/
+--   | step_main :
+--     main.Step s.mainState tr mainState' retVals →
+--     LinkStep deps main s tr { s with mainState := mainState' } retVals
+--   /-- Main semantics yielding to a dependency -/
+--   | step_yield_to_dep {depState : (deps depOp).S} :
+--     main.IsYield s.mainState (.inr depOp) inputVals →
+--     s.depStates depOp = none → -- No parallel yields to the same dependency
+--     LinkStep deps main s .ε
+--       { s with depStates :=
+--         Function.update s.depStates depOp (some ((deps depOp).init inputVals)) }
+--       none
+--   /-- One of the dependencies making a step without returning -/
+--   | step_dep_no_ret {depState depState' : (deps depOp).S} :
+--     s.depStates depOp = some depState →
+--     (deps depOp).Step depState tr depState' none →
+--     LinkStep deps main s tr
+--       { s with depStates := Function.update s.depStates depOp (some depState') }
+--       none
+--   /-- One of the dependencies making a step and returning to the main semantics -/
+--   | step_dep_with_ret
+--     {depState depState' : (deps depOp).S} :
+--     s.depStates depOp = some depState →
+--     (deps depOp).Step depState tr depState' (some outputVals) →
+--     main.Yield s.mainState (.inr depOp) inputVals outputVals mainState' →
+--     LinkStep deps main s tr
+--       { s with
+--         mainState := mainState',
+--         depStates := Function.update s.depStates depOp none }
+--       none
+
+-- /-- Link a partial interpretation of a subset of operators. -/
+-- def link
+--   [Arity Op₀] [Arity Op₁]
+--   [DecidableEq Op₁]
+--   (deps : PartInterp Op₀ Op₁ V E)
+--   (main : Semantics (Op₀ ⊕ Op₁) V E m n)
+--   : Semantics Op₀ V E m n
+--   := {
+--     S := LinkState deps main,
+--     init := LinkState.init,
+--     Yield := LinkYield deps main,
+--     Step := LinkStep deps main,
+--   }
+
+-- end Wavelet.Op
+
+namespace Wavelet.Op
+
+inductive Empty
+
+def Empty.elim {α} (e : Empty) : α := by cases e
+
+instance : Arity Empty where
+  ι e := e.elim
+  ω e := e.elim
+
+inductive Label (Op : Type u) V n [Arity Op] where
+  | yield (o : Op) (inputs : Vector V (Arity.ι o)) (outputs : Vector V (Arity.ω o))
+  | output (vals : Vector V n)
+  | τ
+
+def Label.inlSum [Arity Op₁] [Arity Op₂] : Label Op₁ V n → Label (Op₁ ⊕ Op₂) V n
+  | .yield o inputs outputs => .yield (.inl o) inputs outputs
+  | .output vals => .output vals
+  | .τ => .τ
+
+def Label.inrSum [Arity Op₁] [Arity Op₂] : Label Op₂ V n → Label (Op₁ ⊕ Op₂) V n
+  | .yield o inputs outputs => .yield (.inr o) inputs outputs
+  | .output vals => .output vals
+  | .τ => .τ
+
+class Semantics Op V [Arity Op] m n where
+  S : Type*
+  init : Vector V m → S
+  Step : S → Label Op V n → S → Prop
+  HasYield s op inputs := ∃ outputs s', Step s (.yield op inputs outputs) s'
+
+structure Semantics.Simulates
+  [Arity Op]
+  (sem₁ sem₂ : Semantics Op V m n)
+  (R : sem₁.S → sem₂.S → Prop) : Prop where
+  init : ∀ args, R (sem₁.init args) (sem₂.init args)
+  sim_step : ∀ s₁ s₂ l s₁',
+    R s₁ s₂ →
+    sem₁.Step s₁ l s₁' →
+    ∃ s₂',
+      sem₂.Step s₂ l s₂' ∧
+      R s₁' s₂'
+
+abbrev PartInterp Op₀ Op V [Arity Op₀] [Arity Op] :=
+  (op : Op) → Semantics Op₀ V (Arity.ι op) (Arity.ω op)
+
+abbrev FullInterp Op V [Arity Op] := PartInterp Empty Op V
+
+structure LinkState
+  [Arity Op₀] [Arity Op₁]
+  [DecidableEq Op₁]
+  (deps : PartInterp Op₀ Op₁ V)
+  (main : Semantics (Op₀ ⊕ Op₁) V m n) where
+  mainState : main.S
+  depStates : (op : Op₁) → Option (deps op).S
+
+def LinkState.init
+  [Arity Op₀] [Arity Op₁]
+  [DecidableEq Op₁]
+  {deps : PartInterp Op₀ Op₁ V}
+  {main : Semantics (Op₀ ⊕ Op₁) V m n}
+  (args : Vector V m) : LinkState deps main := {
+    mainState := main.init args,
+    depStates := λ _ => none,
+  }
+
+inductive LinkStep
+  [Arity Op₀] [Arity Op₁]
+  [DecidableEq Op₁]
+  (deps : PartInterp Op₀ Op₁ V)
+  (main : Semantics (Op₀ ⊕ Op₁) V m n)
+  : LinkState deps main →
+    Label Op₀ V n →
+    LinkState deps main → Prop where
+  | step_main_tau :
+    main.Step s.mainState .τ mainState' →
+    LinkStep deps main s .τ { s with mainState := mainState' }
+  | step_main_yield :
+    main.Step s.mainState (.yield (.inl op) inputs outputs) mainState' →
+    LinkStep deps main s (.yield op inputs outputs) { s with mainState := mainState' }
+  | step_main_output :
+    main.Step s.mainState (.output outputVals) mainState' →
+    LinkStep deps main s (.output outputVals) { s with mainState := mainState' }
+  | step_dep_tau {depState depState' : (deps depOp).S} :
+    s.depStates depOp = some depState →
+    (deps depOp).Step depState .τ depState' →
+    LinkStep deps main s .τ
+      { s with depStates := Function.update s.depStates depOp (some depState') }
+  | step_dep_yield {depState depState' : (deps depOp).S} :
+    s.depStates depOp = some depState →
+    (deps depOp).Step depState (.yield op inputs outputs) depState' →
+    LinkStep deps main s (.yield op inputs outputs)
+      { s with depStates := Function.update s.depStates depOp (some depState') }
+  -- Semantics to yield and return to the partial interpretation
+  | step_yield_to_dep :
+    main.HasYield s.mainState (.inr depOp) inputVals →
+    s.depStates depOp = none → -- No parallel yields to the same dependency
+    LinkStep deps main s .τ
+      { s with depStates :=
+        Function.update s.depStates depOp (some ((deps depOp).init inputVals)) }
+  | step_comm
+    {depState : (deps depOp).S} :
+    s.depStates depOp = some depState →
+    (deps depOp).Step depState (.output outputVals) depState' →
+    main.Step s.mainState (.yield (.inr depOp) inputVals outputVals) mainState' →
+    LinkStep deps main s .τ
+      { s with
+        mainState := mainState',
+        depStates := Function.update s.depStates depOp none }
+
+/-- Link a partial interpretation of a subset of operators. -/
+def link
+  [Arity Op₀] [Arity Op₁]
+  [DecidableEq Op₁]
+  (deps : PartInterp Op₀ Op₁ V)
+  (main : Semantics (Op₀ ⊕ Op₁) V m n)
+  : Semantics Op₀ V m n
+  := {
+    S := LinkState deps main,
+    init := LinkState.init,
+    Step := LinkStep deps main,
+  }
+
+end Wavelet.Op
