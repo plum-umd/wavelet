@@ -127,7 +127,7 @@ edges of channels with the name `.tail_cond []` or `.tail_arg i []`.
 def compileFn
   [Arity Op] [DecidableEq χ] [InterpConsts V]
   (hnz : m > 0 ∧ n > 0)
-  (fn : Fn Op χ m n) : Proc Op (ChanName χ) V m n
+  (fn : Fn Op χ V m n) : Proc Op (ChanName χ) V m n
   := {
     inputs,
     outputs := (Vector.range n).map .final_tail_arg,

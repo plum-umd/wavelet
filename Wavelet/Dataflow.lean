@@ -60,13 +60,22 @@ def ChanMap.popVal
   | v :: vs => some (v, λ n => if n = name then vs else map n)
 
 def ChanMap.popVals
+  {χ : Type u} {V : Type v}
   [DecidableEq χ]
   (names : Vector χ n)
   (map : ChanMap χ V) : Option (Vector V n × ChanMap χ V)
-  := (names.mapM popValM).run map
+  := do
+    let (vs, map) ← (names.mapM popValM).run map
+    (vs.map λ v => v.down, map)
   where
     @[simp]
-    popValM : χ → StateT (ChanMap χ V) Option V := popVal
+    popValM (name : χ) : StateT (ChanMap χ V) Option (ULift V) := do
+      let map ← get
+      let (val, map) ← match map.popVal name with
+        | some p => pure p
+        | none => StateT.lift none
+      set map
+      pure (ULift.up val)
 
 def ChanMap.IsSingleton (name : χ) (val : V) (map : ChanMap χ V) : Prop := map name = [val]
 
@@ -81,18 +90,23 @@ structure Config (Op : Type u) (χ : Type v) (V : Type w) [Arity Op] m n where
 /-- Initial process configuration. -/
 def Config.init
   [Arity Op] [DecidableEq χ]
-  (proc : Proc Op χ V m n)
-  (args : Vector V m) : Config Op χ V m n
-  := {
-    proc,
-    chans := ChanMap.empty.pushVals proc.inputs args,
-  }
+  (proc : Proc Op χ V m n) : Config Op χ V m n
+  := { proc, chans := .empty }
 
 inductive Config.Step
-  {χ : Type u}
+  {χ : Type u} {V : Type v}
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
-  : Lts (Config Op χ V m n) (Label Op V n) where
+  : Lts (Config Op χ V m n) (Label Op V m n) where
+  | step_init :
+    Step c (.input args) { c with
+      chans := c.chans.pushVals c.proc.inputs args,
+    }
+  | step_output :
+    c.chans.popVals c.proc.outputs = some (outputVals, chans') →
+    Step c (.output outputVals) { c with
+      chans := chans',
+    }
   | step_op {inputs : Vector χ (Arity.ι op)} :
     .op op inputs outputs ∈ c.proc.atoms →
     c.chans.popVals inputs = some (inputVals, chans') →

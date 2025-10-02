@@ -50,12 +50,12 @@ inductive Expr.WellFormed [Arity Op] [DecidableEq χ]
     WellFormed definedVars (.br c left right)
 
 /-- `Fn m n` is a function with `m` inputs and `n` outputs. -/
-structure Fn (Op χ) [instArity : Arity Op] m n where
+structure Fn Op χ (V : Type u) [instArity : Arity Op] m n where
   params : Vector χ m
   body : Expr Op χ m n
 
 def Fn.WellFormed [Arity Op] [DecidableEq χ]
-  (fn : Fn Op χ m n) : Prop :=
+  (fn : Fn Op χ V m n) : Prop :=
   fn.params.toList.Nodup ∧
   fn.body.WellFormed fn.params.toList
 
@@ -113,14 +113,14 @@ def VarMap.removeVar [DecidableEq χ] (v : χ) (m : VarMap χ V) : VarMap χ V :
 def VarMap.removeVars [DecidableEq χ] (vars : List χ) (m : VarMap χ V) : VarMap χ V :=
   λ v => if v ∈ vars then none else m v
 
-inductive ExprResult Op χ V [Arity Op] (m n : Nat) where
-  | ret (vals : Vector V n)
-  | cont (expr : Expr Op χ m n)
+inductive Cont Op χ [Arity Op] m n where
+  | init
+  | expr (e : Expr Op χ m n)
 
 /-- State of expression execution. -/
 structure Config (Op : Type u₁) (χ : Type u₂) (V : Type u₃) [Arity Op] m n where
-  expr : ExprResult Op χ V m n
-  fn : Fn Op χ m n
+  cont : Cont Op χ m n
+  fn : Fn Op χ V m n
   vars : VarMap χ V
   -- Ghost state for the simulation relation
   definedVars : List χ
@@ -129,49 +129,60 @@ structure Config (Op : Type u₁) (χ : Type u₂) (V : Type u₃) [Arity Op] m 
 /-- Initialize an expression configuration. -/
 def Config.init
   [Arity Op] [DecidableEq χ]
-  (fn : Fn Op χ m n)
-  (args : Vector V m) : Config Op χ V m n
+  (fn : Fn Op χ V m n) : Config Op χ V m n
   := {
-    expr := .cont fn.body,
+    cont := .init,
     fn,
-    vars := .fromList (fn.params.zip args).toList,
-    definedVars := fn.params.toList,
+    vars := .empty,
+    definedVars := [],
     pathConds := [],
   }
 
 /-- Small-step operational semantics for Seq. -/
 inductive Config.Step
   [Arity Op] [InterpConsts V] [DecidableEq χ]
-  : Lts (Config Op χ V m n) (Label Op V n) where
+  : Lts (Config Op χ V m n) (Label Op V m n) where
+  | step_init :
+    c.cont = .init →
+    Step c (.input args) { c with
+      vars := .fromList (c.fn.params.zip args).toList,
+      definedVars := c.fn.params.toList,
+      pathConds := [],
+    }
   | step_ret :
-    c.expr = .cont (.ret args) →
-    c.vars.getVars args = some inputVals →
-    Step c .τ { c with
-      expr := .ret inputVals,
-      vars := VarMap.empty,
+    c.cont = .expr (.ret args) →
+    c.vars.getVars args = some retVals →
+    Step c (.output retVals) { c with
+      cont := .init,
+      vars := .empty,
       definedVars := [],
       pathConds := [],
     }
   | step_tail :
-    c.expr = .cont (.tail args) →
-    c.vars.getVars args = some inputVals →
-    Step c .τ (.init c.fn inputVals)
+    c.cont = .expr (.tail args) →
+    c.vars.getVars args = some tailArgs →
+    Step c .τ { c with
+      cont := .expr c.fn.body,
+      vars := .fromList (c.fn.params.zip tailArgs).toList,
+      definedVars := c.fn.params.toList,
+      pathConds := [],
+    }
   | step_op
     {args : Vector χ (Arity.ι op)}
     {rets cont} :
-    c.expr = .cont (.op op args rets cont) →
+    c.cont = .expr (.op op args rets cont) →
     c.vars.getVars args = some inputVals →
     Step c (.yield op inputVals outputVals) { c with
-      expr := .cont cont,
+      cont := .expr cont,
       vars := (c.vars.removeVars args.toList).insertVars rets outputVals,
       definedVars := (c.definedVars.removeAll args.toList) ++ rets.toList,
     }
   | step_br {cond : χ} :
-    c.expr = .cont (.br cond left right) →
+    c.cont = .expr (.br cond left right) →
     c.vars.getVar cond = some condVal →
     InterpConsts.toBool condVal = some condBool →
     Step c .τ { c with
-      expr := .cont (if condBool then left else right),
+      cont := .expr (if condBool then left else right),
       vars := c.vars.removeVar cond,
       definedVars := c.definedVars.removeAll [cond],
       pathConds :=
@@ -181,7 +192,7 @@ inductive Config.Step
 /-- `Semantics` implementation of a function. -/
 def Fn.semantics
   [Arity Op] [DecidableEq χ] [InterpConsts V]
-  (fn : Fn Op χ m n) : Semantics Op V m n := {
+  (fn : Fn Op χ V m n) : Semantics Op V m n := {
     S := Config Op χ V m n,
     init := Config.init fn,
     lts := Config.Step,
