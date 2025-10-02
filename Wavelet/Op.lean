@@ -67,19 +67,19 @@ abbrev Semantics.SimilarBy
   (sem₁ sem₂ : Semantics Op V m n) : Prop
   := Lts.SimilarBy sem₁.lts sem₂.lts sem₁.init sem₂.init
 
-infix:50 " ∼ " => Semantics.SimilarBy
+infix:50 " ≲ " => Semantics.SimilarBy
 
 theorem Semantics.SimilarBy.refl
   [Arity Op]
   (sem : Semantics Op V m n) :
-  sem ∼ sem := Lts.SimilarBy.refl
+  sem ≲ sem := Lts.SimilarBy.refl
 
 theorem Semantics.SimilarBy.trans
   {Op : Type u} {V : Type v}
   [Arity Op]
   {sem₁ sem₂ sem₃ : Semantics Op V m n}
-  (h₁ : sem₁ ∼ sem₂) (h₂ : sem₂ ∼ sem₃) :
-  sem₁ ∼ sem₃ :=
+  (h₁ : sem₁ ≲ sem₂) (h₂ : sem₂ ≲ sem₃) :
+  sem₁ ≲ sem₃ :=
   Lts.SimilarBy.trans h₁ h₂
 
 /-- Interprets a set of operators with semantics using another
