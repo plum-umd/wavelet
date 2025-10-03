@@ -371,6 +371,106 @@ theorem sim_link_procs_step_dep
     sorry
   | _ => sorry
 
+theorem sim_link_procs_step_dep_spawn
+  [Arity Op]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {sigs : Vector Sig k}
+  {k' : Fin (k + 1)}
+  {procs : (i : Fin k') → Proc Op (LinkName χ) V sigs[i].ι sigs[i].ω}
+  {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
+  {s₁ : Semantics.LinkState main.semantics (λ op => (procs (op.toFin)).semantics)}
+  {s₂ : Dataflow.Config Op (LinkName χ) V m n}
+  {depOp : SigOps sigs k'}
+  {depState' : (procs depOp.toFin).semantics.S}
+  {inputVals : Vector V sigs[depOp.toFin].ι}
+  (hsim : Sim s₁ s₂)
+  -- Assumptions of `.LinkStep.step_dep`
+  (hcur : s₁.curSem = none)
+  (hyield : main.semantics.HasYield s₁.mainState (.inr depOp) inputVals)
+  (hstep_dep :
+    (procs depOp.toFin).semantics.lts.Step
+      (s₁.depStates depOp) (.input inputVals) depState')
+  : ∃ s₂',
+    Dataflow.Config.Step.StepModTau .τ s₂ .τ s₂' ∧
+    Sim { s₁ with
+      curSem := some depOp,
+      depStates := Function.update s₁.depStates depOp depState' } s₂'
+  := by
+  have ⟨hsim_proc, hsim_chans⟩ := hsim
+  have ⟨outputVals, mainState', hstep_main⟩ := hyield
+  simp [Proc.semantics, Lts.Step] at hstep_dep hstep_main
+  cases hstep_dep with | step_init =>
+  cases hstep_main with | step_op hmem_op hpop =>
+  rename_i chans' inputs outputs
+  -- | .op (.inr (.call i)) inputs outputs =>
+  --   [ .forward (inputs.map .main) ((procs i).inputs.map (LinkName.dep idx)) ] ++
+  --   (procs i).atoms.mapChans (LinkName.dep idx) ++
+  --   [ .forward ((procs i).outputs.map (LinkName.dep idx)) (outputs.map .main) ]
+  have ⟨idx, hidx, hget_op⟩ := List.mem_iff_getElem.mp hmem_op
+  have hmem_forward :
+    .forward
+      (inputs.map .main)
+      ((procs depOp.toFin).inputs.map (LinkName.dep idx))
+    ∈ s₂.proc.atoms
+    := sorry
+  have hstep_s₂ : Dataflow.Config.Step s₂ .τ _
+    := Dataflow.Config.Step.step_forward
+      hmem_forward
+      (by
+        simp [hsim_chans]
+        apply sim_link_procs_pop_vals_main hpop)
+  replace ⟨s₂', hs₂', hstep_s₂⟩ := exists_eq_left.mpr hstep_s₂
+  exists s₂'
+  constructor
+  · exact .single hstep_s₂
+  · and_intros
+    · -- TODO: clean this up
+      simp [hs₂', hsim_proc, linkProcs]
+      cases depOp with | call i =>
+      congr
+      funext i'
+      if h : i' = i then
+        subst h
+        simp
+      else
+        simp [Function.update, h]
+    · simp [hs₂']
+      -- Need suitably generalized `sim_link_procs_push_vals_main`
+      sorry
+
+theorem sim_link_procs_step_dep_ret
+  [Arity Op]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {sigs : Vector Sig k}
+  {k' : Fin (k + 1)}
+  {procs : (i : Fin k') → Proc Op (LinkName χ) V sigs[i].ι sigs[i].ω}
+  {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
+  {s₁ : Semantics.LinkState main.semantics (λ op => (procs (op.toFin)).semantics)}
+  {s₂ : Dataflow.Config Op (LinkName χ) V m n}
+  {depOp : SigOps sigs k'}
+  {depState' : (procs depOp.toFin).semantics.S}
+  {mainState' : main.semantics.S}
+  {inputVals : Vector V sigs[depOp.toFin].ι}
+  {outputVals : Vector V sigs[depOp.toFin].ω}
+  (hsim : Sim s₁ s₂)
+  -- Assumptions of `.LinkStep.step_dep`
+  (hcur : s₁.curSem = some depOp)
+  (hstep_dep :
+    (procs depOp.toFin).semantics.lts.Step
+      (s₁.depStates depOp) (.output outputVals) depState')
+  (hyield :
+    main.semantics.lts.Step s₁.mainState
+      (Label.yield (.inr depOp) inputVals outputVals) mainState')
+  : ∃ s₂',
+    Dataflow.Config.Step.StepModTau .τ s₂ .τ s₂' ∧
+    Sim { s₁ with
+      curSem := none,
+      mainState := mainState',
+      depStates := Function.update s₁.depStates depOp depState' } s₂'
+  := sorry
+
 /-- Linking syntactically simulates linking semantically. -/
 theorem sim_link_procs
   [Arity Op]
@@ -403,8 +503,10 @@ theorem sim_link_procs
       exact sim_link_procs_step_main hsim hcur hlabel hstep_main
     | step_dep hcur hlabel hstep_dep =>
       exact sim_link_procs_step_dep hsim hcur hlabel hstep_dep
-    | _ =>
-      sorry
+    | step_dep_spawn hcur hyield hstep_dep =>
+      exact sim_link_procs_step_dep_spawn hsim hcur hyield hstep_dep
+    | step_dep_ret hcur hstep_dep hyield =>
+      exact sim_link_procs_step_dep_ret hsim hcur hstep_dep hyield
 
 theorem sim_compile_prog
   [Arity Op]
