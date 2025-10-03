@@ -37,6 +37,11 @@ inductive Label (Op : Type u) V m n [Arity Op] where
   | output (vals : Vector V n)
   | τ
 
+@[simp]
+def Label.isSilent [Arity Op] : Label Op V m n → Bool
+  | .τ => true
+  | _ => false
+
 /-- A labelled transition with an initial state that can
 interact with uninterpreted operators in `Op` by yielding
 and receiving values of type `V`. -/
@@ -65,9 +70,76 @@ abbrev Semantics.SimulatedBy
 abbrev Semantics.SimilarBy
   [Arity Op]
   (sem₁ sem₂ : Semantics Op V m n) : Prop
-  := Lts.SimilarBy sem₁.lts sem₂.lts sem₁.init sem₂.init
+  := Lts.SimilarBy (sem₁.lts.StepModTau .τ) (sem₂.lts.StepModTau .τ) sem₁.init sem₂.init
 
 infix:50 " ≲ " => Semantics.SimilarBy
+
+private theorem sim_tau_step_to_tau_star
+  [Arity Op]
+  {sem₁ sem₂ : Semantics Op V m n}
+  {R : sem₁.S → sem₂.S → Prop}
+  {s₁ s₁' : sem₁.S}
+  {s₂ : sem₂.S}
+  (hR : R s₁ s₂)
+  (hsim_tau : ∀ s₁ s₂ s₁',
+    R s₁ s₂ →
+    sem₁.lts.Step s₁ .τ s₁' →
+    ∃ s₂',
+      sem₂.lts.TauStar .τ s₂ s₂' ∧
+      R s₁' s₂')
+  (hstep_tau : sem₁.lts.TauStar .τ s₁ s₁') :
+  ∃ s₂',
+    sem₂.lts.TauStar .τ s₂ s₂' ∧
+    R s₁' s₂' := by
+  induction hstep_tau with
+  | refl =>
+    exists s₂
+    constructor
+    · exact .refl
+    · exact hR
+  | tail pref tail ih =>
+    have ⟨s₂₂, hstep_s₂, hR₂⟩ := ih
+    have ⟨s₂', hstep_s₂₂, hR₂₂⟩ := hsim_tau _ s₂₂ _ hR₂ tail
+    have := Lts.TauStar.trans hstep_s₂ hstep_s₂₂
+    exists s₂'
+
+/-- An alternative proof obligation for simulation mod tau. -/
+theorem Semantics.SimulatedBy.alt
+  [Arity Op]
+  {sem₁ sem₂ : Semantics Op V m n}
+  {R : sem₁.S → sem₂.S → Prop}
+  (hinit : R sem₁.init sem₂.init)
+  (hsim_non_tau : ∀ s₁ s₂ l s₁',
+    ¬ l.isSilent →
+    R s₁ s₂ →
+    sem₁.lts.Step s₁ l s₁' →
+    ∃ s₂',
+      sem₂.lts.Step s₂ l s₂' ∧
+      R s₁' s₂')
+  (hsim_tau : ∀ s₁ s₂ s₁',
+    R s₁ s₂ →
+    sem₁.lts.Step s₁ .τ s₁' →
+    ∃ s₂',
+      sem₂.lts.TauStar .τ s₂ s₂' ∧
+      R s₁' s₂') :
+  Semantics.SimulatedBy sem₁ sem₂ R := by
+  constructor
+  · exact hinit
+  · intros s₁ s₂ l s₁' hR hstep
+    rcases hstep with ⟨hstep_s₁, hstep_s₁₂, hne_tau, hstep_s₁₃⟩
+    rename_i s₁₂ s₁₃
+    have ⟨s₂₂, hstep_s₂, hR₂⟩ : ∃ s₂₂,
+      sem₂.lts.TauStar .τ s₂ s₂₂ ∧
+      R s₁₂ s₂₂ := sim_tau_step_to_tau_star hR hsim_tau hstep_s₁
+    have ⟨s₂₃, hstep_s₂₂, hR₃⟩ : ∃ s₂₃,
+      sem₂.lts.Step s₂₂ l s₂₃ ∧
+      R s₁₃ s₂₃ := hsim_non_tau s₁₂ s₂₂ l s₁₃ (by simp) hR₂ hstep_s₁₂
+    have ⟨s₂', hstep_s₂₃, hR'⟩ : ∃ s₂',
+      sem₂.lts.TauStar .τ s₂₃ s₂' ∧
+      R s₁' s₂' := sim_tau_step_to_tau_star hR₃ hsim_tau hstep_s₁₃
+    exists s₂'
+    have hsteps' : sem₂.lts.StepModTau .τ s₂ l s₂' := ⟨hstep_s₂, hstep_s₂₂, hne_tau, hstep_s₂₃⟩
+    simp [hsteps', hR']
 
 theorem Semantics.SimilarBy.refl
   [Arity Op]

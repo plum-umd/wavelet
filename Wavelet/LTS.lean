@@ -9,8 +9,28 @@ abbrev Lts.Step (lts : Lts C E) := lts
 /-- Zero or more steps with the given label -/
 inductive Lts.TauStar (lts : Lts C E) (τ : E) : C → C → Prop
   | refl : lts.TauStar τ c c
-  | tail (c₁ c₂ c₃ : C) :
+  | tail {c₁ c₂ c₃ : C} :
       lts.TauStar τ c₁ c₂ → lts c₂ τ c₃ → lts.TauStar τ c₁ c₃
+
+theorem Lts.TauStar.prepend
+  {lts : Lts C E}
+  (hhead : lts c₁ τ c₂)
+  (htail : lts.TauStar τ c₂ c₃)
+  : lts.TauStar τ c₁ c₃ := by
+  induction htail with
+  | refl => exact Lts.TauStar.tail .refl hhead
+  | tail _ h ih => exact Lts.TauStar.tail ih h
+
+theorem Lts.TauStar.trans
+  {lts : Lts C E}
+  (h₁ : lts.TauStar τ c₁ c₂)
+  (h₂ : lts.TauStar τ c₂ c₃) :
+  lts.TauStar τ c₁ c₃ := by
+  induction h₁ with
+  | refl => exact h₂
+  | tail h₁' hstep ih =>
+    have := Lts.TauStar.prepend hstep h₂
+    exact ih this
 
 /-- A non-tau step preceded and followed by zero or more tau steps. -/
 inductive Lts.StepModTau (lts : Lts C E) (τ : E) : Lts C E where

@@ -29,10 +29,6 @@ instance : Arity (SigOps sigs k') where
 abbrev Prog (Op : Type u) χ V [Arity Op] (sigs : Vector Sig k) :=
   (i : Fin k) → Fn (Op ⊕ SigOps sigs i.castSucc) χ V sigs[i].ι sigs[i].ω
 
-/-- A list of `Proc`s with each being able to call previous `Proc`s. -/
-abbrev DepProcs (Op : Type u) χ V [Arity Op] (sigs : Vector Sig k) :=
-  (i : Fin k) → Proc (Op ⊕ SigOps sigs i.castSucc) χ V sigs[i].ι sigs[i].ω
-
 def Prog.semantics
   [Arity Op] [DecidableEq χ] [InterpConsts V]
   {sigs : Vector Sig k}
@@ -41,15 +37,6 @@ def Prog.semantics
   : Semantics Op V sigs[i].ι sigs[i].ω
   := (prog i).semantics.link (λ op =>
     Prog.semantics prog ⟨op.toFin, by omega⟩)
-
-def DepProcs.semantics
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
-  {sigs : Vector Sig k}
-  (deps : DepProcs Op χ V sigs)
-  (i : Fin k)
-  : Semantics Op V sigs[i].ι sigs[i].ω
-  := (deps i).semantics.link (λ op =>
-    DepProcs.semantics deps ⟨op.toFin, by omega⟩)
 
 /-- Channel name prefixes to disambiguate names during linking. -/
 inductive LinkName (χ : Type u) where
@@ -140,82 +127,6 @@ theorem sim_congr_link
   : main.link deps ≲ main'.link deps'
   := sorry
 
-def Expr.castWithSigs0
-  [Arity Op]
-  {sigs : Vector Sig k}
-  (hz : ↑i = 0) :
-  Expr (Op ⊕ SigOps sigs i) χ m n → Expr Op χ m n
-  | .ret vars => .ret vars
-  | .tail vars => .tail vars
-  | .op (.inl o) inputs outputs cont =>
-    .op o inputs outputs (castWithSigs0 hz cont)
-  | .op (.inr (.call f)) .. => by
-    simp [hz] at f
-    exact f.elim0
-  | .br cond left right => .br cond (castWithSigs0 hz left) (castWithSigs0 hz right)
-
-def Fn.castWithSigs0
-  [Arity Op]
-  {sigs : Vector Sig k}
-  (hz : ↑i = 0)
-  (fn : Fn (Op ⊕ SigOps sigs i) χ V m n) :
-  Fn Op χ V m n := {
-    params := fn.params,
-    body := Expr.castWithSigs0 hz fn.body,
-  }
-
-def AtomicProc.castWithSigs0
-  [Arity Op]
-  {sigs : Vector Sig k}
-  (hz : ↑i = 0)
-  : AtomicProc (Op ⊕ SigOps sigs i) χ V → AtomicProc Op χ V
-  | _ => sorry
-
-def Proc.castWithSigs0
-  [Arity Op]
-  {sigs : Vector Sig k}
-  (hz : ↑i = 0)
-  (proc : Proc (Op ⊕ SigOps sigs i) χ V m n)
-  : Proc Op χ V m n := {
-    inputs := proc.inputs,
-    outputs := proc.outputs,
-    atoms := proc.atoms.map (AtomicProc.castWithSigs0 hz),
-  }
-
-/-- Linking without dependencies is the same as renaming the channels. -/
-def link_procs_0_eq_renaming
-  [Arity Op]
-  {sigs : Vector Sig k}
-  {i : Fin (k + 1)}
-  (hz : ↑i = 0)
-  {deps : (j : Fin ↑i) → Proc Op (LinkName χ) V sigs[j].ι sigs[j].ω}
-  {proc : Proc (Op ⊕ SigOps sigs i) (LinkName χ) V m n} :
-  linkProcs sigs i deps proc
-  = (Proc.castWithSigs0 hz proc).mapChans LinkName.main := sorry
-
-/-- `Proc.castWithSigs0` commutes with `Proc.mapChans`. -/
-def proc_cast_sigs_0_comm_map_chans
-  [Arity Op]
-  {sigs : Vector Sig k}
-  {f : χ → χ'}
-  {i : Fin (k + 1)}
-  (hz : ↑i = 0)
-  (proc : Proc (Op ⊕ SigOps sigs i) χ V m n) :
-  Proc.castWithSigs0 hz (proc.mapChans f)
-  = (Proc.castWithSigs0 hz proc).mapChans f := sorry
-
-def sim_proc_cast_sigs_0_semantics_link
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {sigs : Vector Sig k}
-  {i : Fin (k + 1)}
-  {deps : PartInterp Op (SigOps sigs i) V}
-  {proc : Proc (Op ⊕ SigOps sigs i) χ V m n}
-  (hz : ↑i = 0) :
-  proc.semantics.link deps ≲
-  (Proc.castWithSigs0 hz proc).semantics := sorry
-
 theorem sim_map_chans_inj
   {χ χ' : Type u}
   [Arity Op]
@@ -227,8 +138,25 @@ theorem sim_map_chans_inj
   (hf : Function.Injective f) :
   proc.semantics ≲ (proc.mapChans f).semantics := sorry
 
+def Sim
+  [Arity Op]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {sigs : Vector Sig k}
+  {k' : Fin (k + 1)}
+  {procs : (i : Fin k') → Proc Op (LinkName χ) V sigs[i].ι sigs[i].ω}
+  {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
+  (config₁ : Semantics.LinkState main.semantics (λ op => (procs (op.toFin)).semantics))
+  (config₂ : Dataflow.Config Op (LinkName χ) V m n) : Prop
+  :=
+  (∀ name, config₁.mainState.chans name = config₂.chans (LinkName.main name)) ∧
+  (∀ name i op inputs outputs,
+    (_ : i < main.atoms.length) →
+    main.atoms[i] = .op (.inr op) inputs outputs →
+    (config₁.depStates op).chans name = config₂.chans (LinkName.dep i name))
+
 /-- Linking syntactically simulates linking semantically. -/
-theorem link_procs_semantics_comm
+theorem sim_link_procs
   [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
@@ -238,13 +166,38 @@ theorem link_procs_semantics_comm
   {deps : PartInterp Op (SigOps sigs k') V}
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
   (hdeps : ∀ op, deps op = (procs (op.toFin)).semantics) :
-  main.semantics.link deps
-  ≲ (linkProcs sigs k' procs main).semantics
+  main.semantics.link deps ≲ (linkProcs sigs k' procs main).semantics
   := by
-  sorry
+  replace hdeps :
+    deps = λ op : SigOps sigs k' => (procs (op.toFin)).semantics := by
+    funext op
+    apply hdeps
+  simp only [hdeps]
+  apply Lts.SimilarBy.mk Sim
+  apply Semantics.SimulatedBy.alt
+  · simp [Sim, Proc.semantics, Semantics.link,
+      Semantics.LinkState.init, Dataflow.Config.init,
+      ChanMap.empty]
+  · intros c₁ c₂ l c₁' hne_tau hsim hstep_c₁
+    simp [Proc.semantics]
+    cases hstep_c₁ with
+    | step_main_tau | step_dep_tau | step_dep_input | step_dep_output => simp at hne_tau
+    | step_main_yield hstep_main =>
+      cases hstep_main with | step_op hmem_op hpop_inputs =>
+      sorry
+    | step_main_input hstep_main =>
+      cases hstep_main
+      constructor
+      constructor
+      · apply Dataflow.Config.Step.step_init
+      · and_intros
+        · simp
+          sorry
+        · sorry
+    | _ => sorry
+  · sorry
 
-theorem sim_compile_prog.{u}
-  {Op : Type u}
+theorem sim_compile_prog
   [Arity Op]
   [InterpConsts V]
   [DecidableEq χ]
@@ -257,19 +210,6 @@ theorem sim_compile_prog.{u}
   prog.semantics ⟨i, hlt⟩ ≲ (compileProg sigs prog hnz ⟨i, hlt⟩).semantics
   := by
   induction i using Nat.strong_induction_on with
-  -- | hz =>
-  --   simp [Prog.semantics]
-  --   unfold compileProg
-  --   rw [link_procs_0_eq_renaming (by simp)]
-  --   rw [← proc_cast_sigs_0_comm_map_chans]
-  --   apply Semantics.SimilarBy.trans _
-  --     (sim_proc_cast_sigs_0_semantics_link.{_, _, _, u} (deps := λ x => x.elim0) (by simp))
-  --   apply sim_congr_link (by intros i; exact i.elim0)
-  --   apply Semantics.SimilarBy.trans _
-  --     (sim_map_chans_inj (by simp [Function.Injective]))
-  --   apply Semantics.SimilarBy.trans _
-  --     (sim_map_chans_inj (by simp [Function.Injective]))
-  --   apply sim_compile_fn _ _ (by apply hwf)
   | _ i ih =>
     unfold Prog.semantics
     unfold compileProg
@@ -284,7 +224,7 @@ theorem sim_compile_prog.{u}
           (by apply hnz ⟨i, by omega⟩) _
           (by apply hwf))
         (sim_map_chans_inj (f := LinkName.base) (by simp [Function.Injective]))
-    apply link_procs_semantics_comm
+    apply sim_link_procs
     intros op
     rfl
 
