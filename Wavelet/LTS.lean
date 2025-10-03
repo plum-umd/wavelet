@@ -37,15 +37,14 @@ inductive Lts.StepModTau (lts : Lts C E) (τ : E) : Lts C E where
   | mk :
       lts.TauStar τ c₁ c₂ →
       lts c₂ e c₃ →
-      e ≠ τ →
       lts.TauStar τ c₃ c₄ →
       lts.StepModTau τ c₁ e c₄
 
 /-- Introduces a single step without any τ events -/
 def Lts.StepModTau.single
   {lts : Lts C E} {τ : E}
-  (hstep : lts.Step c₁ l c₂) (hne : l ≠ τ)
-  : lts.StepModTau τ c₁ l c₂ := ⟨.refl, hstep, hne, .refl⟩
+  (hstep : lts.Step c₁ l c₂)
+  : lts.StepModTau τ c₁ l c₂ := ⟨.refl, hstep, .refl⟩
 
 abbrev Trace := List
 

@@ -103,43 +103,20 @@ private theorem sim_tau_step_to_tau_star
     have := Lts.TauStar.trans hstep_s₂ hstep_s₂₂
     exists s₂'
 
-/-- An alternative proof obligation for simulation mod tau. -/
+/-- A sufficient proof obligation for simulation mod tau. -/
 theorem Semantics.SimulatedBy.alt
   [Arity Op]
   {sem₁ sem₂ : Semantics Op V m n}
   {R : sem₁.S → sem₂.S → Prop}
   (hinit : R sem₁.init sem₂.init)
-  (hsim_non_tau : ∀ s₁ s₂ l s₁',
-    ¬ l.isSilent →
+  (hsim : ∀ s₁ s₂ l s₁',
     R s₁ s₂ →
     sem₁.lts.Step s₁ l s₁' →
     ∃ s₂',
-      sem₂.lts.Step s₂ l s₂' ∧
-      R s₁' s₂')
-  (hsim_tau : ∀ s₁ s₂ s₁',
-    R s₁ s₂ →
-    sem₁.lts.Step s₁ .τ s₁' →
-    ∃ s₂',
-      sem₂.lts.TauStar .τ s₂ s₂' ∧
+      sem₂.lts.StepModTau .τ s₂ l s₂' ∧
       R s₁' s₂') :
   Semantics.SimulatedBy sem₁ sem₂ R := by
-  constructor
-  · exact hinit
-  · intros s₁ s₂ l s₁' hR hstep
-    rcases hstep with ⟨hstep_s₁, hstep_s₁₂, hne_tau, hstep_s₁₃⟩
-    rename_i s₁₂ s₁₃
-    have ⟨s₂₂, hstep_s₂, hR₂⟩ : ∃ s₂₂,
-      sem₂.lts.TauStar .τ s₂ s₂₂ ∧
-      R s₁₂ s₂₂ := sim_tau_step_to_tau_star hR hsim_tau hstep_s₁
-    have ⟨s₂₃, hstep_s₂₂, hR₃⟩ : ∃ s₂₃,
-      sem₂.lts.Step s₂₂ l s₂₃ ∧
-      R s₁₃ s₂₃ := hsim_non_tau s₁₂ s₂₂ l s₁₃ (by simp) hR₂ hstep_s₁₂
-    have ⟨s₂', hstep_s₂₃, hR'⟩ : ∃ s₂',
-      sem₂.lts.TauStar .τ s₂₃ s₂' ∧
-      R s₁' s₂' := sim_tau_step_to_tau_star hR₃ hsim_tau hstep_s₁₃
-    exists s₂'
-    have hsteps' : sem₂.lts.StepModTau .τ s₂ l s₂' := ⟨hstep_s₂, hstep_s₂₂, hne_tau, hstep_s₂₃⟩
-    simp [hsteps', hR']
+  sorry
 
 theorem Semantics.SimilarBy.refl
   [Arity Op]
@@ -164,6 +141,11 @@ structure Semantics.LinkState
   [DecidableEq Op₁]
   (main : Semantics (Op₀ ⊕ Op₁) V m n)
   (deps : PartInterp Op₀ Op₁ V) where
+  /-- This field indicates which semantics should be used
+  currently: `none` for the `main` semantics, `some op`
+  for the `deps op` semantics. This helps sequentializing
+  the yields. -/
+  curSem : Option Op₁
   mainState : main.S
   depStates : (op : Op₁) → (deps op).S
 
@@ -172,50 +154,80 @@ def Semantics.LinkState.init
   [DecidableEq Op₁]
   (main : Semantics (Op₀ ⊕ Op₁) V m n)
   (deps : PartInterp Op₀ Op₁ V) : LinkState main deps := {
+    curSem := none,
     mainState := main.init,
     depStates := λ op => (deps op).init ,
   }
 
+/-- Labels from the main semantics can be passed through. -/
+inductive Semantics.MainLabelPassthrough
+  [Arity Op₀] [Arity Op₁] :
+  Label (Op₀ ⊕ Op₁) V m n → Label Op₀ V m n → Prop where
+  | pass_tau : MainLabelPassthrough .τ .τ
+  | pass_input {vals} : MainLabelPassthrough (.input vals) (.input vals)
+  | pass_output {vals} : MainLabelPassthrough (.output vals) (.output vals)
+  | pass_yield_inl {op : Op₀} {inputs outputs} :
+      MainLabelPassthrough (.yield (.inl op) inputs outputs) (.yield op inputs outputs)
+
+/-- Labels from the dependencies that can be passed through -/
+inductive Semantics.DepLabelPassthrough
+  [Arity Op] :
+  Label Op V m' n' → Label Op V m n → Prop where
+  | pass_yield :
+      DepLabelPassthrough (.yield op inputs outputs) (.yield op inputs outputs)
+  | pass_tau : DepLabelPassthrough .τ .τ
+
+/-- Step relation of the linked semantics. -/
 inductive Semantics.LinkStep
   [Arity Op₀] [Arity Op₁]
   [DecidableEq Op₁]
   (main : Semantics (Op₀ ⊕ Op₁) V m n)
   (deps : PartInterp Op₀ Op₁ V)
   : Lts (LinkState main deps) (Label Op₀ V m n) where
-  | step_main_tau :
-    main.lts.Step s.mainState .τ mainState' →
-    LinkStep main deps s .τ { s with mainState := mainState' }
-  | step_main_yield :
-    main.lts.Step s.mainState (.yield (.inl op) inputs outputs) mainState' →
-    LinkStep main deps s (.yield op inputs outputs) { s with mainState := mainState' }
-  | step_main_input :
-    main.lts.Step s.mainState (.input inputVals) mainState' →
-    LinkStep main deps s (.input inputVals) { s with mainState := mainState' }
-  | step_main_output :
-    main.lts.Step s.mainState (.output outputVals) mainState' →
-    LinkStep main deps s (.output outputVals) { s with mainState := mainState' }
-  | step_dep_tau {depState depState' : (deps depOp).S} :
-    (deps depOp).lts.Step (s.depStates depOp) .τ depState' →
-    LinkStep main deps s .τ
-      { s with depStates := Function.update s.depStates depOp depState' }
-  | step_dep_yield {depState depState' : (deps depOp).S} :
-    (deps depOp).lts.Step (s.depStates depOp) (.yield op inputs outputs) depState' →
-    LinkStep main deps s (.yield op inputs outputs)
-      { s with depStates := Function.update s.depStates depOp depState' }
-  | step_dep_input :
+  /-- Pass through some labels from the main semantics. -/
+  | step_main :
+    s.curSem = none →
+    MainLabelPassthrough l l' →
+    main.lts.Step s.mainState l mainState' →
+    LinkStep main deps s l' { s with mainState := mainState' }
+  /-- Pass through some labels from the dependency semantics. -/
+  | step_dep :
+    s.curSem = some depOp →
+    DepLabelPassthrough l l' →
+    (deps depOp).lts.Step (s.depStates depOp) l depState' →
+    LinkStep main deps s l' { s with depStates := Function.update s.depStates depOp depState' }
+  /--
+  If the main semantics can yield, send the inputs to the corresponding dependency.
+
+  Note that this rule and the next one are left a bit ambiguous in the case
+  when then main semantics can make different yields to the same operator.
+  One well-formedness condition we could add is that these restricted relations
+  are deterministic:
+  - `R₁(outputs, s') := Step s (.yield op inputs outputs) s'` for any `s, op, inputs`
+  - `R₂(op, inputs) := HasYield s op inputs` for any `s`
+  -/
+  | step_dep_spawn :
+    s.curSem = none →
     main.HasYield s.mainState (.inr depOp) inputVals →
     (deps depOp).lts.Step (s.depStates depOp) (.input inputVals) depState' →
     LinkStep main deps s .τ
-      { s with depStates := Function.update s.depStates depOp depState' }
-  | step_dep_output :
+      { s with
+        curSem := some depOp, -- Block until the dependency finishes
+        depStates := Function.update s.depStates depOp depState' }
+  /-- If the dependency outputs, forward the results back to the main semantics. -/
+  | step_dep_ret :
+    s.curSem = some depOp →
     (deps depOp).lts.Step (s.depStates depOp) (.output outputVals) depState' →
     main.lts.Step s.mainState (.yield (.inr depOp) inputVals outputVals) mainState' →
     LinkStep main deps s .τ
       { s with
+        curSem := none, -- Return to the main semantics
         mainState := mainState',
         depStates := Function.update s.depStates depOp depState' }
 
-/-- Interprets a subset of operators (`Op₁`) in the remaining ones (`Op₀`). -/
+/-- Interprets a subset of operators (`Op₁`) in the remaining ones (`Op₀`).
+Any yields to `Op₁` in `main` is synchronous: `main` will only continue
+after `Op₁` outputs. -/
 def Semantics.link
   [Arity Op₀] [Arity Op₁]
   [DecidableEq Op₁]

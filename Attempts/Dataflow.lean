@@ -60,6 +60,7 @@ def ChanMap.popVal
   | v :: vs => some (v, λ n => if n = name then vs else map n)
 
 def ChanMap.popVals
+
   [DecidableEq χ]
   (names : Vector χ n)
   (map : ChanMap χ V) : Option (Vector V n × ChanMap χ V)
@@ -74,7 +75,7 @@ def ChanMap.IsEmpty (name : χ) (map : ChanMap χ V) : Prop := map name = []
 
 def ChanMap.getBuf (name : χ) (map : ChanMap χ V) : List V := map name
 
-structure Config (Op : Type u) (χ : Type v) (V : Type w) [Arity Op] m n where
+structure Config Op χ V [Arity Op] m n where
   proc : Proc Op χ V m n
   chans : ChanMap χ V
 
@@ -85,7 +86,6 @@ def Config.init
   := { proc, chans := .empty }
 
 inductive Config.Step
-  {χ : Type u}
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
   : Lts (Config Op χ V m n) (Label Op V m n) where
@@ -98,10 +98,7 @@ inductive Config.Step
     Step c (.output outputVals) { c with
       chans := chans',
     }
-  | step_op {op}
-    {inputs : Vector χ (Arity.ι op)}
-    {outputs : Vector χ (Arity.ω op)}
-    {inputVals outputVals chans'} :
+  | step_op {inputs : Vector χ (Arity.ι op)} :
     .op op inputs outputs ∈ c.proc.atoms →
     c.chans.popVals inputs = some (inputVals, chans') →
     Step c (.yield op inputVals outputVals) { c with
