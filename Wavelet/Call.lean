@@ -19,8 +19,22 @@ inductive SigOps (sigs : Vector Sig k) (k' : Fin (k + 1)) where
   | call (i : Fin k')
   deriving DecidableEq
 
+@[simp]
 def SigOps.toFin {k' : Fin (k + 1)} : SigOps sigs k' → Fin k'
   | .call i => i
+
+@[simp]
+theorem SigOps.inj_to_fin {i j : SigOps sigs k'} :
+  i.toFin = j.toFin ↔ i = j
+  := by
+  constructor
+  · intros h
+    cases i
+    cases j
+    simp at h
+    simp [h]
+  · intros h
+    simp [h]
 
 def SigOps.elim0 : SigOps sigs ⟨0, by simp⟩ → α
   | .call i => i.elim0
@@ -45,7 +59,7 @@ def Prog.semantics
 inductive LinkName (χ : Type u) where
   | base (name : χ)
   | main (name : LinkName χ)
-  | dep (i : Nat) (name : LinkName χ)
+  | dep (op : Nat) (name : LinkName χ)
 
 /-- TODO: should be auto-derived -/
 instance [inst : DecidableEq χ] : DecidableEq (LinkName χ) := sorry
@@ -55,16 +69,15 @@ def linkAtomicProc
   (sigs : Vector Sig k)
   (k' : Fin (k + 1))
   (procs : (i : Fin k') → Proc Op (LinkName χ) V sigs[i].ι sigs[i].ω)
-  (idx : Nat) -- Index of the atomic proc
   (atom : AtomicProc (Op ⊕ (SigOps sigs k')) (LinkName χ) V)
   : AtomicProcs Op (LinkName χ) V :=
   match atom with
   | .op (.inl o) inputs outputs =>
     [.op o (inputs.map .main) (outputs.map .main)]
-  | .op (.inr (.call i)) inputs outputs =>
-    [ .forward (inputs.map .main) ((procs i).inputs.map (LinkName.dep idx)) ] ++
-    (procs i).atoms.mapChans (LinkName.dep idx) ++
-    [ .forward ((procs i).outputs.map (LinkName.dep idx)) (outputs.map .main) ]
+  | .op (.inr op) inputs outputs =>
+    [ .forward (inputs.map .main) ((procs op.toFin).inputs.map (LinkName.dep op.toFin)) ] ++
+    (procs op.toFin).atoms.mapChans (LinkName.dep op.toFin) ++
+    [ .forward ((procs op.toFin).outputs.map (LinkName.dep op.toFin)) (outputs.map .main) ]
   | .switch decider inputs outputs₁ outputs₂ =>
     [.switch (.main decider) (inputs.map .main) (outputs₁.map .main) (outputs₂.map .main)]
   | .steer flavor decider inputs outputs =>
@@ -110,7 +123,7 @@ def linkProcs
   : Proc Op (LinkName χ) V m n := {
     inputs := main.inputs.map LinkName.main,
     outputs := main.outputs.map LinkName.main,
-    atoms := (main.atoms.mapIdx (linkAtomicProc sigs k' procs)).flatten,
+    atoms := (main.atoms.map (linkAtomicProc sigs k' procs)).flatten,
   }
 
 /-- Given a program (a list of functions that non-recursively call each other),
@@ -162,6 +175,16 @@ theorem sim_map_chans_inj
   (hf : Function.Injective f) :
   proc.semantics ≲ (proc.mapChans f).semantics := sorry
 
+def Sim.AffineDepOp
+  [Arity Op]
+  {sigs : Vector Sig k}
+  {k' : Fin (k + 1)}
+  (proc : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n) : Prop
+  := ∀ depOp inputs inputs' outputs outputs',
+    .op (.inr depOp) inputs outputs ∈ proc.atoms →
+    .op (.inr depOp) inputs' outputs' ∈ proc.atoms →
+    inputs = inputs' ∧ outputs = outputs'
+
 /-- Ghost states/invariants about the current activated dependency operator. -/
 structure Sim.GhostFrame
   [Arity Op]
@@ -179,29 +202,15 @@ structure Sim.GhostFrame
   get_op : mainState.proc.atoms[depIdx] = .op (.inr depOp) inputs outputs
   pop_inputs : mainState.chans.popVals inputs = some (inputVals, chans')
 
-/-- Linked dataflow channel states when no dependency is currently activated -/
-def Sim.linkChansMain
-  (mainChans : ChanMap (LinkName χ) V) : ChanMap (LinkName χ) V :=
-  λ name => match name with
-    | .main name' => mainChans name'
-    | _ => []
-
-/-- Linked dataflow channel states when a dependency operator is activated -/
-def Sim.linkChansDep
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {sigs : Vector Sig k}
-  {k' : Fin (k + 1)}
-  {mainState : Dataflow.Config (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
-  {depOp : SigOps sigs k'}
-  (frame : Sim.GhostFrame mainState depOp)
-  (depChans : ChanMap (LinkName χ) V)
+/-- Corresponds channel states -/
+def Sim.linkChans
+  (mainChans : ChanMap (LinkName χ) V)
+  (depChans : Fin k' → ChanMap (LinkName χ) V)
   : ChanMap (LinkName χ) V :=
   λ name => match name with
-    | .base _ => []
-    | .main name' => frame.chans' name'
-    | .dep i name' => if i = frame.depIdx then depChans name' else []
+    | .main name' => mainChans name'
+    | .dep i name' => if _ : i < k' then depChans ⟨i, by assumption⟩ name' else []
+    | _ => []
 
 def Sim
   [Arity Op]
@@ -217,67 +226,103 @@ def Sim
   -- Inputs/outputs of dependencies remain the same
   (∀ depOp, (config₁.depStates depOp).proc.inputs = (procs depOp.toFin).inputs) ∧
   (∀ depOp, (config₁.depStates depOp).proc.outputs = (procs depOp.toFin).outputs) ∧
+  Sim.AffineDepOp config₁.mainState.proc ∧
   -- Linking
   config₂.proc = linkProcs sigs k'
     (λ i => (config₁.depStates (.call i)).proc)
     config₁.mainState.proc ∧
   -- Channel maps in two cases
-  (config₁.curSem = none → config₂.chans = Sim.linkChansMain config₁.mainState.chans) ∧
-  (∀ depOp, config₁.curSem = some depOp →
+  let depChans := (λ i => (config₁.depStates (.call i)).chans)
+  (config₁.curSem = none → config₂.chans = Sim.linkChans config₁.mainState.chans depChans) ∧
+  -- Some ghost states for spawn/return
+  (∀ {depOp}, config₁.curSem = some depOp →
     ∃ frame : Sim.GhostFrame config₁.mainState depOp,
-      config₂.chans = Sim.linkChansDep frame (config₁.depStates depOp).chans)
+      config₂.chans = Sim.linkChans frame.chans' depChans)
 
 -- ChanMap.popVals inputs s₁.mainState.chans = some (inputVals, chans')
 -- ChanMap.popVals (Vector.map LinkName.main inputs) (Sim.linkChansMain s₁.mainState.chans) = some (inputVals, ?m.703)
 
-/-- `pushVals` on main channels commutes with `linkChansMain`. -/
+/-- `pushVals` on main channels commutes with `linkChans`. -/
 theorem sim_link_procs_push_vals_main
   [DecidableEq χ]
-  {chans chans' : ChanMap (LinkName χ) V}
-  (hpush : chans.pushVals names vals = chans') :
-  (Sim.linkChansMain chans).pushVals
-    (names.map LinkName.main) vals = Sim.linkChansMain chans'
+  {chans : ChanMap (LinkName χ) V} :
+  (Sim.linkChans chans depChans).pushVals
+    (names.map LinkName.main) vals = Sim.linkChans
+    (chans.pushVals names vals) depChans
   := by
-  simp [← hpush]
   funext name
-  simp [Sim.linkChansMain]
+  simp [Sim.linkChans]
   cases name with
   | base _ =>
     simp
     rw [push_vals_disjoint]
     rotate_left
     · simp
-    simp [Sim.linkChansMain]
+    simp [Sim.linkChans]
   | main name' =>
     simp
     rw [push_vals_map]
     · simp [Function.Injective]
-    simp [Sim.linkChansMain]
+    simp [Sim.linkChans]
   | dep =>
     simp
     rw [push_vals_disjoint]
     rotate_left
     · simp
-    simp [Sim.linkChansMain]
+    simp [Sim.linkChans]
 
--- /-- `pushVals` on dep channels commutes with `linkChansDep`. -/
--- theorem sim_link_procs_push_vals_dep
---   [DecidableEq χ]
---   {chans chans' : ChanMap (LinkName χ) V}
---   (hpush : chans.pushVals names vals = chans') :
---   (Sim.linkChansMain chans).pushVals
---     (names.map LinkName.main) vals = Sim.linkChansMain chans'
---   := by
---   sorry
+-- ChanMap.pushVals (Vector.map (LinkName.dep ↑i') (procs i').inputs) inputVals
+--     (Sim.linkChans chans' fun i => (s₁.depStates (SigOps.call i)).chans) (LinkName.dep (↑i') name') =
+--   ChanMap.pushVals (procs i').inputs inputVals (s₁.depStates (SigOps.call i')).chans name'
+
+/-- `pushVals` on dep channels commutes with `linkChans`. -/
+theorem sim_link_procs_push_vals_dep
+  [DecidableEq χ]
+  {chans : ChanMap (LinkName χ) V}
+  {depChans : Fin k' → ChanMap (LinkName χ) V}
+  {i : Fin k'} :
+  (Sim.linkChans chans depChans).pushVals
+    (names.map (.dep i))
+    vals
+    (.dep i name') =
+    (depChans i).pushVals names vals name'
+  := by
+  by_cases h : name' ∈ names
+  · apply push_vals_map
+    · simp [Function.Injective]
+    simp [Sim.linkChans]
+  · rw [push_vals_disjoint]
+    rotate_left
+    · simp [h]
+    rw [push_vals_disjoint]
+    rotate_left
+    · simp [h]
+    simp [Sim.linkChans]
 
 /-- `popVals` on main channels commutes with `linkChansMain`. -/
 theorem sim_link_procs_pop_vals_main
   [DecidableEq χ]
   {chans chans' : ChanMap (LinkName χ) V}
   (hpop : chans.popVals names = some (outputVals, chans')) :
-  (Sim.linkChansMain chans).popVals
+  (Sim.linkChans chans depChans).popVals
     (names.map LinkName.main) =
-    some (outputVals, Sim.linkChansMain chans')
+    some (outputVals, Sim.linkChans chans' depChans)
+  := by
+  sorry
+
+-- ChanMap.popVals (Vector.map (LinkName.dep ↑depOp.1) (procs depOp.1).outputs)
+--     (Sim.linkChans frame.chans' fun i => (s₁.depStates (SigOps.call i)).chans) =
+--   some (outputVals, chans'')
+
+theorem sim_link_procs_pop_vals_dep
+  [DecidableEq χ]
+  {chans : ChanMap (LinkName χ) V}
+  {depChans : Fin k' → ChanMap (LinkName χ) V}
+  {i : Fin k'}
+  (hpop : (depChans i).popVals names = some (outputVals, chans')) :
+  (Sim.linkChans chans depChans).popVals
+    (names.map (.dep i)) =
+    some (outputVals, Sim.linkChans chans (Function.update depChans i chans'))
   := by
   sorry
 
@@ -307,24 +352,24 @@ theorem sim_link_procs_step_dep_spawn
       curSem := some depOp,
       depStates := Function.update s₁.depStates depOp depState' } s₂'
   := by
-  have ⟨hsim_proc_inputs, hsim_proc_outputs, hsim_proc, hsim_main, hsim_dep⟩ := hsim
+  have ⟨hsim_proc_inputs, hsim_proc_outputs, hsim_aff, hsim_proc, hsim_main, hsim_dep⟩ := hsim
   have hsim_chans := hsim_main hcur
   have ⟨outputVals, mainState', hstep_main⟩ := hyield
   simp [Proc.semantics, Lts.Step] at hstep_dep hstep_main
   cases hstep_dep with | step_init =>
   cases hstep_main with | step_op hmem_op hpop =>
   rename_i chans' inputs outputs
-  -- | .op (.inr (.call i)) inputs outputs =>
-  --   [ .forward (inputs.map .main) ((procs i).inputs.map (LinkName.dep idx)) ] ++
-  --   (procs i).atoms.mapChans (LinkName.dep idx) ++
-  --   [ .forward ((procs i).outputs.map (LinkName.dep idx)) (outputs.map .main) ]
   have ⟨idx, hidx, hget_op⟩ := List.mem_iff_getElem.mp hmem_op
   have hmem_forward :
     .forward
       (inputs.map .main)
-      ((procs depOp.toFin).inputs.map (LinkName.dep idx))
+      ((procs depOp.toFin).inputs.map (LinkName.dep depOp.toFin))
     ∈ s₂.proc.atoms
-    := sorry
+    := by
+    simp [hsim_proc, linkProcs]
+    have := List.mem_of_getElem hget_op
+    exists AtomicProc.op (Sum.inr depOp) inputs outputs
+    simp [this, linkAtomicProc, hsim_proc_inputs]
   have hstep_s₂ : Dataflow.Config.Step s₂ .τ _
     := Dataflow.Config.Step.step_forward
       (inputVals := inputVals)
@@ -351,6 +396,7 @@ theorem sim_link_procs_step_dep_spawn
         simp [hsim_proc_outputs]
       · rw [Function.update_of_ne (Ne.symm hdep) _ _]
         simp [hsim_proc_outputs]
+    · exact hsim_aff
     · simp [hs₂', hsim_proc, linkProcs]
       congr
       cases depOp with | call i =>
@@ -360,7 +406,7 @@ theorem sim_link_procs_step_dep_spawn
         simp
       · simp [Function.update, h]
     · simp [hs₂']
-    · simp
+    · simp [hs₂']
       exists {
         depIdx := ⟨idx, hidx⟩,
         inputs := inputs,
@@ -370,44 +416,175 @@ theorem sim_link_procs_step_dep_spawn
         get_op := hget_op,
         pop_inputs := hpop,
       }
-      simp [hs₂']
       funext name
-      simp [Sim.linkChansDep]
+      simp [Sim.linkChans]
       cases name with
       | base _ =>
         simp
         rw [push_vals_disjoint]
         rotate_left; simp
-        simp [Sim.linkChansMain]
+        simp [Sim.linkChans]
       | main name' =>
         simp
         rw [push_vals_disjoint]
         rotate_left; simp
-        simp [Sim.linkChansMain]
+        simp [Sim.linkChans]
       | dep i name' =>
         simp
         split <;> rename_i h₁
-        · simp [h₁, hsim_proc_inputs]
-
-          sorry
+        · simp [hsim_proc_inputs]
+          by_cases h₂ : i = depOp.toFin
+          · cases depOp with | call i' =>
+            simp at h₂
+            subst h₂
+            rw [Function.update_self]
+            simp
+            apply sim_link_procs_push_vals_dep
+          · simp at h₂
+            rw [Function.update_of_ne (by
+              intros h
+              simp [← h] at h₂) _ _]
+            rw [push_vals_disjoint]
+            rotate_left; simp [Ne.symm h₂]
+            simp [Sim.linkChans, h₁]
         · rw [push_vals_disjoint]
           rotate_left
           · simp only [Vector.mem_map]
             intros h₂
             have ⟨_, _, h₃⟩ := h₂
             simp at h₃
-            exact False.elim (h₁ (h₃.1.symm))
-          simp [Sim.linkChansMain]
+            omega
+          simp [Sim.linkChans, h₁]
 
--- ChanMap.pushVals (Vector.map (LinkName.dep idx) (procs depOp.toFin).inputs) inputVals
---     (Sim.linkChans
---       { curSem := s₁.curSem, mainState := { proc := s₁.mainState.proc, chans := chans' }, depStates := s₁.depStates }) =
---   Sim.linkChans
---     { curSem := some depOp, mainState := s₁.mainState,
---       depStates :=
---         Function.update s₁.depStates depOp
---           { proc := (s₁.depStates depOp).proc,
---             chans := ChanMap.pushVals (s₁.depStates depOp).proc.inputs inputVals (s₁.depStates depOp).chans } }
+theorem sim_link_procs_step_dep_ret
+  [Arity Op]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {sigs : Vector Sig k}
+  {k' : Fin (k + 1)}
+  {procs : (i : Fin k') → Proc Op (LinkName χ) V sigs[i].ι sigs[i].ω}
+  {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
+  {s₁ : Semantics.LinkState main.semantics (λ op => (procs (op.toFin)).semantics)}
+  {s₂ : Dataflow.Config Op (LinkName χ) V m n}
+  {depOp : SigOps sigs k'}
+  {depState' : (procs depOp.toFin).semantics.S}
+  {mainState' : main.semantics.S}
+  {inputVals : Vector V sigs[depOp.toFin].ι}
+  {outputVals : Vector V sigs[depOp.toFin].ω}
+  (hsim : Sim s₁ s₂)
+  -- Assumptions of `.LinkStep.step_dep`
+  (hcur : s₁.curSem = some depOp)
+  (hstep_dep :
+    (procs depOp.toFin).semantics.lts.Step
+      (s₁.depStates depOp) (.output outputVals) depState')
+  (hyield :
+    main.semantics.lts.Step s₁.mainState
+      (Label.yield (.inr depOp) inputVals outputVals) mainState')
+  : ∃ s₂',
+    Dataflow.Config.Step.StepModTau .τ s₂ .τ s₂' ∧
+    Sim { s₁ with
+      curSem := none,
+      mainState := mainState',
+      depStates := Function.update s₁.depStates depOp depState' } s₂'
+  := by
+  have ⟨hsim_proc_inputs, hsim_proc_outputs, hsim_aff, hsim_proc, hsim_main, hsim_dep⟩ := hsim
+  have ⟨frame, hsim_chans⟩ := hsim_dep hcur
+  have ⟨
+    depIdx,
+    inputs',
+    inputVals',
+    outputs',
+    chans₁,
+    hget_op,
+    hpop_inputs',
+  ⟩ := frame
+  simp [Proc.semantics, Lts.Step] at hstep_dep hyield
+  cases hyield with | step_op hmem_op hpop_inputs =>
+  rename_i chans₁' inputs outputs
+  -- Prove that `hyield` must be the same as the previous
+  -- `HasYield` call by affine usage of dependencies
+  have ⟨h₁, h₂⟩ := hsim_aff depOp inputs inputs' outputs outputs'
+    hmem_op (List.mem_of_getElem hget_op)
+  subst h₁ h₂
+  simp [hpop_inputs] at hpop_inputs'
+  have ⟨h₁, h₂⟩ := hpop_inputs'
+  subst h₁ h₂
+  clear hpop_inputs'
+  simp at hsim_chans
+  cases hstep_dep with | step_output hpop_outputs =>
+  rename_i chans'
+  have ⟨idx, hidx, hget_op⟩ := List.mem_iff_getElem.mp hmem_op
+  have hmem_forward_inputs :
+    .forward
+      (inputs.map .main)
+      ((procs depOp.toFin).inputs.map (LinkName.dep depOp.toFin))
+    ∈ s₂.proc.atoms
+    := by
+    simp [hsim_proc, linkProcs]
+    have := List.mem_of_getElem hget_op
+    exists AtomicProc.op (Sum.inr depOp) inputs outputs
+    simp [this, linkAtomicProc, hsim_proc_inputs]
+  have hmem_forward_outputs :
+    .forward
+      ((procs depOp.toFin).outputs.map (LinkName.dep depOp.toFin))
+      (outputs.map .main)
+    ∈ s₂.proc.atoms
+    := by
+    simp [hsim_proc, linkProcs]
+    have := List.mem_of_getElem hget_op
+    exists AtomicProc.op (Sum.inr depOp) inputs outputs
+    simp [this, linkAtomicProc, hsim_proc_outputs]
+  have hstep_s₂ : Dataflow.Config.Step s₂ .τ _
+    := Dataflow.Config.Step.step_forward
+      (inputVals := outputVals)
+      (chans' :=
+        Sim.linkChans chans₁'
+          (Function.update (λ i => (s₁.depStates (SigOps.call i)).chans) depOp.1 chans'))
+      hmem_forward_outputs
+      (by
+        simp [hsim_chans]
+        simp [hsim_proc_outputs] at hpop_outputs
+        rw [sim_link_procs_pop_vals_dep hpop_outputs])
+  replace ⟨s₂', hs₂', hstep_s₂⟩ := exists_eq_left.mpr hstep_s₂
+  exists s₂'
+  constructor
+  · exact .single hstep_s₂
+  · and_intros
+    · simp
+      intros depOp'
+      by_cases hdep : depOp = depOp'
+      · subst hdep
+        simp [hsim_proc_inputs]
+      · rw [Function.update_of_ne (Ne.symm hdep) _ _]
+        simp [hsim_proc_inputs]
+    · simp
+      intros depOp'
+      by_cases hdep : depOp = depOp'
+      · subst hdep
+        simp [hsim_proc_outputs]
+      · rw [Function.update_of_ne (Ne.symm hdep) _ _]
+        simp [hsim_proc_outputs]
+    · exact hsim_aff
+    · simp [hs₂', hsim_proc, linkProcs]
+      congr
+      cases depOp with | call i =>
+      funext i'
+      by_cases h : i' = i
+      · subst h
+        simp
+      · simp [Function.update, h]
+    · simp [hs₂']
+      rw [sim_link_procs_push_vals_main]
+      congr
+      funext i
+      by_cases h : i = depOp.1
+      · rw [h]
+        simp
+      · simp [h]
+        rw [Function.update_of_ne (by
+          intros h'
+          simp [← h'] at h) _ _]
+    · simp [hs₂']
 
 -- /-- `pushVals` on main channels commutes with `linkChans`. -/
 -- theorem sim_link_procs_push_vals
@@ -565,38 +742,6 @@ theorem sim_link_procs_step_dep_spawn
 --     rename_i op inputVals outputVals inputs outputs chans'
 --     sorry
 --   | _ => sorry
-
-theorem sim_link_procs_step_dep_ret
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {sigs : Vector Sig k}
-  {k' : Fin (k + 1)}
-  {procs : (i : Fin k') → Proc Op (LinkName χ) V sigs[i].ι sigs[i].ω}
-  {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
-  {s₁ : Semantics.LinkState main.semantics (λ op => (procs (op.toFin)).semantics)}
-  {s₂ : Dataflow.Config Op (LinkName χ) V m n}
-  {depOp : SigOps sigs k'}
-  {depState' : (procs depOp.toFin).semantics.S}
-  {mainState' : main.semantics.S}
-  {inputVals : Vector V sigs[depOp.toFin].ι}
-  {outputVals : Vector V sigs[depOp.toFin].ω}
-  (hsim : Sim s₁ s₂)
-  -- Assumptions of `.LinkStep.step_dep`
-  (hcur : s₁.curSem = some depOp)
-  (hstep_dep :
-    (procs depOp.toFin).semantics.lts.Step
-      (s₁.depStates depOp) (.output outputVals) depState')
-  (hyield :
-    main.semantics.lts.Step s₁.mainState
-      (Label.yield (.inr depOp) inputVals outputVals) mainState')
-  : ∃ s₂',
-    Dataflow.Config.Step.StepModTau .τ s₂ .τ s₂' ∧
-    Sim { s₁ with
-      curSem := none,
-      mainState := mainState',
-      depStates := Function.update s₁.depStates depOp depState' } s₂'
-  := sorry
 
 /-- Linking syntactically simulates linking semantically. -/
 theorem sim_link_procs
