@@ -1,7 +1,8 @@
 import Batteries.Data.Vector.Lemmas
 import Mathlib.Data.List.Nodup
 
-import Wavelet.Lemmas
+import Wavelet.Data.List
+import Wavelet.Data.Vector
 
 /-! Definition and lemmas for channel maps. -/
 
