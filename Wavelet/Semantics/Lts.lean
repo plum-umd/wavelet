@@ -1,6 +1,6 @@
 /-! Definitions and utilities for labelled transition systems. -/
 
-namespace Wavelet.Lts
+namespace Wavelet.Semantics
 
 abbrev Lts (C : Type u) (E : Type v) := C → E → C → Prop
 
@@ -115,4 +115,4 @@ theorem Lts.SimilarBy.trans
     · exact hstep_c₃
     · exists c₂'
 
-end Wavelet.Lts
+end Wavelet.Semantics

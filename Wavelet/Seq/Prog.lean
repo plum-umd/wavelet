@@ -1,0 +1,42 @@
+import Wavelet.Semantics.Defs
+import Wavelet.Semantics.Link
+import Wavelet.Seq.Fn
+
+/-! Syntax and semantics of programs (a list of `Fn`s with a acyclic call graph). -/
+
+namespace Wavelet.Seq
+
+open Semantics
+
+structure Sig where
+  ι : Nat
+  ω : Nat
+
+inductive SigOps (sigs : Vector Sig k) (k' : Fin (k + 1)) where
+  | call (i : Fin k')
+  deriving DecidableEq
+
+@[simp]
+def SigOps.toFin {k' : Fin (k + 1)} : SigOps sigs k' → Fin k'
+  | .call i => i
+
+def SigOps.elim0 : SigOps sigs ⟨0, by simp⟩ → α
+  | .call i => i.elim0
+
+instance : Arity (SigOps sigs k') where
+  ι | .call i => sigs[i].ι
+  ω | .call i => sigs[i].ω
+
+abbrev Prog (Op : Type u) χ V [Arity Op] (sigs : Vector Sig k) :=
+  (i : Fin k) → Fn (Op ⊕ SigOps sigs i.castSucc) χ V sigs[i].ι sigs[i].ω
+
+def Prog.semantics
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  {sigs : Vector Sig k}
+  (prog : Prog Op χ V sigs)
+  (i : Fin k)
+  : Semantics Op V sigs[i].ι sigs[i].ω
+  := (prog i).semantics.link (λ op =>
+    Prog.semantics prog ⟨op.toFin, by omega⟩)
+
+end Wavelet.Seq

@@ -1,5 +1,4 @@
-import Wavelet.Op
+import Wavelet.Semantics
 import Wavelet.Seq
 import Wavelet.Dataflow
 import Wavelet.Compile
-import Wavelet.Simulation

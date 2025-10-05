@@ -143,7 +143,7 @@ theorem mem_implies_mem_zip_left
 := sorry
 
 @[simp]
-theorem Vector.back_map
+theorem back_map
   [NeZero n]
   {f : α → β} {xs : Vector α n} :
   (map f xs).back = f xs.back
