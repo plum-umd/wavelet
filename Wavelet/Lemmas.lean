@@ -142,4 +142,11 @@ theorem mem_implies_mem_zip_left
   ∃ y, (x, y) ∈ xs.zip ys
 := sorry
 
+@[simp]
+theorem Vector.back_map
+  [NeZero n]
+  {f : α → β} {xs : Vector α n} :
+  (map f xs).back = f xs.back
+  := sorry
+
 end Vector

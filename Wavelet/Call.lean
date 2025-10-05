@@ -6,10 +6,9 @@ import Wavelet.Compile
 
 import Wavelet.Simulation.Lemmas
 
-namespace Wavelet.Call
+namespace Wavelet.Seq
 
-open Op Lts Seq Dataflow Compile
-open Simulation.Lemmas
+open Op
 
 structure Sig where
   ι : Nat
@@ -22,19 +21,6 @@ inductive SigOps (sigs : Vector Sig k) (k' : Fin (k + 1)) where
 @[simp]
 def SigOps.toFin {k' : Fin (k + 1)} : SigOps sigs k' → Fin k'
   | .call i => i
-
-@[simp]
-theorem SigOps.inj_to_fin {i j : SigOps sigs k'} :
-  i.toFin = j.toFin ↔ i = j
-  := by
-  constructor
-  · intros h
-    cases i
-    cases j
-    simp at h
-    simp [h]
-  · intros h
-    simp [h]
 
 def SigOps.elim0 : SigOps sigs ⟨0, by simp⟩ → α
   | .call i => i.elim0
@@ -54,6 +40,59 @@ def Prog.semantics
   : Semantics Op V sigs[i].ι sigs[i].ω
   := (prog i).semantics.link (λ op =>
     Prog.semantics prog ⟨op.toFin, by omega⟩)
+
+/-- Usage of a subset of operators is affine. -/
+inductive Expr.AffineInrOp [Arity Op₁] [Arity Op₂]
+  : List Op₂ → Expr (Op₁ ⊕ Op₂) χ m n → Prop where
+  | aff_ret : AffineInrOp used (.ret vars)
+  | aff_tail : AffineInrOp used (.tail vars)
+  | aff_op_inl
+      {op : Op₁}
+      {args : Vector χ (Arity.ι op)}
+      {rets : Vector χ (Arity.ω op)}
+      {cont : Expr (Op₁ ⊕ Op₂) χ m n} :
+      AffineInrOp used cont →
+      AffineInrOp used (.op (.inl op) args rets cont)
+  | aff_op_inr
+      {op : Op₂}
+      {args : Vector χ (Arity.ι op)}
+      {rets : Vector χ (Arity.ω op)}
+      {cont : Expr (Op₁ ⊕ Op₂) χ m n} :
+      op ∉ used →
+      AffineInrOp used cont →
+      AffineInrOp (op :: used) (.op (.inr op) args rets cont)
+  | aff_br :
+      AffineInrOp used left →
+      AffineInrOp used right →
+      AffineInrOp used (.br cond left right)
+
+def Fn.AffineInrOp [Arity Op₁] [Arity Op₂]
+  (fn : Fn (Op₁ ⊕ Op₂) χ V m n) : Prop := fn.body.AffineInrOp []
+
+def Prog.AffineInrOp [Arity Op]
+  (prog : Prog Op χ V sigs) : Prop := ∀ i, (prog i).AffineInrOp
+
+end Wavelet.Seq
+
+namespace Wavelet.Dataflow
+
+open Op
+
+/-- Usage of a subset of operators is affine. -/
+def Proc.AffineInrOp
+  [Arity Op₁] [Arity Op₂]
+  (proc : Proc (Op₁ ⊕ Op₂) χ V m n) : Prop
+  := ∀ depOp inputs inputs' outputs outputs',
+    .op (.inr depOp) inputs outputs ∈ proc.atoms →
+    .op (.inr depOp) inputs' outputs' ∈ proc.atoms →
+    inputs = inputs' ∧ outputs = outputs'
+
+end Wavelet.Dataflow
+
+namespace Wavelet.Compile
+
+open Op Lts Seq Dataflow
+open Simulation.Lemmas
 
 /-- Channel name prefixes to disambiguate names during linking. -/
 inductive LinkName (χ : Type u) where
@@ -175,16 +214,6 @@ theorem sim_map_chans_inj
   (hf : Function.Injective f) :
   proc.semantics ≲ (proc.mapChans f).semantics := sorry
 
-def Sim.AffineDepOp
-  [Arity Op]
-  {sigs : Vector Sig k}
-  {k' : Fin (k + 1)}
-  (proc : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n) : Prop
-  := ∀ depOp inputs inputs' outputs outputs',
-    .op (.inr depOp) inputs outputs ∈ proc.atoms →
-    .op (.inr depOp) inputs' outputs' ∈ proc.atoms →
-    inputs = inputs' ∧ outputs = outputs'
-
 /-- Ghost states/invariants about the current activated dependency operator. -/
 structure Sim.GhostFrame
   [Arity Op]
@@ -226,7 +255,7 @@ def Sim
   -- Inputs/outputs of dependencies remain the same
   (∀ depOp, (config₁.depStates depOp).proc.inputs = (procs depOp.toFin).inputs) ∧
   (∀ depOp, (config₁.depStates depOp).proc.outputs = (procs depOp.toFin).outputs) ∧
-  Sim.AffineDepOp config₁.mainState.proc ∧
+  config₁.mainState.proc.AffineInrOp ∧
   -- Linking
   config₂.proc = linkProcs sigs k'
     (λ i => (config₁.depStates (.call i)).proc)
@@ -244,7 +273,7 @@ theorem sim_link_procs_push_vals_main
   [DecidableEq χ]
   {chans : ChanMap (LinkName χ) V} :
   (Sim.linkChans chans depChans).pushVals
-    (names.map LinkName.main) vals = Sim.linkChans
+    (names.map .main) vals = Sim.linkChans
     (chans.pushVals names vals) depChans
   := by
   funext name
@@ -292,27 +321,114 @@ theorem sim_link_procs_push_vals_dep
     · simp [h]
     simp [Sim.linkChans]
 
-/-- `popVals` on main channels commutes with `linkChansMain`. -/
+/-- `popVal` on a main channel commutes with `linkChans`. -/
+theorem sim_link_procs_pop_val_main
+  [DecidableEq χ]
+  {chans chans' : ChanMap (LinkName χ) V}
+  {name : LinkName χ}
+  (hpop : chans.popVal name = some (val, chans')) :
+  (Sim.linkChans chans depChans).popVal (.main name) =
+    some (val, Sim.linkChans chans' depChans)
+  := by
+  simp [ChanMap.popVal] at hpop ⊢
+  split at hpop <;> rename_i h₁
+  contradiction
+  simp at hpop
+  simp [Sim.linkChans, h₁, hpop]
+  funext name
+  cases name with
+  | base => simp [Sim.linkChans]
+  | main => simp [Sim.linkChans, ← hpop.2]
+  | dep => simp [Sim.linkChans]
+
+/-- `popVals` on main channels commutes with `linkChans`. -/
 theorem sim_link_procs_pop_vals_main
   [DecidableEq χ]
   {chans chans' : ChanMap (LinkName χ) V}
+  {names : Vector (LinkName χ) n}
   (hpop : chans.popVals names = some (outputVals, chans')) :
-  (Sim.linkChans chans depChans).popVals
-    (names.map LinkName.main) =
+  (Sim.linkChans chans depChans).popVals (names.map .main) =
     some (outputVals, Sim.linkChans chans' depChans)
   := by
-  sorry
+  induction n generalizing chans chans' with
+  | zero =>
+    simp [Vector.eq_empty, ChanMap.popVals] at hpop ⊢
+    simp [hpop]
+  | succ n' ih =>
+    simp [pop_vals_unfold] at hpop ⊢
+    simp [Option.bind] at hpop
+    split at hpop <;> rename_i h₁
+    contradiction
+    simp at hpop
+    split at hpop <;> rename_i h₂
+    contradiction
+    simp at hpop
+    simp [← Vector.map_pop, ih h₁]
+    simp [sim_link_procs_pop_val_main h₂, hpop]
+
+/-- `popVal` on a dep channel commutes with `linkChans`. -/
+theorem sim_link_procs_pop_val_dep
+  [DecidableEq χ]
+  {mainChans chans' : ChanMap (LinkName χ) V}
+  {name : LinkName χ}
+  {depChans : Fin k' → ChanMap (LinkName χ) V}
+  {i : Fin k'}
+  (hpop : (depChans i).popVal name = some (val, chans')) :
+  (Sim.linkChans mainChans depChans).popVal (.dep i name) =
+    some (val, Sim.linkChans mainChans (Function.update depChans i chans'))
+  := by
+  simp [ChanMap.popVal] at hpop ⊢
+  split at hpop <;> rename_i h₁
+  contradiction
+  simp at hpop
+  simp [Sim.linkChans, h₁, hpop]
+  funext name
+  cases name with
+  | base => simp [Sim.linkChans]
+  | main => simp [Sim.linkChans]
+  | dep i' name' =>
+    simp [Sim.linkChans]
+    by_cases h₁ : i = i'
+    · simp [h₁]
+      by_cases h₂ : name' = name
+      · simp [h₂, ← h₁, ← hpop.2]
+      · simp [h₂]
+        split
+        · simp [← h₁, ← hpop.2, h₂]
+        · rfl
+    · simp [Ne.symm h₁]
+      split
+      · rw [Function.update_of_ne (by
+          intros h₂; simp [← h₂] at h₁) _ _]
+      · rfl
 
 theorem sim_link_procs_pop_vals_dep
   [DecidableEq χ]
-  {chans : ChanMap (LinkName χ) V}
+  {mainChans chans' : ChanMap (LinkName χ) V}
+  {names : Vector (LinkName χ) n}
   {depChans : Fin k' → ChanMap (LinkName χ) V}
   {i : Fin k'}
   (hpop : (depChans i).popVals names = some (outputVals, chans')) :
-  (Sim.linkChans chans depChans).popVals (names.map (.dep i)) =
-    some (outputVals, Sim.linkChans chans (Function.update depChans i chans'))
+  (Sim.linkChans mainChans depChans).popVals (names.map (.dep i)) =
+    some (outputVals, Sim.linkChans mainChans (Function.update depChans i chans'))
   := by
-  sorry
+  induction n generalizing chans' with
+  | zero =>
+    simp [Vector.eq_empty, ChanMap.popVals] at hpop ⊢
+    simp [← hpop]
+  | succ n' ih =>
+    simp [pop_vals_unfold] at hpop ⊢
+    simp [Option.bind] at hpop
+    split at hpop <;> rename_i pops h₁
+    contradiction
+    simp at hpop
+    split at hpop <;> rename_i pop h₂
+    contradiction
+    simp at hpop
+    simp [← Vector.map_pop, ih h₁]
+    have : pops.snd = Function.update depChans i pops.snd i := by simp
+    rw [this] at h₂
+    simp [sim_link_procs_pop_val_dep (χ := χ) h₂, hpop]
 
 theorem sim_link_procs_step_dep_spawn
   [Arity Op]
@@ -684,9 +800,7 @@ theorem sim_link_procs_step_dep
   have ⟨frame, hsim_chans⟩ := hsim_dep hcur
   simp [Proc.semantics, Lts.Step] at hstep_dep
   cases hstep_dep with
-  | step_init =>
-    rename_i args
-    cases hlabel
+  | step_init | step_output => cases hlabel
   | step_op hmem_op hpop =>
     cases hlabel
     rename_i op inputs outputs inputVals outputVals chans'
@@ -781,7 +895,8 @@ theorem sim_link_procs
   {procs : (i : Fin k') → Proc Op (LinkName χ) V sigs[i].ι sigs[i].ω}
   {deps : PartInterp Op (SigOps sigs k') V}
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
-  (hdeps : ∀ op, deps op = (procs (op.toFin)).semantics) :
+  (hdeps : ∀ op, deps op = (procs (op.toFin)).semantics)
+  (haff : main.AffineInrOp) :
   main.semantics.link deps ≲ (linkProcs sigs k' procs main).semantics
   := by
   replace hdeps :
@@ -794,8 +909,13 @@ theorem sim_link_procs
   · -- Sim holds at initial states
     simp [Sim, Proc.semantics, Semantics.link,
       Semantics.LinkState.init, Dataflow.Config.init]
-    sorry
-  · intros s₁ s₂ l s₁' hsim hstep_s₁
+    constructor
+    · exact haff
+    · funext name
+      simp [Sim.linkChans, ChanMap.empty]
+      cases name <;> rfl
+  · -- Sim holds after every step
+    intros s₁ s₂ l s₁' hsim hstep_s₁
     simp [Semantics.link, Lts.Step] at hstep_s₁
     simp [Proc.semantics]
     cases hstep_s₁ with
@@ -808,6 +928,37 @@ theorem sim_link_procs
     | step_dep_ret hcur hstep_dep hyield =>
       exact sim_link_procs_step_dep_ret hsim hcur hstep_dep hyield
 
+/-- `compileFn` preserves `AffineInrOp`. -/
+theorem compile_fn_preserves_aff_op
+  [Arity Op₁] [Arity Op₂]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {fn : Fn (Op₁ ⊕ Op₂) χ V m n}
+  (haff : fn.AffineInrOp)
+  : (compileFn hnz fn).AffineInrOp
+  := sorry
+
+theorem map_chans_preserves_aff_op
+  [Arity Op₁] [Arity Op₂]
+  {f : χ → χ'}
+  {proc : Proc (Op₁ ⊕ Op₂) χ V m n}
+  (haff : proc.AffineInrOp) : (proc.mapChans f).AffineInrOp
+  := by
+  simp [Proc.mapChans, Proc.AffineInrOp]
+  intros depOp inputs inputs' outputs outputs' hmem hmem'
+  simp [AtomicProcs.mapChans] at hmem hmem'
+  have ⟨ap, hmem_ap, hmap_ap⟩ := hmem
+  have ⟨ap', hmem_ap', hmap_ap'⟩ := hmem'
+  cases ap <;> simp [AtomicProc.mapChans] at hmap_ap
+  cases ap' <;> simp [AtomicProc.mapChans] at hmap_ap'
+  have ⟨h₁, h₂, h₃⟩ := hmap_ap
+  subst h₁
+  have ⟨h₁', h₂', h₃'⟩ := hmap_ap'
+  subst h₁'
+  simp at h₂ h₃ h₂' h₃'
+  subst h₂ h₃ h₂' h₃'
+  simp [haff _ _ _ _ _ hmem_ap hmem_ap']
+
 theorem sim_compile_prog
   [Arity Op]
   [InterpConsts V]
@@ -817,7 +968,8 @@ theorem sim_compile_prog
   (i : Nat)
   (hlt : i < k)
   (hnz : ∀ (i : Fin k), sigs[i].ι > 0 ∧ sigs[i].ω > 0)
-  (hwf : ∀ i, (prog i).WellFormed) :
+  (hwf : ∀ i, (prog i).WellFormed)
+  (haff : prog.AffineInrOp) :
   prog.semantics ⟨i, hlt⟩ ≲ (compileProg sigs prog hnz ⟨i, hlt⟩).semantics
   := by
   induction i using Nat.strong_induction_on with
@@ -836,7 +988,10 @@ theorem sim_compile_prog
           (by apply hwf))
         (sim_map_chans_inj (f := LinkName.base) (by simp [Function.Injective]))
     apply sim_link_procs
-    intros op
-    rfl
+    · intros op
+      rfl
+    · apply map_chans_preserves_aff_op
+      apply compile_fn_preserves_aff_op
+      apply haff
 
-end Wavelet.Call
+end Wavelet.Compile

@@ -113,6 +113,27 @@ theorem push_vals_empty
             simp [Vector.mem_pop_iff, h₁, this]
           simp [Vector.finIdxOf?_eq_none_iff.mpr this]
 
+theorem pop_vals_unfold
+  {map : ChanMap χ V}
+  {names : Vector χ (n + 1)} :
+  map.popVals names = do
+    let (vals', map') ← map.popVals names.pop
+    let (val, map'') ← map'.popVal names.back
+    return (vals'.push val, map'')
+:= by
+  simp [ChanMap.popVals]
+  have : names = names.pop.push names.back := by simp
+  rw [this, Vector.mapM_push]
+  simp
+  congr
+  funext x
+  simp [Option.map]
+  split <;> rename_i h
+  · simp [StateT.run] at h
+    simp [h]
+  · simp [StateT.run] at h
+    simp [h]
+
 theorem pop_val_singleton
   {map : ChanMap χ V}
   (hsingleton : map name = [val]) :
