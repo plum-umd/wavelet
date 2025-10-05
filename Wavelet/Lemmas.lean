@@ -65,6 +65,17 @@ theorem mem_flatten_mapIdx
   · exists i, hlt
   · simp [hget_x, hmem_x']
 
+theorem mem_flatten_map
+  {xs : List α} {x : α} {x' : β}
+  {f : α → List β}
+  (hmem_x : x ∈ xs)
+  (hmem_x' : x' ∈ f x):
+  x' ∈ (xs.map f).flatten
+  := by
+  apply List.mem_flatten.mpr
+  simp
+  exists x
+
 end List
 
 namespace Array
