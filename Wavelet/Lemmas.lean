@@ -50,6 +50,21 @@ theorem mem_to_mem_removeAll
   simp [List.removeAll]
   grind
 
+theorem mem_flatten_mapIdx
+  {xs : List α} {x : α} {x' : β}
+  {f : Nat → α → List β}
+  (hmem_x : x ∈ xs)
+  (hmem_x' : ∀ i, x' ∈ f i x):
+  x' ∈ (xs.mapIdx f).flatten
+  := by
+  have ⟨i, hlt, hget_x⟩ := List.mem_iff_getElem.mp hmem_x
+  apply List.mem_flatten.mpr
+  simp
+  exists f i xs[i]
+  constructor
+  · exists i, hlt
+  · simp [hget_x, hmem_x']
+
 end List
 
 namespace Array
