@@ -502,16 +502,6 @@ theorem sim_link_procs_step_dep_ret
   cases hstep_dep with | step_output hpop_outputs =>
   rename_i chans'
   have ⟨idx, hidx, hget_op⟩ := List.mem_iff_getElem.mp hmem_op
-  have hmem_forward_inputs :
-    .forward
-      (inputs.map .main)
-      ((procs depOp.toFin).inputs.map (LinkName.dep depOp.toFin))
-    ∈ s₂.proc.atoms
-    := by
-    simp [hsim_proc, linkProcs]
-    have := List.mem_of_getElem hget_op
-    exists AtomicProc.op (Sum.inr depOp) inputs outputs
-    simp [this, linkAtomicProc, hsim_proc_inputs]
   have hmem_forward_outputs :
     .forward
       ((procs depOp.toFin).outputs.map (LinkName.dep depOp.toFin))
@@ -690,7 +680,8 @@ theorem sim_link_procs_step_dep
     Sim { s₁ with
       depStates := Function.update s₁.depStates depOp depState' } s₂'
   := by
-  have ⟨hsim_proc, hsim_chans⟩ := hsim
+  have ⟨hsim_proc_inputs, hsim_proc_outputs, hsim_aff, hsim_proc, hsim_main, hsim_dep⟩ := hsim
+  have ⟨frame, hsim_chans⟩ := hsim_dep hcur
   simp [Proc.semantics, Lts.Step] at hstep_dep
   cases hstep_dep with
   | step_init =>
@@ -698,8 +689,86 @@ theorem sim_link_procs_step_dep
     cases hlabel
   | step_op hmem_op hpop =>
     cases hlabel
-    rename_i op inputVals outputVals inputs outputs chans'
-    sorry
+    rename_i op inputs outputs inputVals outputVals chans'
+    have hstep_s₂ : Dataflow.Config.Step s₂ (.yield op inputVals outputVals) _
+      := Dataflow.Config.Step.step_op
+        (op := op)
+        (inputs := inputs.map (.dep depOp.toFin))
+        (outputs := outputs.map (.dep depOp.toFin))
+        (chans' :=
+          Sim.linkChans frame.chans'
+            (Function.update (λ i => (s₁.depStates (SigOps.call i)).chans) depOp.1 chans'))
+        (by
+          simp [hsim_proc, linkProcs]
+          apply List.mem_flatten_map (List.mem_of_getElem frame.get_op)
+          simp [linkAtomicProc, AtomicProcs.mapChans]
+          exists AtomicProc.op op inputs outputs)
+        (by
+          simp [hsim_chans]
+          rw [sim_link_procs_pop_vals_dep hpop])
+    replace ⟨s₂', hs₂', hstep_s₂⟩ := exists_eq_left.mpr hstep_s₂
+    exists s₂'
+    constructor
+    · exact .single hstep_s₂
+    · and_intros
+      · simp
+        intros depOp'
+        by_cases hdep : depOp = depOp'
+        · subst hdep
+          simp [hsim_proc_inputs]
+        · simp [Ne.symm hdep]
+          simp [hsim_proc_inputs]
+      · simp
+        intros depOp'
+        by_cases hdep : depOp = depOp'
+        · subst hdep
+          simp [hsim_proc_outputs]
+        · simp [Ne.symm hdep]
+          simp [hsim_proc_outputs]
+      · exact hsim_aff
+      · simp [hs₂', hsim_proc, linkProcs]
+        congr
+        cases depOp with | call i =>
+        funext i'
+        by_cases h : i' = i
+        · subst h
+          simp
+        · simp [Function.update, h]
+      · simp [hs₂', hcur]
+      · simp [hs₂', hcur]
+        exists frame
+        funext name
+        -- TODO: refactor this as a lemma
+        cases name with
+        | base =>
+          rw [push_vals_disjoint]
+          rotate_left
+          · simp
+          simp [Sim.linkChans]
+        | main =>
+          rw [push_vals_disjoint]
+          rotate_left
+          · simp
+          simp [Sim.linkChans]
+        | dep i name' =>
+          simp [Sim.linkChans]
+          by_cases h : i = depOp.1
+          · simp at h
+            rw [h]
+            rw [sim_link_procs_push_vals_dep]
+            simp
+          · rw [push_vals_disjoint]
+            rotate_left
+            · simp [Ne.symm h]
+            simp [Sim.linkChans]
+            split
+            · rw [Function.update_of_ne (by
+                intros h'
+                simp [← h'] at h) _ _]
+              rw [Function.update_of_ne (by
+                intros h'
+                simp [← h'] at h) _ _]
+            · rfl
   | _ => sorry
 
 /-- Linking syntactically simulates linking semantically. -/
