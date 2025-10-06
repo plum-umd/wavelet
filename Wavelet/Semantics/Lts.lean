@@ -6,11 +6,43 @@ abbrev Lts (C : Type u) (E : Type v) := C → E → C → Prop
 
 abbrev Lts.Step (lts : Lts C E) := lts
 
+theorem Lts.Step.eq_rhs
+  {lts : Lts C E}
+  (hstep : lts.Step c₁ l c₂)
+  (heq : c₂ = c₂') :
+  lts.Step c₁ l c₂' := by
+  simp [heq] at hstep
+  exact hstep
+
+theorem Lts.Step.eq_lhs
+  {lts : Lts C E}
+  (hstep : lts.Step c₁ l c₂)
+  (heq : c₁ = c₁') :
+  lts.Step c₁' l c₂ := by
+  simp [heq] at hstep
+  exact hstep
+
 /-- Zero or more steps with the given label -/
 inductive Lts.TauStar (lts : Lts C E) (τ : E) : C → C → Prop
   | refl : lts.TauStar τ c c
   | tail {c₁ c₂ c₃ : C} :
       lts.TauStar τ c₁ c₂ → lts c₂ τ c₃ → lts.TauStar τ c₁ c₃
+
+theorem Lts.TauStar.eq_rhs
+  {lts : Lts C E}
+  (hstep : lts.TauStar τ c₁ c₂)
+  (heq : c₂ = c₂') :
+  lts.TauStar τ c₁ c₂' := by
+  simp [heq] at hstep
+  exact hstep
+
+theorem Lts.TauStar.eq_lhs
+  {lts : Lts C E}
+  (hstep : lts.TauStar τ c₁ c₂)
+  (heq : c₁ = c₁') :
+  lts.TauStar τ c₁' c₂ := by
+  simp [heq] at hstep
+  exact hstep
 
 theorem Lts.TauStar.single
   {lts : Lts C E} {τ : E}
