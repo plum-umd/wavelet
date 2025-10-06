@@ -117,6 +117,61 @@ def link
 
 section Simulation
 
+/-- Similar to `step_main`, but uses `TauStar`. -/
+theorem LinkStep.step_main_tau_star
+  [Arity Op₀] [Arity Op₁]
+  [DecidableEq Op₁]
+  {main : Semantics (Op₀ ⊕ Op₁) V m n}
+  {deps : PartInterp Op₀ Op₁ V}
+  {s : LinkState main deps}
+  {mainState' : main.S}
+  (hcur : s.curSem = none)
+  (hstep : main.lts.TauStar .τ s.mainState mainState') :
+  (LinkStep main deps).TauStar .τ s { s with mainState := mainState' }
+  := by
+  induction hstep with
+  | refl => exact .refl
+  | tail pref tail ih =>
+    apply Lts.TauStar.trans
+    · exact ih
+    · apply Lts.TauStar.single
+      exact .step_main hcur .pass_tau tail
+
+/-- Similar to `step_main`, but uses `StepModTau`. -/
+theorem LinkStep.step_main_mod_tau
+  [Arity Op₀] [Arity Op₁]
+  [DecidableEq Op₁]
+  {main : Semantics (Op₀ ⊕ Op₁) V m n}
+  {deps : PartInterp Op₀ Op₁ V}
+  {s : LinkState main deps}
+  {l : Label (Op₀ ⊕ Op₁) V m n}
+  {l' : Label Op₀ V m n}
+  {mainState' : main.S}
+  (hcur : s.curSem = none)
+  (hlabel : MainLabelPassthrough l l')
+  (hstep : main.lts.StepModTau .τ s.mainState l mainState') :
+  (LinkStep main deps).StepModTau .τ s l' { s with mainState := mainState' }
+  := by
+  have ⟨h₁, h₂, h₃⟩ := hstep
+  constructor
+  · exact LinkStep.step_main_tau_star hcur h₁
+  · exact .step_main hcur hlabel h₂
+  · exact LinkStep.step_main_tau_star hcur h₃
+
+private def SimRel
+  [Arity Op₀] [Arity Op₁]
+  [DecidableEq Op₁]
+  {main main' : Semantics (Op₀ ⊕ Op₁) V m n}
+  {deps deps' : PartInterp Op₀ Op₁ V}
+  (hsim_deps : ∀ i, deps i ≲ deps' i)
+  (hsim_main : main ≲ main')
+  (s : LinkState main deps)
+  (s' : LinkState main' deps') : Prop
+  :=
+    s.curSem = s'.curSem ∧
+    hsim_main.Sim s.mainState s'.mainState ∧
+    (∀ op, (hsim_deps op).Sim (s.depStates op) (s'.depStates op))
+
 /-- Refining components implies refining the linked semantics. -/
 theorem sim_congr_link
   [Arity Op₀] [Arity Op₁]
@@ -126,7 +181,30 @@ theorem sim_congr_link
   (hsim_deps : ∀ i, deps i ≲ deps' i)
   (hsim_main : main ≲ main')
   : main.link deps ≲ main'.link deps'
-  := sorry
+  := by
+  apply Lts.SimilarBy.intro (SimRel hsim_deps hsim_main)
+  apply SimulatedBy.alt
+  and_intros
+  · simp [link, LinkState.init]
+  · exact hsim_main.sim_init
+  · intros op
+    exact (hsim_deps op).sim_init
+  · intros s₁ s₂ l s₁' hsim hstep
+    have ⟨hcur_sem, hsim_main_states, hsim_dep_states⟩ := hsim
+    cases hstep with
+    | step_main hcur hlabel hstep_main =>
+      have ⟨mainState', hstep', hsim'⟩
+        := hsim_main.sim_step _ _ _ _ hsim.2.1 (.single hstep_main)
+      exists { s₂ with mainState := mainState' }
+      constructor
+      · simp [link, hcur_sem] at hcur ⊢
+        simp [Lts.Step] at hstep'
+        exact LinkStep.step_main_mod_tau hcur hlabel hstep'
+      · and_intros
+        · simp [hcur_sem]
+        · exact hsim'
+        · exact hsim_dep_states
+    | _ => sorry
 
 end Simulation
 

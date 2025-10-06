@@ -10,7 +10,7 @@ namespace Wavelet.Compile
 open Semantics Seq Dataflow
 
 /-- Ghost states/invariants about the current activated dependency operator. -/
-structure SimRel.GhostFrame
+private structure SimRel.GhostFrame
   [Arity Op]
   [DecidableEq χ]
   {sigs : Vector Sig k}
@@ -27,7 +27,7 @@ structure SimRel.GhostFrame
   pop_inputs : mainState.chans.popVals inputs = some (inputVals, chans')
 
 /-- Corresponds channel states -/
-def SimRel.linkChans
+private def SimRel.linkChans
   (mainChans : ChanMap (LinkName χ) V)
   (depChans : Fin k' → ChanMap (LinkName χ) V)
   : ChanMap (LinkName χ) V :=
@@ -37,7 +37,7 @@ def SimRel.linkChans
     | _ => []
 
 /-- Simulation relation for `linkProcs`. -/
-def SimRel
+private def SimRel
   [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
@@ -94,7 +94,7 @@ theorem sim_link_procs_push_vals_main
     simp [SimRel.linkChans]
 
 /-- `pushVals` on dep channels commutes with `linkChans`. -/
-theorem sim_link_procs_push_vals_dep
+private theorem sim_link_procs_push_vals_dep
   [DecidableEq χ]
   {chans : ChanMap (LinkName χ) V}
   {depChans : Fin k' → ChanMap (LinkName χ) V}
@@ -118,7 +118,7 @@ theorem sim_link_procs_push_vals_dep
     simp [SimRel.linkChans]
 
 /-- `popVal` on a main channel commutes with `linkChans`. -/
-theorem sim_link_procs_pop_val_main
+private theorem sim_link_procs_pop_val_main
   [DecidableEq χ]
   {chans chans' : ChanMap (LinkName χ) V}
   {name : LinkName χ}
@@ -138,7 +138,7 @@ theorem sim_link_procs_pop_val_main
   | dep => simp [SimRel.linkChans]
 
 /-- `popVals` on main channels commutes with `linkChans`. -/
-theorem sim_link_procs_pop_vals_main
+private theorem sim_link_procs_pop_vals_main
   [DecidableEq χ]
   {chans chans' : ChanMap (LinkName χ) V}
   {names : Vector (LinkName χ) n}
@@ -163,7 +163,7 @@ theorem sim_link_procs_pop_vals_main
     simp [sim_link_procs_pop_val_main h₂, hpop]
 
 /-- `popVal` on a dep channel commutes with `linkChans`. -/
-theorem sim_link_procs_pop_val_dep
+private theorem sim_link_procs_pop_val_dep
   [DecidableEq χ]
   {mainChans chans' : ChanMap (LinkName χ) V}
   {name : LinkName χ}
@@ -198,7 +198,7 @@ theorem sim_link_procs_pop_val_dep
           intros h₂; simp [← h₂] at h₁) _ _]
       · rfl
 
-theorem sim_link_procs_pop_vals_dep
+private theorem sim_link_procs_pop_vals_dep
   [DecidableEq χ]
   {mainChans chans' : ChanMap (LinkName χ) V}
   {names : Vector (LinkName χ) n}
@@ -226,7 +226,7 @@ theorem sim_link_procs_pop_vals_dep
     rw [this] at h₂
     simp [sim_link_procs_pop_val_dep (χ := χ) h₂, hpop]
 
-theorem sim_link_procs_step_dep_spawn
+private theorem sim_link_procs_step_dep_spawn
   [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
@@ -356,7 +356,7 @@ theorem sim_link_procs_step_dep_spawn
             omega
           simp [SimRel.linkChans, h₁]
 
-theorem sim_link_procs_step_dep_ret
+private theorem sim_link_procs_step_dep_ret
   [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
@@ -476,7 +476,7 @@ theorem sim_link_procs_step_dep_ret
           simp [← h'] at h) _ _]
     · simp [hs₂']
 
-theorem sim_link_procs_step_main
+private theorem sim_link_procs_step_main
   [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
@@ -568,7 +568,7 @@ theorem sim_link_procs_step_main
       · simp [hs₂', hcur]
   | _ => sorry
 
-theorem sim_link_procs_step_dep
+private theorem sim_link_procs_step_dep
   [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
@@ -700,7 +700,7 @@ theorem sim_link_procs
     funext op
     apply hdeps
   simp only [hdeps]
-  apply Lts.SimilarBy.mk SimRel
+  apply Lts.SimilarBy.intro SimRel
   apply Semantics.SimulatedBy.alt
   · -- SimRel holds at initial states
     simp [SimRel, Proc.semantics, Semantics.link,

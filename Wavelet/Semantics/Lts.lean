@@ -12,6 +12,11 @@ inductive Lts.TauStar (lts : Lts C E) (τ : E) : C → C → Prop
   | tail {c₁ c₂ c₃ : C} :
       lts.TauStar τ c₁ c₂ → lts c₂ τ c₃ → lts.TauStar τ c₁ c₃
 
+theorem Lts.TauStar.single
+  {lts : Lts C E} {τ : E}
+  (hstep : lts c₁ τ c₂) :
+  lts.TauStar τ c₁ c₂ := Lts.TauStar.tail .refl hstep
+
 theorem Lts.TauStar.prepend
   {lts : Lts C E}
   (hhead : lts c₁ τ c₂)
@@ -106,13 +111,46 @@ structure Lts.SimulatedBy
       lts₂.Step c₂ l c₂' ∧
       R c₁' c₂'
 
-inductive Lts.SimilarBy
+/-- Similarity -/
+def Lts.SimilarBy
   (lts₁ : Lts C₁ E)
   (lts₂ : Lts C₂ E)
-  (c₁ : C₁) (c₂ : C₂) : Prop where
-  | mk (Sim : C₁ → C₂ → Prop) :
-      lts₁.SimulatedBy lts₂ Sim c₁ c₂ →
-      SimilarBy lts₁ lts₂ c₁ c₂
+  (c₁ : C₁) (c₂ : C₂) : Prop :=
+  ∃ Sim : C₁ → C₂ → Prop, lts₁.SimulatedBy lts₂ Sim c₁ c₂
+
+theorem Lts.SimilarBy.intro
+  {lts₁ : Lts C₁ E}
+  {lts₂ : Lts C₂ E}
+  {c₁ : C₁} {c₂ : C₂}
+  (Sim : C₁ → C₂ → Prop)
+  (hsim : lts₁.SimulatedBy lts₂ Sim c₁ c₂)
+  : Lts.SimilarBy lts₁ lts₂ c₁ c₂ := by exists Sim
+
+abbrev Lts.SimilarBy.Sim
+  {lts₁ : Lts C₁ E}
+  {lts₂ : Lts C₂ E}
+  {c₁ : C₁} {c₂ : C₂}
+  (hsim : Lts.SimilarBy lts₁ lts₂ c₁ c₂) :
+  C₁ → C₂ → Prop := hsim.choose
+
+theorem Lts.SimilarBy.sim_init
+  {lts₁ : Lts C₁ E}
+  {lts₂ : Lts C₂ E}
+  {c₁ : C₁} {c₂ : C₂}
+  (hsim : Lts.SimilarBy lts₁ lts₂ c₁ c₂) :
+  hsim.Sim c₁ c₂ := hsim.choose_spec.init
+
+theorem Lts.SimilarBy.sim_step
+  {lts₁ : Lts C₁ E}
+  {lts₂ : Lts C₂ E}
+  {c₁ : C₁} {c₂ : C₂}
+  (hsim : Lts.SimilarBy lts₁ lts₂ c₁ c₂) :
+  ∀ c₁ c₂ l c₁',
+    hsim.Sim c₁ c₂ →
+    lts₁.Step c₁ l c₁' →
+    ∃ c₂',
+      lts₂.Step c₂ l c₂' ∧
+      hsim.Sim c₁' c₂' := hsim.choose_spec.coind
 
 theorem Lts.SimilarBy.refl
   {lts : Lts C E} {c : C} :
@@ -134,7 +172,7 @@ theorem Lts.SimilarBy.trans
   Lts.SimilarBy lts₁ lts₃ c₁ c₃ := by
   rintro ⟨R₁₂, hsim₁₂_init, hsim₁₂_coind⟩
   rintro ⟨R₂₃, hsim₂₃_init, hsim₂₃_coind⟩
-  apply Lts.SimilarBy.mk λ c₁ c₃ => ∃ c₂, R₁₂ c₁ c₂ ∧ R₂₃ c₂ c₃
+  apply Lts.SimilarBy.intro λ c₁ c₃ => ∃ c₂, R₁₂ c₁ c₂ ∧ R₂₃ c₂ c₃
   constructor
   · exists c₂
   · intros c₁ c₃ l c₁' hR hstep_c₁
