@@ -1,6 +1,10 @@
 import Wavelet.Seq
 import Wavelet.Dataflow
 
+import Wavelet.Compile.Fn.Defs
+import Wavelet.Compile.Prog.Defs
+import Wavelet.Compile.MapChans
+
 namespace Wavelet.Seq
 
 open Semantics
@@ -52,3 +56,40 @@ def Proc.AffineInrOp
     inputs = inputs' ∧ outputs = outputs'
 
 end Wavelet.Dataflow
+
+namespace Wavelet.Compile
+
+open Semantics Seq Dataflow Fn
+
+/-- `compileFn` preserves `AffineInrOp`. -/
+theorem compile_fn_preserves_aff_op
+  [Arity Op₁] [Arity Op₂]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {fn : Fn (Op₁ ⊕ Op₂) χ V m n}
+  (haff : fn.AffineInrOp)
+  : (compileFn hnz fn).AffineInrOp
+  := sorry
+
+theorem map_chans_preserves_aff_op
+  [Arity Op₁] [Arity Op₂]
+  {f : χ → χ'}
+  {proc : Proc (Op₁ ⊕ Op₂) χ V m n}
+  (haff : proc.AffineInrOp) : (proc.mapChans f).AffineInrOp
+  := by
+  simp [Proc.mapChans, Proc.AffineInrOp]
+  intros depOp inputs inputs' outputs outputs' hmem hmem'
+  simp [AtomicProcs.mapChans] at hmem hmem'
+  have ⟨ap, hmem_ap, hmap_ap⟩ := hmem
+  have ⟨ap', hmem_ap', hmap_ap'⟩ := hmem'
+  cases ap <;> simp [AtomicProc.mapChans] at hmap_ap
+  cases ap' <;> simp [AtomicProc.mapChans] at hmap_ap'
+  have ⟨h₁, h₂, h₃⟩ := hmap_ap
+  subst h₁
+  have ⟨h₁', h₂', h₃'⟩ := hmap_ap'
+  subst h₁'
+  simp at h₂ h₃ h₂' h₃'
+  subst h₂ h₃ h₂' h₃'
+  simp [haff _ _ _ _ _ hmem_ap hmem_ap']
+
+end Wavelet.Compile

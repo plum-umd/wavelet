@@ -82,24 +82,25 @@ abbrev SimilarBy
 
 infix:50 " ≲ " => Semantics.SimilarBy
 
-private theorem sim_tau_step_to_tau_star
+/-- Helper lemma for `SimulatedBy.alt`. -/
+private theorem SimulatedBy.alt_tau_star_to_tau_star
   [Arity Op]
   {sem₁ sem₂ : Semantics Op V m n}
   {R : sem₁.S → sem₂.S → Prop}
   {s₁ s₁' : sem₁.S}
   {s₂ : sem₂.S}
-  (hR : R s₁ s₂)
-  (hsim_tau : ∀ s₁ s₂ s₁',
+  (hsim : ∀ s₁ s₂ l s₁',
     R s₁ s₂ →
-    sem₁.lts.Step s₁ .τ s₁' →
+    sem₁.lts.Step s₁ l s₁' →
     ∃ s₂',
-      sem₂.lts.TauStar .τ s₂ s₂' ∧
+      sem₂.lts.StepModTau .τ s₂ l s₂' ∧
       R s₁' s₂')
-  (hstep_tau : sem₁.lts.TauStar .τ s₁ s₁') :
+  (hR : R s₁ s₂)
+  (htau_steps : sem₁.lts.TauStar .τ s₁ s₁') :
   ∃ s₂',
     sem₂.lts.TauStar .τ s₂ s₂' ∧
     R s₁' s₂' := by
-  induction hstep_tau with
+  induction htau_steps with
   | refl =>
     exists s₂
     constructor
@@ -107,11 +108,13 @@ private theorem sim_tau_step_to_tau_star
     · exact hR
   | tail pref tail ih =>
     have ⟨s₂₂, hstep_s₂, hR₂⟩ := ih
-    have ⟨s₂', hstep_s₂₂, hR₂₂⟩ := hsim_tau _ s₂₂ _ hR₂ tail
-    have := Lts.TauStar.trans hstep_s₂ hstep_s₂₂
+    have ⟨s₂', htau_step, hR'⟩ := hsim _ _ .τ _ hR₂ tail
     exists s₂'
+    constructor
+    · exact .trans hstep_s₂ htau_step.to_tau_star
+    · exact hR'
 
-/-- A sufficient proof obligation for simulation mod tau. -/
+/-- A sufficient proof obligation for simulation modulo tau. -/
 theorem SimulatedBy.alt
   [Arity Op]
   {sem₁ sem₂ : Semantics Op V m n}
@@ -124,7 +127,17 @@ theorem SimulatedBy.alt
       sem₂.lts.StepModTau .τ s₂ l s₂' ∧
       R s₁' s₂') :
   Semantics.SimulatedBy sem₁ sem₂ R := by
-  sorry
+  apply Lts.SimulatedBy.mk
+  · exact hinit
+  · intros s₁ s₂ l s₁' hR hstep
+    have ⟨hstep₁, hstep₂, hstep₃⟩ := hstep
+    have ⟨s₂₁, hstep_s₂, hR₂₁⟩ := SimulatedBy.alt_tau_star_to_tau_star hsim hR hstep₁
+    have ⟨s₂₂, ⟨h₁, h₂, h₃⟩, hR₂₂⟩ := hsim _ _ l _ hR₂₁ hstep₂
+    have ⟨s₂', hstep_s₂₂, hR'⟩ := SimulatedBy.alt_tau_star_to_tau_star hsim hR₂₂ hstep₃
+    exists s₂'
+    constructor
+    · exact ⟨.trans hstep_s₂ h₁, h₂, .trans h₃ hstep_s₂₂⟩
+    · exact hR'
 
 theorem SimilarBy.refl
   [Arity Op]

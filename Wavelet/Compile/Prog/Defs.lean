@@ -1,4 +1,5 @@
 import Wavelet.Compile.Fn.Defs
+import Wavelet.Compile.MapChans
 
 /-! Compiler from `Prog` to dataflow `Proc`. -/
 

@@ -115,4 +115,19 @@ def link
     lts := LinkStep main deps,
   }
 
+section Simulation
+
+/-- Refining components implies refining the linked semantics. -/
+theorem sim_congr_link
+  [Arity Op₀] [Arity Op₁]
+  [DecidableEq Op₁]
+  {main main' : Semantics (Op₀ ⊕ Op₁) V m n}
+  {deps deps' : PartInterp Op₀ Op₁ V}
+  (hsim_deps : ∀ i, deps i ≲ deps' i)
+  (hsim_main : main ≲ main')
+  : main.link deps ≲ main'.link deps'
+  := sorry
+
+end Simulation
+
 end Wavelet.Semantics
