@@ -798,8 +798,8 @@ theorem sim_compile_prog
       apply ih
       omega
     · apply Semantics.SimilarBy.trans
-        (sim_compile_fn
-          (by apply hnz ⟨i, by omega⟩) _
+        (sim_compile_fn _
+          (by apply hnz ⟨i, by omega⟩)
           (by apply hwf))
         (sim_map_chans_inj (f := LinkName.base) (by simp [Function.Injective]))
     apply sim_link_procs

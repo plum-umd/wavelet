@@ -118,6 +118,7 @@ inductive Config.Step
   | step_init :
     c.cont = .init →
     Step c (.input args) { c with
+      cont := .expr c.fn.body,
       vars := .fromList (c.fn.params.zip args).toList,
       definedVars := c.fn.params.toList,
       pathConds := [],

@@ -320,6 +320,15 @@ theorem path_conds_nodup_alt
   (hpath_conds : ((b, condName) :: tailConds).Sublist pathConds) :
   (b', condName) ∉ tailConds := by grind
 
+theorem input_finIdxOf?_none
+  [DecidableEq χ]
+  {vars : Vector χ n}
+  (hnot_mem : var ∉ vars) :
+  (Vector.map ChanName.input vars).finIdxOf? (ChanName.input var) = none
+:= by
+  apply Vector.finIdxOf?_eq_none_iff.mpr
+  simp [hnot_mem]
+
 theorem input_finIdxOf?_index
   [DecidableEq χ]
   {vars : Vector χ n} {i : Nat} {hlt : i < n}
@@ -333,5 +342,28 @@ theorem input_finIdxOf?_index
   have := (List.Nodup.get_inj_iff hnodup).mp hget
   simp at this
   simp [← this] at hj
+
+theorem final_dest_finIdxOf?_index
+  [DecidableEq χ]
+  {i : Nat}
+  (hlt : i < n) :
+  ((Vector.range n).map ChanName.final_dest).finIdxOf?
+    (ChanName.final_dest (χ := χ) i)
+    = some (⟨i, by omega⟩)
+  := by
+  apply Vector.finIdxOf?_eq_some_iff.mpr
+  simp [Vector.get]
+  intros j hj hget
+  simp [← hget] at hj
+
+theorem final_dest_finIdxOf?_none
+  [DecidableEq χ]
+  {i : Nat}
+  (hlt : i ≥ n) :
+  ((Vector.range n).map ChanName.final_dest).finIdxOf?
+    (ChanName.final_dest (χ := χ) i) = none
+  := by
+  apply Vector.finIdxOf?_eq_none_iff.mpr
+  simp [hlt]
 
 end Wavelet.Compile

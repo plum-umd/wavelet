@@ -30,6 +30,7 @@ instance : Arity (SigOps sigs k') where
 abbrev Prog (Op : Type u) χ V [Arity Op] (sigs : Vector Sig k) :=
   (i : Fin k) → Fn (Op ⊕ SigOps sigs i.castSucc) χ V sigs[i].ι sigs[i].ω
 
+/-- Semantics of programs by semantically linking dependent functions. -/
 def Prog.semantics
   [Arity Op] [DecidableEq χ] [InterpConsts V]
   {sigs : Vector Sig k}

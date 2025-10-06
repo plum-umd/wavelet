@@ -127,13 +127,13 @@ def compileFn
   (hnz : m > 0 ∧ n > 0)
   (fn : Fn Op χ V m n) : Proc Op (ChanName χ) V m n
   := {
-    inputs,
-    outputs := (Vector.range n).map .final_tail_arg,
+    inputs, outputs,
     atoms := initCarry false :: (bodyComp ++ resultSteers m n)
   }
   where
     -- A carry gate to merge initial values and tail call arguments
     inputs := fn.params.map .input
+    outputs := (Vector.range n).map .final_dest
     initCarry inLoop :=
       .carry inLoop
         .tail_cond_carry

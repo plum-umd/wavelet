@@ -46,6 +46,37 @@ def Lts.StepModTau.single
   (hstep : lts.Step c₁ l c₂)
   : lts.StepModTau τ c₁ l c₂ := ⟨.refl, hstep, .refl⟩
 
+/-- Append a τ step at the end of `StepModTau`. -/
+theorem Lts.StepModTau.tail_tau
+  {lts : Lts C E} {τ : E}
+  (hstep : lts.StepModTau τ c₁ l c₂)
+  (htau : lts.Step c₂ τ c₃)
+  : lts.StepModTau τ c₁ l c₃ := by
+  have ⟨h₁, h₂, h₃⟩ := hstep
+  exact ⟨h₁, h₂, Lts.TauStar.tail h₃ htau⟩
+
+theorem Lts.StepModTau.to_tau_star
+  {lts : Lts C E} {τ : E}
+  (hstep : lts.StepModTau τ c₁ τ c₂)
+  : lts.TauStar τ c₁ c₂ := by
+  have ⟨h₁, h₂, h₃⟩ := hstep
+  exact .trans h₁ (.prepend h₂ h₃)
+
+theorem Lts.StepModTau.tail_non_tau
+  {lts : Lts C E} {τ : E}
+  (htau_steps : lts.StepModTau τ c₁ τ c₂)
+  (hstep : lts.Step c₂ l c₃)
+  : lts.StepModTau τ c₁ l c₃ :=
+  ⟨htau_steps.to_tau_star, hstep, .refl⟩
+
+theorem Lts.StepModTau.eq_rhs
+  {lts : Lts C E} {τ : E}
+  (hstep : lts.StepModTau τ c₁ l c₂)
+  (heq : c₂ = c₂') :
+  lts.StepModTau τ c₁ l c₂' := by
+  simp [heq] at hstep
+  exact hstep
+
 abbrev Trace := List
 
 abbrev Trace.ε : Trace E := []
