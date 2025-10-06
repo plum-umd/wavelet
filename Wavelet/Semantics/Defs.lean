@@ -65,25 +65,25 @@ def HasYield
   (s : sem.S) (op : Op) (inputs : Vector V (Arity.ι op)) : Prop :=
   ∃ outputs s', sem.lts.Step s (.yield op inputs outputs) s'
 
-/-- Simulation modulo the silent label. -/
-abbrev SimulatedBy
+/-- Weak simulation (up to the silent label). -/
+abbrev WeakSimulation
   [Arity Op]
   (sem₁ sem₂ : Semantics Op V m n)
   (R : sem₁.S → sem₂.S → Prop) : Prop
-  := Lts.SimulatedBy
+  := Lts.Simulation
     (sem₁.lts.StepModTau .τ) (sem₂.lts.StepModTau .τ)
     R
     sem₁.init sem₂.init
 
-abbrev SimilarBy
+abbrev WeakSimilarity
   [Arity Op]
   (sem₁ sem₂ : Semantics Op V m n) : Prop
-  := Lts.SimilarBy (sem₁.lts.StepModTau .τ) (sem₂.lts.StepModTau .τ) sem₁.init sem₂.init
+  := Lts.Similarity (sem₁.lts.StepModTau .τ) (sem₂.lts.StepModTau .τ) sem₁.init sem₂.init
 
-infix:50 " ≲ " => Semantics.SimilarBy
+infix:50 " ≲ " => WeakSimilarity
 
-/-- Helper lemma for `SimulatedBy.alt`. -/
-private theorem SimulatedBy.alt_tau_star_to_tau_star
+/-- Helper lemma for `WeakSimulation.alt`. -/
+private theorem WeakSimulation.alt_tau_star_to_tau_star
   [Arity Op]
   {sem₁ sem₂ : Semantics Op V m n}
   {R : sem₁.S → sem₂.S → Prop}
@@ -115,7 +115,7 @@ private theorem SimulatedBy.alt_tau_star_to_tau_star
     · exact hR'
 
 /-- A sufficient proof obligation for simulation modulo tau. -/
-theorem SimulatedBy.alt
+theorem WeakSimulation.alt
   [Arity Op]
   {sem₁ sem₂ : Semantics Op V m n}
   {R : sem₁.S → sem₂.S → Prop}
@@ -126,30 +126,30 @@ theorem SimulatedBy.alt
     ∃ s₂',
       sem₂.lts.StepModTau .τ s₂ l s₂' ∧
       R s₁' s₂') :
-  Semantics.SimulatedBy sem₁ sem₂ R := by
-  apply Lts.SimulatedBy.mk
+  WeakSimulation sem₁ sem₂ R := by
+  apply Lts.Simulation.mk
   · exact hinit
   · intros s₁ s₂ l s₁' hR hstep
     have ⟨hstep₁, hstep₂, hstep₃⟩ := hstep
-    have ⟨s₂₁, hstep_s₂, hR₂₁⟩ := SimulatedBy.alt_tau_star_to_tau_star hsim hR hstep₁
+    have ⟨s₂₁, hstep_s₂, hR₂₁⟩ := WeakSimulation.alt_tau_star_to_tau_star hsim hR hstep₁
     have ⟨s₂₂, ⟨h₁, h₂, h₃⟩, hR₂₂⟩ := hsim _ _ l _ hR₂₁ hstep₂
-    have ⟨s₂', hstep_s₂₂, hR'⟩ := SimulatedBy.alt_tau_star_to_tau_star hsim hR₂₂ hstep₃
+    have ⟨s₂', hstep_s₂₂, hR'⟩ := WeakSimulation.alt_tau_star_to_tau_star hsim hR₂₂ hstep₃
     exists s₂'
     constructor
     · exact ⟨.trans hstep_s₂ h₁, h₂, .trans h₃ hstep_s₂₂⟩
     · exact hR'
 
-theorem SimilarBy.refl
+theorem WeakSimilarity.refl
   [Arity Op]
   (sem : Semantics Op V m n) :
-  sem ≲ sem := Lts.SimilarBy.refl
+  sem ≲ sem := Lts.Similarity.refl
 
-theorem SimilarBy.trans
+theorem WeakSimilarity.trans
   {Op : Type u} {V : Type v}
   [Arity Op]
   {sem₁ sem₂ sem₃ : Semantics Op V m n}
   (h₁ : sem₁ ≲ sem₂) (h₂ : sem₂ ≲ sem₃) :
   sem₁ ≲ sem₃ :=
-  Lts.SimilarBy.trans h₁ h₂
+  Lts.Similarity.trans h₁ h₂
 
 end Wavelet.Semantics

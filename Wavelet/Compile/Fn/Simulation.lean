@@ -50,8 +50,8 @@ theorem sim_compile_fn
   (hwf : fn.WellFormed) :
   fn.semantics ≲ (compileFn hnz fn).semantics
   := by
-  apply Lts.SimilarBy.intro (SimRel hnz)
-  apply Semantics.SimulatedBy.alt
+  apply Lts.Similarity.intro (SimRel hnz)
+  apply Semantics.WeakSimulation.alt
   · exact sim_compile_fn_init fn hnz hwf
   · intros ec pc l ec' hsim hstep
     cases h₁ : ec.cont with

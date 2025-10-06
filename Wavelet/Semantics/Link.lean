@@ -233,8 +233,8 @@ theorem sim_congr_link
   (hsim_main : main ≲ main')
   : main.link deps ≲ main'.link deps'
   := by
-  apply Lts.SimilarBy.intro (SimRel hsim_deps hsim_main)
-  apply SimulatedBy.alt
+  apply Lts.Similarity.intro (SimRel hsim_deps hsim_main)
+  apply WeakSimulation.alt
   and_intros
   · simp [link, LinkState.init]
   · exact hsim_main.sim_init

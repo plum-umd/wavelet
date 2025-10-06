@@ -700,8 +700,8 @@ theorem sim_link_procs
     funext op
     apply hdeps
   simp only [hdeps]
-  apply Lts.SimilarBy.intro SimRel
-  apply Semantics.SimulatedBy.alt
+  apply Lts.Similarity.intro SimRel
+  apply WeakSimulation.alt
   · -- SimRel holds at initial states
     simp [SimRel, Proc.semantics, Semantics.link,
       Semantics.LinkState.init, Dataflow.Config.init]
@@ -742,12 +742,12 @@ theorem sim_compile_prog
     unfold Prog.semantics
     unfold compileProg
     simp
-    apply Semantics.SimilarBy.trans
+    apply WeakSimilarity.trans
     apply sim_congr_link
     · intros j
       apply ih
       omega
-    · apply Semantics.SimilarBy.trans
+    · apply WeakSimilarity.trans
         (sim_compile_fn _
           (by apply hnz ⟨i, by omega⟩)
           (by apply hwf))

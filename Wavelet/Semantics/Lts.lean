@@ -130,7 +130,7 @@ inductive LTS.Star (R : Lts C E) : Lts C (Trace E) where
   | refl : Star R c .ε c
   | tail : Star R c tr c' → R c' tr' c'' → Star R c (.cons tr tr') c''
 
-structure Lts.SimulatedBy
+structure Lts.Simulation
   (lts₁ : Lts C₁ E)
   (lts₂ : Lts C₂ E)
   (R : C₁ → C₂ → Prop)
@@ -143,40 +143,39 @@ structure Lts.SimulatedBy
       lts₂.Step c₂ l c₂' ∧
       R c₁' c₂'
 
-/-- Similarity -/
-def Lts.SimilarBy
+def Lts.Similarity
   (lts₁ : Lts C₁ E)
   (lts₂ : Lts C₂ E)
   (c₁ : C₁) (c₂ : C₂) : Prop :=
-  ∃ Sim : C₁ → C₂ → Prop, lts₁.SimulatedBy lts₂ Sim c₁ c₂
+  ∃ Sim : C₁ → C₂ → Prop, lts₁.Simulation lts₂ Sim c₁ c₂
 
-theorem Lts.SimilarBy.intro
+theorem Lts.Similarity.intro
   {lts₁ : Lts C₁ E}
   {lts₂ : Lts C₂ E}
   {c₁ : C₁} {c₂ : C₂}
   (Sim : C₁ → C₂ → Prop)
-  (hsim : lts₁.SimulatedBy lts₂ Sim c₁ c₂)
-  : Lts.SimilarBy lts₁ lts₂ c₁ c₂ := by exists Sim
+  (hsim : lts₁.Simulation lts₂ Sim c₁ c₂)
+  : Lts.Similarity lts₁ lts₂ c₁ c₂ := by exists Sim
 
-abbrev Lts.SimilarBy.Sim
+abbrev Lts.Similarity.Sim
   {lts₁ : Lts C₁ E}
   {lts₂ : Lts C₂ E}
   {c₁ : C₁} {c₂ : C₂}
-  (hsim : Lts.SimilarBy lts₁ lts₂ c₁ c₂) :
+  (hsim : Lts.Similarity lts₁ lts₂ c₁ c₂) :
   C₁ → C₂ → Prop := hsim.choose
 
-theorem Lts.SimilarBy.sim_init
+theorem Lts.Similarity.sim_init
   {lts₁ : Lts C₁ E}
   {lts₂ : Lts C₂ E}
   {c₁ : C₁} {c₂ : C₂}
-  (hsim : Lts.SimilarBy lts₁ lts₂ c₁ c₂) :
+  (hsim : Lts.Similarity lts₁ lts₂ c₁ c₂) :
   hsim.Sim c₁ c₂ := hsim.choose_spec.init
 
-theorem Lts.SimilarBy.sim_step
+theorem Lts.Similarity.sim_step
   {lts₁ : Lts C₁ E}
   {lts₂ : Lts C₂ E}
   {c₁ : C₁} {c₂ : C₂}
-  (hsim : Lts.SimilarBy lts₁ lts₂ c₁ c₂) :
+  (hsim : Lts.Similarity lts₁ lts₂ c₁ c₂) :
   ∀ c₁ c₂ l c₁',
     hsim.Sim c₁ c₂ →
     lts₁.Step c₁ l c₁' →
@@ -184,9 +183,9 @@ theorem Lts.SimilarBy.sim_step
       lts₂.Step c₂ l c₂' ∧
       hsim.Sim c₁' c₂' := hsim.choose_spec.coind
 
-theorem Lts.SimilarBy.refl
+theorem Lts.Similarity.refl
   {lts : Lts C E} {c : C} :
-  Lts.SimilarBy lts lts c c := ⟨
+  Lts.Similarity lts lts c c := ⟨
     λ c₁ c₂ => c₁ = c₂,
     by simp,
     by
@@ -195,16 +194,16 @@ theorem Lts.SimilarBy.refl
       exists c₁'
   ⟩
 
-theorem Lts.SimilarBy.trans
+theorem Lts.Similarity.trans
   {C₁ : Type u₁} {C₂ : Type u₂} {C₃ : Type u₃} {E : Type u₄}
   {lts₁ : Lts C₁ E} {lts₂ : Lts C₂ E} {lts₃ : Lts C₃ E}
   {c₁ : C₁} {c₂ : C₂} {c₃ : C₃} :
-  Lts.SimilarBy lts₁ lts₂ c₁ c₂ →
-  Lts.SimilarBy lts₂ lts₃ c₂ c₃ →
-  Lts.SimilarBy lts₁ lts₃ c₁ c₃ := by
+  Lts.Similarity lts₁ lts₂ c₁ c₂ →
+  Lts.Similarity lts₂ lts₃ c₂ c₃ →
+  Lts.Similarity lts₁ lts₃ c₁ c₃ := by
   rintro ⟨R₁₂, hsim₁₂_init, hsim₁₂_coind⟩
   rintro ⟨R₂₃, hsim₂₃_init, hsim₂₃_coind⟩
-  apply Lts.SimilarBy.intro λ c₁ c₃ => ∃ c₂, R₁₂ c₁ c₂ ∧ R₂₃ c₂ c₃
+  apply Lts.Similarity.intro λ c₁ c₃ => ∃ c₂, R₁₂ c₁ c₂ ∧ R₂₃ c₂ c₃
   constructor
   · exists c₂
   · intros c₁ c₃ l c₁' hR hstep_c₁
