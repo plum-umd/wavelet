@@ -56,7 +56,10 @@ theorem allVarsExcept_finIdxOf?_none_if_not_defined
   (compileExpr.allVarsExcept definedVars removedVars pathConds).finIdxOf?
     (.var var pathConds') = none
 := by
-  sorry
+  simp [compileExpr.allVarsExcept, List.removeAll]
+  simp [List.toVector]
+  intros hmem
+  exact False.elim (hnot_mem_var hmem)
 
 theorem allVarsExcept_finIdxOf?_none_if_diff_path_conds
   [DecidableEq χ]
@@ -65,7 +68,9 @@ theorem allVarsExcept_finIdxOf?_none_if_diff_path_conds
   (compileExpr.allVarsExcept definedVars removedVars pathConds).finIdxOf?
     (.var var pathConds') = none
 := by
-  sorry
+  simp [compileExpr.allVarsExcept]
+  intros hmem
+  exact hneq
 
 theorem allVarsExcept_finIdxOf?_some
   [DecidableEq χ]
@@ -77,7 +82,10 @@ theorem allVarsExcept_finIdxOf?_some
     (compileExpr.allVarsExcept definedVars removedVars pathConds).finIdxOf?
       (.var var pathConds') = some i
 := by
-  sorry
+  apply Option.isSome_iff_exists.mp
+  simp [compileExpr.allVarsExcept, h₃, List.removeAll]
+  simp [List.toVector]
+  constructor <;> assumption
 
 theorem vars_nodup_to_var_names_nodup
   {vars : Vector χ n}
@@ -129,7 +137,11 @@ theorem tailExprOutputs_finIdxOf?_none_to_exprOutputs
   {name : ChanName χ} :
   (compileExpr.tailExprOutputs m n pathConds).finIdxOf? name = none →
   (compileExpr.exprOutputs m n pathConds).finIdxOf? name = none
-:= sorry
+:= by
+  intros hnone
+  simp [compileExpr.tailExprOutputs, compileExpr.exprOutputs] at hnone ⊢
+  have ⟨h₁, h₂, h₃⟩ := hnone
+  and_intros <;> assumption
 
 /-- Converts indices found in `tailExprOutputs` to those in `exprOutputs` -/
 theorem tailExprOutputs_finIdxOf?_some_to_exprOutputs
@@ -141,7 +153,31 @@ theorem tailExprOutputs_finIdxOf?_some_to_exprOutputs
     else if i < n + m then ⟨i - m, by omega⟩
     else ⟨n + m, by omega⟩
   )
-:= sorry
+:= by
+  cases h₁ : name with
+  | tail_arg =>
+    simp [compileExpr.tailExprOutputs, h₁, Vector.get,
+      Array.getElem_append, Array.getElem_push] at h
+    split at h <;> rename_i h₂
+    · simp at h
+      simp [compileExpr.exprOutputs, h₂, Vector.get,
+        Array.getElem_append, Array.getElem_push]
+      simp [h.1]
+      intros j hj hget
+      split_ifs at hget
+      simp at hget
+      simp [← hget] at hj
+      rename_i h₃ _
+      simp at h₃
+      simp [h₃] at hj
+    · split at h <;> simp at h
+  | dest =>
+    sorry
+  | tail_cond => sorry
+  | _ =>
+    have : (compileExpr.tailExprOutputs m n pathConds).finIdxOf? name = none := by
+      simp [compileExpr.tailExprOutputs, h₁]
+    simp [this] at h
 
 theorem exprOutputs_finIdxOf?_tail_cond
   [DecidableEq χ]
