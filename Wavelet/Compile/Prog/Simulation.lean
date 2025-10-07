@@ -247,7 +247,7 @@ private theorem sim_link_procs_step_dep_spawn
     (procs depOp.toFin).semantics.lts.Step
       (s₁.depStates depOp) (.input inputVals) depState')
   : ∃ s₂',
-    Dataflow.Config.Step.StepModTau .τ s₂ .τ s₂' ∧
+    Dataflow.Config.Step.IORestrictedStep s₂ .τ s₂' ∧
     SimRel { s₁ with
       curSem := some depOp,
       depStates := Function.update s₁.depStates depOp depState' } s₂'
@@ -381,7 +381,7 @@ private theorem sim_link_procs_step_dep_ret
     main.semantics.lts.Step s₁.mainState
       (Label.yield (.inr depOp) inputVals outputVals) mainState')
   : ∃ s₂',
-    Dataflow.Config.Step.StepModTau .τ s₂ .τ s₂' ∧
+    Dataflow.Config.Step.IORestrictedStep s₂ .τ s₂' ∧
     SimRel { s₁ with
       curSem := none,
       mainState := mainState',
@@ -495,7 +495,7 @@ private theorem sim_link_procs_step_main
   (hlabel : Semantics.MainLabelPassthrough l l')
   (hstep_main : main.semantics.lts.Step s₁.mainState l mainState')
   : ∃ s₂',
-    Dataflow.Config.Step.StepModTau Label.τ s₂ l' s₂' ∧
+    Dataflow.Config.Step.IORestrictedStep s₂ l' s₂' ∧
     SimRel { s₁ with mainState := mainState' } s₂' := by
   have ⟨hsim_proc_inputs, hsim_proc_outputs, hsim_aff, hsim_proc, hsim_main, hsim_dep⟩ := hsim
   have hsim_chans := hsim_main hcur
@@ -588,7 +588,7 @@ private theorem sim_link_procs_step_dep
   (hlabel : Semantics.DepLabelPassthrough l l')
   (hstep_dep : (procs depOp.toFin).semantics.lts.Step (s₁.depStates depOp) l depState')
   : ∃ s₂',
-    Dataflow.Config.Step.StepModTau Label.τ s₂ l' s₂' ∧
+    Dataflow.Config.Step.IORestrictedStep s₂ l' s₂' ∧
     SimRel { s₁ with
       depStates := Function.update s₁.depStates depOp depState' } s₂'
   := by
@@ -693,7 +693,7 @@ theorem sim_link_procs
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
   (hdeps : ∀ op, deps op = (procs (op.toFin)).semantics)
   (haff : main.AffineInrOp) :
-  main.semantics.link deps ≲ (linkProcs sigs k' procs main).semantics
+  main.semantics.link deps ≲ᵣ (linkProcs sigs k' procs main).semantics
   := by
   replace hdeps :
     deps = λ op : SigOps sigs k' => (procs (op.toFin)).semantics := by
@@ -701,7 +701,7 @@ theorem sim_link_procs
     apply hdeps
   simp only [hdeps]
   apply Lts.Similarity.intro SimRel
-  apply WeakSimulation.alt
+  constructor
   · -- SimRel holds at initial states
     simp [SimRel, Proc.semantics, Semantics.link,
       Semantics.LinkState.init, Dataflow.Config.init]
@@ -735,19 +735,19 @@ theorem sim_compile_prog
   (hnz : ∀ (i : Fin k), sigs[i].ι > 0 ∧ sigs[i].ω > 0)
   (hwf : ∀ i, (prog i).WellFormed)
   (haff : prog.AffineInrOp) :
-  prog.semantics ⟨i, hlt⟩ ≲ (compileProg sigs prog hnz ⟨i, hlt⟩).semantics
+  prog.semantics ⟨i, hlt⟩ ≲ᵣ (compileProg sigs prog hnz ⟨i, hlt⟩).semantics
   := by
   induction i using Nat.strong_induction_on with
   | _ i ih =>
     unfold Prog.semantics
     unfold compileProg
     simp
-    apply WeakSimilarity.trans
+    apply IORestrictedSimilarity.trans
     apply sim_congr_link
     · intros j
       apply ih
       omega
-    · apply WeakSimilarity.trans
+    · apply IORestrictedSimilarity.trans
         (sim_compile_fn _
           (by apply hnz ⟨i, by omega⟩)
           (by apply hwf))

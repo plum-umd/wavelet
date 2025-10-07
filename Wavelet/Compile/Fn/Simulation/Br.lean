@@ -237,7 +237,7 @@ theorem sim_step_br
   (hstep : Config.Step ec l ec')
   (hbr : ec.cont = .expr (.br cond left right)) :
   ∃ pc',
-    Config.Step.StepModTau .τ pc l pc' ∧
+    Config.Step.IORestrictedStep pc l pc' ∧
     SimRel hnz ec' pc' := by
   have hsteps := sim_step_br_exec_dataflow hsim hstep hbr
   replace ⟨pc', hpc', hsteps⟩ := exists_eq_left.mpr hsteps
@@ -260,7 +260,7 @@ theorem sim_step_br
     cases hwf_expr with | wf_br hwf_left hwf_right =>
     exists pc'
     constructor
-    · exact hsteps
+    · exact .step_tau hsteps.to_tau_star
     · simp only [hpc']
       and_intros
       · simp

@@ -44,7 +44,7 @@ theorem sim_map_chans_inj
   {f : χ → χ'}
   {proc : Proc Op χ V m n}
   (hf : Function.Injective f) :
-  proc.semantics ≲ (proc.mapChans f).semantics := sorry
+  proc.semantics ≲ᵣ (proc.mapChans f).semantics := sorry
 
 end Simulation
 

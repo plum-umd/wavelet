@@ -86,7 +86,7 @@ theorem sim_step_op
   (hstep : Config.Step ec l ec')
   (hop : ec.cont = .expr (.op o args rets cont)) :
   ∃ pc',
-    Config.Step.StepModTau .τ pc l pc' ∧
+    Config.Step.IORestrictedStep pc l pc' ∧
     SimRel hnz ec' pc' := by
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
@@ -166,7 +166,7 @@ theorem sim_step_op
     -- Prove simulation invariants
     exists pc'
     constructor
-    · exact hsteps
+    · exact .step_yield hsteps
     · and_intros
       · funext name
         simp [hpc', varsToChans, hchans₁]

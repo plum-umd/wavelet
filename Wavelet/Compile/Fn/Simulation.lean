@@ -48,10 +48,10 @@ theorem sim_compile_fn
   (fn : Fn Op χ V m n)
   (hnz : m > 0 ∧ n > 0)
   (hwf : fn.WellFormed) :
-  fn.semantics ≲ (compileFn hnz fn).semantics
+  fn.semantics ≲ᵣ (compileFn hnz fn).semantics
   := by
   apply Lts.Similarity.intro (SimRel hnz)
-  apply Semantics.WeakSimulation.alt
+  constructor
   · exact sim_compile_fn_init fn hnz hwf
   · intros ec pc l ec' hsim hstep
     cases h₁ : ec.cont with

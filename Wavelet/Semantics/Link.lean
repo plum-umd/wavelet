@@ -194,6 +194,42 @@ theorem LinkStep.step_main_mod_tau
   · exact .step_main hcur hlabel h₂
   · exact LinkStep.step_main_tau_star hcur h₃
 
+/-- Similar to `step_main`, but uses `IORestrictedStep`. -/
+theorem LinkStep.step_main_io_restricted
+  [Arity Op₀] [Arity Op₁]
+  [DecidableEq Op₁]
+  {main : Semantics (Op₀ ⊕ Op₁) V m n}
+  {deps : PartInterp Op₀ Op₁ V}
+  {s : LinkState main deps}
+  {l : Label (Op₀ ⊕ Op₁) V m n}
+  {l' : Label Op₀ V m n}
+  {mainState' : main.S}
+  (hcur : s.curSem = none)
+  (hlabel : MainLabelPassthrough l l')
+  (hstep : main.lts.IORestrictedStep s.mainState l mainState') :
+  (LinkStep main deps).IORestrictedStep s l' { s with mainState := mainState' }
+  := by
+  cases hstep with
+  | step_yield hstep =>
+    cases hlabel
+    exact .step_yield (LinkStep.step_main_mod_tau hcur .pass_yield_inl hstep)
+  | step_input hstep hstep_tau =>
+    cases hlabel
+    apply Lts.IORestrictedStep.step_input
+    apply LinkStep.step_main hcur .pass_input
+    exact hstep
+    exact LinkStep.step_main_tau_star hcur hstep_tau
+  | step_output hstep_tau hstep =>
+    cases hlabel
+    apply Lts.IORestrictedStep.step_output
+    exact LinkStep.step_main_tau_star hcur hstep_tau
+    apply LinkStep.step_main _ .pass_output
+    exact hstep
+    simp [hcur]
+  | step_tau hstep =>
+    cases hlabel
+    exact .step_tau (LinkStep.step_main_tau_star hcur hstep)
+
 /-- Similar to `step_dep`, but uses `StepModTau`. -/
 theorem LinkStep.step_dep_mod_tau
   [Arity Op₀] [Arity Op₁]
@@ -221,13 +257,31 @@ theorem LinkStep.step_dep_mod_tau
       · exact hcur
     · simp
 
+/-- Similar to `step_dep`, but uses `IORestrictedStep`. -/
+theorem LinkStep.step_dep_io_restricted
+  [Arity Op₀] [Arity Op₁]
+  [DecidableEq Op₁]
+  {main : Semantics (Op₀ ⊕ Op₁) V m n}
+  {deps : PartInterp Op₀ Op₁ V}
+  {depOp : Op₁}
+  {s : LinkState main deps}
+  {l : Label Op₀ V (Arity.ι depOp) (Arity.ω depOp)}
+  {l' : Label Op₀ V m n}
+  {depState' : (deps depOp).S}
+  (hcur : s.curSem = some depOp)
+  (hlabel : DepLabelPassthrough l l')
+  (hstep : (deps depOp).lts.IORestrictedStep (s.depStates depOp) l depState') :
+  (LinkStep main deps).IORestrictedStep s l'
+    { s with depStates := Function.update s.depStates depOp depState' }
+  := sorry
+
 private def SimRel
   [Arity Op₀] [Arity Op₁]
   [DecidableEq Op₁]
   {main main' : Semantics (Op₀ ⊕ Op₁) V m n}
   {deps deps' : PartInterp Op₀ Op₁ V}
-  (hsim_deps : ∀ i, deps i ≲ deps' i)
-  (hsim_main : main ≲ main')
+  (hsim_deps : ∀ i, deps i ≲ᵣ deps' i)
+  (hsim_main : main ≲ᵣ main')
   (s : LinkState main deps)
   (s' : LinkState main' deps') : Prop
   :=
@@ -241,12 +295,12 @@ theorem sim_congr_link
   [DecidableEq Op₁]
   {main main' : Semantics (Op₀ ⊕ Op₁) V m n}
   {deps deps' : PartInterp Op₀ Op₁ V}
-  (hsim_deps : ∀ i, deps i ≲ deps' i)
-  (hsim_main : main ≲ main')
-  : main.link deps ≲ main'.link deps'
+  (hsim_deps : ∀ i, deps i ≲ᵣ deps' i)
+  (hsim_main : main ≲ᵣ main')
+  : main.link deps ≲ᵣ main'.link deps'
   := by
   apply Lts.Similarity.intro (SimRel hsim_deps hsim_main)
-  apply WeakSimulation.alt
+  constructor
   and_intros
   · simp [link, LinkState.init]
   · exact hsim_main.sim_init
@@ -257,12 +311,12 @@ theorem sim_congr_link
     cases hstep with
     | step_main hcur hlabel hstep_main =>
       have ⟨mainState', hstep', hsim'⟩
-        := hsim_main.sim_step _ _ _ _ hsim_main_states (.single hstep_main)
+        := hsim_main.sim_step _ _ _ _ hsim_main_states hstep_main
       exists { s₂ with mainState := mainState' }
       constructor
       · simp [link, hcur_sem] at hcur ⊢
         simp [Lts.Step] at hstep'
-        exact LinkStep.step_main_mod_tau hcur hlabel hstep'
+        exact LinkStep.step_main_io_restricted hcur hlabel hstep'
       · and_intros
         · simp [hcur_sem]
         · exact hsim'
@@ -271,12 +325,12 @@ theorem sim_congr_link
       rename_i depOp _ _
       have ⟨depState', hstep', hsim'⟩
         := (hsim_deps depOp).sim_step _ _ _ _
-          (hsim_dep_states depOp) (.single hstep_dep)
+          (hsim_dep_states depOp) hstep_dep
       exists { s₂ with depStates := Function.update s₂.depStates depOp depState' }
       constructor
       · simp [link, hcur_sem] at hcur ⊢
         simp [Lts.Step] at hstep'
-        exact LinkStep.step_dep_mod_tau hcur hlabel hstep'
+        exact LinkStep.step_dep_io_restricted hcur hlabel hstep'
       · and_intros
         · simp [hcur_sem]
         · exact hsim_main_states
@@ -292,8 +346,7 @@ theorem sim_congr_link
       rename_i depOp inputVals depState'
       have ⟨depState₂', hstep₂', hsim₂'⟩
         := (hsim_deps depOp).sim_step _ _ _ _
-          (hsim_dep_states depOp) (.single hstep_dep)
-      have ⟨hstep₂'₁, hstep₂'₂, hstep₂'₃⟩ := hstep₂'
+          (hsim_dep_states depOp) hstep_dep
       sorry
     | _ => sorry
 

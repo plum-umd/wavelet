@@ -40,6 +40,16 @@ def Label.isSilent [Arity Op] : Label Op V m n → Bool
   | .τ => true
   | _ => false
 
+@[simp]
+def Label.isOutput [Arity Op] : Label Op V m n → Bool
+  | .output _ => true
+  | _ => false
+
+@[simp]
+def Label.isInput [Arity Op] : Label Op V m n → Bool
+  | .input _ => true
+  | _ => false
+
 end Wavelet.Semantics
 
 namespace Wavelet
@@ -155,40 +165,91 @@ theorem WeakSimilarity.trans
 
 /-- Slightly stronger than `StepModTau` and does not allow
 τ steps before input or after output. -/
-inductive IORestrictedStep
-  [Arity Op]
-  (sem : Semantics Op V m n) : Lts sem.S (Label Op V m n) where
+inductive Lts.IORestrictedStep
+  {S} [Arity Op]
+  (lts : Lts S (Label Op V m n)) : Lts S (Label Op V m n) where
   | step_yield :
-    sem.lts.StepModTau .τ s (.yield o inputs outputs) s' →
-    IORestrictedStep sem s (.yield o inputs outputs) s'
+    lts.StepModTau .τ s (.yield o inputs outputs) s' →
+    lts.IORestrictedStep s (.yield o inputs outputs) s'
   | step_input :
-    sem.lts.Step s (.input vals) s' →
-    sem.lts.TauStar .τ s' s'' →
-    IORestrictedStep sem s (.input vals) s''
+    lts.Step s (.input vals) s' →
+    lts.TauStar .τ s' s'' →
+    lts.IORestrictedStep s (.input vals) s''
   | step_output :
-    sem.lts.TauStar .τ s s' →
-    sem.lts.Step s' (.output vals) s'' →
-    IORestrictedStep sem s (.output vals) s''
+    lts.TauStar .τ s s' →
+    lts.Step s' (.output vals) s'' →
+    lts.IORestrictedStep s (.output vals) s''
   | step_tau :
-    sem.lts.TauStar .τ s s' →
-    IORestrictedStep sem s .τ s'
+    lts.TauStar .τ s s' →
+    lts.IORestrictedStep s .τ s'
 
-theorem IORestrictedStep.single
-  [Arity Op]
-  {sem : Semantics Op V m n}
-  {s s' : sem.S} {l : Label Op V m n}
-  (hstep : sem.lts.Step s l s')
-  : IORestrictedStep sem s l s' := by
+theorem Lts.IORestrictedStep.single
+  {S} [Arity Op]
+  {lts : Lts S (Label Op V m n)}
+  {s s' : S} {l : Label Op V m n}
+  (hstep : lts.Step s l s')
+  : lts.IORestrictedStep s l s' := by
   cases l with
   | yield => exact .step_yield (.single hstep)
   | input => exact .step_input hstep .refl
   | output => exact .step_output .refl hstep
   | τ => exact .step_tau (.single hstep)
 
+/-- Append a τ transition at the end if allowed. -/
+theorem Lts.IORestrictedStep.tail_tau
+  {S} [Arity Op]
+  {lts : Lts S (Label Op V m n)}
+  {s s' s'' : S} {l : Label Op V m n}
+  (hl : ¬ l.isOutput)
+  (hstep : lts.IORestrictedStep s l s')
+  (hstep_tau : lts.Step s' .τ s'') :
+  lts.IORestrictedStep s l s'' := by
+  cases hstep with
+  | step_yield hstep' => exact .step_yield (.tail_tau hstep' hstep_tau)
+  | step_input hstep₁ hstep₂ => exact .step_input hstep₁ (.tail hstep₂ hstep_tau)
+  | step_output hstep₁ hstep₂ => simp at hl
+  | step_tau hstep' => exact .step_tau (.tail hstep' hstep_tau)
+
+/-- Append a non-τ transition at the end if allowed. -/
+theorem Lts.IORestrictedStep.tail_non_tau
+  {S} [Arity Op]
+  {lts : Lts S (Label Op V m n)}
+  {s s' s'' : S} {l : Label Op V m n}
+  (hl : ¬ l.isInput)
+  (hstep_tau : lts.IORestrictedStep s .τ s')
+  (hstep : lts.Step s' l s'') :
+  lts.IORestrictedStep s l s'' := by
+  cases hstep_tau with | step_tau hstep_tau =>
+  cases l with
+  | yield => exact .step_yield ⟨hstep_tau, hstep, .refl⟩
+  | input => simp at hl
+  | output => exact .step_output hstep_tau hstep
+  | τ => exact .step_tau (.tail hstep_tau hstep)
+
+theorem Lts.IORestrictedStep.eq_rhs
+  {S} [Arity Op]
+  {lts : Lts S (Label Op V m n)}
+  {s₁ s₂ s₂' : S} {l : Label Op V m n}
+  (hstep : lts.IORestrictedStep s₁ l s₂)
+  (heq : s₂ = s₂') :
+  lts.IORestrictedStep s₁ l s₂' := by
+  subst heq
+  exact hstep
+
+theorem Lts.IORestrictedStep.eq_lhs
+  {S} [Arity Op]
+  {lts : Lts S (Label Op V m n)}
+  {s₁ s₁' s₂ : S} {l : Label Op V m n}
+  (hstep : lts.IORestrictedStep s₁ l s₂)
+  (heq : s₁ = s₁') :
+  lts.IORestrictedStep s₁' l s₂ := by
+  subst heq
+  exact hstep
+
 abbrev IORestrictedSimilarity
   [Arity Op]
   (sem₁ sem₂ : Semantics Op V m n) : Prop
-  := Lts.Similarity sem₁.lts sem₂.IORestrictedStep sem₁.init sem₂.init
+  := Lts.Similarity sem₁.lts sem₂.lts.IORestrictedStep sem₁.init sem₂.init
 
 infix:50 " ≲ᵣ " => IORestrictedSimilarity
 
@@ -196,14 +257,13 @@ theorem IORestrictedSimilarity.refl
   [Arity Op]
   (sem : Semantics Op V m n) :
   sem ≲ᵣ sem :=
-  Lts.Similarity.refl_single IORestrictedStep.single
+  Lts.Similarity.refl_single .single
 
 theorem IORestrictedSimilarity.trans
   {Op : Type u} {V : Type v}
   [Arity Op]
   {sem₁ sem₂ sem₃ : Semantics Op V m n}
-  (h₁ : sem₁ ≲ sem₂) (h₂ : sem₂ ≲ sem₃) :
-  sem₁ ≲ sem₃ :=
-  Lts.Similarity.trans h₁ h₂
+  (h₁ : sem₁ ≲ᵣ sem₂) (h₂ : sem₂ ≲ᵣ sem₃) :
+  sem₁ ≲ᵣ sem₃ := sorry
 
 end Wavelet.Semantics

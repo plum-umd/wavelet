@@ -53,7 +53,7 @@ theorem sim_step_init
   (hstep : Config.Step ec l ec')
   (hinit : ec.cont = .init) :
   ∃ pc',
-    Dataflow.Config.Step.StepModTau .τ pc l pc' ∧
+    Dataflow.Config.Step.IORestrictedStep pc l pc' ∧
     SimRel hnz ec' pc' := by
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
@@ -65,7 +65,7 @@ theorem sim_step_init
     simp [hinit] at hexpr
   | step_init hexpr =>
   rename_i args
-  have hsteps₁ : Dataflow.Config.Step.StepModTau .τ pc _ _
+  have hsteps₁ : Dataflow.Config.Step.IORestrictedStep pc _ _
     := .single (Dataflow.Config.Step.step_init (args := args))
   -- Simplify initial pushes to the carry gate
   rw [push_vals_empty] at hsteps₁
@@ -120,8 +120,8 @@ theorem sim_step_init
     simp [compileFn]
   simp only [compileFn.initCarry] at hmem_carry
   have hsteps₂ :
-    Dataflow.Config.Step.StepModTau .τ pc _ _
-  := .tail_tau hsteps₁
+    Dataflow.Config.Step.IORestrictedStep pc _ _
+  := .tail_tau (by simp) hsteps₁
     (Dataflow.Config.Step.step_carry_init
       hmem_carry
       hpop_args)

@@ -475,7 +475,7 @@ theorem sim_step_tail
   (hstep : Config.Step ec l ec')
   (hexpr : ec.cont = .expr (.tail vars)) :
   ∃ pc',
-    Config.Step.StepModTau .τ pc l pc' ∧
+    Config.Step.IORestrictedStep pc l pc' ∧
     SimRel hnz ec' pc' := by
   have hsteps := sim_step_tail_exec_dataflow hsim hstep hexpr
   replace ⟨pc', hpc', hsteps⟩ := exists_eq_left.mpr hsteps
@@ -494,7 +494,7 @@ theorem sim_step_tail
     cases hwf_expr with | wf_tail hvars_nodup =>
     exists pc'
     constructor
-    · exact hsteps
+    · exact .step_tau hsteps.to_tau_star
     · simp only [hpc']
       and_intros
       · simp
