@@ -143,11 +143,10 @@ theorem sim_step_op
         (rets.map (.var · ec.pathConds))
       ∈ pc.proc.atoms
     := by grind
-    have hsteps : Dataflow.Config.Step.StepModTau .τ pc (.yield o inputVals outputVals) _
-      := .single
-        (Dataflow.Config.Step.step_op hmem_op hpop_input_vals)
+    have hstep : Dataflow.Config.Step pc (.yield o inputVals outputVals) _
+      := Dataflow.Config.Step.step_op hmem_op hpop_input_vals
     -- Simplify pushes
-    rw [push_vals_empty] at hsteps
+    rw [push_vals_empty] at hstep
     rotate_left
     · exact vars_nodup_to_var_names_nodup hrets_nodup
     · intros name hname
@@ -162,11 +161,11 @@ theorem sim_step_op
       · have h' := hsim.get_var_to_defined_vars ⟨_, h⟩
         simp [this h']
       · rfl
-    replace ⟨pc', hpc', hsteps⟩ := exists_eq_left.mpr hsteps
+    replace ⟨pc', hpc', hstep⟩ := exists_eq_left.mpr hstep
     -- Prove simulation invariants
     exists pc'
     constructor
-    · exact .step_yield hsteps
+    · exact .step_yield hstep
     · and_intros
       · funext name
         simp [hpc', varsToChans, hchans₁]

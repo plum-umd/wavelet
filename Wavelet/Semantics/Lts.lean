@@ -69,7 +69,9 @@ theorem Lts.TauStar.trans
     have := Lts.TauStar.prepend hstep h₂
     exact ih this
 
-/-- A non-tau step preceded and followed by zero or more tau steps. -/
+/-- A step preceded and followed by zero or more tau steps.
+NOTE: to work with weak simulation, need to weaken this to
+allow reflexivity. -/
 inductive Lts.StepModTau (lts : Lts C E) (τ : E) : Lts C E where
   | mk :
       lts.TauStar τ c₁ c₂ →

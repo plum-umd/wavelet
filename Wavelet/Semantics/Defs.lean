@@ -63,10 +63,6 @@ structure Semantics.{u, v, w} (Op : Type u) (V : Type v) [Arity Op] m n : Type (
   S : Type w
   init : S
   lts : Lts S (Label Op V m n)
-  /-- Shorthand for whether the given state can potentially yield. -/
-  HasYield
-    (s : S) (op : Op) (inputs : Vector V (Arity.ι op)) : Prop :=
-    ∃ outputs s', lts.Step s (.yield op inputs outputs) s'
   /-- Yield transitions behave like a function. -/
   yields_functional {s op inputs outputs s'} :
     lts.Step s (.yield op inputs outputs) s' →
@@ -75,6 +71,13 @@ structure Semantics.{u, v, w} (Op : Type u) (V : Type v) [Arity Op] m n : Type (
 end Wavelet
 
 namespace Wavelet.Semantics
+
+/-- Shorthand for whether the given state can potentially yield. -/
+def HasYield
+  [Arity Op]
+  (sem : Semantics Op V m n)
+  (s : sem.S) (op : Op) (inputs : Vector V (Arity.ι op)) : Prop :=
+  ∃ outputs s', sem.lts.Step s (.yield op inputs outputs) s'
 
 /-- Weak simulation (up to the silent label). -/
 abbrev WeakSimulation
@@ -163,13 +166,13 @@ theorem WeakSimilarity.trans
   sem₁ ≲ sem₃ :=
   Lts.Similarity.trans h₁ h₂
 
-/-- Slightly stronger than `StepModTau` and does not allow
-τ steps before input or after output. -/
+/-- Stronger than `StepModTau` and does not allow τ steps
+before input, after output, or before/after yields. -/
 inductive Lts.IORestrictedStep
   {S} [Arity Op]
   (lts : Lts S (Label Op V m n)) : Lts S (Label Op V m n) where
   | step_yield :
-    lts.StepModTau .τ s (.yield o inputs outputs) s' →
+    lts.Step s (.yield o inputs outputs) s' →
     lts.IORestrictedStep s (.yield o inputs outputs) s'
   | step_input :
     lts.Step s (.input vals) s' →
@@ -190,7 +193,7 @@ theorem Lts.IORestrictedStep.single
   (hstep : lts.Step s l s')
   : lts.IORestrictedStep s l s' := by
   cases l with
-  | yield => exact .step_yield (.single hstep)
+  | yield => exact .step_yield hstep
   | input => exact .step_input hstep .refl
   | output => exact .step_output .refl hstep
   | τ => exact .step_tau (.single hstep)
@@ -200,12 +203,12 @@ theorem Lts.IORestrictedStep.tail_tau
   {S} [Arity Op]
   {lts : Lts S (Label Op V m n)}
   {s s' s'' : S} {l : Label Op V m n}
-  (hl : ¬ l.isOutput)
+  (hl : l.isInput ∨ l.isSilent)
   (hstep : lts.IORestrictedStep s l s')
   (hstep_tau : lts.Step s' .τ s'') :
   lts.IORestrictedStep s l s'' := by
   cases hstep with
-  | step_yield hstep' => exact .step_yield (.tail_tau hstep' hstep_tau)
+  | step_yield hstep' => simp at hl
   | step_input hstep₁ hstep₂ => exact .step_input hstep₁ (.tail hstep₂ hstep_tau)
   | step_output hstep₁ hstep₂ => simp at hl
   | step_tau hstep' => exact .step_tau (.tail hstep' hstep_tau)
@@ -215,13 +218,13 @@ theorem Lts.IORestrictedStep.tail_non_tau
   {S} [Arity Op]
   {lts : Lts S (Label Op V m n)}
   {s s' s'' : S} {l : Label Op V m n}
-  (hl : ¬ l.isInput)
+  (hl : l.isOutput ∨ l.isSilent)
   (hstep_tau : lts.IORestrictedStep s .τ s')
   (hstep : lts.Step s' l s'') :
   lts.IORestrictedStep s l s'' := by
   cases hstep_tau with | step_tau hstep_tau =>
   cases l with
-  | yield => exact .step_yield ⟨hstep_tau, hstep, .refl⟩
+  | yield => simp at hl
   | input => simp at hl
   | output => exact .step_output hstep_tau hstep
   | τ => exact .step_tau (.tail hstep_tau hstep)
@@ -303,15 +306,8 @@ theorem IORestrictedSimilarity.alt
   · intros s₁ s₂ l s₁' hR hstep
     cases hstep with
     | step_yield hstep' =>
-      have ⟨h₁, h₂, h₃⟩ := hstep'
-      have ⟨s₁₂, hstep_s₂, hsim₂⟩ := alt_helper hsim hR h₁
-      have ⟨s₂₂, hstep_s₁₂, hsim₁₂⟩ := hsim.sim_step _ _ _ _ hsim₂ h₂
-      have ⟨s₂', hstep_s₂₂, hsim'⟩ := alt_helper hsim hsim₁₂ h₃
+      have ⟨s₂', hsim'⟩ := hsim.sim_step _ _ _ _ hR hstep'
       exists s₂'
-      constructor
-      · rcases hstep_s₁₂ with ⟨h₁', h₂', h₃'⟩
-        exact .step_yield ⟨.trans hstep_s₂ h₁', h₂', .trans h₃' hstep_s₂₂⟩
-      · exact hsim'
     | step_input hstep₁ hstep₂ =>
       have ⟨s₂₁, hstep_s₂₁, hsim₁⟩ := hsim.sim_step _ _ _ _ hR hstep₁
       have ⟨s₂', hstep_s₂₂, hsim'⟩ := alt_helper hsim hsim₁ hstep₂

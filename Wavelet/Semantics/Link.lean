@@ -212,7 +212,7 @@ theorem LinkStep.step_main_io_restricted
   cases hstep with
   | step_yield hstep =>
     cases hlabel
-    exact .step_yield (LinkStep.step_main_mod_tau hcur .pass_yield_inl hstep)
+    exact .step_yield (LinkStep.step_main hcur .pass_yield_inl hstep)
   | step_input hstep hstep_tau =>
     cases hlabel
     apply Lts.IORestrictedStep.step_input
@@ -278,26 +278,28 @@ theorem LinkStep.step_dep_io_restricted
 private def SimRel
   [Arity Op₀] [Arity Op₁]
   [DecidableEq Op₁]
-  {main main' : Semantics (Op₀ ⊕ Op₁) V m n}
-  {deps deps' : PartInterp Op₀ Op₁ V}
-  (hsim_deps : ∀ i, deps i ≲ᵣ deps' i)
-  (hsim_main : main ≲ᵣ main')
-  (s : LinkState main deps)
-  (s' : LinkState main' deps') : Prop
+  {main₁ main₂ : Semantics (Op₀ ⊕ Op₁) V m n}
+  {deps₁ deps₂ : PartInterp Op₀ Op₁ V}
+  (hsim_deps : ∀ i, deps₁ i ≲ᵣ deps₂ i)
+  (hsim_main : main₁ ≲ᵣ main₂)
+  (s₁ : LinkState main₁ deps₁)
+  (s₂ : LinkState main₂ deps₂) : Prop
   :=
-    s.curSem = s'.curSem ∧
-    hsim_main.Sim s.mainState s'.mainState ∧
-    (∀ op, (hsim_deps op).Sim (s.depStates op) (s'.depStates op))
+    s₁.curSem = s₂.curSem ∧
+    hsim_main.Sim s₁.mainState s₂.mainState ∧
+    (∀ op, (hsim_deps op).Sim (s₁.depStates op) (s₂.depStates op)) ∧
+    (∀ depOp, s₂.curSem = some depOp →
+      ∃ inputs, main₂.HasYield s₂.mainState (.inr depOp) inputs)
 
 /-- Refining components implies refining the linked semantics. -/
 theorem sim_congr_link
   [Arity Op₀] [Arity Op₁]
   [DecidableEq Op₁]
-  {main main' : Semantics (Op₀ ⊕ Op₁) V m n}
-  {deps deps' : PartInterp Op₀ Op₁ V}
-  (hsim_deps : ∀ i, deps i ≲ᵣ deps' i)
-  (hsim_main : main ≲ᵣ main')
-  : main.link deps ≲ᵣ main'.link deps'
+  {main₁ main₂ : Semantics (Op₀ ⊕ Op₁) V m n}
+  {deps₁ deps₂ : PartInterp Op₀ Op₁ V}
+  (hsim_deps : ∀ i, deps₁ i ≲ᵣ deps₂ i)
+  (hsim_main : main₁ ≲ᵣ main₂)
+  : main₁.link deps₁ ≲ᵣ main₂.link deps₂
   := by
   apply Lts.Similarity.intro (SimRel hsim_deps hsim_main)
   constructor
@@ -306,31 +308,34 @@ theorem sim_congr_link
   · exact hsim_main.sim_init
   · intros op
     exact (hsim_deps op).sim_init
-  · intros s₁ s₂ l s₁' hsim hstep
-    have ⟨hcur_sem, hsim_main_states, hsim_dep_states⟩ := hsim
-    cases hstep with
-    | step_main hcur hlabel hstep_main =>
-      have ⟨mainState', hstep', hsim'⟩
-        := hsim_main.sim_step _ _ _ _ hsim_main_states hstep_main
-      exists { s₂ with mainState := mainState' }
+  · simp [link, LinkState.init]
+  · intros s₁ s₂ l s₁' hsim hstep_s₁
+    have ⟨hcur_sem, hsim_main_states, hsim_dep_states, hsim_yield⟩ := hsim
+    cases hstep_s₁ with
+    | step_main hcur₁ hlabel hstep_main₁ =>
+      have ⟨mainState₂', hstep_s₂, hsim'⟩
+        := hsim_main.sim_step _ _ _ _ hsim_main_states hstep_main₁
+      exists { s₂ with mainState := mainState₂' }
       constructor
-      · simp [link, hcur_sem] at hcur ⊢
-        simp [Lts.Step] at hstep'
-        exact LinkStep.step_main_io_restricted hcur hlabel hstep'
+      · simp [link, hcur_sem] at hcur₁ ⊢
+        simp [Lts.Step] at hstep_s₂
+        exact LinkStep.step_main_io_restricted hcur₁ hlabel hstep_s₂
       · and_intros
         · simp [hcur_sem]
         · exact hsim'
         · exact hsim_dep_states
-    | step_dep hcur hlabel hstep_dep =>
+        · simp [hcur_sem] at hcur₁
+          simp [hcur₁]
+    | step_dep hcur₁ hlabel hstep_dep₁ =>
       rename_i depOp _ _
-      have ⟨depState', hstep', hsim'⟩
+      have ⟨depState₂', hstep_s₂, hsim'⟩
         := (hsim_deps depOp).sim_step _ _ _ _
-          (hsim_dep_states depOp) hstep_dep
-      exists { s₂ with depStates := Function.update s₂.depStates depOp depState' }
+          (hsim_dep_states depOp) hstep_dep₁
+      exists { s₂ with depStates := Function.update s₂.depStates depOp depState₂' }
       constructor
-      · simp [link, hcur_sem] at hcur ⊢
-        simp [Lts.Step] at hstep'
-        exact LinkStep.step_dep_io_restricted hcur hlabel hstep'
+      · simp [link, hcur_sem] at hcur₁ ⊢
+        simp [Lts.Step] at hstep_s₂
+        exact LinkStep.step_dep_io_restricted hcur₁ hlabel hstep_s₂
       · and_intros
         · simp [hcur_sem]
         · exact hsim_main_states
@@ -342,12 +347,47 @@ theorem sim_congr_link
             exact hsim'
           · simp [h]
             apply hsim_dep_states
-    | step_dep_spawn hcur hyield hstep_dep =>
-      rename_i depOp inputVals depState'
-      have ⟨depState₂', hstep₂', hsim₂'⟩
+        · apply hsim_yield
+    | step_dep_spawn hcur₁ hyield₁ hstep_dep₁ =>
+      rename_i depOp inputVals depState₁'
+      have hcur₂ : s₂.curSem = none := by simp [hcur_sem] at hcur₁; exact hcur₁
+      -- Convert `dep₁` input to `dep₂` input
+      have ⟨depState₂', hstep_s₂, hsim₂'⟩
         := (hsim_deps depOp).sim_step _ _ _ _
-          (hsim_dep_states depOp) hstep_dep
+          (hsim_dep_states depOp) hstep_dep₁
+      cases hstep_s₂ with | step_input hstep_input_s₂ hstep_tau_s₂₁ =>
+      rename_i s₂₁
+      -- Convert `main₁` yield to `main₂` yield
+      replace ⟨_, _, hyield₁⟩ := hyield₁
+      have ⟨mainState₁', hstep_yield_s₂, hsim'⟩
+        := hsim_main.sim_step _ _ _ _ hsim_main_states hyield₁
+      cases hstep_yield_s₂ with | step_yield hstep_yield_s₂ =>
       sorry
+      -- -- Step `main₂` with τ steps first to get to a direct yield
+      -- replace ⟨hstep_yield_s₂_tau₁, hstep_yield_s₂, hstep_yield_s₂_tau₂⟩ := hstep_yield_s₂
+      -- have hstep_yield_point := LinkStep.step_main_tau_star hcur₂ hstep_yield_s₂_tau₁
+      -- -- Yield in the RHS
+      -- have hstep_spawn₂ := Lts.TauStar.tail
+      --   hstep_yield_point
+      --   (LinkStep.step_dep_spawn hcur₂ ⟨_, _, hstep_yield_s₂⟩ hstep_input_s₂)
+      -- -- Finally, there are some leftover τ steps in `dep₂`
+      -- replace hstep_spawn₂ := Lts.TauStar.trans
+      --   hstep_spawn₂
+      --   (LinkStep.step_dep_tau_star (by rfl) (by
+      --     simp
+      --     exact hstep_tau_s₂₁))
+      -- simp at hstep_spawn₂
+      -- replace ⟨s₂', hs₂', hstep_spawn₂⟩ := exists_eq_left.mpr hstep_spawn₂
+      -- exists s₂'
+      -- constructor
+      -- · exact .step_tau hstep_spawn₂
+      -- · simp [hs₂']
+      --   and_intros
+      --   · simp
+      --   · simp
+      --     sorry
+      --   · sorry
+      --   · sorry
     | _ => sorry
 
 end Simulation
