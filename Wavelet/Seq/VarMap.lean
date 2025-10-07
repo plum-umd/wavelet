@@ -1,3 +1,5 @@
+import Mathlib.Data.List.Nodup
+import Wavelet.Data.List
 
 /-! Definition and lemmas for maps from variables to values. -/
 
@@ -45,13 +47,22 @@ theorem var_map_fromList_get_vars
     suffices h :
       ((VarMap.fromList (vars.zip vals).toList).getVar var).isSome by
       exact Option.isSome_iff_exists.mp h
-    simp [VarMap.getVar, VarMap.fromList,
-      Vector.zip_eq_zipWith,
-      Vector.toList_zipWith,
-      ← List.zip_eq_zipWith]
-    sorry
+    simp [VarMap.getVar, VarMap.fromList]
+    have ⟨i, hi, hget_i⟩ := Vector.mem_iff_getElem.mp hmem_var
+    exists vals[i]
+    apply Vector.mem_iff_getElem.mpr
+    exists i, hi
+    simp [hget_i]
   · intros hget_var
-    sorry
+    simp [VarMap.getVar, VarMap.fromList] at hget_var
+    have ⟨val, var', hfind⟩ := hget_var
+    have := List.find?_some hfind
+    simp at this
+    simp [← this]
+    have := List.mem_of_find?_eq_some hfind
+    simp at this
+    have := Vector.of_mem_zip this
+    simp [this.1]
 
 theorem var_map_fromList_get_vars_index
   [DecidableEq χ]
@@ -59,7 +70,28 @@ theorem var_map_fromList_get_vars_index
   {i : Nat} {hlt : i < n}
   (hnodup : vars.toList.Nodup) :
   (VarMap.fromList (vars.zip vals).toList).getVar vars[i] = some vals[i]
-:= sorry
+:= by
+  simp [VarMap.fromList, VarMap.getVar]
+  exists vars[i]
+  apply List.find?_eq_some_iff_append.mpr
+  constructor
+  · simp
+  · exists (vars.zip vals).toList.take i
+    exists (vars.zip vals).toList.drop (i + 1)
+    simp
+    constructor
+    · have := List.to_append_cons (l := (vars.zip vals).toList) (i := i) (by simp [hlt])
+      simp at this
+      exact this
+    · intros k v hkv
+      have ⟨j, hj, hget⟩ := List.mem_take_iff_getElem.mp hkv
+      simp at hj
+      simp at hget
+      simp [←hget.1]
+      intros h
+      have := (List.Nodup.getElem_inj_iff hnodup).mp h
+      simp at this
+      omega
 
 theorem var_map_insert_vars_disj
   [DecidableEq χ]

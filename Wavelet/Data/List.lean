@@ -1,28 +1,171 @@
 import Mathlib.Data.List.Infix
+import Mathlib.Data.List.Forall2
 
+/-!
+Some proofs are adapted from
+https://github.com/cedar-policy/cedar-spec/tree/main/cedar-lean/Cedar/Thm/Data/List
+-/
 namespace List
 
 def toVector (xs : List α) : Vector α xs.length :=
   xs.toArray.toVector
 
-theorem all_some_implies_mapM_some {α β} {f : α → Option β} {xs : List α} :
-  (∀ x ∈ xs, ∃ y, f x = some y) →
+theorem all_some_implies_mapM_some {α β} {f : α → Option β} {xs : List α}
+  (h : ∀ x ∈ xs, ∃ y, f x = some y) :
   ∃ ys, mapM f xs = some ys
-:= sorry
-
-theorem mapM_some_implies_all_some {α β} {f : α → Option β} {xs : List α} {ys : List β} :
-  mapM f xs = some ys →
-  (∀ x ∈ xs, ∃ y ∈ ys, f x = some y)
-:= sorry
-
-theorem mem_iff_mem_eraseDups [BEq α] {xs : List α}
-  : x ∈ xs ↔ x ∈ xs.eraseDups := sorry
+:= by
+  induction xs with
+  | nil => exists []
+  | cons xhd xtl ih =>
+    simp only [mem_cons, forall_eq_or_imp] at h
+    replace ⟨⟨yhd, h₁⟩, h₂⟩ := h
+    replace ⟨ytl, ih⟩ := ih h₂
+    exists yhd :: ytl
+    simp [h₁, ih, pure]
 
 theorem mapM_some_iff_forall₂
   {α β} {f : α → Option β} {xs : List α} {ys : List β} :
   mapM f xs = .some ys ↔
   Forall₂ (λ x y => f x = .some y) xs ys
-:= sorry
+:= by
+  constructor
+  case mp =>
+    intro h₁
+    induction xs generalizing ys
+    case nil =>
+      simp only [mapM_nil, pure] at h₁
+      injection h₁; rename_i h₁
+      subst h₁
+      exact List.Forall₂.nil
+    case cons xhd xtl ih =>
+      simp only [mapM_cons, pure] at h₁
+      cases h₂ : f xhd <;>
+      simp only [h₂, Option.bind_eq_bind, Option.bind, reduceCtorEq] at h₁
+      rename_i yhd
+      cases mapM' f xtl
+      · split at h₁
+        . contradiction
+        . simp at h₁
+          rename_i a h₂
+          rw [← h₁]
+          specialize ih h₂
+          apply Forall₂.cons
+          . rename_i h₃ h₄ h₅
+            exact h₃
+          . exact ih
+      · split at h₁
+        . contradiction
+        . simp at h₁
+          rename_i a h₂
+          rw [← h₁]
+          specialize ih h₂
+          apply Forall₂.cons
+          . rename_i h₃ h₄ h₅ h₆
+            exact h₃
+          . exact ih
+  case mpr =>
+    intro h₁
+    induction xs generalizing ys
+    case nil =>
+      simp only [forall₂_nil_left_iff] at h₁
+      simp only [mapM_nil, pure, h₁]
+    case cons xhd xtl ih =>
+      simp only [mapM_cons, pure]
+      replace ⟨yhd, ytl, h₁, h₃, h₄⟩ := forall₂_cons_left_iff.mp h₁
+      subst ys
+      cases h₂ : f xhd
+      case none => simp [h₁] at h₂
+      case some y' =>
+        simp [h₁] at h₂
+        specialize ih h₃
+        simp only [ih]
+        simp [Option.some.injEq, cons.injEq, and_true]
+        rw [h₂]
+
+theorem forall₂_implies_all_left {α β} {R : α → β → Prop} {xs : List α} {ys : List β} :
+  List.Forall₂ R xs ys →
+  ∀ x ∈ xs, ∃ y ∈ ys, R x y
+:= by
+  intro h
+  induction h
+  case nil =>
+    simp only [not_mem_nil, false_and, exists_false, imp_self, implies_true]
+  case cons xhd yhd xtl ytl hhd _ ih =>
+    intro x hx
+    simp only [mem_cons] at hx
+    rcases hx with hx | hx
+    · subst hx
+      exists yhd
+      simp only [mem_cons, true_or, hhd, and_self]
+    · have ⟨y, ih⟩ := ih x hx
+      exists y
+      simp only [mem_cons, ih, or_true, and_self]
+
+theorem mapM_some_implies_all_some {α β} {f : α → Option β} {xs : List α} {ys : List β}
+  (h : mapM f xs = some ys) :
+  (∀ x ∈ xs, ∃ y ∈ ys, f x = some y)
+:= forall₂_implies_all_left (mapM_some_iff_forall₂.mp h)
+
+theorem mem_implies_mem_eraseDups
+  [BEq α] [LawfulBEq α]
+  {xs : List α} {x : α}
+  (hmem : x ∈ xs) :
+  x ∈ xs.eraseDups
+:= by
+  cases xs with
+  | nil => contradiction
+  | cons hd tl =>
+    simp only [List.eraseDups_cons, List.mem_cons]
+    simp only [List.mem_cons] at hmem
+    cases hx : x == hd
+    · simp only [beq_eq_false_iff_ne, ne_eq] at hx
+      apply Or.inr
+      simp only [hx, false_or] at hmem
+      apply mem_implies_mem_eraseDups
+      apply List.mem_filter.mpr
+      simp only [hmem, true_and]
+      simp only [Bool.not_eq_eq_eq_not, Bool.not_true, beq_eq_false_iff_ne, ne_eq]
+      exact hx
+    · apply Or.inl
+      simp only [beq_iff_eq] at hx
+      exact hx
+termination_by xs.length
+decreasing_by
+  calc
+    (List.filter (fun b => !b == hd) tl).length <= tl.length := by
+      apply List.length_filter_le
+    _ < xs.length := by
+      simp [*]
+
+theorem mem_eraseDups_implies_mem
+  [BEq α] [LawfulBEq α]
+  {xs : List α} {x : α}
+  (hmem : x ∈ xs.eraseDups) :
+  x ∈ xs
+:= by
+  cases xs with
+  | nil => contradiction
+  | cons hd tl =>
+    simp only [eraseDups_cons, mem_cons] at hmem
+    simp only [mem_cons]
+    cases hmem with
+    | inl h => exact Or.inl h
+    | inr h =>
+      apply Or.inr
+      have := mem_eraseDups_implies_mem h
+      have := List.mem_filter.mp this
+      exact this.1
+termination_by xs.length
+decreasing_by
+  calc
+    (List.filter (fun b => !b == hd) tl).length <= tl.length := by
+      apply List.length_filter_le
+    _ < xs.length := by
+      simp [*]
+
+theorem mem_iff_mem_eraseDups [BEq α] [LawfulBEq α] {xs : List α}
+  : x ∈ xs ↔ x ∈ xs.eraseDups :=
+  ⟨mem_implies_mem_eraseDups, mem_eraseDups_implies_mem⟩
 
 theorem disjoint_implies_filter_disjoint_left
   {l₁ l₂ : List α}
@@ -37,7 +180,7 @@ theorem to_append_cons
   {l : List α} {i : Nat}
   (hi : i < l.length) :
   l = l.take i ++ l[i] :: l.drop (i + 1)
-:= sorry
+:= by simp
 
 theorem mem_to_mem_removeAll
   [DecidableEq α]

@@ -52,9 +52,24 @@ variable [DecidableEq χ]
 
 theorem push_vals_disjoint
   {map : ChanMap χ V}
+  {names : Vector χ n}
   (hdisj : name ∉ names) :
   map.pushVals names vals name = map name
-:= sorry
+:= by
+  simp [ChanMap.pushVals]
+  induction n generalizing map with
+  | zero => simp [Vector.eq_empty]
+  | succ n' ih =>
+    rw [← (Vector.push_pop_back (names.zip vals))]
+    rw [Vector.foldl_push]
+    simp [ChanMap.pushVal]
+    split <;> rename_i h₁
+    · simp [h₁] at hdisj
+    · simp [Vector.pop_zip]
+      rw [ih]
+      intros h
+      have := Vector.mem_pop_iff.mpr (.inl h)
+      exact False.elim (hdisj this)
 
 theorem push_vals_map
   {map₁ map₂ : ChanMap χ V}
@@ -64,7 +79,30 @@ theorem push_vals_map
   (heq : map₁ (f name) = map₂ name) :
   map₁.pushVals (names.map f) vals (f name) =
   map₂.pushVals names vals name
-:= sorry
+:= by
+  simp [ChanMap.pushVals]
+  induction n generalizing map₁ map₂ name with
+  | zero =>
+    simp [Vector.eq_empty, heq]
+  | succ n' ih =>
+    rw [← (Vector.push_pop_back (names.zip vals))]
+    rw [← (Vector.push_pop_back ((names.map f).zip vals))]
+    rw [Vector.foldl_push]
+    rw [Vector.foldl_push]
+    simp [ChanMap.pushVal]
+    split <;> rename_i h₁
+    · simp [hinj h₁]
+      simp [Vector.pop_zip]
+      rw [← Vector.map_pop]
+      apply ih
+      simp [hinj h₁] at heq
+      exact heq
+    · have h₂ := (Function.Injective.ne_iff hinj).mp h₁
+      simp [h₂]
+      simp [Vector.pop_zip]
+      rw [← Vector.map_pop]
+      apply ih
+      exact heq
 
 theorem push_val_empty
   {map : ChanMap χ V}
