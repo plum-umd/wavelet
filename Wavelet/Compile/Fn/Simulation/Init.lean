@@ -17,8 +17,9 @@ private theorem init_chans_empty
   [Arity Op] [DecidableEq χ] [InterpConsts V]
   {ec : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
+  {gs : GhostState χ}
   {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz ec pc)
+  (hsim : SimRel hnz gs ec pc)
   (hinit : ec.cont = .init) :
   pc.chans = ChanMap.empty := by
   have ⟨
@@ -48,13 +49,14 @@ theorem sim_step_init
   {l : Label Op V m n}
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
+  {gs : GhostState χ}
   {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz ec pc)
+  (hsim : SimRel hnz gs ec pc)
   (hstep : Config.Step ec l ec')
   (hinit : ec.cont = .init) :
   ∃ pc',
     Dataflow.Config.Step.IORestrictedStep pc l pc' ∧
-    SimRel hnz ec' pc' := by
+    ∃ gs', SimRel hnz gs' ec' pc' := by
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
     hatoms, hcomp_fn, hrest, hret, hcont,
@@ -137,58 +139,58 @@ theorem sim_step_init
     simp [← hname, hchans₁, hpc₁, compileFn.inputs, hsim.inputs]
     simp [init_chans_empty hsim hinit, ChanMap.empty]
   simp at hsteps₂
-  have ⟨pc', hpc', hsteps⟩ := exists_eq_left.mpr hsteps₂
-  exists pc'
-  constructor
-  · exact hsteps
-  · simp only [hpc', hpc₁]
-    and_intros
-    · simp
-      funext name
-      simp [varsToChans]
-      cases name with
-      | var v pathConds =>
-        simp
-        if h₁ : pathConds = [] then
-          simp [h₁]
-          split <;> rename_i h₂
-          · simp [Vector.get] at h₂
-            simp [← h₂.1, var_map_fromList_get_vars_index hsim.wf_fn.1]
-          · have := Option.eq_none_iff_forall_ne_some.mpr h₂
-            simp at this
-            split <;> rename_i h₃
-            · have h₄ := var_map_fromList_get_vars.mpr ⟨_, h₃⟩
-              exact False.elim (this h₄)
-            · simp [hchans₁, hpc₁, compileFn.inputs, hsim.inputs,
-                init_chans_empty hsim hinit, ChanMap.empty]
-        else
-          simp [h₁, hchans₁, hpc₁, hsim.inputs, compileFn.inputs,
+  exact ⟨_, hsteps₂,
+    GhostState.init ec.fn.params.toList,
+    by
+      simp only [hpc₁]
+      and_intros
+      · simp
+        funext name
+        simp [varsToChans]
+        cases name with
+        | var v pathConds =>
+          simp
+          if h₁ : pathConds = [] then
+            simp [h₁]
+            split <;> rename_i h₂
+            · simp [Vector.get] at h₂
+              simp [← h₂.1, var_map_fromList_get_vars_index hsim.wf_fn.1]
+            · have := Option.eq_none_iff_forall_ne_some.mpr h₂
+              simp at this
+              split <;> rename_i h₃
+              · have h₄ := var_map_fromList_get_vars.mpr ⟨_, h₃⟩
+                exact False.elim (this h₄)
+              · simp [hchans₁, hpc₁, compileFn.inputs, hsim.inputs,
+                  init_chans_empty hsim hinit, ChanMap.empty]
+          else
+            simp [h₁, hchans₁, hpc₁, hsim.inputs, compileFn.inputs,
+              init_chans_empty hsim hinit, ChanMap.empty]
+        | input =>
+          simp [hchans₁, hpc₁, compileFn.inputs, hsim.inputs,
             init_chans_empty hsim hinit, ChanMap.empty]
-      | input =>
-        simp [hchans₁, hpc₁, compileFn.inputs, hsim.inputs,
-          init_chans_empty hsim hinit, ChanMap.empty]
-        intros h
-        simp [input_finIdxOf?_none h]
-      | _ =>
-        simp [hchans₁, hpc₁, compileFn.inputs, hsim.inputs,
-          init_chans_empty hsim hinit, ChanMap.empty]
-    · simp [hsim.wf_fn.1]
-    · simp
-      intros var
-      apply var_map_fromList_get_vars
-    · simp [OrderedPathConds]
-    · simp
-    · simp [HasMerges]
-    · exact hsim.wf_fn.1
-    · exact hsim.wf_fn.2
-    · exact hsim.inputs
-    · exact hsim.outputs
-    · simp [HasCompiledProcs, compileFn.initCarry, hcomp_fn, hrest]
-      simp [hrest, compileFn] at hcomp_fn
-      simp [hcomp_fn]
-      constructor
-      · exists [], compileFn.resultSteers m n
-        simp [← hcomp_fn, compileFn.bodyComp]
+          intros h
+          simp [input_finIdxOf?_none h]
+        | _ =>
+          simp [hchans₁, hpc₁, compileFn.inputs, hsim.inputs,
+            init_chans_empty hsim hinit, ChanMap.empty]
+      · simp [hsim.wf_fn.1]
+      · simp
+        intros var
+        apply var_map_fromList_get_vars
+      · simp [OrderedPathConds]
+      · simp
+      · simp [HasMerges]
+      · exact hsim.wf_fn.1
       · exact hsim.wf_fn.2
+      · exact hsim.inputs
+      · exact hsim.outputs
+      · simp [HasCompiledProcs, compileFn.initCarry, hcomp_fn, hrest]
+        simp [hrest, compileFn] at hcomp_fn
+        simp [hcomp_fn]
+        constructor
+        · exists [], compileFn.resultSteers m n
+          simp [← hcomp_fn, compileFn.bodyComp]
+        · exact hsim.wf_fn.2
+  ⟩
 
 end Wavelet.Compile.Fn

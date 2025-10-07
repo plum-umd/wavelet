@@ -20,7 +20,7 @@ private theorem sim_compile_fn_init
   (fn : Fn Op χ V m n)
   (hnz : m > 0 ∧ n > 0)
   (hwf : fn.WellFormed) :
-  SimRel hnz fn.semantics.init (compileFn hnz fn).semantics.init
+  SimRel hnz .empty fn.semantics.init (compileFn hnz fn).semantics.init
   := by
   simp [semantics, Fn.semantics, Seq.Config.init,
     Proc.semantics, Dataflow.Config.init]
@@ -50,10 +50,11 @@ theorem sim_compile_fn
   (hwf : fn.WellFormed) :
   fn.semantics ≲ᵣ (compileFn hnz fn).semantics
   := by
-  apply Lts.Similarity.intro (SimRel hnz)
+  apply Lts.Similarity.intro (∃ gs, SimRel hnz gs · ·)
   constructor
-  · exact sim_compile_fn_init fn hnz hwf
+  · exact ⟨_, sim_compile_fn_init fn hnz hwf⟩
   · intros ec pc l ec' hsim hstep
+    replace ⟨_, hsim⟩ := hsim
     cases h₁ : ec.cont with
     | init => exact sim_step_init hsim hstep h₁
     | expr expr =>

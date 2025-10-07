@@ -26,16 +26,17 @@ private theorem sim_step_tail_forwardc_sink
   [Arity Op] [InterpConsts V] [DecidableEq χ]
   {ec : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
+  {gs : GhostState χ}
   {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz ec pc)
+  (hsim : SimRel hnz gs ec pc)
   (hexpr : ec.cont = .expr (.tail vars))
   (hvars : VarMap.getVars vars ec.vars = some tailArgs)
   (hvars_nodup : vars.toList.Nodup) :
   Dataflow.Config.Step.StepModTau .τ pc .τ
   { proc := pc.proc,
-    chans := intermChans ec pc vars
+    chans := intermChans m n gs vars
       (tailArgsToExprOutputs tailArgs)
-      ec.pathConds }
+      gs.pathConds }
 := by
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
@@ -47,10 +48,10 @@ private theorem sim_step_tail_forwardc_sink
   have ⟨chans₁, tailArgs', hpop_tail_args, hchans₁, htail_args⟩ :=
     pop_vals_singleton _ _
     (map := pc.chans)
-    (names := vars.map (.var · ec.pathConds))
+    (names := vars.map (.var · gs.pathConds))
     (λ name val =>
       ∃ var,
-        name = .var var ec.pathConds ∧
+        name = .var var gs.pathConds ∧
         ec.vars.getVar var = some val)
     (by
       simp only [Vector.toList_map]
@@ -82,9 +83,9 @@ private theorem sim_step_tail_forwardc_sink
   subst heq_ret_vals
   have hmem_forwardc :
     AtomicProc.forwardc
-      (vars.map (.var · ec.pathConds))
+      (vars.map (.var · gs.pathConds))
       ((Vector.replicate n InterpConsts.junkVal).push (InterpConsts.fromBool true))
-      (compileExpr.tailExprOutputs m n ec.pathConds)
+      (compileExpr.tailExprOutputs m n gs.pathConds)
       ∈ pc.proc.atoms
   := by grind
   have hsteps₁ : Dataflow.Config.Step.StepModTau .τ pc _ _
@@ -107,7 +108,7 @@ private theorem sim_step_tail_forwardc_sink
   have ⟨chans₂, otherVals, hpop_other_vals, hchans₂, hother_vals⟩ :=
     pop_vals_singleton _ _
     (map := pc₁.chans)
-    (names := compileExpr.allVarsExcept ec.definedVars vars.toList ec.pathConds)
+    (names := compileExpr.allVarsExcept gs.definedVars vars.toList gs.pathConds)
     (λ name val => True)
     (allVarsExcept_nodup hsim.defined_vars_nodup)
     (by
@@ -121,7 +122,7 @@ private theorem sim_step_tail_forwardc_sink
       simp at hnot_mem_var
       simp [h, hnot_mem_var])
   have hmem_sink :
-    .sink (compileExpr.allVarsExcept ec.definedVars vars.toList ec.pathConds)
+    .sink (compileExpr.allVarsExcept gs.definedVars vars.toList gs.pathConds)
     ∈ pc₁.proc.atoms
   := by grind
   have hsteps₂ : Dataflow.Config.Step.StepModTau .τ pc _ _
@@ -178,13 +179,14 @@ private theorem sim_step_tail_exec_dataflow
   {l : Label Op V m n}
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
+  {gs : GhostState χ}
   {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz ec pc)
+  (hsim : SimRel hnz gs ec pc)
   (hstep : Config.Step ec l ec')
   (hexpr : ec.cont = .expr (.tail vars)) :
   Dataflow.Config.Step.StepModTau .τ pc l {
     proc := pc.proc,
-    chans := varsToChans ec',
+    chans := varsToChans (.init ec.fn.params.toList) ec',
   }
 := by
   have ⟨
@@ -203,13 +205,13 @@ private theorem sim_step_tail_exec_dataflow
   -- Step 1: Fire `forwardc` and `sink`
   have hsteps₁ := sim_step_tail_forwardc_sink hsim hexpr hvars hvars_nodup
   -- Step 2: Fire final merges
-  have hsteps₂ := sim_step_merges ec pc
+  have hsteps₂ := sim_step_merges pc gs
     hsim.has_merges (by simp)
     hsim.path_conds_nodup hsteps₁
   -- Step 3: Fire the `fork` in `compileFn`.
   simp [compileFn, compileFn.resultSteers] at hcomp_fn
   have ⟨chans₁, hpop_tail_cond, hchans₁⟩ := pop_val_singleton _ _
-    (map := intermChans ec pc vars
+    (map := intermChans m n gs vars
       (tailArgsToExprOutputs tailArgs)
       [])
     (name := .tail_cond [])
@@ -470,15 +472,15 @@ theorem sim_step_tail
   {l : Label Op V m n}
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
+  {gs : GhostState χ}
   {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz ec pc)
+  (hsim : SimRel hnz gs ec pc)
   (hstep : Config.Step ec l ec')
   (hexpr : ec.cont = .expr (.tail vars)) :
   ∃ pc',
     Config.Step.IORestrictedStep pc l pc' ∧
-    SimRel hnz ec' pc' := by
+    ∃ gs', SimRel hnz gs' ec' pc' := by
   have hsteps := sim_step_tail_exec_dataflow hsim hstep hexpr
-  replace ⟨pc', hpc', hsteps⟩ := exists_eq_left.mpr hsteps
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
     hatoms, hcomp_fn, hrest, hret, hcont,
@@ -492,31 +494,31 @@ theorem sim_step_tail
     simp [hexpr] at hexpr'
     subst hexpr'
     cases hwf_expr with | wf_tail hvars_nodup =>
-    exists pc'
-    constructor
-    · exact .step_tau hsteps.to_tau_star
-    · simp only [hpc']
-      and_intros
-      · simp
-      · simp [hsim.wf_fn.1]
-      · simp []
-        intros var
-        apply var_map_fromList_get_vars
-      · simp [OrderedPathConds]
-      · simp
-      · simp [HasMerges]
-      · exact hsim.wf_fn.1
-      · exact hsim.wf_fn.2
-      · exact hsim.inputs
-      · exact hsim.outputs
-      · simp [compileFn.initCarry, HasCompiledProcs]
-        exists rest
-        simp [hatoms, compileFn, compileFn.initCarry, hcarryInLoop]
-        simp [compileFn] at hcomp_fn
-        simp [hcomp_fn]
-        constructor
-        · exists [], compileFn.resultSteers m n
-          simp [← hcomp_fn, compileFn.bodyComp]
+    exact ⟨_, .step_tau hsteps.to_tau_star,
+      .init ec.fn.params.toList,
+      by
+        and_intros
+        · simp
+        · simp [hsim.wf_fn.1]
+        · simp []
+          intros var
+          apply var_map_fromList_get_vars
+        · simp [OrderedPathConds]
+        · simp
+        · simp [HasMerges]
+        · exact hsim.wf_fn.1
         · exact hsim.wf_fn.2
+        · exact hsim.inputs
+        · exact hsim.outputs
+        · simp [compileFn.initCarry, HasCompiledProcs]
+          exists rest
+          simp [hatoms, compileFn, compileFn.initCarry, hcarryInLoop]
+          simp [compileFn] at hcomp_fn
+          simp [hcomp_fn]
+          constructor
+          · exists [], compileFn.resultSteers m n
+            simp [← hcomp_fn, compileFn.bodyComp]
+          · exact hsim.wf_fn.2
+    ⟩
 
 end Wavelet.Compile.Fn

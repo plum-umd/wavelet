@@ -17,16 +17,20 @@ open Semantics Seq Dataflow Compile Fn
 private theorem sim_step_br_exec_dataflow
   [Arity Op] [DecidableEq χ] [InterpConsts V]
   {cond left right}
-  {l : Label Op V m n}
-  {ec ec' : Seq.Config Op χ V m n}
+  {ec : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
+  {gs : GhostState χ}
   {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz ec pc)
-  (hstep : Config.Step ec l ec')
-  (hbr : ec.cont = .expr (.br cond left right)) :
-  Dataflow.Config.Step.StepModTau .τ pc l {
+  (hsim : SimRel hnz gs ec pc)
+  (hbr : ec.cont = .expr (.br cond left right))
+  (hcond : ec.vars.getVar cond = some condVal)
+  (hcondBool : InterpConsts.toBool condVal = some condBool) :
+  Dataflow.Config.Step.StepModTau .τ pc .τ {
     proc := pc.proc,
-    chans := varsToChans ec',
+    chans := varsToChans (gs.useThenBranch cond condBool) { ec with
+      cont := .expr (if condBool then left else right),
+      vars := ec.vars.removeVar cond
+    },
   } := by
   -- Unpack compiled processes
   have ⟨
@@ -35,34 +39,23 @@ private theorem sim_step_br_exec_dataflow
   ⟩ := hsim.has_compiled_procs
   have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont _ hbr
   simp only [compileExpr] at hcurrent
-  -- Deduce some facts from `hstep`
-  cases hstep with
-  | step_init hexpr | step_ret hexpr | step_tail hexpr
-  | step_op hexpr => simp [hbr] at hexpr
-  | step_br hexpr hcond hcondBool =>
-  rename_i condVal condBool _ _ cond'
-  simp only [hbr, Cont.expr.injEq, Expr.br.injEq] at hexpr
-  have h := hexpr.1; subst h
-  have h := hexpr.2.1; subst h
-  have h := hexpr.2.2; subst h
-  clear hexpr
   cases hwf_expr with | wf_br hwf_left hwf_right =>
   -- Some abbreviations
-  generalize hleft_conds : (true, .var cond ec.pathConds) :: ec.pathConds = leftConds
-  generalize hright_conds : (false, .var cond ec.pathConds) :: ec.pathConds = rightConds
+  generalize hleft_conds : (true, .var cond gs.pathConds) :: gs.pathConds = leftConds
+  generalize hright_conds : (false, .var cond gs.pathConds) :: gs.pathConds = rightConds
   simp only [hleft_conds, hright_conds] at hcurrent
   -- Step 1: Pop `cond` and fire the first `fork`.
   have ⟨chans₁, hpop_cond, hchans₁⟩ := pop_val_singleton _ _
     (map := pc.chans)
-    (name := .var cond ec.pathConds)
+    (name := .var cond gs.pathConds)
     (val := condVal)
     (by simp [hsim.vars_to_chans, varsToChans, hcond])
   have hmem_fork :
     .fork
-      (.var cond ec.pathConds)
+      (.var cond gs.pathConds)
       #v[
-        .switch_cond (.var cond ec.pathConds),
-        .merge_cond (.var cond ec.pathConds),
+        .switch_cond (.var cond gs.pathConds),
+        .merge_cond (.var cond gs.pathConds),
       ] ∈ pc.proc.atoms
     := by simp [hatoms, hrest, ← hcurrent]
   have hsteps₁ : Dataflow.Config.Step.StepModTau .τ pc .τ _
@@ -77,15 +70,15 @@ private theorem sim_step_br_exec_dataflow
   have ⟨chans₂, hpop_switch_cond, hchans₂⟩ := pop_val_singleton _ _
     (map := pc₁.chans)
     (val := condVal)
-    (name := .switch_cond (.var cond ec.pathConds))
+    (name := .switch_cond (.var cond gs.pathConds))
     (by simp [hpc₁, List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go])
   have ⟨chans₃, allVals, hpop_all_vals, hchans₃, hall_vals⟩ :=
     pop_vals_singleton _ _
     (map := chans₂)
-    (names := compileExpr.allVarsExcept ec.definedVars [cond] ec.pathConds)
+    (names := compileExpr.allVarsExcept gs.definedVars [cond] gs.pathConds)
     (λ name val =>
       ∃ var,
-        name = .var var ec.pathConds ∧
+        name = .var var gs.pathConds ∧
         ec.vars.getVar var = some val)
     (allVarsExcept_nodup hsim.defined_vars_nodup)
     (by
@@ -111,10 +104,10 @@ private theorem sim_step_br_exec_dataflow
         simp [h₁ (List.mem_filter.mpr ⟨this, by simp [h₅]⟩) h₃.symm]
     · rfl
   have hmem_switch :
-    AtomicProc.switch (.switch_cond (.var cond ec.pathConds))
-      (compileExpr.allVarsExcept ec.definedVars [cond] ec.pathConds)
-      (compileExpr.allVarsExcept ec.definedVars [cond] leftConds)
-      (compileExpr.allVarsExcept ec.definedVars [cond] rightConds)
+    AtomicProc.switch (.switch_cond (.var cond gs.pathConds))
+      (compileExpr.allVarsExcept gs.definedVars [cond] gs.pathConds)
+      (compileExpr.allVarsExcept gs.definedVars [cond] leftConds)
+      (compileExpr.allVarsExcept gs.definedVars [cond] rightConds)
     ∈ pc₁.proc.atoms
   := by simp [hpc₁, hatoms, hrest, ← hcurrent, compileExpr.allVarsExcept]
   have hsteps₂ : Dataflow.Config.Step.StepModTau .τ pc .τ _
@@ -124,10 +117,10 @@ private theorem sim_step_br_exec_dataflow
           hpop_switch_cond
           hpop_all_vals
           hcondBool
-          (decider := .switch_cond (.var cond ec.pathConds))
-          (inputs := compileExpr.allVarsExcept ec.definedVars [cond] ec.pathConds)
-          (outputs₁ := compileExpr.allVarsExcept ec.definedVars [cond] leftConds)
-          (outputs₂ := compileExpr.allVarsExcept ec.definedVars [cond] rightConds))
+          (decider := .switch_cond (.var cond gs.pathConds))
+          (inputs := compileExpr.allVarsExcept gs.definedVars [cond] gs.pathConds)
+          (outputs₁ := compileExpr.allVarsExcept gs.definedVars [cond] leftConds)
+          (outputs₂ := compileExpr.allVarsExcept gs.definedVars [cond] rightConds))
   simp only at hsteps₂
   -- Simplify pushes
   rw [push_vals_empty] at hsteps₂
@@ -147,11 +140,11 @@ private theorem sim_step_br_exec_dataflow
       exact False.elim (h₁ hvar h₂.symm)
   have :
     (if condBool = true then
-      compileExpr.allVarsExcept ec.definedVars [cond] leftConds
+      compileExpr.allVarsExcept gs.definedVars [cond] leftConds
     else
-      compileExpr.allVarsExcept ec.definedVars [cond] rightConds)
-    = compileExpr.allVarsExcept ec.definedVars [cond]
-      ((condBool, ChanName.var cond ec.pathConds) :: ec.pathConds)
+      compileExpr.allVarsExcept gs.definedVars [cond] rightConds)
+    = compileExpr.allVarsExcept gs.definedVars [cond]
+      ((condBool, ChanName.var cond gs.pathConds) :: gs.pathConds)
   := by
     simp only [← hleft_conds, ← hright_conds, compileExpr.allVarsExcept]
     cases condBool <;> simp
@@ -171,8 +164,8 @@ private theorem sim_step_br_exec_dataflow
       intros _ h₂ h₃
       exact False.elim (h₂ h₃)
     else
-      if h₂ : v ∈ ec.definedVars then
-        if h₃ : pathConds = (condBool, ChanName.var cond ec.pathConds) :: ec.pathConds then
+      if h₂ : v ∈ gs.definedVars then
+        if h₃ : pathConds = (condBool, ChanName.var cond gs.pathConds) :: gs.pathConds then
           have ⟨i, h₄⟩ := allVarsExcept_finIdxOf?_some (removedVars := [cond])
             h₂ (by simp [h₁]) h₃
           simp [h₄]
@@ -200,7 +193,7 @@ private theorem sim_step_br_exec_dataflow
   | merge_cond name =>
     simp [hchans₃, hchans₂, hpc₁, hchans₁,
       compileExpr.allVarsExcept, List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
-    if h₁ : .var cond ec.pathConds = name then
+    if h₁ : .var cond gs.pathConds = name then
       simp [h₁]
       simp [Eq.symm h₁]
       have := InterpConsts.unique_toBool_fromBool _ _ hcondBool
@@ -232,15 +225,14 @@ theorem sim_step_br
   {l : Label Op V m n}
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
+  {gs : GhostState χ}
   {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz ec pc)
+  (hsim : SimRel hnz gs ec pc)
   (hstep : Config.Step ec l ec')
   (hbr : ec.cont = .expr (.br cond left right)) :
   ∃ pc',
     Config.Step.IORestrictedStep pc l pc' ∧
-    SimRel hnz ec' pc' := by
-  have hsteps := sim_step_br_exec_dataflow hsim hstep hbr
-  replace ⟨pc', hpc', hsteps⟩ := exists_eq_left.mpr hsteps
+    ∃ gs', SimRel hnz gs' ec' pc' := by
   -- Deduce some facts from `hstep`
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
@@ -258,24 +250,25 @@ theorem sim_step_br
     have h := hexpr.2.2; subst h
     clear hexpr
     cases hwf_expr with | wf_br hwf_left hwf_right =>
-    exists pc'
-    constructor
-    · exact .step_tau hsteps.to_tau_star
-    · simp only [hpc']
-      and_intros
-      · simp
-      · exact List.Nodup.filter _ hsim.defined_vars_nodup
-      · simp; grind [VarMap.removeVar, VarMap.getVar]
-      · simp; grind
-      · simp; grind
-      · simp
-        grind [compileExpr]
-      · simp only [hsim.has_merges]
-      · exact hsim.wf_fn.1
-      · exact hsim.wf_fn.2
-      · exact hsim.inputs
-      · exact hsim.outputs
-      · simp [HasCompiledProcs]
-        grind [compileExpr]
+    have hsteps := sim_step_br_exec_dataflow hsim hbr hcond hcondBool
+    exact ⟨_, .step_tau hsteps.to_tau_star,
+      gs.useThenBranch cond condBool,
+      by
+        and_intros
+        · simp
+        · exact List.Nodup.filter _ hsim.defined_vars_nodup
+        · simp; grind [VarMap.removeVar, VarMap.getVar]
+        · simp; grind
+        · simp; grind
+        · simp
+          grind [compileExpr]
+        · simp only [hsim.has_merges]
+        · exact hsim.wf_fn.1
+        · exact hsim.wf_fn.2
+        · exact hsim.inputs
+        · exact hsim.outputs
+        · simp [HasCompiledProcs]
+          grind [compileExpr]
+    ⟩
 
 end Wavelet.Compile.Fn

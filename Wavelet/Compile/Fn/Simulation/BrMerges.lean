@@ -16,9 +16,9 @@ open Semantics Seq Dataflow Compile Fn
 /-- Intermediate channel maps after the `forwardc` and `sink`
 have fired, but before the `merge`s finish. -/
 def intermChans
-  [Arity Op] [InterpConsts V] [DecidableEq χ]
-  (ec : Seq.Config Op χ V m n)
-  (_pc : Dataflow.Config Op (ChanName χ) V m n)
+  [InterpConsts V] [DecidableEq χ]
+  m n
+  (gs : GhostState χ)
   (clearVars : Vector χ k)
   (vals : Vector V (n + (m + 1)))
   (pathConds : List (Bool × ChanName χ))
@@ -27,7 +27,7 @@ def intermChans
   match (compileExpr.exprOutputs m n pathConds).finIdxOf? name with
   | some i => [vals[i]]
   | x =>
-    if name ∈ clearVars.map (.var · ec.pathConds) then
+    if name ∈ clearVars.map (.var · gs.pathConds) then
       []
     else
       -- `merge_cond` channels outside `pathConds` should be empty
@@ -44,18 +44,18 @@ def intermChans
 theorem sim_step_merges
   [Arity Op] [InterpConsts V] [DecidableEq χ]
   {l : Label Op V m n}
-  (ec : Seq.Config Op χ V m n)
   (pc : Dataflow.Config Op (ChanName χ) V m n)
+  (gs : GhostState χ)
   (hmerges : HasMerges m n pc.proc.atoms pathConds)
-  (hpath_conds : pathConds.Sublist ec.pathConds)
-  (hpath_conds_nodup : (ec.pathConds.map Prod.snd).Nodup)
+  (hpath_conds : pathConds.Sublist gs.pathConds)
+  (hpath_conds_nodup : (gs.pathConds.map Prod.snd).Nodup)
   (hsteps :
     Dataflow.Config.Step.StepModTau .τ pc l
     { proc := pc.proc,
-      chans := intermChans ec pc vars outputVals pathConds })
+      chans := intermChans m n gs vars outputVals pathConds })
   : Dataflow.Config.Step.StepModTau .τ pc l
     { proc := pc.proc,
-      chans := intermChans ec pc vars outputVals [] }
+      chans := intermChans m n gs vars outputVals [] }
   := by
   induction pathConds with
   | nil => exact hsteps
@@ -65,12 +65,12 @@ theorem sim_step_merges
     have ⟨hhead_merge, hmerges_rest⟩ := hmerges
     simp [compileExpr.branchMerge] at hhead_merge
     -- Pop the current merge condition
-    have hmem_cond_path_conds : (condBool, condName) ∈ ec.pathConds :=
+    have hmem_cond_path_conds : (condBool, condName) ∈ gs.pathConds :=
       List.Sublist.mem (by simp) hpath_conds
     have hnot_mem_cond_tail_conds {b} : (b, condName) ∉ tailConds :=
       path_conds_nodup_alt hpath_conds_nodup hpath_conds
     have ⟨chans₁, hpop_cond, hchans₁⟩ := pop_val_singleton _ _
-      (map := intermChans ec pc vars
+      (map := intermChans m n gs vars
         outputVals
         ((condBool, condName) :: tailConds))
       (name := .merge_cond condName)

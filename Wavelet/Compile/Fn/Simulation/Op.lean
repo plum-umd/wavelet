@@ -81,13 +81,14 @@ theorem sim_step_op
   {l : Label Op V m n}
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
+  {gs : GhostState χ}
   {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz ec pc)
+  (hsim : SimRel hnz gs ec pc)
   (hstep : Config.Step ec l ec')
   (hop : ec.cont = .expr (.op o args rets cont)) :
   ∃ pc',
     Config.Step.IORestrictedStep pc l pc' ∧
-    SimRel hnz ec' pc' := by
+    ∃ gs', SimRel hnz gs' ec' pc' := by
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
     hatoms, hcomp_fn, hrest, hret, hcont,
@@ -110,7 +111,7 @@ theorem sim_step_op
     have ⟨chans₁, inputVals', hpop_input_vals, hchans₁, hinput_vals⟩ :=
       pop_vals_singleton _ _
       (map := pc.chans)
-      (names := args.map (.var · ec.pathConds))
+      (names := args.map (.var · gs.pathConds))
       (λ name val =>
         match name with
         | .var v _ => ec.vars.getVar v = some val
@@ -139,8 +140,8 @@ theorem sim_step_op
     subst this; clear hinput_vals
     have hmem_op :
       .op o
-        (args.map (.var · ec.pathConds))
-        (rets.map (.var · ec.pathConds))
+        (args.map (.var · gs.pathConds))
+        (rets.map (.var · gs.pathConds))
       ∈ pc.proc.atoms
     := by grind
     have hstep : Dataflow.Config.Step pc (.yield o inputVals outputVals) _
@@ -155,116 +156,115 @@ theorem sim_step_op
       simp at hname
       replace ⟨var, hvar, hname⟩ := hname
       simp [← hname, hsim.vars_to_chans, varsToChans]
-      have : var ∉ ec.definedVars := List.disjoint_right.mp hrets_disj
+      have : var ∉ gs.definedVars := List.disjoint_right.mp hrets_disj
         (Vector.mem_toList_iff.mpr hvar)
       split <;> rename_i h
       · have h' := hsim.get_var_to_defined_vars ⟨_, h⟩
         simp [this h']
       · rfl
-    replace ⟨pc', hpc', hstep⟩ := exists_eq_left.mpr hstep
-    -- Prove simulation invariants
-    exists pc'
-    constructor
-    · exact .step_yield hstep
-    · and_intros
-      · funext name
-        simp [hpc', varsToChans, hchans₁]
-        cases name with
-        | var var pathConds =>
-          simp
-          split <;> rename_i h₁
-          · rename_i i
-            simp [Vector.get] at h₁
-            have ⟨⟨hvar, h₂⟩, h₃⟩ := h₁
-            simp [h₂, VarMap.getVar, VarMap.removeVars, VarMap.insertVars]
-            have :
-              (List.find? (fun x => decide (x.fst = var)) (rets.zip outputVals).toList)
-              = some (var, outputVals[i])
-              := by
-              apply List.find?_eq_some_iff_append.mpr
-              and_intros
-              · simp
-              · exists
-                  (rets.zip outputVals).toList.take i,
-                  (rets.zip outputVals).toList.drop (i + 1)
+    exact ⟨_, .step_yield hstep,
+      gs.useThenDefine args.toList rets.toList,
+      by
+        and_intros
+        · funext name
+          simp [varsToChans, hchans₁]
+          cases name with
+          | var var pathConds =>
+            simp
+            split <;> rename_i h₁
+            · rename_i i
+              simp [Vector.get] at h₁
+              have ⟨⟨hvar, h₂⟩, h₃⟩ := h₁
+              simp [h₂, VarMap.getVar, VarMap.removeVars, VarMap.insertVars]
+              have :
+                (List.find? (fun x => decide (x.fst = var)) (rets.zip outputVals).toList)
+                = some (var, outputVals[i])
+                := by
+                apply List.find?_eq_some_iff_append.mpr
                 and_intros
-                · have : (var, outputVals[i]) = (rets.zip outputVals)[i] := by simp [hvar]
-                  simp only [this]
-                  apply List.to_append_cons
-                · intros x hmem_x
-                  simp
-                  have ⟨j, hj, hmem_x'⟩ := List.mem_iff_getElem.mp hmem_x
-                  simp at hmem_x' hj
-                  simp [← hmem_x']
-                  intros h
-                  simp only [← h] at hvar
-                  have := (List.Nodup.getElem_inj_iff hrets_nodup).mp hvar
-                  simp at this
-                  omega
-            simp [this]
-          · have := Option.eq_none_iff_forall_ne_some.mpr h₁
-            simp at this
-            split <;> rename_i h₂
-            · simp [h₂.2]
-              simp [h₂.1, VarMap.getVar, VarMap.removeVars, VarMap.insertVars]
-              split <;> rename_i h₃
-              · simp at h₃
-                replace ⟨_, h₃⟩ := h₃
-                -- replace h₃ := Option.isSome_iff_exists.mpr ⟨_, h₃⟩
-                have h₄ := List.find?_some h₃
-                have h₅ := List.mem_of_find?_eq_some h₃
-                simp at h₄ h₅
-                replace h₅ := Vector.of_mem_zip h₅
-                simp only [h₄] at h₅
-                simp [this h₅.1 h₂.2]
-              · rfl
-            · simp at h₂
-              split <;> rename_i h₃
-              · simp [hsim.vars_to_chans, varsToChans, h₃]
-                have : var ∉ rets := by
-                  intros h
-                  exact this h h₃.symm
-                rw [var_map_insert_vars_disj this]
-                have : var ∉ args.toList := by
-                  intros h
-                  replace h := Vector.mem_toList_iff.mp h
-                  exact h₂ h h₃.symm
-                rw [var_map_remove_vars_disj this]
-              · simp [hsim.vars_to_chans, varsToChans, h₃]
-        | _ =>
-          simp [hsim.vars_to_chans, varsToChans]
-      · simp
-        apply List.Nodup.append
-        · apply List.Nodup.filter
-          exact hsim.defined_vars_nodup
-        · exact hrets_nodup
-        · apply List.disjoint_implies_filter_disjoint_left hrets_disj
-      · simp
-        intros var
-        apply sim_step_op_defined_vars
-        · exact hrets_disj
-        · intros v
-          apply hsim.defined_vars_iff_get_var
-      · grind
-      · exact hsim.path_conds_nodup
-      · simp [hpc', hsim.has_merges]
-      · exact hsim.wf_fn.1
-      · exact hsim.wf_fn.2
-      · simp [hpc']; exact hsim.inputs
-      · simp [hpc']; exact hsim.outputs
-      · exists rest, carryInLoop
-        -- ctxLeft
-        exists
-          ctxLeft ++ [
-            .op o
-              (args.map (.var · ec.pathConds))
-              (rets.map (.var · ec.pathConds))
-          ]
-        -- ctxCurrent
-        exists
-          compileExpr hnz (ec.definedVars.removeAll args.toList ++ rets.toList) ec.pathConds cont
-        -- ctxRight
-        exists ctxRight
-        grind
+                · simp
+                · exists
+                    (rets.zip outputVals).toList.take i,
+                    (rets.zip outputVals).toList.drop (i + 1)
+                  and_intros
+                  · have : (var, outputVals[i]) = (rets.zip outputVals)[i] := by simp [hvar]
+                    simp only [this]
+                    apply List.to_append_cons
+                  · intros x hmem_x
+                    simp
+                    have ⟨j, hj, hmem_x'⟩ := List.mem_iff_getElem.mp hmem_x
+                    simp at hmem_x' hj
+                    simp [← hmem_x']
+                    intros h
+                    simp only [← h] at hvar
+                    have := (List.Nodup.getElem_inj_iff hrets_nodup).mp hvar
+                    simp at this
+                    omega
+              simp [this]
+            · have := Option.eq_none_iff_forall_ne_some.mpr h₁
+              simp at this
+              split <;> rename_i h₂
+              · simp [h₂.2]
+                simp [h₂.1, VarMap.getVar, VarMap.removeVars, VarMap.insertVars]
+                split <;> rename_i h₃
+                · simp at h₃
+                  replace ⟨_, h₃⟩ := h₃
+                  -- replace h₃ := Option.isSome_iff_exists.mpr ⟨_, h₃⟩
+                  have h₄ := List.find?_some h₃
+                  have h₅ := List.mem_of_find?_eq_some h₃
+                  simp at h₄ h₅
+                  replace h₅ := Vector.of_mem_zip h₅
+                  simp only [h₄] at h₅
+                  simp [this h₅.1 h₂.2]
+                · rfl
+              · simp at h₂
+                split <;> rename_i h₃
+                · simp [hsim.vars_to_chans, varsToChans, h₃]
+                  have : var ∉ rets := by
+                    intros h
+                    exact this h h₃.symm
+                  rw [var_map_insert_vars_disj this]
+                  have : var ∉ args.toList := by
+                    intros h
+                    replace h := Vector.mem_toList_iff.mp h
+                    exact h₂ h h₃.symm
+                  rw [var_map_remove_vars_disj this]
+                · simp [hsim.vars_to_chans, varsToChans, h₃]
+          | _ =>
+            simp [hsim.vars_to_chans, varsToChans]
+        · simp
+          apply List.Nodup.append
+          · apply List.Nodup.filter
+            exact hsim.defined_vars_nodup
+          · exact hrets_nodup
+          · apply List.disjoint_implies_filter_disjoint_left hrets_disj
+        · simp
+          intros var
+          apply sim_step_op_defined_vars
+          · exact hrets_disj
+          · intros v
+            apply hsim.defined_vars_iff_get_var
+        · grind
+        · exact hsim.path_conds_nodup
+        · simp [hsim.has_merges]
+        · exact hsim.wf_fn.1
+        · exact hsim.wf_fn.2
+        · simp; exact hsim.inputs
+        · simp; exact hsim.outputs
+        · exists rest, carryInLoop
+          -- ctxLeft
+          exists
+            ctxLeft ++ [
+              .op o
+                (args.map (.var · gs.pathConds))
+                (rets.map (.var · gs.pathConds))
+            ]
+          -- ctxCurrent
+          exists
+            compileExpr hnz (gs.definedVars.removeAll args.toList ++ rets.toList) gs.pathConds cont
+          -- ctxRight
+          exists ctxRight
+          grind
+    ⟩
 
 end Wavelet.Compile.Fn

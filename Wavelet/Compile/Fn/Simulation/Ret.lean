@@ -27,16 +27,17 @@ private theorem sim_step_ret_forwardc_sink
   [Arity Op] [InterpConsts V] [DecidableEq χ]
   {ec : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
+  {gs : GhostState χ}
   {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz ec pc)
+  (hsim : SimRel hnz gs ec pc)
   (hexpr : ec.cont = .expr (.ret vars))
   (hvars : VarMap.getVars vars ec.vars = some retVals)
   (hvars_nodup : vars.toList.Nodup) :
   Dataflow.Config.Step.StepModTau .τ pc .τ
   { proc := pc.proc,
-    chans := intermChans ec pc vars
+    chans := intermChans m n gs vars
       (retValsToExprOutputs retVals)
-      ec.pathConds }
+      gs.pathConds }
 := by
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
@@ -48,10 +49,10 @@ private theorem sim_step_ret_forwardc_sink
   have ⟨chans₁, retVals', hpop_ret_vals, hchans₁, hret_vals⟩ :=
     pop_vals_singleton _ _
     (map := pc.chans)
-    (names := vars.map (.var · ec.pathConds))
+    (names := vars.map (.var · gs.pathConds))
     (λ name val =>
       ∃ var,
-        name = .var var ec.pathConds ∧
+        name = .var var gs.pathConds ∧
         ec.vars.getVar var = some val)
     (by
       simp only [Vector.toList_map]
@@ -77,10 +78,10 @@ private theorem sim_step_ret_forwardc_sink
   subst heq_ret_vals
   have hmem_forwardc :
     AtomicProc.forwardc
-      (vars.map (.var · ec.pathConds))
+      (vars.map (.var · gs.pathConds))
       ((Vector.replicate m InterpConsts.junkVal).push
         (InterpConsts.fromBool false))
-      (compileExpr.exprOutputs m n ec.pathConds)
+      (compileExpr.exprOutputs m n gs.pathConds)
       ∈ pc.proc.atoms
   := by grind
   have hsteps₁ : Dataflow.Config.Step.StepModTau .τ pc _ _
@@ -103,7 +104,7 @@ private theorem sim_step_ret_forwardc_sink
   have ⟨chans₂, otherVals, hpop_other_vals, hchans₂, hother_vals⟩ :=
     pop_vals_singleton _ _
     (map := pc₁.chans)
-    (names := compileExpr.allVarsExcept ec.definedVars vars.toList ec.pathConds)
+    (names := compileExpr.allVarsExcept gs.definedVars vars.toList gs.pathConds)
     (λ name val => True)
     (allVarsExcept_nodup hsim.defined_vars_nodup)
     (by
@@ -117,7 +118,7 @@ private theorem sim_step_ret_forwardc_sink
       simp at hnot_mem_var
       simp [h, hnot_mem_var])
   have hmem_sink :
-    .sink (compileExpr.allVarsExcept ec.definedVars vars.toList ec.pathConds)
+    .sink (compileExpr.allVarsExcept gs.definedVars vars.toList gs.pathConds)
     ∈ pc₁.proc.atoms
   := by grind
   have hsteps₂ : Dataflow.Config.Step.StepModTau .τ pc _ _
@@ -161,8 +162,9 @@ private theorem sim_step_ret_exec_dataflow
   {l : Label Op V m n}
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
+  {gs : GhostState χ}
   {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz ec pc)
+  (hsim : SimRel hnz gs ec pc)
   (hstep : Config.Step ec l ec')
   (hexpr : ec.cont = .expr (.ret vars))
   (hpc_atoms : pc.proc.atoms = compileFn.initCarry ec.fn true :: rest) :
@@ -172,7 +174,7 @@ private theorem sim_step_ret_exec_dataflow
       outputs := pc.proc.outputs,
       atoms := compileFn.initCarry ec.fn false :: rest
     },
-    chans := varsToChans ec',
+    chans := varsToChans .empty ec',
   }
 := by
   have ⟨
@@ -195,7 +197,7 @@ private theorem sim_step_ret_exec_dataflow
   cases hwf_expr with | wf_ret hvars_nodup =>
   have hsteps₁ :=
     sim_step_ret_forwardc_sink hsim hexpr hvars hvars_nodup
-  have hsteps₂ := sim_step_merges ec pc
+  have hsteps₂ := sim_step_merges pc gs
     hsim.has_merges (by simp)
     hsim.path_conds_nodup hsteps₁
   replace hsteps₂ :
@@ -204,7 +206,7 @@ private theorem sim_step_ret_exec_dataflow
   -- Step 4: Fire the `fork` in `compileFn`.
   simp only [compileFn, compileFn.resultSteers] at hcomp_fn
   have ⟨chans₁, hpop_tail_cond, hchans₁⟩ := pop_val_singleton _ _
-    (map := intermChans ec pc vars
+    (map := intermChans m n gs vars
       (retValsToExprOutputs retVals)
       [])
     (name := .tail_cond [])
@@ -424,13 +426,14 @@ theorem sim_step_ret
   {l : Label Op V m n}
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
+  {gs : GhostState χ}
   {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz ec pc)
+  (hsim : SimRel hnz gs ec pc)
   (hstep : Config.Step ec l ec')
   (hexpr : ec.cont = .expr (.ret vars)) :
   ∃ pc',
     Config.Step.IORestrictedStep pc l pc' ∧
-    SimRel hnz ec' pc' := by
+    ∃ gs', SimRel hnz gs' ec' pc' := by
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
     hatoms, hcomp_fn, hrest, hret, hcont,
@@ -438,7 +441,6 @@ theorem sim_step_ret
   have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont _ hexpr
   simp [hcarryInLoop] at hatoms
   have hsteps := sim_step_ret_exec_dataflow hsim hstep hexpr hatoms
-  replace ⟨pc', hpc', hsteps⟩ := exists_eq_left.mpr hsteps
   cases hstep with
   | step_init hexpr' | step_br hexpr' | step_tail hexpr' | step_op hexpr' =>
     simp [hexpr] at hexpr'
@@ -447,22 +449,22 @@ theorem sim_step_ret
     simp [hexpr] at hexpr'
     subst hexpr'
     cases hwf_expr with | wf_ret hvars_nodup =>
-    exists pc'
-    constructor
-    · exact hsteps
-    · simp only [hpc']
-      and_intros
-      · simp
-      · simp
-      · simp [VarMap.empty, VarMap.getVar]
-      · simp [OrderedPathConds]
-      · simp
-      · simp [HasMerges]
-      · exact hsim.wf_fn.1
-      · exact hsim.wf_fn.2
-      · exact hsim.inputs
-      · exact hsim.outputs
-      · simp [compileFn.initCarry, HasCompiledProcs]
-        exact hcomp_fn
+    exact ⟨_, hsteps,
+      .empty,
+      by
+        and_intros
+        · simp
+        · simp
+        · simp [VarMap.empty, VarMap.getVar]
+        · simp [OrderedPathConds]
+        · simp
+        · simp [HasMerges]
+        · exact hsim.wf_fn.1
+        · exact hsim.wf_fn.2
+        · exact hsim.inputs
+        · exact hsim.outputs
+        · simp [compileFn.initCarry, HasCompiledProcs]
+          exact hcomp_fn
+    ⟩
 
 end Wavelet.Compile.Fn

@@ -7,6 +7,67 @@ namespace Wavelet.Compile
 
 open Semantics Seq Dataflow
 
+/-- Consistently encodes Seq variables (`χ`) into channel names. -/
+inductive ChanName (χ : Type u) where
+  -- Inputs to a function's carry gates
+  | input (base : χ)
+  | var (base : χ) (pathConds : List (Bool × ChanName χ))
+  -- Only sent during branching
+  | switch_cond (chan : ChanName χ)
+  | merge_cond (chan : ChanName χ)
+  -- Only sent during ret/tail
+  | dest (i : Nat) (pathConds : List (Bool × ChanName χ))
+  -- Only sent during ret/tail
+  | tail_arg (i : Nat) (pathConds : List (Bool × ChanName χ))
+  -- Only sent during ret/tail
+  | tail_cond (pathConds : List (Bool × ChanName χ))
+  | tail_cond_carry
+  | tail_cond_steer_dests
+  | tail_cond_steer_tail_args
+  -- Only sent during the final steers
+  | final_dest (i : Nat)
+  | final_tail_arg (i : Nat)
+  deriving Repr
+
+mutual
+
+variable (χ : Type u)
+variable [inst : DecidableEq χ]
+
+private def decChanName (n₁ n₂ : ChanName χ) : Decidable (n₁ = n₂) := by
+  cases n₁ <;> cases n₂
+  case input.input => simp; apply decEq
+  case var.var | dest.dest | tail_arg.tail_arg =>
+    simp; apply @instDecidableAnd _ _ (decEq _ _) (decPathConds _ _)
+  case switch_cond.switch_cond | merge_cond.merge_cond =>
+    simp; apply decChanName _ _
+  case tail_cond.tail_cond => simp; apply decPathConds _ _
+  case tail_cond_carry.tail_cond_carry
+    | tail_cond_steer_dests.tail_cond_steer_dests
+    | tail_cond_steer_tail_args.tail_cond_steer_tail_args =>
+    exact isTrue rfl
+  case final_dest.final_dest | final_tail_arg.final_tail_arg =>
+    simp; apply decEq
+  all_goals simp; exact isFalse False.elim
+
+private def decPathConds : ∀ (pc₁ pc₂ : List (Bool × ChanName χ)), Decidable (pc₁ = pc₂)
+  | [], [] => isTrue rfl
+  | _ :: _, [] => isFalse (by intro h; cases h)
+  | [], _ :: _ => isFalse (by intro h; cases h)
+  | (c₁, x₁) :: pc₁', (c₂, x₂) :: pc₂' => by
+    simp
+    apply @instDecidableAnd _ _
+      (@instDecidableAnd _ _ (decEq _ _) (decChanName _ _))
+      (decPathConds _ _)
+
+end
+
+/--
+TODO: Auto-derive this once this issue is fixed:
+https://github.com/leanprover/lean4/issues/2329
+-/
+instance [DecidableEq χ] : DecidableEq (ChanName χ) := decChanName χ
+
 /--
 TODO: These are originally specified in the `where`
 clause of `compileExpr`, but I hit this issue:

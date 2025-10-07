@@ -60,68 +60,6 @@ def Fn.WellFormed [Arity Op] [DecidableEq χ]
   fn.params.toList.Nodup ∧
   fn.body.WellFormed fn.params.toList
 
-/-- Consistently encoding Seq variables (`χ`) into channel names, used in
-the compiler and also semantics of Seq to keep useful ghost states. -/
-inductive ChanName (χ : Type u) where
-  -- Inputs to a function's carry gates
-  | input (base : χ)
-  | var (base : χ) (pathConds : List (Bool × ChanName χ))
-  -- Only sent during branching
-  | switch_cond (chan : ChanName χ)
-  | merge_cond (chan : ChanName χ)
-  -- Only sent during ret/tail
-  | dest (i : Nat) (pathConds : List (Bool × ChanName χ))
-  -- Only sent during ret/tail
-  | tail_arg (i : Nat) (pathConds : List (Bool × ChanName χ))
-  -- Only sent during ret/tail
-  | tail_cond (pathConds : List (Bool × ChanName χ))
-  | tail_cond_carry
-  | tail_cond_steer_dests
-  | tail_cond_steer_tail_args
-  -- Only sent during the final steers
-  | final_dest (i : Nat)
-  | final_tail_arg (i : Nat)
-  deriving Repr
-
-mutual
-
-variable (χ : Type u)
-variable [inst : DecidableEq χ]
-
-private def decChanName (n₁ n₂ : ChanName χ) : Decidable (n₁ = n₂) := by
-  cases n₁ <;> cases n₂
-  case input.input => simp; apply decEq
-  case var.var | dest.dest | tail_arg.tail_arg =>
-    simp; apply @instDecidableAnd _ _ (decEq _ _) (decPathConds _ _)
-  case switch_cond.switch_cond | merge_cond.merge_cond =>
-    simp; apply decChanName _ _
-  case tail_cond.tail_cond => simp; apply decPathConds _ _
-  case tail_cond_carry.tail_cond_carry
-    | tail_cond_steer_dests.tail_cond_steer_dests
-    | tail_cond_steer_tail_args.tail_cond_steer_tail_args =>
-    exact isTrue rfl
-  case final_dest.final_dest | final_tail_arg.final_tail_arg =>
-    simp; apply decEq
-  all_goals simp; exact isFalse False.elim
-
-private def decPathConds : ∀ (pc₁ pc₂ : List (Bool × ChanName χ)), Decidable (pc₁ = pc₂)
-  | [], [] => isTrue rfl
-  | _ :: _, [] => isFalse (by intro h; cases h)
-  | [], _ :: _ => isFalse (by intro h; cases h)
-  | (c₁, x₁) :: pc₁', (c₂, x₂) :: pc₂' => by
-    simp
-    apply @instDecidableAnd _ _
-      (@instDecidableAnd _ _ (decEq _ _) (decChanName _ _))
-      (decPathConds _ _)
-
-end
-
-/--
-TODO: Auto-derive this once this issue is fixed:
-https://github.com/leanprover/lean4/issues/2329
--/
-instance [DecidableEq χ] : DecidableEq (ChanName χ) := decChanName χ
-
 inductive Cont Op χ [Arity Op] m n where
   | init
   | expr (e : Expr Op χ m n)
@@ -131,9 +69,6 @@ structure Config (Op : Type u₁) (χ : Type u₂) (V : Type u₃) [Arity Op] m 
   cont : Cont Op χ m n
   fn : Fn Op χ V m n
   vars : VarMap χ V
-  -- Ghost state for the simulation relation
-  definedVars : List χ
-  pathConds : List (Bool × ChanName χ)
 
 /-- Initialize an expression configuration. -/
 def Config.init
@@ -143,8 +78,6 @@ def Config.init
     cont := .init,
     fn,
     vars := .empty,
-    definedVars := [],
-    pathConds := [],
   }
 
 /-- Small-step operational semantics for Seq. -/
@@ -156,8 +89,6 @@ inductive Config.Step
     Step c (.input args) { c with
       cont := .expr c.fn.body,
       vars := .fromList (c.fn.params.zip args).toList,
-      definedVars := c.fn.params.toList,
-      pathConds := [],
     }
   | step_ret :
     c.cont = .expr (.ret args) →
@@ -165,8 +96,6 @@ inductive Config.Step
     Step c (.output retVals) { c with
       cont := .init,
       vars := .empty,
-      definedVars := [],
-      pathConds := [],
     }
   | step_tail :
     c.cont = .expr (.tail args) →
@@ -174,8 +103,6 @@ inductive Config.Step
     Step c .τ { c with
       cont := .expr c.fn.body,
       vars := .fromList (c.fn.params.zip tailArgs).toList,
-      definedVars := c.fn.params.toList,
-      pathConds := [],
     }
   | step_op
     {args : Vector χ (Arity.ι op)}
@@ -185,7 +112,6 @@ inductive Config.Step
     Step c (.yield op inputVals outputVals) { c with
       cont := .expr cont,
       vars := (c.vars.removeVars args.toList).insertVars rets outputVals,
-      definedVars := (c.definedVars.removeAll args.toList) ++ rets.toList,
     }
   | step_br {cond : χ} :
     c.cont = .expr (.br cond left right) →
@@ -194,9 +120,6 @@ inductive Config.Step
     Step c .τ { c with
       cont := .expr (if condBool then left else right),
       vars := c.vars.removeVar cond,
-      definedVars := c.definedVars.removeAll [cond],
-      pathConds :=
-        (condBool, .var cond c.pathConds) :: c.pathConds,
     }
 
 /-- `Semantics` implementation of a function. -/
