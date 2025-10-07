@@ -31,7 +31,7 @@ def LinkState.init
   (deps : PartInterp Op₀ Op₁ V) : LinkState main deps := {
     curSem := none,
     mainState := main.init,
-    depStates := λ op => (deps op).init ,
+    depStates := λ op => (deps op).init,
   }
 
 /-- Labels from the main semantics can be passed through. -/
@@ -113,6 +113,18 @@ def link
     S := LinkState main deps,
     init := LinkState.init main deps,
     lts := LinkStep main deps,
+    yields_functional hyield := by
+      intros outputs
+      cases hyield with
+      | step_main hcur hlabel hstep_main =>
+        cases hlabel
+        have ⟨s', hstep_main'⟩ := main.yields_functional hstep_main outputs
+        exact ⟨_, .step_main hcur .pass_yield_inl hstep_main'⟩
+      | step_dep hcur hlabel hstep_dep =>
+        rename Op₁ => depOp
+        cases hlabel
+        have ⟨s', hstep_dep'⟩ := (deps depOp).yields_functional hstep_dep outputs
+        exact ⟨_, .step_dep hcur .pass_yield hstep_dep'⟩
   }
 
 section Simulation

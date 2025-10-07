@@ -165,6 +165,10 @@ def Proc.semantics
     S := Config Op χ V m n,
     init := Config.init proc,
     lts := Config.Step,
+    yields_functional hyield := by
+      intros
+      cases hyield with | step_op hmem hpop =>
+      exact ⟨_, .step_op hmem hpop⟩
   }
 
 end Wavelet.Dataflow

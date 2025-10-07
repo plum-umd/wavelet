@@ -53,17 +53,18 @@ structure Semantics.{u, v, w} (Op : Type u) (V : Type v) [Arity Op] m n : Type (
   S : Type w
   init : S
   lts : Lts S (Label Op V m n)
+  /-- Shorthand for whether the given state can potentially yield. -/
+  HasYield
+    (s : S) (op : Op) (inputs : Vector V (Arity.ι op)) : Prop :=
+    ∃ outputs s', lts.Step s (.yield op inputs outputs) s'
+  /-- Yield transitions behave like a function. -/
+  yields_functional {s op inputs outputs s'} :
+    lts.Step s (.yield op inputs outputs) s' →
+    ∀ outputs', ∃ s', lts.Step s (.yield op inputs outputs') s'
 
 end Wavelet
 
 namespace Wavelet.Semantics
-
-/-- Whether the given state can potentially yield. -/
-def HasYield
-  [Arity Op]
-  (sem : Semantics Op V m n)
-  (s : sem.S) (op : Op) (inputs : Vector V (Arity.ι op)) : Prop :=
-  ∃ outputs s', sem.lts.Step s (.yield op inputs outputs) s'
 
 /-- Weak simulation (up to the silent label). -/
 abbrev WeakSimulation
@@ -74,13 +75,6 @@ abbrev WeakSimulation
     (sem₁.lts.StepModTau .τ) (sem₂.lts.StepModTau .τ)
     R
     sem₁.init sem₂.init
-
-abbrev WeakSimilarity
-  [Arity Op]
-  (sem₁ sem₂ : Semantics Op V m n) : Prop
-  := Lts.Similarity (sem₁.lts.StepModTau .τ) (sem₂.lts.StepModTau .τ) sem₁.init sem₂.init
-
-infix:50 " ≲ " => WeakSimilarity
 
 /-- Helper lemma for `WeakSimulation.alt`. -/
 private theorem WeakSimulation.alt_tau_star_to_tau_star
@@ -139,12 +133,72 @@ theorem WeakSimulation.alt
     · exact ⟨.trans hstep_s₂ h₁, h₂, .trans h₃ hstep_s₂₂⟩
     · exact hR'
 
+abbrev WeakSimilarity
+  [Arity Op]
+  (sem₁ sem₂ : Semantics Op V m n) : Prop
+  := Lts.Similarity (sem₁.lts.StepModTau .τ) (sem₂.lts.StepModTau .τ) sem₁.init sem₂.init
+
+infix:50 " ≲ " => WeakSimilarity
+
 theorem WeakSimilarity.refl
   [Arity Op]
   (sem : Semantics Op V m n) :
   sem ≲ sem := Lts.Similarity.refl
 
 theorem WeakSimilarity.trans
+  {Op : Type u} {V : Type v}
+  [Arity Op]
+  {sem₁ sem₂ sem₃ : Semantics Op V m n}
+  (h₁ : sem₁ ≲ sem₂) (h₂ : sem₂ ≲ sem₃) :
+  sem₁ ≲ sem₃ :=
+  Lts.Similarity.trans h₁ h₂
+
+/-- Slightly stronger than `StepModTau` and does not allow
+τ steps before input or after output. -/
+inductive IORestrictedStep
+  [Arity Op]
+  (sem : Semantics Op V m n) : Lts sem.S (Label Op V m n) where
+  | step_yield :
+    sem.lts.StepModTau .τ s (.yield o inputs outputs) s' →
+    IORestrictedStep sem s (.yield o inputs outputs) s'
+  | step_input :
+    sem.lts.Step s (.input vals) s' →
+    sem.lts.TauStar .τ s' s'' →
+    IORestrictedStep sem s (.input vals) s''
+  | step_output :
+    sem.lts.TauStar .τ s s' →
+    sem.lts.Step s' (.output vals) s'' →
+    IORestrictedStep sem s (.output vals) s''
+  | step_tau :
+    sem.lts.TauStar .τ s s' →
+    IORestrictedStep sem s .τ s'
+
+theorem IORestrictedStep.single
+  [Arity Op]
+  {sem : Semantics Op V m n}
+  {s s' : sem.S} {l : Label Op V m n}
+  (hstep : sem.lts.Step s l s')
+  : IORestrictedStep sem s l s' := by
+  cases l with
+  | yield => exact .step_yield (.single hstep)
+  | input => exact .step_input hstep .refl
+  | output => exact .step_output .refl hstep
+  | τ => exact .step_tau (.single hstep)
+
+abbrev IORestrictedSimilarity
+  [Arity Op]
+  (sem₁ sem₂ : Semantics Op V m n) : Prop
+  := Lts.Similarity sem₁.lts sem₂.IORestrictedStep sem₁.init sem₂.init
+
+infix:50 " ≲ᵣ " => IORestrictedSimilarity
+
+theorem IORestrictedSimilarity.refl
+  [Arity Op]
+  (sem : Semantics Op V m n) :
+  sem ≲ᵣ sem :=
+  Lts.Similarity.refl_single IORestrictedStep.single
+
+theorem IORestrictedSimilarity.trans
   {Op : Type u} {V : Type v}
   [Arity Op]
   {sem₁ sem₂ sem₃ : Semantics Op V m n}

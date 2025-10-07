@@ -59,6 +59,7 @@ def interpret
     S := sem.S × interp.S,
     init := (sem.init, interp.init),
     lts := sem.InterpStep interp,
+    yields_functional hyield := by cases hyield
   }
 
 end Wavelet.Semantics

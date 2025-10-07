@@ -194,6 +194,19 @@ theorem Lts.Similarity.refl
       exists c₁'
   ⟩
 
+theorem Lts.Similarity.refl_single
+  {lts₁ lts₂ : Lts C E} {c : C}
+  (single : ∀ {c l c'}, lts₁.Step c l c' → lts₂.Step c l c') :
+  Lts.Similarity lts₁ lts₂ c c := ⟨
+    λ c₁ c₂ => c₁ = c₂,
+    by simp,
+    by
+      intros c₁ c₂ l c₁' hc₁ hstep
+      subst hc₁
+      exists c₁'
+      simp [single hstep]
+  ⟩
+
 theorem Lts.Similarity.trans
   {C₁ : Type u₁} {C₂ : Type u₂} {C₃ : Type u₃} {E : Type u₄}
   {lts₁ : Lts C₁ E} {lts₂ : Lts C₂ E} {lts₃ : Lts C₃ E}

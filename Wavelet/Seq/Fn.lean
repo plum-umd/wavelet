@@ -170,6 +170,10 @@ def Fn.semantics
     S := Config Op χ V m n,
     init := Config.init fn,
     lts := Config.Step,
+    yields_functional hyield := by
+      intros
+      cases hyield with | step_op hcont hvars =>
+      exact ⟨_, .step_op hcont hvars⟩
   }
 
 end Wavelet.Seq
