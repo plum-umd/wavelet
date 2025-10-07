@@ -12,9 +12,7 @@ inductive LinkName (χ : Type u) where
   | base (name : χ)
   | main (name : LinkName χ)
   | dep (op : Nat) (name : LinkName χ)
-
-/-- TODO: should be auto-derived -/
-instance [inst : DecidableEq χ] : DecidableEq (LinkName χ) := sorry
+  deriving DecidableEq
 
 def linkAtomicProc
   [Arity Op]
