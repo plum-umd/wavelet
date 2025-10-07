@@ -117,6 +117,49 @@ private theorem sim_link_procs_push_vals_dep
     · simp [h]
     simp [SimRel.linkChans]
 
+/-- `pushVals` on dep channels commutes with `linkChans`. -/
+private theorem sim_link_procs_push_vals_dep_alt
+  [DecidableEq χ]
+  {chans : ChanMap (LinkName χ) V}
+  {depChans : Fin k' → ChanMap (LinkName χ) V}
+  {i : Fin k'} :
+  (SimRel.linkChans chans depChans).pushVals
+    (names.map (.dep i)) vals =
+    (SimRel.linkChans chans (Function.update depChans i ((depChans i).pushVals names vals)))
+  := by
+  funext name
+  cases name with
+  | base =>
+    rw [push_vals_disjoint]
+    rotate_left
+    · simp
+    simp [SimRel.linkChans]
+  | main =>
+    rw [push_vals_disjoint]
+    rotate_left
+    · simp
+    simp [SimRel.linkChans]
+  | dep i' name' =>
+    simp [SimRel.linkChans]
+    split <;> rename_i h₁
+    · by_cases h₂ : i' = i
+      · simp [h₂]
+        rw [push_vals_map]
+        · simp [Function.Injective]
+        · simp [SimRel.linkChans]
+      · rw [Function.update_of_ne (by
+          intros h₃
+          simp [← h₃] at h₂) _ _]
+        rw [push_vals_disjoint]
+        rotate_left
+        · simp [Ne.symm h₂]
+        simp [SimRel.linkChans, h₁]
+    · rw [push_vals_disjoint]
+      rotate_left
+      · simp; omega
+      · simp [SimRel.linkChans]
+        simp [h₁]
+
 /-- `popVal` on a main channel commutes with `linkChans`. -/
 private theorem sim_link_procs_pop_val_main
   [DecidableEq χ]
@@ -506,38 +549,35 @@ private theorem sim_link_procs_step_main
     cases hlabel
     have hstep_s₂ : Dataflow.Config.Step s₂ (.input args) _
       := Dataflow.Config.Step.step_init
-    replace ⟨s₂', hs₂', hstep_s₂⟩ := exists_eq_left.mpr hstep_s₂
-    exists s₂'
-    constructor
-    · exact .single hstep_s₂
-    · and_intros
-      · exact hsim_proc_inputs
-      · exact hsim_proc_outputs
-      · exact hsim_aff
-      · simp [hs₂', hsim_proc]
-      · simp [hs₂', hsim_chans, hsim_proc, linkProcs]
-        intros
-        simp [sim_link_procs_push_vals_main]
-      · simp [hs₂', hcur]
+    exact ⟨_, .single hstep_s₂,
+      by
+        and_intros
+        · exact hsim_proc_inputs
+        · exact hsim_proc_outputs
+        · exact hsim_aff
+        · simp [hsim_proc]
+        · simp [hsim_chans, hsim_proc, linkProcs]
+          intros
+          simp [sim_link_procs_push_vals_main]
+        · simp [hcur]
+    ⟩
   | step_output hpop =>
-    rename_i chans' outputVals
     cases hlabel
-    have hstep_s₂ : Dataflow.Config.Step s₂ (.output outputVals) _
+    have hstep_s₂ : Dataflow.Config.Step s₂ (.output _) _
       := Dataflow.Config.Step.step_output
         (by
           simp [hsim_proc, hsim_chans, linkProcs]
           apply sim_link_procs_pop_vals_main hpop)
-    replace ⟨s₂', hs₂', hstep_s₂⟩ := exists_eq_left.mpr hstep_s₂
-    exists s₂'
-    constructor
-    · exact .single hstep_s₂
-    · and_intros
-      · exact hsim_proc_inputs
-      · exact hsim_proc_outputs
-      · exact hsim_aff
-      · simp [hs₂', hsim_proc]
-      · simp [hs₂', hsim_proc, linkProcs]
-      · simp [hs₂', hcur]
+    exact ⟨_, .single hstep_s₂,
+      by
+        and_intros
+        · exact hsim_proc_inputs
+        · exact hsim_proc_outputs
+        · exact hsim_aff
+        · simp [hsim_proc]
+        · simp
+        · simp [hcur]
+    ⟩
   | step_op hmem_op hpop =>
     cases hlabel
     rename_i chans' op inputVals outputVals inputs outputs
@@ -566,6 +606,36 @@ private theorem sim_link_procs_step_main
         intros
         simp [sim_link_procs_push_vals_main]
       · simp [hs₂', hcur]
+  | step_switch hmem hpop hpops hcond =>
+    rename_i _ _ _ _ _ _ decider inputs outputs₁ outputs₂
+    cases hlabel
+    have hstep_s₂ : Dataflow.Config.Step s₂ _ _
+      := Dataflow.Config.Step.step_switch
+        (decider := .main decider)
+        (inputs := inputs.map .main)
+        (outputs₁ := outputs₁.map .main)
+        (outputs₂ := outputs₂.map .main)
+        (by
+          simp [hsim_proc, linkProcs]
+          apply List.mem_flatten_map hmem
+          simp [linkAtomicProc])
+        (by
+          simp [hsim_chans]
+          apply sim_link_procs_pop_val_main hpop)
+        (by apply sim_link_procs_pop_vals_main hpops)
+        hcond
+    exact ⟨_, .single hstep_s₂,
+      by
+        and_intros
+        · exact hsim_proc_inputs
+        · exact hsim_proc_outputs
+        · exact hsim_aff
+        · simp [hsim_proc]
+        · simp
+          intros
+          split <;> rw [sim_link_procs_push_vals_main]
+        · simp [hcur]
+    ⟩
   | _ => sorry
 
 private theorem sim_link_procs_step_dep
@@ -647,38 +717,82 @@ private theorem sim_link_procs_step_dep
       · simp [hs₂', hcur]
       · simp [hs₂', hcur]
         exists frame
-        funext name
-        -- TODO: refactor this as a lemma
-        cases name with
-        | base =>
-          rw [push_vals_disjoint]
-          rotate_left
-          · simp
-          simp [SimRel.linkChans]
-        | main =>
-          rw [push_vals_disjoint]
-          rotate_left
-          · simp
-          simp [SimRel.linkChans]
-        | dep i name' =>
-          simp [SimRel.linkChans]
-          by_cases h : i = depOp.1
-          · simp at h
-            rw [h]
-            rw [sim_link_procs_push_vals_dep]
+        rw [sim_link_procs_push_vals_dep_alt]
+        congr
+        funext i
+        simp
+        by_cases h : i = depOp.1
+        · rw [h]
+          simp
+        · simp [h]
+          rw [Function.update_of_ne (by
+            intros h'
+            simp [← h'] at h) _ _]
+  | step_switch hmem hpop hpops hcond =>
+    rename_i _ _ _ _ _ _ decider inputs outputs₁ outputs₂
+    cases hlabel
+    have hstep_s₂ : Dataflow.Config.Step s₂ _ _
+      := Dataflow.Config.Step.step_switch
+        (decider := .dep depOp.toFin decider)
+        (inputs := inputs.map (.dep depOp.toFin))
+        (outputs₁ := outputs₁.map (.dep depOp.toFin))
+        (outputs₂ := outputs₂.map (.dep depOp.toFin))
+        (by
+          simp [hsim_proc, linkProcs]
+          apply List.mem_flatten_map (List.mem_of_getElem frame.get_op)
+          simp [linkAtomicProc, AtomicProcs.mapChans]
+          exact ⟨_, hmem, by rfl⟩)
+        (by
+          simp [hsim_chans]
+          apply sim_link_procs_pop_val_dep hpop)
+        (by
+          apply sim_link_procs_pop_vals_dep (by simp; exact hpops))
+        hcond
+    exact ⟨_, .single hstep_s₂,
+      by
+        and_intros
+        · simp
+          intros depOp'
+          by_cases hdep : depOp = depOp'
+          · subst hdep
+            simp [hsim_proc_inputs]
+          · simp [Ne.symm hdep]
+            simp [hsim_proc_inputs]
+        · simp
+          intros depOp'
+          by_cases hdep : depOp = depOp'
+          · subst hdep
+            simp [hsim_proc_outputs]
+          · simp [Ne.symm hdep]
+            simp [hsim_proc_outputs]
+        · exact hsim_aff
+        · simp [hsim_proc, linkProcs]
+          split <;> (
+            congr
+            cases depOp with | call i =>
+            funext i'
+            by_cases h : i' = i
+            · subst h
+              simp
+            · simp [Function.update, h]
+          )
+        · simp [hcur]
+        · simp [hcur]
+          exists frame
+          split <;> (
+            rw [sim_link_procs_push_vals_dep_alt]
+            congr
+            funext i
             simp
-          · rw [push_vals_disjoint]
-            rotate_left
-            · simp [Ne.symm h]
-            simp [SimRel.linkChans]
-            split
-            · rw [Function.update_of_ne (by
-                intros h'
-                simp [← h'] at h) _ _]
+            by_cases h : i = depOp.1
+            · rw [h]
+              simp
+            · simp [h]
               rw [Function.update_of_ne (by
                 intros h'
                 simp [← h'] at h) _ _]
-            · rfl
+          )
+    ⟩
   | _ => sorry
 
 /-- Linking syntactically simulates linking semantically. -/

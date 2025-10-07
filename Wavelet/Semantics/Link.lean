@@ -307,8 +307,8 @@ theorem sim_congr_link
   {main₁ main₂ : Semantics (Op₀ ⊕ Op₁) V m n}
   {deps₁ deps₂ : PartInterp Op₀ Op₁ V}
   (hsim_deps : ∀ i, deps₁ i ≲ᵣ deps₂ i)
-  (hsim_main : main₁ ≲ᵣ main₂)
-  : main₁.link deps₁ ≲ᵣ main₂.link deps₂
+  (hsim_main : main₁ ≲ᵣ main₂) :
+    main₁.link deps₁ ≲ᵣ main₂.link deps₂
   := by
   apply Lts.Similarity.intro (SimRel hsim_deps hsim_main)
   constructor
