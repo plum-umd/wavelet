@@ -165,15 +165,44 @@ theorem tailExprOutputs_finIdxOf?_some_to_exprOutputs
       simp [h.1]
       intros j hj hget
       split_ifs at hget
-      simp at hget
-      simp [← hget] at hj
       rename_i h₃ _
-      simp at h₃
-      simp [h₃] at hj
+      simp at hget h₃
+      simp [h₃, ← hget] at hj
     · split at h <;> simp at h
   | dest =>
-    sorry
-  | tail_cond => sorry
+    simp [compileExpr.tailExprOutputs, h₁, Vector.get,
+      Array.getElem_append, Array.getElem_push] at h
+    split at h <;> rename_i h₂
+    · simp at h
+    · split at h <;> rename_i h₃
+      · simp [compileExpr.exprOutputs, h₂, Vector.get,
+          Array.getElem_append, Array.getElem_push]
+        simp at h
+        have h₄ : ↑i < n + m := by omega
+        simp [h₄, h₃]
+        constructor
+        · simp at h₂
+          exact h.1
+        · intros j hj hget
+          split_ifs at hget
+          simp at hget
+          simp [← h.1] at hget
+          simp [← hget] at hj
+      · simp at h
+  | tail_cond =>
+    simp [compileExpr.tailExprOutputs, h₁, Vector.get,
+      Array.getElem_append, Array.getElem_push] at h
+    split at h <;> rename_i h₂
+    · simp at h
+    · split at h <;> rename_i h₃
+      · simp at h
+      · simp at h
+        have h₄ : ¬(↑i < n + m) := by omega
+        simp [compileExpr.exprOutputs, h₂, h₄, h, Vector.get,
+          Array.getElem_append, Array.getElem_push]
+        intros j hj hget
+        split_ifs at hget
+        omega
   | _ =>
     have : (compileExpr.tailExprOutputs m n pathConds).finIdxOf? name = none := by
       simp [compileExpr.tailExprOutputs, h₁]
