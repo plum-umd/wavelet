@@ -32,7 +32,7 @@ private theorem sim_step_tail_forwardc_sink
   (hexpr : ec.cont = .expr (.tail vars))
   (hvars : VarMap.getVars vars ec.vars = some tailArgs)
   (hvars_nodup : vars.toList.Nodup) :
-  Dataflow.Config.Step.StepModTau .τ pc .τ
+  Dataflow.Config.Step.WeakStep .τ pc .τ
   { proc := pc.proc,
     chans := intermChans m n gs vars
       (tailArgsToExprOutputs tailArgs)
@@ -88,7 +88,7 @@ private theorem sim_step_tail_forwardc_sink
       (compileExpr.tailExprOutputs m n gs.pathConds)
       ∈ pc.proc.atoms
   := by grind
-  have hsteps₁ : Dataflow.Config.Step.StepModTau .τ pc _ _
+  have hsteps₁ : Dataflow.Config.Step.WeakStep .τ pc _ _
     := .single (Dataflow.Config.Step.step_forwardc hmem_forwardc hpop_tail_args)
   -- Simplify pushes
   rw [push_vals_empty] at hsteps₁
@@ -125,7 +125,7 @@ private theorem sim_step_tail_forwardc_sink
     .sink (compileExpr.allVarsExcept gs.definedVars vars.toList gs.pathConds)
     ∈ pc₁.proc.atoms
   := by grind
-  have hsteps₂ : Dataflow.Config.Step.StepModTau .τ pc _ _
+  have hsteps₂ : Dataflow.Config.Step.WeakStep .τ pc _ _
     := .tail_tau hsteps₁
       (Dataflow.Config.Step.step_sink hmem_sink hpop_other_vals)
   apply hsteps₂.eq_rhs
@@ -184,7 +184,7 @@ private theorem sim_step_tail_exec_dataflow
   (hsim : SimRel hnz gs ec pc)
   (hstep : Config.Step ec l ec')
   (hexpr : ec.cont = .expr (.tail vars)) :
-  Dataflow.Config.Step.StepModTau .τ pc l {
+  Dataflow.Config.Step.WeakStep .τ pc l {
     proc := pc.proc,
     chans := varsToChans (.init ec.fn.params.toList) ec',
   }
@@ -222,7 +222,7 @@ private theorem sim_step_tail_exec_dataflow
       #v[.tail_cond_carry, .tail_cond_steer_dests, .tail_cond_steer_tail_args]
     ∈ pc.proc.atoms
   := by simp [hatoms, ← hcomp_fn]
-  have hsteps₃ : Dataflow.Config.Step.StepModTau .τ pc _ _
+  have hsteps₃ : Dataflow.Config.Step.WeakStep .τ pc _ _
     := .tail_tau hsteps₂
       (Dataflow.Config.Step.step_fork hmem_fork hpop_tail_cond)
   -- Simplify pushes
@@ -261,7 +261,7 @@ private theorem sim_step_tail_exec_dataflow
       ((Vector.range n).map .final_dest)
     ∈ pc₁.proc.atoms
   := by simp [hpc₁, hatoms, ← hcomp_fn]
-  have hsteps₄ : Dataflow.Config.Step.StepModTau .τ pc _ _
+  have hsteps₄ : Dataflow.Config.Step.WeakStep .τ pc _ _
     := .tail_tau hsteps₃
       (Dataflow.Config.Step.step_steer
         hmem_steer_dests
@@ -326,7 +326,7 @@ private theorem sim_step_tail_exec_dataflow
       ((Vector.range m).map .final_tail_arg)
     ∈ pc₂.proc.atoms
   := by simp [hpc₂, hpc₁, hatoms, ← hcomp_fn]
-  have hsteps₅ : Dataflow.Config.Step.StepModTau .τ pc _ _
+  have hsteps₅ : Dataflow.Config.Step.WeakStep .τ pc _ _
     := .tail_tau hsteps₄
       (Dataflow.Config.Step.step_steer
         hmem_steer_tail_args
@@ -393,7 +393,7 @@ private theorem sim_step_tail_exec_dataflow
     pc₃.proc.atoms = [] ++ [compileFn.initCarry ec.fn carryInLoop] ++ rest
   := by simp [hpc₃, hpc₂, hpc₁, hatoms]
   simp only [compileFn.initCarry, hcarryInLoop] at hmem_carry
-  have hsteps₆ : Dataflow.Config.Step.StepModTau .τ pc _ _
+  have hsteps₆ : Dataflow.Config.Step.WeakStep .τ pc _ _
     := .tail_tau hsteps₅
       (Dataflow.Config.Step.step_carry_true
         hmem_carry

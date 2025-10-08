@@ -25,7 +25,7 @@ private theorem sim_step_br_exec_dataflow
   (hbr : ec.cont = .expr (.br cond left right))
   (hcond : ec.vars.getVar cond = some condVal)
   (hcondBool : InterpConsts.toBool condVal = some condBool) :
-  Dataflow.Config.Step.StepModTau .τ pc .τ {
+  Dataflow.Config.Step.WeakStep .τ pc .τ {
     proc := pc.proc,
     chans := varsToChans (gs.useThenBranch cond condBool) { ec with
       cont := .expr (if condBool then left else right),
@@ -58,7 +58,7 @@ private theorem sim_step_br_exec_dataflow
         .merge_cond (.var cond gs.pathConds),
       ] ∈ pc.proc.atoms
     := by simp [hatoms, hrest, ← hcurrent]
-  have hsteps₁ : Dataflow.Config.Step.StepModTau .τ pc .τ _
+  have hsteps₁ : Dataflow.Config.Step.WeakStep .τ pc .τ _
     := .single (Dataflow.Config.Step.step_fork hmem_fork hpop_cond)
   -- Simplify pushes
   rw [push_vals_empty] at hsteps₁
@@ -110,7 +110,7 @@ private theorem sim_step_br_exec_dataflow
       (compileExpr.allVarsExcept gs.definedVars [cond] rightConds)
     ∈ pc₁.proc.atoms
   := by simp [hpc₁, hatoms, hrest, ← hcurrent, compileExpr.allVarsExcept]
-  have hsteps₂ : Dataflow.Config.Step.StepModTau .τ pc .τ _
+  have hsteps₂ : Dataflow.Config.Step.WeakStep .τ pc .τ _
     := .tail_tau hsteps₁
         (Dataflow.Config.Step.step_switch
           hmem_switch

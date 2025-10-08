@@ -85,78 +85,71 @@ abbrev WeakSimulation
   (sem₁ sem₂ : Semantics Op V m n)
   (R : sem₁.S → sem₂.S → Prop) : Prop
   := Lts.Simulation
-    (sem₁.lts.StepModTau .τ) (sem₂.lts.StepModTau .τ)
+    sem₁.lts (sem₂.lts.WeakStep .τ)
     R
     sem₁.init sem₂.init
 
-/-- Helper lemma for `WeakSimulation.alt`. -/
-private theorem WeakSimulation.alt_tau_star_to_tau_star
+abbrev WeakSimilarity
+  [Arity Op]
+  (sem₁ sem₂ : Semantics Op V m n) : Prop
+  := Lts.Similarity sem₁.lts (sem₂.lts.WeakStep .τ) sem₁.init sem₂.init
+
+infix:50 " ≲ " => WeakSimilarity
+
+private theorem WeakSimilarity.alt_helper
   [Arity Op]
   {sem₁ sem₂ : Semantics Op V m n}
-  {R : sem₁.S → sem₂.S → Prop}
-  {s₁ s₁' : sem₁.S}
-  {s₂ : sem₂.S}
-  (hsim : ∀ s₁ s₂ l s₁',
-    R s₁ s₂ →
-    sem₁.lts.Step s₁ l s₁' →
-    ∃ s₂',
-      sem₂.lts.StepModTau .τ s₂ l s₂' ∧
-      R s₁' s₂')
-  (hR : R s₁ s₂)
-  (htau_steps : sem₁.lts.TauStar .τ s₁ s₁') :
-  ∃ s₂',
-    sem₂.lts.TauStar .τ s₂ s₂' ∧
-    R s₁' s₂' := by
-  induction htau_steps with
+  {s₁ s₁' : sem₁.S} {s₂ : sem₂.S}
+  (hsim : Lts.Similarity sem₁.lts (sem₂.lts.WeakStep .τ) sem₁.init sem₂.init)
+  (hR : hsim.Sim s₁ s₂)
+  (hstep_tau : sem₁.lts.TauStar .τ s₁ s₁') :
+  ∃ s₂', sem₂.lts.TauStar .τ s₂ s₂' ∧ hsim.Sim s₁' s₂' := by
+  induction hstep_tau with
   | refl =>
     exists s₂
     constructor
     · exact .refl
     · exact hR
   | tail pref tail ih =>
-    have ⟨s₂₂, hstep_s₂, hR₂⟩ := ih
-    have ⟨s₂', htau_step, hR'⟩ := hsim _ _ .τ _ hR₂ tail
+    rename_i s₁'' s₁'
+    have ⟨s₂'', hstep_s₂, hR₂''⟩ := ih
+    have ⟨s₂', hstep_s₂', hR'⟩ := hsim.sim_step _ _ _ _ hR₂'' tail
     exists s₂'
     constructor
-    · exact .trans hstep_s₂ htau_step.to_tau_star
+    · exact .trans hstep_s₂ hstep_s₂'.to_tau_star
     · exact hR'
 
-/-- A sufficient proof obligation for simulation modulo tau. -/
-theorem WeakSimulation.alt
+theorem WeakSimilarity.alt
   [Arity Op]
   {sem₁ sem₂ : Semantics Op V m n}
-  {R : sem₁.S → sem₂.S → Prop}
-  (hinit : R sem₁.init sem₂.init)
-  (hsim : ∀ s₁ s₂ l s₁',
-    R s₁ s₂ →
-    sem₁.lts.Step s₁ l s₁' →
-    ∃ s₂',
-      sem₂.lts.StepModTau .τ s₂ l s₂' ∧
-      R s₁' s₂') :
-  WeakSimulation sem₁ sem₂ R := by
-  apply Lts.Simulation.mk
-  · exact hinit
+  (hsim : Lts.Similarity sem₁.lts (sem₂.lts.WeakStep .τ) sem₁.init sem₂.init) :
+  Lts.Similarity (sem₁.lts.WeakStep .τ) (sem₂.lts.WeakStep .τ) sem₁.init sem₂.init
+  := by
+  apply Lts.Similarity.intro hsim.Sim
+  constructor
+  · exact hsim.sim_init
   · intros s₁ s₂ l s₁' hR hstep
-    have ⟨hstep₁, hstep₂, hstep₃⟩ := hstep
-    have ⟨s₂₁, hstep_s₂, hR₂₁⟩ := WeakSimulation.alt_tau_star_to_tau_star hsim hR hstep₁
-    have ⟨s₂₂, ⟨h₁, h₂, h₃⟩, hR₂₂⟩ := hsim _ _ l _ hR₂₁ hstep₂
-    have ⟨s₂', hstep_s₂₂, hR'⟩ := WeakSimulation.alt_tau_star_to_tau_star hsim hR₂₂ hstep₃
-    exists s₂'
-    constructor
-    · exact ⟨.trans hstep_s₂ h₁, h₂, .trans h₃ hstep_s₂₂⟩
-    · exact hR'
-
-abbrev WeakSimilarity
-  [Arity Op]
-  (sem₁ sem₂ : Semantics Op V m n) : Prop
-  := Lts.Similarity (sem₁.lts.StepModTau .τ) (sem₂.lts.StepModTau .τ) sem₁.init sem₂.init
-
-infix:50 " ≲ " => WeakSimilarity
+    cases hstep with
+    | refl =>
+      exists s₂
+      exact ⟨.refl, hR⟩
+    | step htau₁' hstep' htau₁'' =>
+      have ⟨s₂₁, hstep_s₂₁, hsim₁⟩ := alt_helper hsim hR htau₁'
+      have ⟨s₂', hstep_s₂₂, hsim'⟩ := hsim.sim_step _ _ _ _ hsim₁ hstep'
+      have ⟨s₂'', hstep_s₂₃, hsim''⟩ := alt_helper hsim hsim' htau₁''
+      exists s₂''
+      constructor
+      · cases hstep_s₂₂ with
+        | refl =>
+          exact .from_tau_star (.trans hstep_s₂₁ hstep_s₂₃)
+        | step htau₂₁ hstep₂ htau₂₂ =>
+          exact .step (.trans hstep_s₂₁ htau₂₁) hstep₂ (.trans htau₂₂ hstep_s₂₃)
+      · exact hsim''
 
 theorem WeakSimilarity.refl
   [Arity Op]
   (sem : Semantics Op V m n) :
-  sem ≲ sem := Lts.Similarity.refl
+  sem ≲ sem := Lts.Similarity.refl_single .single
 
 theorem WeakSimilarity.trans
   {Op : Type u} {V : Type v}
@@ -164,9 +157,9 @@ theorem WeakSimilarity.trans
   {sem₁ sem₂ sem₃ : Semantics Op V m n}
   (h₁ : sem₁ ≲ sem₂) (h₂ : sem₂ ≲ sem₃) :
   sem₁ ≲ sem₃ :=
-  Lts.Similarity.trans h₁ h₂
+  Lts.Similarity.trans h₁ (WeakSimilarity.alt h₂)
 
-/-- Stronger than `StepModTau` and does not allow τ steps
+/-- Stronger than `WeakStep` and does not allow τ steps
 before input, after output, or before/after yields. -/
 inductive Lts.IORestrictedStep
   {S} [Arity Op]

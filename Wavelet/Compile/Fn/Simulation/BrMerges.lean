@@ -50,10 +50,10 @@ theorem sim_step_merges
   (hpath_conds : pathConds.Sublist gs.pathConds)
   (hpath_conds_nodup : (gs.pathConds.map Prod.snd).Nodup)
   (hsteps :
-    Dataflow.Config.Step.StepModTau .τ pc l
+    Dataflow.Config.Step.WeakStep .τ pc l
     { proc := pc.proc,
       chans := intermChans m n gs vars outputVals pathConds })
-  : Dataflow.Config.Step.StepModTau .τ pc l
+  : Dataflow.Config.Step.WeakStep .τ pc l
     { proc := pc.proc,
       chans := intermChans m n gs vars outputVals [] }
   := by
@@ -143,7 +143,7 @@ theorem sim_step_merges
           compileExpr.exprOutputs m n ((false, condName) :: tailConds)
     := by split <;> (rename_i h; simp [h])
     simp only [this] at hpop_output_vals
-    replace hsteps : Dataflow.Config.Step.StepModTau .τ pc l _
+    replace hsteps : Dataflow.Config.Step.WeakStep .τ pc l _
       := .tail_tau hsteps (Dataflow.Config.Step.step_merge
         hhead_merge
         hpop_cond

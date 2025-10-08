@@ -1,6 +1,7 @@
 import Mathlib.Logic.Relation
 
 import Wavelet.Compile.Fn.Defs
+import Wavelet.Compile.AffineVar
 
 /-! Simulation relation for `compileFn`. -/
 
@@ -95,7 +96,7 @@ def HasCompiledProcs
       gs.definedVars = [] ∧
       gs.pathConds = []) ∧
     (∀ expr, ec.cont = .expr expr → carryInLoop ∧
-      expr.WellFormed gs.definedVars ∧
+      expr.AffineVar gs.definedVars ∧
       compileExpr hnz gs.definedVars gs.pathConds expr = ctxCurrent)
 
 @[grind]
@@ -114,7 +115,7 @@ def SimRel
   (gs.pathConds.map Prod.snd).Nodup ∧
   -- Some invariants about the "shape" of the processes
   HasMerges m n pc.proc.atoms gs.pathConds ∧
-  ec.fn.WellFormed ∧
+  ec.fn.AffineVar ∧
   pc.proc.inputs = ec.fn.params.map .input ∧
   pc.proc.outputs = (Vector.range n).map .final_dest ∧
   HasCompiledProcs hnz ec pc gs
@@ -132,7 +133,7 @@ variable (hsim : SimRel hnz gs ec pc)
 
 def SimRel.vars_to_chans : pc.chans = varsToChans gs ec := hsim.1
 
-def SimRel.wf_fn : ec.fn.WellFormed := by
+def SimRel.wf_fn : ec.fn.AffineVar := by
   have ⟨_, _, _, _, _, _, h, _⟩ := hsim
   exact h
 

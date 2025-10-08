@@ -19,7 +19,7 @@ private theorem sim_compile_fn_init
   [DecidableEq χ]
   (fn : Fn Op χ V m n)
   (hnz : m > 0 ∧ n > 0)
-  (hwf : fn.WellFormed) :
+  (hwf : fn.AffineVar) :
   SimRel hnz .empty fn.semantics.init (compileFn hnz fn).semantics.init
   := by
   simp [semantics, Fn.semantics, Seq.Config.init,
@@ -47,7 +47,7 @@ theorem sim_compile_fn
   [DecidableEq χ]
   (fn : Fn Op χ V m n)
   (hnz : m > 0 ∧ n > 0)
-  (hwf : fn.WellFormed) :
+  (hwf : fn.AffineVar) :
   fn.semantics ≲ᵣ (compileFn hnz fn).semantics
   := by
   apply Lts.Similarity.intro (∃ gs, SimRel hnz gs · ·)

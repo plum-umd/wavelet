@@ -847,7 +847,7 @@ theorem sim_compile_prog
   (i : Nat)
   (hlt : i < k)
   (hnz : ∀ (i : Fin k), sigs[i].ι > 0 ∧ sigs[i].ω > 0)
-  (hwf : ∀ i, (prog i).WellFormed)
+  (hwf : ∀ i, (prog i).AffineVar)
   (haff : prog.AffineInrOp) :
   prog.semantics ⟨i, hlt⟩ ≲ᵣ (compileProg sigs prog hnz ⟨i, hlt⟩).semantics
   := by

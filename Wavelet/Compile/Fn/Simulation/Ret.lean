@@ -33,7 +33,7 @@ private theorem sim_step_ret_forwardc_sink
   (hexpr : ec.cont = .expr (.ret vars))
   (hvars : VarMap.getVars vars ec.vars = some retVals)
   (hvars_nodup : vars.toList.Nodup) :
-  Dataflow.Config.Step.StepModTau .τ pc .τ
+  Dataflow.Config.Step.WeakStep .τ pc .τ
   { proc := pc.proc,
     chans := intermChans m n gs vars
       (retValsToExprOutputs retVals)
@@ -84,7 +84,7 @@ private theorem sim_step_ret_forwardc_sink
       (compileExpr.exprOutputs m n gs.pathConds)
       ∈ pc.proc.atoms
   := by grind
-  have hsteps₁ : Dataflow.Config.Step.StepModTau .τ pc _ _
+  have hsteps₁ : Dataflow.Config.Step.WeakStep .τ pc _ _
     := .single (Dataflow.Config.Step.step_forwardc hmem_forwardc hpop_ret_vals)
   -- Simplify pushes
   rw [push_vals_empty] at hsteps₁
@@ -121,7 +121,7 @@ private theorem sim_step_ret_forwardc_sink
     .sink (compileExpr.allVarsExcept gs.definedVars vars.toList gs.pathConds)
     ∈ pc₁.proc.atoms
   := by grind
-  have hsteps₂ : Dataflow.Config.Step.StepModTau .τ pc _ _
+  have hsteps₂ : Dataflow.Config.Step.WeakStep .τ pc _ _
     := .tail_tau hsteps₁
       (Dataflow.Config.Step.step_sink hmem_sink hpop_other_vals)
   apply hsteps₂.eq_rhs

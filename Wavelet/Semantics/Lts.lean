@@ -69,50 +69,63 @@ theorem Lts.TauStar.trans
     have := Lts.TauStar.prepend hstep h₂
     exact ih this
 
-/-- A step preceded and followed by zero or more tau steps.
-NOTE: to work with weak simulation, need to weaken this to
-allow reflexivity. -/
-inductive Lts.StepModTau (lts : Lts C E) (τ : E) : Lts C E where
-  | mk :
+/-- A non-τ step preceded and followed by zero or more tau steps,
+or zero or more τ steps. -/
+inductive Lts.WeakStep (lts : Lts C E) (τ : E) : Lts C E where
+  | refl : lts.WeakStep τ c τ c
+  | step :
       lts.TauStar τ c₁ c₂ →
       lts c₂ e c₃ →
       lts.TauStar τ c₃ c₄ →
-      lts.StepModTau τ c₁ e c₄
+      lts.WeakStep τ c₁ e c₄
 
 /-- Introduces a single step without any τ events -/
-def Lts.StepModTau.single
+def Lts.WeakStep.single
   {lts : Lts C E} {τ : E}
-  (hstep : lts.Step c₁ l c₂)
-  : lts.StepModTau τ c₁ l c₂ := ⟨.refl, hstep, .refl⟩
+  (hstep : lts.Step c₁ l c₂) :
+  lts.WeakStep τ c₁ l c₂ := .step .refl hstep .refl
 
-/-- Append a τ step at the end of `StepModTau`. -/
-theorem Lts.StepModTau.tail_tau
+/-- Append a τ step at the end of `WeakStep`. -/
+theorem Lts.WeakStep.tail_tau
   {lts : Lts C E} {τ : E}
-  (hstep : lts.StepModTau τ c₁ l c₂)
-  (htau : lts.Step c₂ τ c₃)
-  : lts.StepModTau τ c₁ l c₃ := by
-  have ⟨h₁, h₂, h₃⟩ := hstep
-  exact ⟨h₁, h₂, Lts.TauStar.tail h₃ htau⟩
+  (hstep : lts.WeakStep τ c₁ l c₂)
+  (htau : lts.Step c₂ τ c₃) :
+  lts.WeakStep τ c₁ l c₃ := by
+  cases hstep with
+  | refl => exact .step .refl htau .refl
+  | step htau₁ hstep' htau₂ =>
+    exact .step htau₁ hstep' (.tail htau₂ htau)
 
-theorem Lts.StepModTau.to_tau_star
+theorem Lts.WeakStep.to_tau_star
   {lts : Lts C E} {τ : E}
-  (hstep : lts.StepModTau τ c₁ τ c₂)
+  (hstep : lts.WeakStep τ c₁ τ c₂)
   : lts.TauStar τ c₁ c₂ := by
-  have ⟨h₁, h₂, h₃⟩ := hstep
-  exact .trans h₁ (.prepend h₂ h₃)
+  cases hstep with
+  | refl => exact .refl
+  | step htau₁ hstep' htau₂ =>
+    exact .trans htau₁ (.prepend hstep' htau₂)
 
-theorem Lts.StepModTau.tail_non_tau
+theorem Lts.WeakStep.from_tau_star
   {lts : Lts C E} {τ : E}
-  (htau_steps : lts.StepModTau τ c₁ τ c₂)
+  (htau : lts.TauStar τ c₁ c₂)
+  : lts.WeakStep τ c₁ τ c₂ := by
+  induction htau with
+  | refl => exact .refl
+  | tail htau' hstep ih =>
+    exact .tail_tau ih hstep
+
+theorem Lts.WeakStep.tail_non_tau
+  {lts : Lts C E} {τ : E}
+  (htau_steps : lts.WeakStep τ c₁ τ c₂)
   (hstep : lts.Step c₂ l c₃)
-  : lts.StepModTau τ c₁ l c₃ :=
-  ⟨htau_steps.to_tau_star, hstep, .refl⟩
+  : lts.WeakStep τ c₁ l c₃ :=
+  .step htau_steps.to_tau_star hstep .refl
 
-theorem Lts.StepModTau.eq_rhs
+theorem Lts.WeakStep.eq_rhs
   {lts : Lts C E} {τ : E}
-  (hstep : lts.StepModTau τ c₁ l c₂)
+  (hstep : lts.WeakStep τ c₁ l c₂)
   (heq : c₂ = c₂') :
-  lts.StepModTau τ c₁ l c₂' := by
+  lts.WeakStep τ c₁ l c₂' := by
   simp [heq] at hstep
   exact hstep
 

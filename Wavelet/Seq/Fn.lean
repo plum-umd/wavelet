@@ -24,41 +24,10 @@ inductive Expr (Op : Type u) (χ : Type v) [instArity : Arity Op]
     (left : Expr Op χ m n)
     (right : Expr Op χ m n) : Expr Op χ m n
 
-/--
-Some static constraints on expressions:
-1. Bound variables are disjoint
-2. Use of variables is affine
-3. No shadowing
--/
-inductive Expr.WellFormed [Arity Op] [DecidableEq χ]
-  : List χ → Expr Op χ n m → Prop where
-  | wf_ret :
-    vars.toList.Nodup →
-    WellFormed definedVars (.ret vars)
-  | wf_tail :
-    vars.toList.Nodup →
-    WellFormed definedVars (.tail vars)
-  | wf_op :
-    args.toList.Nodup →
-    rets.toList.Nodup →
-    definedVars.Disjoint rets.toList →
-    args.toList ⊆ definedVars →
-    WellFormed ((definedVars.removeAll args.toList) ++ rets.toList) cont →
-    WellFormed definedVars (.op o args rets cont)
-  | wf_br :
-    WellFormed (definedVars.removeAll [c]) left →
-    WellFormed (definedVars.removeAll [c]) right →
-    WellFormed definedVars (.br c left right)
-
 /-- `Fn m n` is a function with `m` inputs and `n` outputs. -/
 structure Fn Op χ (V : Type u) [instArity : Arity Op] m n where
   params : Vector χ m
   body : Expr Op χ m n
-
-def Fn.WellFormed [Arity Op] [DecidableEq χ]
-  (fn : Fn Op χ V m n) : Prop :=
-  fn.params.toList.Nodup ∧
-  fn.body.WellFormed fn.params.toList
 
 inductive Cont Op χ [Arity Op] m n where
   | init

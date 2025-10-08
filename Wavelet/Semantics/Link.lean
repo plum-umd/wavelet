@@ -173,27 +173,6 @@ theorem LinkStep.step_dep_tau_star
           (Lts.Step.eq_lhs tail (by simp))
       · simp
 
-/-- Similar to `step_main`, but uses `StepModTau`. -/
-theorem LinkStep.step_main_mod_tau
-  [Arity Op₀] [Arity Op₁]
-  [DecidableEq Op₁]
-  {main : Semantics (Op₀ ⊕ Op₁) V m n}
-  {deps : PartInterp Op₀ Op₁ V}
-  {s : LinkState main deps}
-  {l : Label (Op₀ ⊕ Op₁) V m n}
-  {l' : Label Op₀ V m n}
-  {mainState' : main.S}
-  (hcur : s.curSem = none)
-  (hlabel : MainLabelPassthrough l l')
-  (hstep : main.lts.StepModTau .τ s.mainState l mainState') :
-  (LinkStep main deps).StepModTau .τ s l' { s with mainState := mainState' }
-  := by
-  have ⟨h₁, h₂, h₃⟩ := hstep
-  constructor
-  · exact LinkStep.step_main_tau_star hcur h₁
-  · exact .step_main hcur hlabel h₂
-  · exact LinkStep.step_main_tau_star hcur h₃
-
 /-- Similar to `step_main`, but uses `IORestrictedStep`. -/
 theorem LinkStep.step_main_io_restricted
   [Arity Op₀] [Arity Op₁]
@@ -229,33 +208,6 @@ theorem LinkStep.step_main_io_restricted
   | step_tau hstep =>
     cases hlabel
     exact .step_tau (LinkStep.step_main_tau_star hcur hstep)
-
-/-- Similar to `step_dep`, but uses `StepModTau`. -/
-theorem LinkStep.step_dep_mod_tau
-  [Arity Op₀] [Arity Op₁]
-  [DecidableEq Op₁]
-  {main : Semantics (Op₀ ⊕ Op₁) V m n}
-  {deps : PartInterp Op₀ Op₁ V}
-  {depOp : Op₁}
-  {s : LinkState main deps}
-  {l : Label Op₀ V (Arity.ι depOp) (Arity.ω depOp)}
-  {l' : Label Op₀ V m n}
-  {depState' : (deps depOp).S}
-  (hcur : s.curSem = some depOp)
-  (hlabel : DepLabelPassthrough l l')
-  (hstep : (deps depOp).lts.StepModTau .τ (s.depStates depOp) l depState') :
-  (LinkStep main deps).StepModTau .τ s l'
-    { s with depStates := Function.update s.depStates depOp depState' }
-  := by
-  have ⟨h₁, h₂, h₃⟩ := hstep
-  constructor
-  · exact LinkStep.step_dep_tau_star hcur h₁
-  · exact .step_dep hcur hlabel (Lts.Step.eq_lhs h₂ (by simp))
-  · simp
-    apply Lts.TauStar.eq_rhs
-    · apply LinkStep.step_dep_tau_star (depOp := depOp) _ (h₃.eq_lhs (by simp))
-      · exact hcur
-    · simp
 
 /-- Similar to `step_dep`, but uses `IORestrictedStep`. -/
 theorem LinkStep.step_dep_io_restricted
