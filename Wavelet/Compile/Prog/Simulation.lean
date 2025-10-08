@@ -446,8 +446,7 @@ private theorem sim_link_procs_step_dep_ret
   rename_i chans₁' inputs outputs
   -- Prove that `hyield` must be the same as the previous
   -- `HasYield` call by affine usage of dependencies
-  have ⟨h₁, h₂⟩ := hsim_aff depOp inputs inputs' outputs outputs'
-    hmem_op (List.mem_of_getElem hget_op)
+  have ⟨h₁, h₂⟩ := hsim_aff hmem_op (List.mem_of_getElem hget_op)
   subst h₁ h₂
   simp [hpop_inputs] at hpop_inputs'
   have ⟨h₁, h₂⟩ := hpop_inputs'
