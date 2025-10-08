@@ -72,22 +72,12 @@ end Wavelet
 
 namespace Wavelet.Semantics
 
-/-- Shorthand for whether the given state can potentially yield. -/
-def HasYield
+abbrev StrongSimilarity
   [Arity Op]
-  (sem : Semantics Op V m n)
-  (s : sem.S) (op : Op) (inputs : Vector V (Arity.ι op)) : Prop :=
-  ∃ outputs s', sem.lts.Step s (.yield op inputs outputs) s'
+  (sem₁ sem₂ : Semantics Op V m n) : Prop
+  := Lts.Similarity sem₁.lts sem₂.lts sem₁.init sem₂.init
 
-/-- Weak simulation (up to the silent label). -/
-abbrev WeakSimulation
-  [Arity Op]
-  (sem₁ sem₂ : Semantics Op V m n)
-  (R : sem₁.S → sem₂.S → Prop) : Prop
-  := Lts.Simulation
-    sem₁.lts (sem₂.lts.WeakStep .τ)
-    R
-    sem₁.init sem₂.init
+infix:50 " ≲ₛ " => StrongSimilarity
 
 abbrev WeakSimilarity
   [Arity Op]

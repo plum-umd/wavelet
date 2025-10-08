@@ -52,6 +52,13 @@ inductive DepLabelPassthrough
       DepLabelPassthrough (.yield op inputs outputs) (.yield op inputs outputs)
   | pass_tau : DepLabelPassthrough .τ .τ
 
+/-- Shorthand for whether the given state can potentially yield. -/
+def HasYield
+  [Arity Op]
+  (sem : Semantics Op V m n)
+  (s : sem.S) (op : Op) (inputs : Vector V (Arity.ι op)) : Prop :=
+  ∃ outputs s', sem.lts.Step s (.yield op inputs outputs) s'
+
 /-- Step relation of the linked semantics. -/
 inductive LinkStep
   [Arity Op₀] [Arity Op₁]
