@@ -83,7 +83,7 @@ inductive Expr.Typed
 
 def Fn.Typed
     [BaseTy τ] [Arity Op] [OpTy τ Op] [DecidableEq χ] :
-    Fn Op χ V m n → Vector τ m → Vector τ n → Prop
+    Fn Op χ m n → Vector τ m → Vector τ n → Prop
   | ⟨params, body⟩, inTys, outTys =>
       let Γ₀ := TyEnv.insertVars params inTys TyEnv.empty
       Expr.Typed Γ₀ body inTys outTys
@@ -143,6 +143,68 @@ def le (c₁ c₂ : Capability) : Prop :=
 
 instance : LE Capability := ⟨le⟩
 
+instance {c₁ c₂ : Capability} : Decidable (c₁ ≤ c₂) :=
+  inferInstanceAs (Decidable (c₁.shrd ⊆ (c₂.shrd ∪ c₂.uniq) ∧ c₁.uniq ⊆ c₂.uniq))
+
+/-- Minus operation: `c₁ - c₂` is defined if `c₂ ≤ c₁`, and removes the shared
+  and unique permissions in `c₂` from `c₁`'s unique permissions, while leaving
+  `c₁`'s shared permissions unchanged. -/
+def minus (c₁ c₂ : Capability) : Option Capability :=
+  if h : c₂ ≤ c₁ then
+    some
+      { shrd := c₁.shrd,
+        uniq := c₁.uniq \ (c₂.shrd ∪ c₂.uniq),
+        disjoint := by
+          have h₁ : Disjoint c₁.shrd c₁.uniq := c₁.disjoint
+          apply h₁.mono_right
+          apply Finset.sdiff_subset
+      }
+  else
+    none
+
+@[ext]
+theorem ext (c₁ c₂ : Capability) (h₁ : c₁.shrd = c₂.shrd) (h₂ : c₁.uniq = c₂.uniq) : c₁ = c₂ := by
+  cases c₁; cases c₂; simp_all
+
+/-- instance for PartialOrder -/
+instance : PartialOrder Capability where
+  le := le
+  le_refl c := ⟨Finset.subset_union_left, subset_refl _⟩
+  le_trans c₁ c₂ c₃ h₁ h₂ := by
+    obtain ⟨h₁₁, h₁₂⟩ := h₁
+    obtain ⟨h₂₁, h₂₂⟩ := h₂
+    constructor
+    · -- c₁.shrd ⊆ (c₃.shrd ∪ c₃.uniq)
+      calc c₁.shrd
+        _ ⊆ c₂.shrd ∪ c₂.uniq     := h₁₁
+        _ ⊆ c₃.shrd ∪ c₃.uniq     := Finset.union_subset h₂₁ (subset_trans h₂₂ Finset.subset_union_right)
+    · -- c₁.uniq ⊆ c₃.uniq
+      exact subset_trans h₁₂ h₂₂
+  le_antisymm c₁ c₂ h₁ h₂ := by
+    obtain ⟨h₁₁, h₁₂⟩ := h₁
+    obtain ⟨h₂₁, h₂₂⟩ := h₂
+    have uniq_eq : c₁.uniq = c₂.uniq := subset_antisymm h₁₂ h₂₂
+    have shrd_eq : c₁.shrd = c₂.shrd := by
+      apply subset_antisymm
+      · -- c₁.shrd ⊆ c₂.shrd
+        intro x hx
+        have : x ∈ c₂.shrd ∪ c₂.uniq := h₁₁ hx
+        rw [Finset.mem_union] at this
+        rcases this with h_shrd | h_uniq
+        · exact h_shrd
+        · -- Contradiction with disjointness
+          rw [←uniq_eq] at h_uniq
+          exact absurd (Finset.mem_inter.mpr ⟨hx, h_uniq⟩) (Finset.disjoint_iff_inter_eq_empty.mp c₁.disjoint ▸ Finset.notMem_empty x)
+      · -- c₂.shrd ⊆ c₁.shrd
+        intro x hx
+        have : x ∈ c₁.shrd ∪ c₁.uniq := h₂₁ hx
+        rw [Finset.mem_union] at this
+        rcases this with h_shrd | h_uniq
+        · exact h_shrd
+        · rw [uniq_eq] at h_uniq
+          exact absurd (Finset.mem_inter.mpr ⟨hx, h_uniq⟩) (Finset.disjoint_iff_inter_eq_empty.mp c₂.disjoint ▸ Finset.notMem_empty x)
+    ext <;> simp [shrd_eq, uniq_eq]
+
 end Capability
 
 /-- A capability environment for arrays. -/
@@ -159,9 +221,43 @@ def update [DecidableEq χ] (Δ : CapEnv χ) (A : χ) (cap : Capability) : CapEn
 
 /-- Pointwise comparison on capability environments. -/
 def le (Δ₁ Δ₂ : CapEnv χ) : Prop :=
-  ∀ A c₁, Δ₁ A = some c₁ → ∃ c₂, Δ₂ A = some c₂ ∧ c₁ ≤ c₂
+  ∀ A c₁, Δ₁ A = some c₁ → (∃ c₂, Δ₂ A = some c₂ ∧ c₁ ≤ c₂)
 
 instance : LE (CapEnv χ) := ⟨CapEnv.le⟩
+
+def leCheck [DecidableEq χ] (vars : List χ) (Δ₁ Δ₂ : CapEnv χ) : Bool :=
+  vars.all fun A =>
+    match Δ₁ A with
+    | none => true
+    | some c₁ =>
+      match Δ₂ A with
+      | none => false
+      | some c₂ => decide (c₁ ≤ c₂)
+
+/-- If leCheck returns true for all variables in scope, then Δ₁ ≤ Δ₂. -/
+theorem leCheck_sound [DecidableEq χ] (vars : List χ)
+    (h_complete : ∀ A c₁, Δ₁ A = some c₁ → A ∈ vars) :
+    leCheck vars Δ₁ Δ₂ = true → Δ₁ ≤ Δ₂ := by
+  intro h A c₁ h₁
+  have : A ∈ vars := h_complete A c₁ h₁
+  simp [leCheck, List.all_eq_true] at h
+  have := h A this
+  simp [h₁] at this
+  cases h₂ : Δ₂ A
+  · simp [h₂] at this
+  · rename_i c₂
+    simp [h₂] at this
+    exact ⟨c₂, rfl, this⟩
+
+def minus [DecidableEq χ] (Δ₁ Δ₂ : CapEnv χ) (vars : List χ) : Option (CapEnv χ) :=
+  if leCheck vars Δ₂ Δ₁ then
+    some (λ A =>
+      match Δ₁ A, Δ₂ A with
+      | some c₁, some c₂ => Capability.minus c₁ c₂
+      | some c₁, none   => some c₁
+      | none, _         => none)
+  else
+    none
 
 end CapEnv
 
