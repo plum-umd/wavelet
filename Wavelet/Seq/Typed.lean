@@ -83,7 +83,7 @@ inductive Expr.Typed
 
 def Fn.Typed
     [BaseTy τ] [Arity Op] [OpTy τ Op] [DecidableEq χ] :
-    Fn Op χ m n → Vector τ m → Vector τ n → Prop
+    Fn Op χ V m n → Vector τ m → Vector τ n → Prop
   | ⟨params, body⟩, inTys, outTys =>
       let Γ₀ := TyEnv.insertVars params inTys TyEnv.empty
       Expr.Typed Γ₀ body inTys outTys

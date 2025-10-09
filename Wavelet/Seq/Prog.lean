@@ -37,7 +37,7 @@ def Prog.semantics
   (prog : Prog Op χ V sigs)
   (i : Fin k)
   : Semantics Op V sigs[i].ι sigs[i].ω
-  := (prog i).semantics.link (λ op =>
+  := Semantics.link (prog i).semantics (λ op =>
     Prog.semantics prog ⟨op.toFin, by omega⟩)
 
 end Wavelet.Seq
