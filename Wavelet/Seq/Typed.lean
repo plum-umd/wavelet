@@ -147,17 +147,22 @@ instance {c₁ c₂ : Capability} : Decidable (c₁ ≤ c₂) :=
   inferInstanceAs (Decidable (c₁.shrd ⊆ (c₂.shrd ∪ c₂.uniq) ∧ c₁.uniq ⊆ c₂.uniq))
 
 /-- Minus operation: `c₁ - c₂` is defined if `c₂ ≤ c₁`, and removes the shared
-  and unique permissions in `c₂` from `c₁`'s unique permissions, while leaving
-  `c₁`'s shared permissions unchanged. -/
+  and unique permissions in `c₂` from `c₁`'s unique permissions, while moving
+  the shared permissions in `c₂` to `c₁`'s shared permissions. -/
 def minus (c₁ c₂ : Capability) : Option Capability :=
   if h : c₂ ≤ c₁ then
     some
-      { shrd := c₁.shrd,
+      { shrd := c₁.shrd ∪ c₂.shrd,
         uniq := c₁.uniq \ (c₂.shrd ∪ c₂.uniq),
         disjoint := by
-          have h₁ : Disjoint c₁.shrd c₁.uniq := c₁.disjoint
-          apply h₁.mono_right
-          apply Finset.sdiff_subset
+          apply Finset.disjoint_union_left.mpr
+          constructor
+          · -- c₁.shrd is disjoint from the result's uniq (subset of c₁.uniq)
+            exact c₁.disjoint.mono_right Finset.sdiff_subset
+          · -- c₂.shrd is disjoint from the result's uniq (which excludes c₂.shrd)
+            simp only [Finset.disjoint_left, Finset.mem_sdiff, Finset.mem_union, not_and, not_or]
+            intros x hx _ h_not_in
+            exact (h_not_in hx).elim
       }
   else
     none
