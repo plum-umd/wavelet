@@ -253,7 +253,7 @@ private theorem sim_link_procs_pop_vals_dep
   := by
   induction n generalizing chans' with
   | zero =>
-    simp [Vector.eq_empty, ChanMap.popVals] at hpop ⊢
+    simp [ChanMap.popVals] at hpop ⊢
     simp [← hpop]
   | succ n' ih =>
     simp [pop_vals_unfold] at hpop ⊢
@@ -586,7 +586,7 @@ private theorem sim_link_procs_step_main
         (inputs := inputs.map LinkName.main)
         (outputs := outputs.map LinkName.main)
         (by
-          simp [hsim_proc, linkProcs]
+          simp [hsim_proc]
           apply List.mem_flatten_map hmem_op
           simp [linkAtomicProc])
         (by
@@ -615,7 +615,7 @@ private theorem sim_link_procs_step_main
         (outputs₁ := outputs₁.map .main)
         (outputs₂ := outputs₂.map .main)
         (by
-          simp [hsim_proc, linkProcs]
+          simp [hsim_proc]
           apply List.mem_flatten_map hmem
           simp [linkAtomicProc])
         (by
@@ -678,7 +678,7 @@ private theorem sim_link_procs_step_dep
           SimRel.linkChans frame.chans'
             (Function.update (λ i => (s₁.depStates (SigOps.call i)).chans) depOp.1 chans'))
         (by
-          simp [hsim_proc, linkProcs]
+          simp [hsim_proc]
           apply List.mem_flatten_map (List.mem_of_getElem frame.get_op)
           simp [linkAtomicProc, AtomicProcs.mapChans]
           exists AtomicProc.op op inputs outputs)
@@ -737,7 +737,7 @@ private theorem sim_link_procs_step_dep
         (outputs₁ := outputs₁.map (.dep depOp.toFin))
         (outputs₂ := outputs₂.map (.dep depOp.toFin))
         (by
-          simp [hsim_proc, linkProcs]
+          simp [hsim_proc]
           apply List.mem_flatten_map (List.mem_of_getElem frame.get_op)
           simp [linkAtomicProc, AtomicProcs.mapChans]
           exact ⟨_, hmem, by rfl⟩)

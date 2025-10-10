@@ -50,7 +50,6 @@ def Config.init
   := { proc, chans := .empty }
 
 inductive Config.Step
-  {χ : Type u}
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
   : Lts (Config Op χ V m n) (Label Op V m n) where

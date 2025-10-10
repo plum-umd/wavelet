@@ -30,13 +30,16 @@ def ChanMap.popVal
   | v :: vs => some (v, λ n => if n = name then vs else map n)
 
 def ChanMap.popVals
+  {χ : Type u} {V : Type v}
   [DecidableEq χ]
   (names : Vector χ n)
   (map : ChanMap χ V) : Option (Vector V n × ChanMap χ V)
-  := (names.mapM popValM).run map
-  where
-    @[simp]
-    popValM : χ → StateT (ChanMap χ V) Option V := popVal
+  := match n with
+  | 0 => some (#v[], map)
+  | _ + 1 => do
+    let (vals', map') ← map.popVals names.pop
+    let (val, map'') ← map'.popVal names.back
+    return (vals'.push val, map'')
 
 def ChanMap.IsSingleton (name : χ) (val : V) (map : ChanMap χ V) : Prop := map name = [val]
 
@@ -190,19 +193,7 @@ theorem pop_vals_unfold
     let (vals', map') ← map.popVals names.pop
     let (val, map'') ← map'.popVal names.back
     return (vals'.push val, map'')
-:= by
-  simp [ChanMap.popVals]
-  have : names = names.pop.push names.back := by simp
-  rw [this, Vector.mapM_push]
-  simp
-  congr
-  funext x
-  simp [Option.map]
-  split <;> rename_i h
-  · simp [StateT.run] at h
-    simp [h]
-  · simp [StateT.run] at h
-    simp [h]
+:= by rfl
 
 theorem pop_val_singleton
   {map : ChanMap χ V}
@@ -223,22 +214,20 @@ theorem pop_vals_singleton
     map' = (λ n => if n ∈ names then [] else map n) ∧
     List.Forall₂ prop names.toList vals.toList
   := by
-  simp [ChanMap.popVals]
   induction n with
-  | zero => simp [StateT.run, StateT.pure, Vector.eq_empty, pure]
+  | zero => simp [Vector.eq_empty, ChanMap.popVals]
   | succ n' ih =>
     have : names = names.pop.push names.back := by simp
-    rw [this, Vector.mapM_push]
-    simp [StateT.run, StateT.bind, Option.bind, bind]
+    rw [this]
+    simp [ChanMap.popVals, Option.bind, bind]
     specialize ih (Vector.nodup_implies_pop_nodup hnodup) _
     · intros name hname
       exact hsingletons name (Vector.mem_pop_implies_mem hname)
     · have ⟨map'', vals', h₁, h₂, h₃⟩ := ih
-      simp only [StateT.run] at h₁
       have ⟨val, h₄, h₅⟩ := hsingletons names.back (by simp)
       have h₆ : names.back ∉ names.pop :=
         Vector.nodup_implies_back_not_mem_pop hnodup
-      simp [h₁, ChanMap.popVal, h₂, h₄, h₆, pure, StateT.pure]
+      simp [h₁, ChanMap.popVal, h₂, h₄, h₆]
       constructor
       · funext name'
         split <;> rename_i h₇
