@@ -137,11 +137,11 @@ abbrev Trace.single (e : E) : Trace E := [e]
 
 abbrev Trace.cons (tr : Trace E) (e : E) : Trace E := tr ++ [e]
 
-inductive LTS.Plus (R : Lts C E) : Lts C (Trace E) where
+inductive Lts.Plus (R : Lts C E) : Lts C (Trace E) where
   | single : R c tr c' → Plus R c (.single tr) c'
   | tail : Plus R c tr c' → R c' tr' c'' → Plus R c (.cons tr tr') c''
 
-inductive LTS.Star (R : Lts C E) : Lts C (Trace E) where
+inductive Lts.Star (R : Lts C E) : Lts C (Trace E) where
   | refl : Star R c .ε c
   | tail : Star R c tr c' → R c' tr' c'' → Star R c (.cons tr tr') c''
 

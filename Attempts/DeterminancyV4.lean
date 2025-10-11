@@ -55,26 +55,24 @@ def guard
     yields_functional := sorry
   }
 
-/-- PCM specification of an operator set -/
-structure OpSpec Op V T [Arity Op] [PCM T] where
-  pre : (op : Op) → Vector V (Arity.ι op) → T
-  post : (op : Op) → Vector V (Arity.ι op) → Vector V (Arity.ω op) → T
-  frame_preserving : ∀ op inputs outputs, pre op inputs ⟹ post op inputs outputs
+/-- PCM specification of an operator set.
+TODO: generalize to dependent tokens. -/
+structure OpSpec Op T [Arity Op] [PCM T] where
+  pre : (op : Op) → T
+  post : (op : Op) → T
+  frame_preserving : ∀ op, pre op ⟹ post op
 
-/-- Specification on input/output labels. -/
-structure IOSpec V T [PCM T] m n where
-  pre : Vector V m → T
-  -- This can only depend on the outputs, due
-  -- to a technical issue that we can't access
-  -- the input values at an output event.
-  post : Vector V n → T
+/-- Specification on input/output labels.
+TODO: generalize to dependent tokens. -/
+structure IOSpec T [PCM T] where
+  pre : T
+  post : T
 
 /-- Augments the operator set with an additional ghost argument
 to pass a PCM token, as well as two operators to split and join PCMs. -/
-inductive WithSpec (Op : Type u) [Arity Op] [PCM T] (spec : OpSpec Op V T) where
+inductive WithSpec (Op : Type u) [Arity Op] [PCM T] (spec : OpSpec Op T) where
   | op (op : Op)
-  | split
-  | join
+  | join (k : Nat)
 
 /-- Uses only the LHS `InterpConsts` of a sum for constants. -/
 instance instInterpConstsSum [left : InterpConsts V] : InterpConsts (V ⊕ V') where
@@ -93,28 +91,26 @@ instance instInterpConstsSum [left : InterpConsts V] : InterpConsts (V ⊕ V') w
 
 instance instArityWithSpec
   [arity : Arity Op] [PCM T]
-  {spec : OpSpec Op V T} :
+  {spec : OpSpec Op T} :
   Arity (WithSpec Op spec) where
   ι | .op o => arity.ι o + 1
-    | .split => 1
-    | .join => 2
+    | .join n => n
   ω | .op o => arity.ω o + 1
-    | .split => 2
-    | .join => 1
+    | .join _ => 2
 
 /-- Interprets the labels with ghost values using the base operators,
 but with dynamic checks for ghost tokens satisfying the specs. -/
 inductive SpecLabelInv [Arity Op] [PCM T]
-  (opSpec : OpSpec Op V T)
-  (ioSpec : IOSpec V T m n) :
+  (opSpec : OpSpec Op T)
+  (ioSpec : IOSpec T) :
   Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) → Label Op V m n → Prop where
   | spec_yield :
     inputs'.pop = inputs.map .inl →
     outputs'.pop = outputs.map .inl →
     inputs'.back = .inr tok₁ →
     outputs'.back = .inr tok₂ →
-    tok₁ ≡ opSpec.pre op inputs →
-    tok₂ ≡ opSpec.post op inputs outputs →
+    tok₁ ≡ opSpec.pre op →
+    tok₂ ≡ opSpec.post op →
     SpecLabelInv opSpec ioSpec
       (.yield (.op op) inputs' outputs')
       (.yield op inputs outputs)
@@ -122,34 +118,26 @@ inductive SpecLabelInv [Arity Op] [PCM T]
   -- intentionally left unspecified, because
   -- we want this to be dynamic without restricting
   -- to a static annotation.
-  | spec_split
-    {inputs : Vector (V ⊕ T) 1}
-    {outputs : Vector (V ⊕ T) 2} :
-    inputs[0] = .inr tok₁ →
-    outputs[0] = .inr tok₂ →
-    outputs[1] = .inr tok₃ →
-    tok₁ ≡ tok₂ ⊔ tok₃ →
-    SpecLabelInv opSpec ioSpec
-      (.yield .split inputs outputs) .τ
   | spec_join
-    {inputs : Vector (V ⊕ T) 2}
-    {outputs : Vector (V ⊕ T) 1} :
-    inputs[0] = .inr tok₁ →
-    inputs[1] = .inr tok₂ →
-    outputs[0] = .inr tok₃ →
-    tok₃ ≡ tok₁ ⊔ tok₂ →
+    {inputs : Vector (V ⊕ T) k}
+    {toks : Vector T k}
+    {outputs : Vector (V ⊕ T) 2} :
+    inputs = toks.map .inr →
+    outputs[0] = .inr tok₁ →
+    outputs[1] = .inr tok₂ →
+    tok₁ ⊔ tok₂ ≡ toks.foldl (· ⊔ ·) zero →
     SpecLabelInv opSpec ioSpec
-      (.yield .join inputs outputs) .τ
+      (.yield (.join k) inputs outputs) .τ
   | spec_input :
     vals'.pop = vals.map .inl →
     vals'.back = .inr tok →
-    tok ≡ ioSpec.pre vals →
+    tok ≡ ioSpec.pre →
     SpecLabelInv opSpec ioSpec
       (.input vals') (.input vals)
   | spec_output :
     vals'.pop = vals.map .inl →
     vals'.back = .inr tok →
-    tok ≡ ioSpec.post vals →
+    tok ≡ ioSpec.post →
     SpecLabelInv opSpec ioSpec
       (.output vals') (.output vals)
 
@@ -170,8 +158,8 @@ def Config.DisjointTokens
 
 abbrev FnWithSpec
   [Arity Op] [PCM T]
-  (opSpec : Semantics.OpSpec Op V T)
-  (_ioSpec : IOSpec V T m n) χ m n
+  (opSpec : Semantics.OpSpec Op T)
+  (_ioSpec : IOSpec T) χ V m n
   := Fn (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
 
 end Wavelet.Seq
@@ -196,8 +184,8 @@ def Config.DisjointTokens
 
 abbrev ProcWithSpec
   [Arity Op] [PCM T]
-  (opSpec : Semantics.OpSpec Op V T)
-  (_ioSpec : IOSpec V T m n) χ m n
+  (opSpec : Semantics.OpSpec Op T)
+  (_ioSpec : IOSpec T) χ V m n
   := Proc (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
 
 end Wavelet.Dataflow
@@ -206,48 +194,14 @@ namespace Wavelet.Compile
 
 open Semantics Seq Dataflow
 
-/-
-Proof sketch (for a single `Fn`):
-
-We show that
-
-```
-fn.semantics
-  ≲ᵣ fn'.semantics.guard ...
-  ≲ᵣ (compileFn ... fn').semantics.guard ...
-  (... maybe some optimization passes)
-  ≲ᵣ proc.semantics.guard ...
-  ≲ᵣ (eraseGhost proc).semantics
-```
-and also
-```
-(eraseGhost proc).semantics
-  ≲ᵣ proc.semantics.guard ...
-```
-
-`(eraseGhost proc)` would be the final compiled dataflow program.
-
-And we have:
-
-1. Correctness:
-   - For any trace of `fn.semantics`, there exists a
-     corresponding trace `T₁` of `proc.semantics.guard ...`
-   - For any trace of `(eraseGhost proc).semantics`
-     there exists a corresponding trace `T₂` of `proc.semantics.guard ...`
-   By `guarded_confluence` below, they should converge to the same state.
-
-2. Liveness: since `fn.semantics ≲ᵣ (eraseGhost proc).semantics`
-   `eraseGhost proc` should have at least one trace simulating `fn`.
--/
-
 theorem sim_compile_fn'
   [Arity Op]
   [InterpConsts V]
   [PCM T]
   [DecidableEq χ]
-  {opSpec : Semantics.OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  (fn : FnWithSpec opSpec ioSpec χ m n)
+  {opSpec : Semantics.OpSpec Op T}
+  {ioSpec : IOSpec T}
+  (fn : FnWithSpec opSpec ioSpec χ V m n)
   (hwf : fn.AffineVar) :
   fn.semantics.guard Config.DisjointTokens (SpecLabelInv opSpec ioSpec)
     ≲ᵣ (compileFn (by simp) fn).semantics.guard Config.DisjointTokens (SpecLabelInv opSpec ioSpec)
@@ -287,14 +241,73 @@ theorem sim_guard_label
       | τ => sorry
     · exact hR₂
 
+inductive TypedName χ where
+  | var (x : χ)
+  | tok (i : Nat)
+  deriving DecidableEq
+
+/-- Tries to find a set of `ts : Fin numToks`
+such that `req ≤ sum of (ts.map ctx)`. -/
+def tryAcquire
+  (ctx : Nat → Option T)
+  (numToks : Nat)
+  (req : T) : Option (List Nat) :=
+  sorry
+
+/-- Helper function for `typeCheck`. -/
+def typeCheckInternal
+  [Arity Op]
+  [PCM T]
+  (opSpec : Semantics.OpSpec Op T)
+  (ioSpec : IOSpec T)
+  (ctx : Nat → Option T)
+  (numToks : Nat) :
+  Expr Op χ m n → Option (Expr (WithSpec Op opSpec) (TypedName χ) (m + 1) (n + 1))
+  | .ret args => do
+    let toks ← tryAcquire ctx numToks ioSpec.post
+    return .op (.join toks.length)
+      (toks.toVector.map .tok)
+      #v[.tok numToks, .tok (numToks + 1)]
+      (.ret ((args.map .var).push (.tok numToks)))
+  | .tail args => do
+    let toks ← tryAcquire ctx numToks ioSpec.pre
+    return .op (.join toks.length)
+      (toks.toVector.map .tok)
+      #v[.tok numToks, .tok (numToks + 1)]
+      (.tail ((args.map .var).push (.tok numToks)))
+  | .op o args bind cont => do
+    let toks ← tryAcquire ctx numToks (opSpec.pre o)
+    let tok₁ := .tok numToks
+    let tok₂ := .tok (numToks + 1)
+    let tok₃ := .tok (numToks + 2)
+    let newCtx₁ := λ i => if i ∈ toks then none else ctx i
+    let newCtx₂ := Function.update newCtx₁ numToks (some (opSpec.pre o))
+    let newCtx₃ := Function.update newCtx₂ (numToks + 1) sorry -- sum of toks - opSpec.pre o
+    let newCtx₄ := Function.update newCtx₃ (numToks + 2) (some (opSpec.post o))
+    return .op (.join toks.length) (toks.toVector.map .tok) #v[tok₁, tok₂]
+      (.op (.op o)
+        ((args.map .var).push tok₁)
+        ((bind.map .var).push tok₃)
+        (← typeCheckInternal opSpec ioSpec newCtx₄ (numToks + 3) cont))
+  | .br cond left right => do
+    let left' ← typeCheckInternal opSpec ioSpec ctx numToks left
+    let right' ← typeCheckInternal opSpec ioSpec ctx numToks right
+    return .br (.var cond) left' right'
+
 /-- Type check a function against the given specs,
 and insert split/join to concretize the flow of permissions. -/
 def typeCheck
   [Arity Op]
   [PCM T]
-  (opSpec : Semantics.OpSpec Op V T)
-  (ioSpec : IOSpec V T m n)
-  (fn : Fn Op χ V m n) : Option (FnWithSpec opSpec ioSpec χ m n) := sorry
+  (opSpec : Semantics.OpSpec Op T)
+  (ioSpec : IOSpec T)
+  (fn : Fn Op χ V m n) :
+  Option (FnWithSpec opSpec ioSpec (TypedName χ) V m n)
+  := return {
+    params := (fn.params.map TypedName.var).push (TypedName.tok 0),
+    body := ← typeCheckInternal opSpec ioSpec
+      (Function.update (Function.const _ none) 0 (some ioSpec.pre)) 1 fn.body,
+  }
 
 /-- Type soundness theorem formulated as a simulation. -/
 theorem fn_progress
@@ -302,10 +315,10 @@ theorem fn_progress
   [InterpConsts V]
   [PCM T]
   [DecidableEq χ]
-  {opSpec : Semantics.OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
+  {opSpec : Semantics.OpSpec Op T}
+  {ioSpec : IOSpec T}
   (fn : Fn Op χ V m n)
-  {fn' : FnWithSpec opSpec ioSpec χ m n}
+  {fn' : FnWithSpec opSpec ioSpec (TypedName χ) V m n}
   (hwf : fn.AffineVar)
   (hwt : typeCheck opSpec ioSpec fn = some fn') :
   fn.semantics ≲ᵣ fn'.semantics.guard Config.DisjointTokens (SpecLabelInv opSpec ioSpec)
@@ -314,9 +327,9 @@ theorem fn_progress
 /-- Erase ghost tokens. -/
 def eraseGhost
   [Arity Op] [PCM T]
-  {opSpec : Semantics.OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  (proc : ProcWithSpec opSpec ioSpec χ m n) : Proc Op χ V m n
+  {opSpec : Semantics.OpSpec Op T}
+  {ioSpec : IOSpec T}
+  (proc : ProcWithSpec opSpec ioSpec χ V m n) : Proc Op χ V m n
   := sorry
 
 /-- Backward simulation for `eraseGhost`. -/
@@ -325,48 +338,53 @@ theorem sim_erase_ghost
   [InterpConsts V]
   [DecidableEq χ]
   [DecidableEq χ']
-  {opSpec : Semantics.OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  (proc : ProcWithSpec opSpec ioSpec χ m n) :
+  {opSpec : Semantics.OpSpec Op T}
+  {ioSpec : IOSpec T}
+  (proc : ProcWithSpec opSpec ioSpec χ V m n) :
   (eraseGhost proc).semantics ≲ᵣ
     proc.semantics.guard Config.DisjointTokens (SpecLabelInv opSpec ioSpec)
   := sorry
 
-/-- Forward simulation for liveness. -/
+/-- Or maybe forward simulation? -/
 theorem sim_erase_ghost_forward
   [Arity Op] [PCM T]
   [InterpConsts V]
   [DecidableEq χ]
   [DecidableEq χ']
-  {opSpec : Semantics.OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  (proc : ProcWithSpec opSpec ioSpec χ m n) :
+  {opSpec : Semantics.OpSpec Op T}
+  {ioSpec : IOSpec T}
+  (proc : ProcWithSpec opSpec ioSpec χ V m n) :
   proc.semantics.guard Config.DisjointTokens (SpecLabelInv opSpec ioSpec)
     ≲ᵣ (eraseGhost proc).semantics
   := sorry
 
-/--
-TODO: this needs to assume more about how
-the operator semantics satisfies the spec.
+/-
+We now have
+
+fn.semantics
+  ≲ᵣ fn'.semantics.guard ...
+  ≲ᵣ (compileFn ... fn').semantics.guard ...
+  ... some optimization passes
+  ≲ᵣ proc.semantics.guard ...
+  ≲ᵣ (eraseGhost proc).semantics
+
+and also
+
+(eraseGhost proc).semantics
+  ≲ᵣ proc.semantics.guard ...
+
+Final correctness theorem will say something like:
+
+For any trace of `fn.semantics`
+there exists a corresponding trace `T₁` of `proc.semantics.guard ...`
+
+For any trace of `(eraseGhost proc).semantics`
+there exists a corresponding trace `T₂` of `proc.semantics.guard ...`
+
+If `T₁` "dominates" `T₂`, then `T₂` converge to `T₁`.
+
+(But this doesn't say anything about deadlock?)
+
 -/
-theorem guarded_confluence
-  [Arity Op] [PCM T]
-  [InterpConsts V]
-  [DecidableEq χ]
-  {opSpec : Semantics.OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {proc : ProcWithSpec opSpec ioSpec χ m n}
-  {trace₁ trace₂ : Trace (Label Op V m n)}
-  {sem : Semantics Op V m n}
-  {s₁ s₂ : sem.S}
-  {hguard : sem = proc.semantics.guard Config.DisjointTokens (SpecLabelInv opSpec ioSpec)}
-  (htrace₁ : sem.lts.Star sem.init trace₁ s₁)
-  (htrace₂ : sem.lts.Star sem.init trace₂ s₂) :
-  ∃ trace₁' trace₂' s₁' s₂',
-    sem.lts.Star s₁ trace₁' s₁' ∧
-    sem.lts.Star s₂ trace₂' s₂' ∧
-    trace₁ ++ trace₁' = trace₂ ++ trace₂' ∧
-    s₁' = s₂'
-  := sorry
 
 end Wavelet.Compile
