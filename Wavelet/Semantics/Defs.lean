@@ -50,6 +50,11 @@ def Label.isInput [Arity Op] : Label Op V m n → Bool
   | .input _ => true
   | _ => false
 
+@[simp]
+def Label.isYield [Arity Op] : Label Op V m n → Bool
+  | .yield _ _ _ => true
+  | _ => false
+
 end Wavelet.Semantics
 
 namespace Wavelet

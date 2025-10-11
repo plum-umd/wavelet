@@ -245,4 +245,91 @@ theorem Lts.Similarity.trans
   Lts.Similarity lts₂ lts₃ c₂ c₃ →
   Lts.Similarity lts₁ lts₃ c₁ c₃ := .trans_single (by simp)
 
+structure Lts.Bisimulation
+  (lts₁ : Lts C₁ E)
+  (lts₂ : Lts C₂ E)
+  (R : C₁ → C₂ → Prop)
+  (c₁ : C₁) (c₂ : C₂) : Prop where
+  init : R c₁ c₂
+  coind₁ : ∀ c₁ c₂ l c₁',
+    R c₁ c₂ →
+    lts₁.Step c₁ l c₁' →
+    ∃ c₂',
+      lts₂.Step c₂ l c₂' ∧
+      R c₁' c₂'
+  coind₂ : ∀ c₁ c₂ l c₂',
+    R c₁ c₂ →
+    lts₂.Step c₂ l c₂' →
+    ∃ c₁',
+      lts₁.Step c₁ l c₁' ∧
+      R c₁' c₂'
+
+def Lts.Bisimilarity
+  (lts₁ : Lts C₁ E)
+  (lts₂ : Lts C₂ E)
+  (c₁ : C₁) (c₂ : C₂) : Prop :=
+  ∃ Sim : C₁ → C₂ → Prop, lts₁.Bisimulation lts₂ Sim c₁ c₂
+
+theorem Lts.Bisimilarity.intro
+  {lts₁ : Lts C₁ E}
+  {lts₂ : Lts C₂ E}
+  {c₁ : C₁} {c₂ : C₂}
+  (Sim : C₁ → C₂ → Prop)
+  (hsim : lts₁.Bisimulation lts₂ Sim c₁ c₂)
+  : Lts.Bisimilarity lts₁ lts₂ c₁ c₂ := by exists Sim
+
+abbrev Lts.Bisimilarity.Bisim
+  {lts₁ : Lts C₁ E}
+  {lts₂ : Lts C₂ E}
+  {c₁ : C₁} {c₂ : C₂}
+  (hsim : Lts.Bisimilarity lts₁ lts₂ c₁ c₂) :
+  C₁ → C₂ → Prop := hsim.choose
+
+theorem Lts.Bisimilarity.bisim_init
+  {lts₁ : Lts C₁ E}
+  {lts₂ : Lts C₂ E}
+  {c₁ : C₁} {c₂ : C₂}
+  (hsim : Lts.Bisimilarity lts₁ lts₂ c₁ c₂) :
+  hsim.Bisim c₁ c₂ := hsim.choose_spec.init
+
+theorem Lts.Bisimilarity.sim_step₁
+  {lts₁ : Lts C₁ E}
+  {lts₂ : Lts C₂ E}
+  {c₁ : C₁} {c₂ : C₂}
+  (hsim : Lts.Bisimilarity lts₁ lts₂ c₁ c₂) :
+  ∀ c₁ c₂ l c₁',
+    hsim.Bisim c₁ c₂ →
+    lts₁.Step c₁ l c₁' →
+    ∃ c₂',
+      lts₂.Step c₂ l c₂' ∧
+      hsim.Bisim c₁' c₂' := hsim.choose_spec.coind₁
+
+theorem Lts.Bisimilarity.sim_step₂
+  {lts₁ : Lts C₁ E}
+  {lts₂ : Lts C₂ E}
+  {c₁ : C₁} {c₂ : C₂}
+  (hsim : Lts.Bisimilarity lts₁ lts₂ c₁ c₂) :
+  ∀ c₁ c₂ l c₂',
+    hsim.Bisim c₁ c₂ →
+    lts₂.Step c₂ l c₂' →
+    ∃ c₁',
+      lts₁.Step c₁ l c₁' ∧
+      hsim.Bisim c₁' c₂' := hsim.choose_spec.coind₂
+
+theorem Lts.Bisimilarity.refl
+  {lts : Lts C E} {c : C} :
+  Lts.Bisimilarity lts lts c c :=
+  ⟨
+    λ c₁ c₂ => c₁ = c₂,
+    by simp,
+    (by
+      intros c₁ c₂ l c₁' hc₁ hstep
+      subst hc₁
+      exists c₁'),
+    (by
+      intros c₁ c₂ l c₂' hc₁ hstep
+      subst hc₁
+      exists c₂'),
+  ⟩
+
 end Wavelet.Semantics

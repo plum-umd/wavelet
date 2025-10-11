@@ -9,40 +9,6 @@ namespace Wavelet.Semantics
 
 open Semantics
 
-abbrev CompatRel V := ∀ {n m}, Vector V n → Vector V m → Prop
-
-/-- Any yielding transitions from the same state commute,
-if a certain compatibility constraint holds on the inputs. -/
-def CommYields
-  [Arity Op]
-  (Compat : CompatRel V)
-  (sem : Semantics Op V m n)
-  : Prop :=
-  ∀ s s₁ s₂
-    op₁ inputs₁ outputs₁
-    op₂ inputs₂ outputs₂,
-    sem.lts.Step s (.yield op₁ inputs₁ outputs₁) s₁ →
-    sem.lts.Step s (.yield op₂ inputs₂ outputs₂) s₂ →
-    Compat inputs₁ inputs₂ →
-    ∃ s',
-      sem.lts.Step s₁ (.yield op₂ inputs₂ outputs₂) s' ∧
-      sem.lts.Step s₂ (.yield op₁ inputs₁ outputs₁) s'
-
-def OpInterp.Determinant
-  [Arity Op]
-  (Compat : CompatRel V)
-  (interp : OpInterp Op V)
-  : Prop :=
-  ∀ s s₁ s₂
-    op₁ inputs₁ outputs₁
-    op₂ inputs₂ outputs₂,
-    interp.interp op₁ inputs₁ s outputs₁ s₁ →
-    interp.interp op₂ inputs₂ s outputs₂ s₂ →
-    Compat inputs₁ inputs₂ →
-    ∃ s',
-      interp.interp op₁ inputs₁ s₂ outputs₁ s' ∧
-      interp.interp op₂ inputs₂ s₁ outputs₂ s'
-
 /-
 Three pieces:
 - A state invariant `P : S → Prop` on each semantics
@@ -61,60 +27,54 @@ class WithToken V where
 State invariant on Seq: for any two values v₁ v₂ in the config, token v₁ ⊥ token v₂
 -/
 
-/-- Restricts an LTS by imposing a state and label invariant. -/
-inductive GuardedLts {S} (InvS : S → Prop) (InvE : E → Prop) (lts : Lts S E) : Lts S E where
+/-
+Maybe easier to directly do the Label translation in `GuardedLts`?
+-/
+
+/-- Restricts an LTS by imposing a state invariant,
+and also transforms the label. -/
+inductive Lts.Guard {S} (InvS : S → Prop) (InvE : E → E' → Prop) (lts : Lts S E) : Lts S E' where
   | step :
-    InvS s → InvE e → InvS s' →
+    InvS s → InvE e e' → InvS s' →
     lts.Step s e s' →
-    GuardedLts InvS InvE lts s e s'
+    Guard InvS InvE lts s e' s'
 
 /-- Guard the transition of a semantics with the given invariant. -/
-def guard [Arity Op]
+def guard
+  [Arity Op] [Arity Op']
   (sem : Semantics Op V m n)
   (InvS : sem.S → Prop)
-  (InvE : Label Op V m n → Prop) :
-  Semantics Op V m n :=
+  (InvE : Label Op V m n → Label Op' V' m' n' → Prop) :
+  Semantics Op' V' m' n' :=
   {
     S := sem.S,
     init := sem.init,
-    lts := GuardedLts InvS InvE sem.lts,
+    lts := sem.lts.Guard InvS InvE,
     -- TODO: this is actually not true,
     -- maybe remove this requirement?
     yields_functional := sorry
   }
 
-class PCM (C : Type u) where
-  add : C → C → C
-  zero : C
-  valid : C → Prop
-  eq : C → C → Prop
+/-- PCM specification of an operator set -/
+structure OpSpec Op V T [Arity Op] [PCM T] where
+  pre : (op : Op) → Vector V (Arity.ι op) → T
+  post : (op : Op) → Vector V (Arity.ι op) → Vector V (Arity.ω op) → T
+  frame_preserving : ∀ op inputs outputs, pre op inputs ⟹ post op inputs outputs
 
-infixl:60 " ⬝ " => PCM.add
-infix:50 " ≡ " => PCM.eq
-prefix:40 "✓ " => PCM.valid
+/-- Specification on input/output labels. -/
+structure IOSpec V T [PCM T] m n where
+  pre : Vector V m → T
+  -- This can only depend on the outputs, due
+  -- to a technical issue that we can't access
+  -- the input values at an output event.
+  post : Vector V n → T
 
-def PCM.disjoint {C : Type u} [PCM C] (a b : C) : Prop := ✓ a ⬝ b
-
-/-- TODO: Implement some type class for partial order. -/
-def PCM.le {C : Type u} [PCM C] (a b : C) : Prop := ∃ c, b ≡ a ⬝ c
-
-def PCM.framePreserving {C : Type u} [PCM C] (a b : C) : Prop :=
-  ∀ c, ✓ a ⬝ c → ✓ b ⬝ c
-
-infix:50 " ⊥ " => PCM.disjoint
-infix:50 " ≤ " => PCM.le
-infix:50 " ⟹ " => PCM.framePreserving
-
-class LawfulPCM (R : Type u) [inst : PCM R] where
-  add_comm : ∀ a b : R, a ⬝ b ≡ b ⬝ a
-  add_assoc : ∀ a b c : R, (a ⬝ b) ⬝ c ≡ a ⬝ (b ⬝ c)
-  add_ident : ∀ a : R, a ⬝ inst.zero ≡ a
-  valid_add : ∀ a b : R, ✓ a ⬝ b → ✓ a
-  valid_zero : ✓ inst.zero
-  valid_eq : ∀ a b : R, a ≡ b → ✓ a → ✓ b
-  eq_refl : ∀ a : R, a ≡ a
-  eq_symm : ∀ a b : R, a ≡ b → b ≡ a
-  eq_trans : ∀ a b c : R, a ≡ b → b ≡ c → a ≡ c
+/-- Augments the operator set with an additional ghost argument
+to pass a PCM token, as well as two operators to split and join PCMs. -/
+inductive WithSpec (Op : Type u) [Arity Op] [PCM T] (spec : OpSpec Op V T) where
+  | op (op : Op)
+  | split
+  | join
 
 /-- Uses only the LHS `InterpConsts` of a sum for constants. -/
 instance instInterpConstsSum [left : InterpConsts V] : InterpConsts (V ⊕ V') where
@@ -131,54 +91,67 @@ instance instInterpConstsSum [left : InterpConsts V] : InterpConsts (V ⊕ V') w
       simp [this]
     · contradiction
 
-/-- PCM specification of an operator set -/
-structure OpSpec' Op V T [Arity Op] [PCM T] where
-  requires : (op : Op) → Vector V (Arity.ι op) → T
-  ensures : (op : Op) → Vector V (Arity.ι op) → T
-  frame_preserving : ∀ op inputs, requires op inputs ⟹ ensures op inputs
-
-def WithSpec Op [Arity Op] [PCM T] (_spec : OpSpec' Op V T) : Type u := Op
-
-/-- Adds an additional argument for ghost permissions. -/
 instance instArityWithSpec
   [arity : Arity Op] [PCM T]
-  {spec : OpSpec' Op V T} :
+  {spec : OpSpec Op V T} :
   Arity (WithSpec Op spec) where
-  ι op := arity.ι op + 1
-  ω op := arity.ω op + 1
+  ι | .op o => arity.ι o + 1
+    | .split => 1
+    | .join => 2
+  ω | .op o => arity.ω o + 1
+    | .split => 2
+    | .join => 1
 
-instance OpInterp.withSpec
-  [Arity Op] [inst : OpInterp Op V] [PCM T]
-  (spec : OpSpec' Op V T) :
-  OpInterp (WithSpec Op spec) (V ⊕ T) where
-  S := inst.S
-  init := inst.init
-  /-
-  Checks the ghost tokens against the spec,
-  then pass through the inputs/outputs to
-  the base interpretation.
-  -/
-  interp op inputs state outputs s' :=
-    ∃ tok₁ tok₂ inputs' outputs',
-      inputs.back = .inr tok₁ ∧
-      outputs.back = .inr tok₂ ∧
-      inputs'.map .inl = inputs.pop ∧
-      outputs'.map .inl = outputs.pop ∧
-      tok₁ ≡ spec.requires op inputs' ∧
-      tok₂ ≡ spec.ensures op inputs' ∧
-      inst.interp op inputs' state outputs' s'
-
-/-- Stucks if a ghost token is received as opposed to an actual value. -/
-instance OpInterp.withGhost
-  [Arity Op] [inst : OpInterp Op V] :
-  OpInterp Op (V ⊕ T) where
-  S := inst.S
-  init := inst.init
-  interp op inputs state outputs s' :=
-    ∃ inputs' outputs',
-      inputs'.map .inl = inputs ∧
-      outputs'.map .inl = outputs ∧
-      inst.interp op inputs' state outputs' s'
+/-- Interprets the labels with ghost values using the base operators,
+but with dynamic checks for ghost tokens satisfying the specs. -/
+inductive SpecLabelInv [Arity Op] [PCM T]
+  (opSpec : OpSpec Op V T)
+  (ioSpec : IOSpec V T m n) :
+  Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) → Label Op V m n → Prop where
+  | spec_yield :
+    inputs'.pop = inputs.map .inl →
+    outputs'.pop = outputs.map .inl →
+    inputs'.back = .inr tok₁ →
+    outputs'.back = .inr tok₂ →
+    tok₁ ≡ opSpec.pre op inputs →
+    tok₂ ≡ opSpec.post op inputs outputs →
+    SpecLabelInv opSpec ioSpec
+      (.yield (.op op) inputs' outputs')
+      (.yield op inputs outputs)
+  -- NOTE: the exact split of permissions is
+  -- intentionally left unspecified, because
+  -- we want this to be dynamic without restricting
+  -- to a static annotation.
+  | spec_split
+    {inputs : Vector (V ⊕ T) 1}
+    {outputs : Vector (V ⊕ T) 2} :
+    inputs[0] = .inr tok₁ →
+    outputs[0] = .inr tok₂ →
+    outputs[1] = .inr tok₃ →
+    tok₁ ≡ tok₂ ⊔ tok₃ →
+    SpecLabelInv opSpec ioSpec
+      (.yield .split inputs outputs) .τ
+  | spec_join
+    {inputs : Vector (V ⊕ T) 2}
+    {outputs : Vector (V ⊕ T) 1} :
+    inputs[0] = .inr tok₁ →
+    inputs[1] = .inr tok₂ →
+    outputs[0] = .inr tok₃ →
+    tok₃ ≡ tok₁ ⊔ tok₂ →
+    SpecLabelInv opSpec ioSpec
+      (.yield .join inputs outputs) .τ
+  | spec_input :
+    vals'.pop = vals.map .inl →
+    vals'.back = .inr tok →
+    tok ≡ ioSpec.pre vals →
+    SpecLabelInv opSpec ioSpec
+      (.input vals') (.input vals)
+  | spec_output :
+    vals'.pop = vals.map .inl →
+    vals'.back = .inr tok →
+    tok ≡ ioSpec.post vals →
+    SpecLabelInv opSpec ioSpec
+      (.output vals') (.output vals)
 
 end Wavelet.Semantics
 
@@ -195,27 +168,11 @@ def Config.DisjointTokens
     c.vars.getVar x₂ = some (.inr t₂) →
     t₁ ⊥ t₂
 
-inductive Config.YieldMeetsSpec
-  [arity : Arity Op] [PCM T]
-  {spec : OpSpec' Op V T} :
-  Label (WithSpec Op spec) (V ⊕ T) m n → Prop where
-  -- Reads the last ghost token and checks it against the spec
-  | spec_yield
-    {inputs : Vector (V ⊕ T) (arity.ι op + 1)}
-    {outputs : Vector (V ⊕ T) (arity.ω op + 1)}
-    {inputs' : Vector V (arity.ι op)}
-    {outputs' : Vector V (arity.ω op)} :
-    inputs.back = .inr tok₁ →
-    outputs.back = .inr tok₂ →
-    inputs'.map .inl = inputs.pop →
-    outputs'.map .inl = outputs.pop →
-    tok₁ ≡ spec.requires op inputs' →
-    tok₂ ≡ spec.ensures op inputs' →
-    YieldMeetsSpec (.yield op inputs outputs)
-  | spec_input :
-    YieldMeetsSpec (.input inputs)
-  | spec_output :
-    YieldMeetsSpec (.output outputs)
+abbrev FnWithSpec
+  [Arity Op] [PCM T]
+  (opSpec : Semantics.OpSpec Op V T)
+  (_ioSpec : IOSpec V T m n) χ m n
+  := Fn (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
 
 end Wavelet.Seq
 
@@ -237,6 +194,12 @@ def Config.DisjointTokens
     buf₂[j] = .inr t₂ →
     t₁ ⊥ t₂
 
+abbrev ProcWithSpec
+  [Arity Op] [PCM T]
+  (opSpec : Semantics.OpSpec Op V T)
+  (_ioSpec : IOSpec V T m n) χ m n
+  := Proc (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
+
 end Wavelet.Dataflow
 
 namespace Wavelet.Compile
@@ -248,43 +211,133 @@ theorem sim_compile_fn'
   [InterpConsts V]
   [PCM T]
   [DecidableEq χ]
-  {spec : OpSpec' Op V T}
-  (fn : Fn (WithSpec Op spec) χ (V ⊕ T) m n)
-  (hnz : m > 0 ∧ n > 0)
+  {opSpec : Semantics.OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  (fn : FnWithSpec opSpec ioSpec χ m n)
   (hwf : fn.AffineVar) :
-  fn.semantics.guard Config.DisjointTokens (λ _ => True)
-    ≲ᵣ (compileFn hnz fn).semantics.guard Config.DisjointTokens (λ _ => True)
+  fn.semantics.guard Config.DisjointTokens (SpecLabelInv opSpec ioSpec)
+    ≲ᵣ (compileFn (by simp) fn).semantics.guard Config.DisjointTokens (SpecLabelInv opSpec ioSpec)
   := sorry
 
-def eraseGhost
+theorem sim_guard_label
+  [Arity Op] [Arity Op']
+  [DecidableEq χ]
+  [DecidableEq χ']
+  [InterpConsts V]
+  [InterpConsts V']
+  {sem₁ sem₂ : Semantics Op V m n}
+  {InvE : Label Op V m n → Label Op' V' m' n' → Prop}
+  (htau : InvE .τ .τ)
+  (hinput : ∀ {vals l}, InvE (.input vals) l → l.isSilent ∨ l.isInput)
+  (houtput : ∀ {vals l}, InvE (.output vals) l → l.isSilent ∨ l.isOutput)
+  (hyield : ∀ {op inputs outputs l}, InvE (.yield op inputs outputs) l → l.isSilent ∨ l.isYield)
+  (hsim : sem₁ ≲ᵣ sem₂) :
+  sem₁.guard (λ _ => True) InvE ≲ᵣ sem₂.guard (λ _ => True) InvE
+  := by
+  apply Lts.Similarity.intro hsim.Sim
+  constructor
+  · exact hsim.sim_init
+  · intros s₁ s₂ l s₁' hR hstep
+    simp [Semantics.guard] at hstep
+    cases hstep with | step _ hlabel _ hstep =>
+    rename Label Op V m n => l'
+    have ⟨s₂', hstep_s₂, hR₂⟩ := hsim.sim_step _ _ _ _ hR hstep
+    exists s₂'
+    constructor
+    · cases l' with
+      | yield => sorry
+      | input =>
+        cases hstep_s₂ with | step_input hstep_input_s₂ hstep_tau =>
+        sorry
+      | output => sorry
+      | τ => sorry
+    · exact hR₂
+
+/-- Type check a function against the given specs,
+and insert split/join to concretize the flow of permissions. -/
+def typeCheck
   [Arity Op]
   [PCM T]
-  {spec : OpSpec' Op V T}
-  (proc : Proc (WithSpec Op spec) χ (V ⊕ T) m n) : Proc Op χ V m n
-  := sorry
+  (opSpec : Semantics.OpSpec Op V T)
+  (ioSpec : IOSpec V T m n)
+  (fn : Fn Op χ V m n) : Option (FnWithSpec opSpec ioSpec χ m n) := sorry
 
-def attachToken
-  [Arity Op]
-  (fn : Fn Op χ V m n) : Fn Op χ (V ⊕ T) m n := {
-    params := fn.params
-    body := fn.body
-  }
-
+/-- Type soundness theorem formulated as a simulation. -/
 theorem fn_progress
   [Arity Op]
   [InterpConsts V]
   [PCM T]
   [DecidableEq χ]
-  {spec : OpSpec' Op V T}
+  {opSpec : Semantics.OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
   (fn : Fn Op χ V m n)
-  {fn' : Fn (WithSpec Op spec) χ (V ⊕ T) m n}
-  (hnz : m > 0 ∧ n > 0)
+  {fn' : FnWithSpec opSpec ioSpec χ m n}
   (hwf : fn.AffineVar)
-  (hwt : sorry) -- Well-typedness: generates the elaborated `fn'` from `fn`
-  (interp : OpInterp Op V) :
-  (attachToken fn).semantics.interpret interp.withGhost
-    ≲ᵣ (fn'.semantics.guard Config.DisjointTokens (λ _ => True)).interpret
-        (interp.withSpec spec)
+  (hwt : typeCheck opSpec ioSpec fn = some fn') :
+  fn.semantics ≲ᵣ fn'.semantics.guard Config.DisjointTokens (SpecLabelInv opSpec ioSpec)
   := sorry
+
+/-- Erase ghost tokens. -/
+def eraseGhost
+  [Arity Op] [PCM T]
+  {opSpec : Semantics.OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  (proc : ProcWithSpec opSpec ioSpec χ m n) : Proc Op χ V m n
+  := sorry
+
+/-- Backward simulation for `eraseGhost`. -/
+theorem sim_erase_ghost
+  [Arity Op] [PCM T]
+  [InterpConsts V]
+  [DecidableEq χ]
+  [DecidableEq χ']
+  {opSpec : Semantics.OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  (proc : ProcWithSpec opSpec ioSpec χ m n) :
+  (eraseGhost proc).semantics ≲ᵣ
+    proc.semantics.guard Config.DisjointTokens (SpecLabelInv opSpec ioSpec)
+  := sorry
+
+/-- Or maybe forward simulation? -/
+theorem sim_erase_ghost_forward
+  [Arity Op] [PCM T]
+  [InterpConsts V]
+  [DecidableEq χ]
+  [DecidableEq χ']
+  {opSpec : Semantics.OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  (proc : ProcWithSpec opSpec ioSpec χ m n) :
+  proc.semantics.guard Config.DisjointTokens (SpecLabelInv opSpec ioSpec)
+    ≲ᵣ (eraseGhost proc).semantics
+  := sorry
+
+/-
+We now have
+
+fn.semantics
+  ≲ᵣ fn'.semantics.guard ...
+  ≲ᵣ (compileFn ... fn').semantics.guard ...
+  ... some optimization passes
+  ≲ᵣ proc.semantics.guard ...
+  ≲ᵣ (eraseGhost proc).semantics
+
+and also
+
+(eraseGhost proc).semantics
+  ≲ᵣ proc.semantics.guard ...
+
+Final correctness theorem will say something like:
+
+For any trace of `fn.semantics`
+there exists a corresponding trace `T₁` of `proc.semantics.guard ...`
+
+For any trace of `(eraseGhost proc).semantics`
+there exists a corresponding trace `T₂` of `proc.semantics.guard ...`
+
+If `T₁` "dominates" `T₂`, then `T₂` converge to `T₁`.
+
+(But this doesn't say anything about deadlock?)
+
+-/
 
 end Wavelet.Compile
