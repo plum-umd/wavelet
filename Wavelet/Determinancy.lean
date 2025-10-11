@@ -9,28 +9,6 @@ namespace Wavelet.Semantics
 
 open Semantics
 
-/-
-Three pieces:
-- A state invariant `P : S → Prop` on each semantics
-- A guarded transition that enforces the invariant on the base transition
-- Proof obligations
-  - Simulation between guarded transitions
-  - Invariant implies compatibility relation of values (obligation of the semantics)
-  - Compatibility relation implies commutative operators (obligation of op interp)
-  - Typing in Seq implies progress in the guarded transition
-
-Maybe just specialize to PCMs?
-
-class WithToken V where
-  token : V → PCM
-
-State invariant on Seq: for any two values v₁ v₂ in the config, token v₁ ⊥ token v₂
--/
-
-/-
-Maybe easier to directly do the Label translation in `GuardedLts`?
--/
-
 /-- Restricts an LTS by imposing a state invariant,
 and also transforms the label. -/
 inductive Lts.Guard {S} (InvS : S → Prop) (InvE : E → E' → Prop) (lts : Lts S E) : Lts S E' where
