@@ -12,20 +12,22 @@ infixl:60 " ⊔ " => PCM.add
 infix:40 " ≡ " => PCM.eq
 prefix:40 "✓ " => PCM.valid
 
-def PCM.disjoint {C : Type u} [PCM C] (a b : C) : Prop := ✓ a ⊔ b
+def PCM.disjoint [PCM C] (a b : C) : Prop := ✓ a ⊔ b
 
-/-- TODO: Implement some type class for partial order. -/
-def PCM.le {C : Type u} [PCM C] (a b : C) : Prop := ∃ c, b ≡ a ⊔ c
-
-noncomputable def PCM.sub {C : Type u} [PCM C] (a b : C) (hle : PCM.le a b) : C :=
-  hle.choose
-
-def PCM.framePreserving {C : Type u} [PCM C] (a b : C) : Prop :=
+def PCM.framePreserving [PCM C] (a b : C) : Prop :=
   ∀ c, ✓ a ⊔ c → ✓ b ⊔ c
 
+def PCM.sum [PCM C] (xs : List C) : C :=
+  xs.foldl (· ⊔ ·) PCM.zero
+
 infix:50 " ⊥ " => PCM.disjoint
-infix:50 " ≤ " => PCM.le
 infix:50 " ⟹ " => PCM.framePreserving
+
+instance [PCM C] : LE C where
+  le a b := ∃ c, b ≡ a ⊔ c
+
+noncomputable def PCM.sub [PCM C] (a b : C) (hle : b ≤ a) : C :=
+  hle.choose
 
 class LawfulPCM (R : Type u) [inst : PCM R] where
   add_comm : ∀ a b : R, a ⊔ b ≡ b ⊔ a

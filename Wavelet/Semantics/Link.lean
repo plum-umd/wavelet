@@ -114,7 +114,7 @@ def link
   [Arity Op₀] [Arity Op₁]
   [DecidableEq Op₁]
   (main : Semantics (Op₀ ⊕ Op₁) V m n)
-  (deps : PartInterp Op₀ Op₁ V)
+  (deps : (op : Op₁) → Semantics Op₀ V (Arity.ι op) (Arity.ω op))
   : Semantics Op₀ V m n
   := {
     S := LinkState main deps,

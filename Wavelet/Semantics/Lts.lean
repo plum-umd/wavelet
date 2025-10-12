@@ -28,6 +28,18 @@ inductive Lts.TauStar (lts : Lts C E) (τ : E) : C → C → Prop
   | tail {c₁ c₂ c₃ : C} :
       lts.TauStar τ c₁ c₂ → lts c₂ τ c₃ → lts.TauStar τ c₁ c₃
 
+/-- Map each transition to a different `lts` while keeping the same states. -/
+theorem Lts.TauStar.map
+  {lts : Lts C E} {τ : E}
+  {lts' : Lts C E'} {τ' : E'}
+  (hmap : ∀ {c₁ c₂}, lts c₁ τ c₂ → lts' c₁ τ' c₂)
+  (htau : lts.TauStar τ c₁ c₂) :
+  lts'.TauStar τ' c₁ c₂ := by
+  induction htau with
+  | refl => exact .refl
+  | tail htau hstep ih =>
+    exact .tail ih (hmap hstep)
+
 theorem Lts.TauStar.eq_rhs
   {lts : Lts C E}
   (hstep : lts.TauStar τ c₁ c₂)
