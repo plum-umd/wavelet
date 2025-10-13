@@ -326,4 +326,22 @@ theorem IORestrictedSimilarity.trans
   (h₁ : sem₁ ≲ᵣ sem₂) (h₂ : sem₂ ≲ᵣ sem₃) :
   sem₁ ≲ᵣ sem₃ := Lts.Similarity.trans h₁ (IORestrictedSimilarity.alt h₂)
 
+theorem IORestrictedSimilarity.to_weak_sim
+  [Arity Op]
+  {sem₁ sem₂ : Semantics Op V m n}
+  (hsim : sem₁ ≲ᵣ sem₂) : sem₁ ≲ sem₂ := by
+  apply Lts.Similarity.intro hsim.Sim
+  constructor
+  · exact hsim.sim_init
+  · intros s₁ s₂ l s₁' hR hstep
+    have ⟨s₂', hstep', hR'⟩ := hsim.sim_step _ _ _ _ hR hstep
+    exists s₂'
+    constructor
+    · cases hstep' with
+      | step_yield hstep' => exact .single hstep'
+      | step_input hstep' htau => exact .step .refl hstep' htau
+      | step_output htau hstep' => exact .step htau hstep' .refl
+      | step_tau htau => exact .from_tau_star htau
+    · exact hR'
+
 end Wavelet.Semantics

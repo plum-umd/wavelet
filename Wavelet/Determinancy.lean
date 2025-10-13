@@ -727,12 +727,23 @@ theorem sim_type_check_ret
   | step_op hexpr | step_br hexpr => simp [hret] at hexpr
   | step_ret hexpr hget_vars =>
     rename_i retVals vars
-    have ⟨ctx, hvars⟩ := hcont _ hexpr
+    have ⟨ctx, expr₂, hcont₂, hwt, hvars⟩ := hcont _ hexpr
     have := sim_get_vars (ctx := ctx) hget_vars
-
+    cases hwt with | wpt_ret hacq hins htoks' hvars' =>
+    rename_i joined ctx' rem toks toks' vars'
     sorry
 
-/-- Type soundness theorem formulated as a simulation. -/
+/--
+Type soundness theorem formulated as a simulation:
+if the untyped `Fn` can execute without error, then
+the typed version can also execute with the same trace
+while keeping the ghost tokens disjoint, i.e., progress
+is simulation and preservation is the `DisjointTokens`
+invariant on the states.
+
+Need to use weak simulation here due to `join` being
+interpreted as silent steps.
+-/
 theorem sim_type_check
   [Arity Op]
   [InterpConsts V]
@@ -755,7 +766,10 @@ theorem sim_type_check
   · apply sim_type_check_init hwt
   · intros s₁ s₂ l s₁' hsim hstep
     cases h₁ : s₁.cont with
-    | init => apply sim_type_check_input hsim h₁ hstep
-    | expr => sorry
+    | init => exact sim_type_check_input hsim h₁ hstep
+    | expr expr =>
+      cases h₂ : expr <;> simp [h₂] at h₁
+      case ret => exact sim_type_check_ret hsim h₁ hstep
+      all_goals sorry
 
 end Wavelet.Seq
