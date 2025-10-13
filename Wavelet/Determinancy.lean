@@ -1,3 +1,5 @@
+import Mathlib.Control.ULiftable
+
 import Wavelet.Semantics
 import Wavelet.Seq
 import Wavelet.Dataflow
@@ -29,8 +31,8 @@ def guard
   }
 
 /-- Modifies labels with a relation. -/
-inductive Lts.InterpLabel {S} (Interp : E → E' → Prop) (lts : Lts S E) : Lts S E' where
-  | step : Interp e e' → lts.Step s e s' → InterpLabel Interp lts s e' s'
+inductive Lts.InterpLabelStep {S} (Interp : E → E' → Prop) (lts : Lts S E) : Lts S E' where
+  | step : Interp e e' → lts.Step s e s' → InterpLabelStep Interp lts s e' s'
 
 /-- Interprets the labels as another set of operators. -/
 def interpLabel
@@ -41,7 +43,7 @@ def interpLabel
   {
     S := sem.S,
     init := sem.init,
-    lts := sem.lts.InterpLabel Interp,
+    lts := sem.lts.InterpLabelStep Interp,
     yields_functional := sorry
   }
 
@@ -221,14 +223,12 @@ def Config.DisjointTokens
 
 abbrev ExprWithSpec
   [Arity Op] [PCM T]
-  (opSpec : Semantics.OpSpec Op V T)
-  (_ioSpec : IOSpec V T m n) χ m n
+  (opSpec : Semantics.OpSpec Op V T) χ m n
   := Expr (WithSpec Op opSpec) χ (m + 1) (n + 1)
 
 abbrev FnWithSpec
   [Arity Op] [PCM T]
-  (opSpec : Semantics.OpSpec Op V T)
-  (_ioSpec : IOSpec V T m n) χ
+  (opSpec : Semantics.OpSpec Op V T) χ m n
   := Fn (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
 
 end Wavelet.Seq
@@ -253,8 +253,7 @@ def Config.DisjointTokens
 
 abbrev ProcWithSpec
   [Arity Op] [PCM T]
-  (opSpec : Semantics.OpSpec Op V T)
-  (_ioSpec : IOSpec V T m n) χ m n
+  (opSpec : Semantics.OpSpec Op V T) χ m n
   := Proc (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
 
 end Wavelet.Dataflow
@@ -304,7 +303,7 @@ theorem sim_compile_fn'
   [DecidableEq χ]
   {opSpec : Semantics.OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  (fn : FnWithSpec opSpec ioSpec χ)
+  (fn : FnWithSpec opSpec χ m n)
   (hwf : fn.AffineVar) :
   fn.semantics.guard Config.DisjointTokens
     ≲ᵣ (compileFn (by simp) fn).semantics.guard Config.DisjointTokens
@@ -314,8 +313,7 @@ theorem sim_compile_fn'
 def eraseGhost
   [Arity Op] [PCM T]
   {opSpec : Semantics.OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  (proc : ProcWithSpec opSpec ioSpec χ m n) : Proc Op χ V m n
+  (proc : ProcWithSpec opSpec χ m n) : Proc Op χ V m n
   := sorry
 
 /-- Backward simulation for `eraseGhost`. -/
@@ -326,7 +324,7 @@ theorem sim_erase_ghost
   [DecidableEq χ']
   {opSpec : Semantics.OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  (proc : ProcWithSpec opSpec ioSpec χ m n) :
+  (proc : ProcWithSpec opSpec χ m n) :
   (eraseGhost proc).semantics ≲ᵣ
     (proc.semantics.guard Config.DisjointTokens).interpLabel (SpecLabelInterp opSpec ioSpec)
   := sorry
@@ -339,7 +337,7 @@ theorem sim_erase_ghost_forward
   [DecidableEq χ']
   {opSpec : Semantics.OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  (proc : ProcWithSpec opSpec ioSpec χ m n) :
+  (proc : ProcWithSpec opSpec χ m n) :
   (proc.semantics.guard Config.DisjointTokens).interpLabel (SpecLabelInterp opSpec ioSpec)
     ≲ᵣ (eraseGhost proc).semantics
   := sorry
@@ -354,7 +352,7 @@ theorem guarded_confluence
   [DecidableEq χ]
   {opSpec : Semantics.OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {proc : ProcWithSpec opSpec ioSpec χ m n}
+  {proc : ProcWithSpec opSpec χ m n}
   {trace₁ trace₂ : Trace (Label Op V m n)}
   {sem : Semantics Op V m n}
   {s₁ s₂ : sem.S}
@@ -423,7 +421,7 @@ noncomputable def typeCheckInternal
   (ctx : Nat → Option T)
   (numToks : Nat) :
   Expr Op χ m n →
-  Option (ExprWithSpec (opSpec.toOpSpec V) (ioSpec.toIOSpec m n) (TypedName χ) m n)
+  Option (ExprWithSpec (opSpec.toOpSpec V) (TypedName χ) m n)
   | .ret args => do
     let toks ← tryAcquire ctx numToks ioSpec.post
     return .op (.join toks.length)
@@ -467,29 +465,253 @@ noncomputable def typeCheck
   (opSpec : SimpleOpSpec Op T)
   (ioSpec : SimpleIOSpec T)
   (fn : Fn Op χ V m n) :
-  Option (FnWithSpec (opSpec.toOpSpec V) (ioSpec.toIOSpec m n) (TypedName χ))
+  Option (FnWithSpec (opSpec.toOpSpec V) (TypedName χ) m n)
   := return {
     params := (fn.params.map TypedName.var).push (TypedName.tok 0),
     body := ← typeCheckInternal opSpec ioSpec
       (Function.update (Function.const _ none) 0 (some ioSpec.pre)) 1 fn.body,
   }
 
-/-- Type soundness theorem formulated as a simulation. -/
-theorem type_check_sound
+/-- Map from ghost variable names to their concrete permission. -/
+structure PermCtx T where
+  map : Nat → Option T
+  numVars : Nat
+
+/-- Defines when a (disjoint) list of variable indices
+has a total permission equal to the sum of `req` and `rem`. -/
+def PermCtx.Acquire
+  [PCM T]
+  (ctx : PermCtx T) (req : T) (rem : T)
+  (idxs : List Nat) : Prop :=
+  idxs.Nodup ∧
+  ∃ ts : List T,
+    idxs.mapM ctx.map = some ts ∧
+    req ⊔ rem ≤ PCM.sum ts
+
+def PermCtx.getVar
+  [PCM T] (ctx : PermCtx T) (idx : Nat) : Option T := ctx.map idx
+
+/-- Insert `n` new permission tokens and return the fresh indices -/
+def PermCtx.insertVars
+  [PCM T]
+  (ctx : PermCtx T) (tys : Vector T n) :
+  Vector Nat n × PermCtx T :=
+  let newIdxs := (Vector.range n).map (· + ctx.numVars)
+  (
+    newIdxs,
+    {
+      map idx :=
+        if _ : ctx.numVars ≤ idx ∧ idx < ctx.numVars + n then
+          some (tys[idx - ctx.numVars]'(by omega))
+        else ctx.map idx,
+      numVars := ctx.numVars + n
+    }
+  )
+
+def PermCtx.removeVars
+  [PCM T]
+  (ctx : PermCtx T) (idxs : List Nat) : PermCtx T :=
+  { ctx with map := λ i => if i ∈ idxs then none else ctx.map i }
+
+/-- Initial context with a single permission variable. -/
+def PermCtx.init
+  [PCM T] (init : T) : PermCtx T :=
+  {
+    map idx := if idx = 0 then some init else none,
+    numVars := 1
+  }
+
+/-- Relational definition for a function to be well-typed
+as a more elaborated `FnWithSpec` with explicit permissions. -/
+inductive Expr.WellPermTyped
+  [Arity Op] [PCM T]
+  {opSpec : SimpleOpSpec Op T}
+  (ioSpec : SimpleIOSpec T) :
+  PermCtx T → Expr Op χ m n →
+  ExprWithSpec (opSpec.toOpSpec V) (TypedName χ) m n → Prop where
+  | wpt_ret :
+    ctx.Acquire ioSpec.post rem toks →
+    ctx.insertVars #v[ioSpec.post, rem] = (joined, ctx') →
+    toks' = toks.map .tok →
+    args' = (args.map .var).push (.tok joined[0]) →
+    WellPermTyped ioSpec ctx
+      (.ret args)
+      (.op (.join toks'.length) toks'.toVector (joined.map .tok)
+        (.ret args'))
+  | wpt_tail :
+    -- The returned permission should exactly match since the token is non-dependent
+    ctx.Acquire ioSpec.pre rem toks →
+    ctx.insertVars #v[ioSpec.pre, rem] = (joined, ctx') →
+    toks' = toks.map .tok →
+    args' = (args.map .var).push (.tok joined[0]) →
+    WellPermTyped ioSpec ctx
+      (.tail args)
+      (.op (.join toks'.length) toks'.toVector (joined.map .tok)
+        (.tail args'))
+  | wpt_op {bind} :
+    ctx.Acquire (opSpec.pre o) rem toks →
+    ctx.removeVars toks = ctx' →
+    ctx'.insertVars #v[opSpec.pre o, rem, opSpec.post o] = (joined, ctx'') →
+    WellPermTyped ioSpec ctx'' cont cont' →
+    toks' = toks.map .tok →
+    WellPermTyped ioSpec ctx
+      (.op o args bind cont)
+      (.op (.join toks'.length) -- First call join to collect required permissions
+        toks'.toVector
+        #v[.tok joined[0], .tok joined[1]]
+        (.op (.op o) -- Then call the actual operator
+        ((args.map .var).push (.tok joined[0]))
+        ((bind.map .var).push (.tok joined[2])) cont'))
+  | wpt_br :
+    WellPermTyped ioSpec ctx left left' →
+    WellPermTyped ioSpec ctx right right' →
+    WellPermTyped ioSpec ctx (.br cond left right) (.br (.var cond) left' right')
+
+def Fn.WellPermTyped
+  [Arity Op] [PCM T]
+  {opSpec : SimpleOpSpec Op T}
+  (ioSpec : SimpleIOSpec T)
+  (fn : Fn Op χ V m n)
+  (fn' : FnWithSpec (opSpec.toOpSpec V) (TypedName χ) m n) :
+  Prop :=
+  fn'.params = (fn.params.map .var).push (.tok 0) ∧
+  Expr.WellPermTyped ioSpec (.init (ioSpec.pre)) fn.body fn'.body
+
+def SimRel.ghostVars
+  {χ : Type u} {V : Type v} {T : Type w}
+  [PCM T]
+  (vars : VarMap χ V)
+  (ctx : PermCtx T) :
+  VarMap (TypedName χ) (V ⊕ T) :=
+  λ var =>
+    match var with
+    | .var v => return .inl (← ULiftable.up (vars.getVar v)).down
+    | .tok i => return .inr (← ULiftable.up (ctx.getVar i)).down
+
+def SimRel
+  [Arity Op] [PCM T]
+  {opSpec : SimpleOpSpec Op T}
+  (ioSpec : SimpleIOSpec T)
+  (s₁ : Config Op χ V m n)
+  (s₂ : Config (WithSpec Op (opSpec.toOpSpec V)) (TypedName χ) (V ⊕ T) (m + 1) (n + 1)) :
+  Prop :=
+  s₁.fn.WellPermTyped ioSpec s₂.fn ∧
+  s₂.DisjointTokens ∧
+  (s₁.cont = .init → s₂.cont = .init) ∧
+  (∀ expr,
+    s₁.cont = .expr expr →
+    ∃ ctx, s₂.vars = SimRel.ghostVars s₁.vars ctx)
+
+theorem sim_type_check_init
   [Arity Op]
   [InterpConsts V]
   [PCM T]
   [DecidableEq χ]
   [DecidableLE T]
+  {opSpec : SimpleOpSpec Op T}
+  {ioSpec : SimpleIOSpec T}
+  {fn : Fn Op χ V m n}
+  {fn' : FnWithSpec (opSpec.toOpSpec V) (TypedName χ) m n}
+  (hwt : fn.WellPermTyped ioSpec fn') :
+    SimRel ioSpec
+      fn.semantics.init
+      ((fn'.semantics.guard Config.DisjointTokens).interpLabel
+          (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).init
+  := by
+  simp [Fn.semantics, Semantics.guard, Semantics.interpLabel, Config.init]
+  simp [Fn.WellPermTyped] at hwt
+  and_intros
+  · simp [hwt]
+  · simp [hwt]
+  · simp [Config.DisjointTokens, VarMap.getVar, VarMap.empty]
+  · simp
+  · simp
+
+theorem sim_type_check_input
+  [Arity Op]
+  [InterpConsts V]
+  [PCM T] [pcm : LawfulPCM T]
+  [DecidableEq χ]
+  [DecidableLE T]
+  {opSpec : SimpleOpSpec Op T}
+  {ioSpec : SimpleIOSpec T}
+  {fn : Fn Op χ V m n}
+  {fn' : FnWithSpec (opSpec.toOpSpec V) (TypedName χ) m n}
+  {s₁ s₁' : Config Op χ V m n}
+  {s₂ : Config (WithSpec Op (opSpec.toOpSpec V)) (TypedName χ) (V ⊕ T) (m + 1) (n + 1)}
+  {l : Label Op V m n}
+  (hsim : SimRel ioSpec s₁ s₂)
+  (hcont : s₁.cont = .init)
+  (hstep : fn.semantics.lts.Step s₁ l s₁') :
+    ∃ s₂',
+      ((fn'.semantics.guard Config.DisjointTokens).interpLabel
+        (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.WeakStep .τ s₂ l s₂' ∧
+      SimRel ioSpec s₁' s₂'
+  := by
+  have ⟨hwt_fn, hdisj, hinit, _⟩ := hsim
+  cases hstep with
+  | step_ret hexpr | step_tail hexpr
+  | step_op hexpr | step_br hexpr => simp [hcont] at hexpr
+  | step_init =>
+  rename Vector V m => args
+  have hcont₂ := hinit hcont
+  simp [Fn.semantics, Semantics.guard, Semantics.interpLabel, Config.init]
+  have hstep₂ : fn'.semantics.lts.Step s₂ _ _ :=
+    .step_init
+      (args := (args.map .inl).push (.inr ioSpec.pre))
+      (c := s₂) hcont₂
+  replace hstep₂ : (fn'.semantics.guard Config.DisjointTokens).lts.Step s₂ _ _ :=
+    .step hdisj (by
+      simp [Config.DisjointTokens, VarMap.getVar]
+      -- TODO: should be easy, only added one token
+      sorry) hstep₂
+  replace hstep₂ :
+    ((fn'.semantics.guard Config.DisjointTokens).interpLabel
+      (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.Step
+      s₂ (.input args) _ :=
+    .step (by
+      apply SpecLabelInterp.spec_input (tok := ioSpec.pre)
+      · simp
+      · simp
+      · simp [SimpleIOSpec.toIOSpec]
+        apply pcm.eq_refl) hstep₂
+  exact ⟨_, .single hstep₂,
+    by
+      and_intros
+      · simp [hwt_fn.1]
+      · simp [hwt_fn.2]
+      · -- TODO same as the TODO above
+        sorry
+      · simp
+      · simp
+        exists PermCtx.init ioSpec.pre
+        sorry
+  ⟩
+
+/-- Type soundness theorem formulated as a simulation. -/
+theorem sim_type_check
+  [Arity Op]
+  [InterpConsts V]
+  [PCM T] [LawfulPCM T]
+  [DecidableEq χ]
+  [DecidableLE T]
   (opSpec : SimpleOpSpec Op T)
   (ioSpec : SimpleIOSpec T)
   (fn : Fn Op χ V m n)
-  {fn' : FnWithSpec (opSpec.toOpSpec V) (ioSpec.toIOSpec m n) (TypedName χ)}
+  {fn' : FnWithSpec (opSpec.toOpSpec V) (TypedName χ) m n}
   (hwf : fn.AffineVar)
-  (hwt : typeCheck opSpec ioSpec fn = some fn') :
-  fn.semantics ≲ᵣ
+  -- (hwt : typeCheck opSpec ioSpec fn = some fn') :
+  (hwt : fn.WellPermTyped ioSpec fn') :
+  fn.semantics ≲
     (fn'.semantics.guard Config.DisjointTokens).interpLabel
       (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))
-  := sorry
+  := by
+  apply Lts.Similarity.intro (SimRel ioSpec)
+  constructor
+  · apply sim_type_check_init hwt
+  · intros s₁ s₂ l s₁' hsim hstep
+    cases h₁ : s₁.cont with
+    | init => apply sim_type_check_input hsim h₁ hstep
+    | expr => sorry
 
 end Wavelet.Seq

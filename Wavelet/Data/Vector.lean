@@ -117,6 +117,13 @@ theorem back_map
 := by
   simp [getElem_map, back_eq_getElem]
 
+@[simp]
+theorem back_push
+  {xs : Vector α n} :
+  (xs.push x).back = x
+:= by
+  simp [back_eq_getElem]
+
 theorem pop_zip
   [NeZero n]
   {xs : Vector α n} {ys : Vector β n} :
