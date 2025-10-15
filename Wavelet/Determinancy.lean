@@ -156,7 +156,8 @@ but with dynamic checks for ghost tokens satisfying the specs. -/
 inductive SpecLabelInterp [Arity Op] [PCM T]
   (opSpec : OpSpec Op V T)
   (ioSpec : IOSpec V T m n) :
-  Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) → Label Op V m n → Prop where
+  Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) →
+  Label Op V m n → Prop where
   | spec_yield
     {op}
     {inputs : Vector V (Arity.ι op)}
@@ -271,9 +272,16 @@ Proof sketch (for a single `Fn`):
 We show that
 
 ```
+untyped functions
+≤ typed functions + disjoint tokens + dynamic race detector
+≤ typed processes + disjoint tokens + dynamic race detector
+```
+
+```
 fn.semantics
-  ≲ᵣ fn'.semantics.guard ...
-  ≲ᵣ (compileFn ... fn').semantics.guard ...
+  ≲ᵣ (fn'.semantics.guard ...).interpLabel
+  ≲ᵣ ((compileFn ... fn').semantics.guard ...).interpLabel
+    -- by (fn'.semantics.guard ...) ≲ᵣ ((compileFn ... fn').semantics.guard ...)
   (... maybe some optimization passes)
   ≲ᵣ proc.semantics.guard ...
   ≲ᵣ (eraseGhost proc).semantics
@@ -551,9 +559,9 @@ inductive Expr.WellPermTyped
         (tokIds.map .inr)
         #v[.inr joined[0], .inr joined[1]]
         (.op (.op o) -- Then call the actual operator
-        ((args.map .inl).push (.inr joined[0]))
-        ((bind.map .inl).push (.inr joined[2])) cont'))
-  | wpt_br {ctx left left' right right'} :
+          ((args.map .inl).push (.inr joined[0]))
+          ((bind.map .inl).push (.inr joined[2])) cont'))
+  | wpt_br {ctx cond left left' right right'} :
     WellPermTyped ioSpec ctx left left' →
     WellPermTyped ioSpec ctx right right' →
     WellPermTyped ioSpec ctx (.br cond left right) (.br (.inl cond) left' right')
@@ -593,6 +601,13 @@ theorem var_map_disjoint_union_get_vars_left
   {m₂ : VarMap χ₂ V₂}
   (hget : m₁.getVars vars = some vals) :
   (VarMap.disjointUnion m₁ m₂).getVars (vars.map .inl) = some (vals.map .inl)
+  := sorry
+
+theorem var_map_disjoint_union_get_var_left
+  {m₁ : VarMap χ₁ V₁}
+  {m₂ : VarMap χ₂ V₂}
+  (hget : m₁.getVar var = some val) :
+  (VarMap.disjointUnion m₁ m₂).getVar (.inl var) = some (.inl val)
   := sorry
 
 theorem var_map_disjoint_union_get_vars_right
@@ -811,6 +826,95 @@ theorem sim_type_check_ret
       · simp
   ⟩
 
+theorem sim_type_check_tail
+  [Arity Op]
+  [InterpConsts V]
+  [PCM T] [pcm : LawfulPCM T]
+  [DecidableEq χ]
+  [DecidableLE T]
+  {opSpec : SimpleOpSpec Op T}
+  {ioSpec : SimpleIOSpec T}
+  {fn : Fn Op χ V m n}
+  {fn' : FnWithSpec (opSpec.toOpSpec V) (TypedName χ) m n}
+  {s₁ s₁' : Config Op χ V m n}
+  {s₂ : Config (WithSpec Op (opSpec.toOpSpec V)) (TypedName χ) (V ⊕ T) (m + 1) (n + 1)}
+  {l : Label Op V m n}
+  (hsim : SimRel ioSpec s₁ s₂)
+  (htail : s₁.cont = .expr (.tail vars))
+  (hstep : fn.semantics.lts.Step s₁ l s₁') :
+    ∃ s₂',
+      ((fn'.semantics.guard Config.DisjointTokens).interpLabel
+        (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.WeakStep
+        .τ s₂ l s₂' ∧
+      SimRel ioSpec s₁' s₂'
+  := by
+  have ⟨hwt_fn, hdisj, _, hcont⟩ := hsim
+  cases hstep with
+  | step_init hexpr | step_ret hexpr
+  | step_op hexpr | step_br hexpr => simp [htail] at hexpr
+  | step_tail hexpr hget_vars =>
+  rename_i tailArgs vars
+  have ⟨ctx, expr₂, hcont₂, hwt, hvars⟩ := hcont _ hexpr
+  cases hwt with | wpt_tail k hacq hins =>
+  rename Vector T k => toks
+  rename Vector ℕ k => tokIds
+  rename Vector ℕ 2 => joined
+  rename T => rem
+  have ⟨hacq₁, hacq₂, hacq₃⟩ := hacq
+  -- Join required permissions
+  have hstep₂ :
+    ((fn'.semantics.guard _).interpLabel
+      (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.Step
+      s₂ _ _ :=
+    guard_interp_label_single
+      (e' := .τ)
+      (.step_op (outputVals := #v[.inr ioSpec.pre, .inr rem])
+        hcont₂
+        (by
+          simp [hvars]
+          apply var_map_disjoint_union_get_vars_right hacq₂))
+      hdisj
+      (by
+        -- TODO: remove tokens and add new tokens
+        simp
+        sorry)
+      (SpecLabelInterp.spec_join (by rfl) (by rfl) hacq₃)
+  -- Run the actual return expression
+  have hsteps₂ :
+    ((fn'.semantics.guard _).interpLabel
+      (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.WeakStep .τ
+      s₂ .τ _ := (Lts.WeakStep.single hstep₂).tail_non_tau
+    (guard_interp_label_single
+      (.step_tail (tailArgs := (tailArgs.map .inl).push (.inr ioSpec.pre))
+        (by rfl)
+        (by
+          simp
+          -- TODO: some var map manipulation
+          sorry))
+      (by
+        simp
+        -- TODO: remove tokens and add new tokens
+        sorry)
+      (by
+        sorry)
+      SpecLabelInterp.spec_tau)
+  simp at hsteps₂
+  exact ⟨_, hsteps₂,
+    by
+      and_intros
+      · simp [hwt_fn.1]
+      · simp [hwt_fn.2]
+      · simp
+        sorry
+      · simp
+      · simp
+        exists PermCtx.init ioSpec.pre
+        and_intros
+        · simp [hwt_fn.2]
+        · simp [hwt_fn.1]
+          apply sim_type_check_input_vars
+  ⟩
+
 theorem sim_type_check_op
   [Arity Op]
   [InterpConsts V]
@@ -848,9 +952,8 @@ theorem sim_type_check_op
   have hstep₂ :
     ((fn'.semantics.guard _).interpLabel
       (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.Step
-      s₂ _ _ :=
+      s₂ .τ _ :=
     guard_interp_label_single
-      (e' := .τ)
       (.step_op (outputVals := #v[.inr (opSpec.pre op), .inr rem])
         hcont₂
         (by
@@ -907,6 +1010,70 @@ theorem sim_type_check_op
         sorry
   ⟩
 
+theorem sim_type_check_br
+  [Arity Op]
+  [InterpConsts V]
+  [PCM T] [pcm : LawfulPCM T]
+  [DecidableEq χ]
+  [DecidableLE T]
+  {opSpec : SimpleOpSpec Op T}
+  {ioSpec : SimpleIOSpec T}
+  {fn : Fn Op χ V m n}
+  {fn' : FnWithSpec (opSpec.toOpSpec V) (TypedName χ) m n}
+  {s₁ s₁' : Config Op χ V m n}
+  {s₂ : Config (WithSpec Op (opSpec.toOpSpec V)) (TypedName χ) (V ⊕ T) (m + 1) (n + 1)}
+  {l : Label Op V m n}
+  {cond left right}
+  (hsim : SimRel ioSpec s₁ s₂)
+  (hret : s₁.cont = .expr (.br cond left right))
+  (hstep : fn.semantics.lts.Step s₁ l s₁') :
+    ∃ s₂',
+      ((fn'.semantics.guard Config.DisjointTokens).interpLabel
+        (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.WeakStep
+        .τ s₂ l s₂' ∧
+      SimRel ioSpec s₁' s₂'
+  := by
+  have ⟨hwt_fn, hdisj, _, hcont⟩ := hsim
+  cases hstep with
+  | step_init hexpr | step_tail hexpr
+  | step_ret hexpr | step_op hexpr => simp [hret] at hexpr
+  | step_br hexpr hget_cond hcond_bool =>
+  have ⟨ctx, expr₂, hcont₂, hwt, hvars⟩ := hcont _ hexpr
+  cases hwt with | wpt_br hwt₁ hwt₂ =>
+  have hstep₂ :
+    ((fn'.semantics.guard _).interpLabel
+      (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.Step
+      s₂ .τ _ :=
+    guard_interp_label_single
+      (.step_br
+        hcont₂
+        (by
+          simp [hvars]
+          apply var_map_disjoint_union_get_var_left hget_cond)
+        hcond_bool)
+      hdisj
+      (by
+        -- TODO: remove a variable
+        simp
+        sorry)
+      SpecLabelInterp.spec_tau
+  exact ⟨_, .single hstep₂,
+    by
+      and_intros
+      · simp [hwt_fn.1]
+      · simp [hwt_fn.2]
+      · simp
+        sorry
+      · simp
+      · simp
+        exists ctx
+        constructor
+        · split
+          · exact hwt₁
+          · exact hwt₂
+        · sorry
+  ⟩
+
 /--
 Type soundness theorem formulated as a simulation:
 if the untyped `Fn` can execute without error, then
@@ -944,7 +1111,8 @@ theorem sim_type_check
     | expr expr =>
       cases h₂ : expr <;> simp [h₂] at h₁
       case ret => exact sim_type_check_ret hsim h₁ hstep
+      case tail => exact sim_type_check_tail hsim h₁ hstep
       case op => exact sim_type_check_op hsim h₁ hstep
-      all_goals sorry
+      case br => exact sim_type_check_br hsim h₁ hstep
 
 end Wavelet.Seq
