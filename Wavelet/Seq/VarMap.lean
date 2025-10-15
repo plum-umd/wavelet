@@ -33,6 +33,15 @@ def VarMap.removeVar [DecidableEq χ] (v : χ) (m : VarMap χ V) : VarMap χ V :
 def VarMap.removeVars [DecidableEq χ] (vars : List χ) (m : VarMap χ V) : VarMap χ V :=
   λ v => if v ∈ vars then none else m v
 
+/-- Note: this requires the values to be of the same type. -/
+def VarMap.disjointUnion
+  {V₁ V₂ : Type u}
+  (m₁ : VarMap χ₁ V₁)
+  (m₂ : VarMap χ₂ V₂) : VarMap (χ₁ ⊕ χ₂) (V₁ ⊕ V₂) :=
+  λ v => match v with
+  | .inl v₁ => .inl <$> m₁ v₁
+  | .inr v₂ => .inr <$> m₂ v₂
+
 /-! Some lemmas about `VarMap`s. -/
 section Lemmas
 

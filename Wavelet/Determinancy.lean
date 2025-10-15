@@ -212,14 +212,18 @@ namespace Wavelet.Seq
 
 open Semantics Compile
 
-def Config.DisjointTokens
-  [Arity Op] [PCM T]
-  (c : Config Op χ (V ⊕ T) m n) : Prop :=
+def VarMap.DisjointTokens
+  [PCM T]
+  (vars : VarMap χ (V ⊕ T)) : Prop :=
   ∀ x₁ x₂ t₁ t₂,
     x₁ ≠ x₂ →
-    c.vars.getVar x₁ = some (.inr t₁) →
-    c.vars.getVar x₂ = some (.inr t₂) →
+    vars.getVar x₁ = some (.inr t₁) →
+    vars.getVar x₂ = some (.inr t₂) →
     t₁ ⊥ t₂
+
+def Config.DisjointTokens
+  [Arity Op] [PCM T]
+  (c : Config Op χ (V ⊕ T) m n) : Prop := c.vars.DisjointTokens
 
 abbrev ExprWithSpec
   [Arity Op] [PCM T]
@@ -399,10 +403,8 @@ def SimpleIOSpec.toIOSpec
     post _ := spec.post,
   }
 
-inductive TypedName χ where
-  | var (x : χ)
-  | tok (i : Nat)
-  deriving DecidableEq
+/-- `.inl` for base vars, `.inr` for token variables. -/
+abbrev TypedName χ := χ ⊕ Nat
 
 /-- Tries to find a set of `ts : Fin numToks`
 such that `req ≤ sum of (ts.map ctx)`. -/
@@ -425,37 +427,37 @@ noncomputable def typeCheckInternal
   | .ret args => do
     let toks ← tryAcquire ctx numToks ioSpec.post
     return .op (.join toks.length)
-      (toks.toVector.map .tok)
-      #v[.tok numToks, .tok (numToks + 1)]
-      (.ret ((args.map .var).push (.tok numToks)))
+      (toks.toVector.map .inr)
+      #v[.inr numToks, .inr (numToks + 1)]
+      (.ret ((args.map .inl).push (.inr numToks)))
   | .tail args => do
     let toks ← tryAcquire ctx numToks ioSpec.pre
     return .op (.join toks.length)
-      (toks.toVector.map .tok)
-      #v[.tok numToks, .tok (numToks + 1)]
-      (.tail ((args.map .var).push (.tok numToks)))
+      (toks.toVector.map .inr)
+      #v[.inr numToks, .inr (numToks + 1)]
+      (.tail ((args.map .inl).push (.inr numToks)))
   | .op o args bind cont => do
     let toks ← tryAcquire ctx numToks (opSpec.pre o)
-    let tok₁ := .tok numToks
-    let tok₂ := .tok (numToks + 1)
-    let tok₃ := .tok (numToks + 2)
+    let tok₁ := .inr numToks
+    let tok₂ := .inr (numToks + 1)
+    let tok₃ := .inr (numToks + 2)
     let newCtx₁ := λ i => if i ∈ toks then none else ctx i
     let newCtx₂ := Function.update newCtx₁ numToks (some (opSpec.pre o))
     let sumToks ← toks.foldlM (λ acc i => return acc ⊔ (← ctx i)) PCM.zero
     if h : opSpec.pre o ≤ sumToks then
       let newCtx₃ := Function.update newCtx₂ (numToks + 1) (some (PCM.sub sumToks (opSpec.pre o) h))
       let newCtx₄ := Function.update newCtx₃ (numToks + 2) (some (opSpec.post o))
-      return .op (.join toks.length) (toks.toVector.map .tok) #v[tok₁, tok₂]
+      return .op (.join toks.length) (toks.toVector.map .inr) #v[tok₁, tok₂]
         (.op (.op o)
-          ((args.map .var).push tok₁)
-          ((bind.map .var).push tok₃)
+          ((args.map .inl).push tok₁)
+          ((bind.map .inl).push tok₃)
           (← typeCheckInternal opSpec ioSpec newCtx₄ (numToks + 3) cont))
     else
       none
   | .br cond left right => do
     let left' ← typeCheckInternal opSpec ioSpec ctx numToks left
     let right' ← typeCheckInternal opSpec ioSpec ctx numToks right
-    return .br (.var cond) left' right'
+    return .br (.inl cond) left' right'
 
 /-- Type check a function against the given specs,
 and insert split/join to concretize the flow of permissions. -/
@@ -467,59 +469,50 @@ noncomputable def typeCheck
   (fn : Fn Op χ V m n) :
   Option (FnWithSpec (opSpec.toOpSpec V) (TypedName χ) m n)
   := return {
-    params := (fn.params.map TypedName.var).push (TypedName.tok 0),
+    params := (fn.params.map .inl).push (.inr 0),
     body := ← typeCheckInternal opSpec ioSpec
       (Function.update (Function.const _ none) 0 (some ioSpec.pre)) 1 fn.body,
   }
 
 /-- Map from ghost variable names to their concrete permission. -/
 structure PermCtx T where
-  map : Nat → Option T
+  perms : VarMap Nat T
   numVars : Nat
-
-/-- Defines when a (disjoint) list of variable indices
-has a total permission equal to the sum of `req` and `rem`. -/
-def PermCtx.Acquire
-  [PCM T]
-  (ctx : PermCtx T) (req : T) (rem : T)
-  (idxs : List Nat) : Prop :=
-  idxs.Nodup ∧
-  ∃ ts : List T,
-    idxs.mapM ctx.map = some ts ∧
-    req ⊔ rem ≤ PCM.sum ts
-
-def PermCtx.getVar
-  [PCM T] (ctx : PermCtx T) (idx : Nat) : Option T := ctx.map idx
 
 /-- Insert `n` new permission tokens and return the fresh indices -/
 def PermCtx.insertVars
   [PCM T]
   (ctx : PermCtx T) (tys : Vector T n) :
   Vector Nat n × PermCtx T :=
-  let newIdxs := (Vector.range n).map (· + ctx.numVars)
-  (
-    newIdxs,
-    {
-      map idx :=
-        if _ : ctx.numVars ≤ idx ∧ idx < ctx.numVars + n then
-          some (tys[idx - ctx.numVars]'(by omega))
-        else ctx.map idx,
-      numVars := ctx.numVars + n
-    }
-  )
+  let newIdxs := Vector.range' ctx.numVars n
+  (newIdxs, {
+    perms := ctx.perms.insertVars newIdxs tys,
+    numVars := ctx.numVars + n
+  })
 
 def PermCtx.removeVars
   [PCM T]
   (ctx : PermCtx T) (idxs : List Nat) : PermCtx T :=
-  { ctx with map := λ i => if i ∈ idxs then none else ctx.map i }
+  { ctx with perms := ctx.perms.removeVars idxs }
 
 /-- Initial context with a single permission variable. -/
 def PermCtx.init
-  [PCM T] (init : T) : PermCtx T :=
-  {
-    map idx := if idx = 0 then some init else none,
+  [PCM T] (init : T) : PermCtx T := {
+    perms idx := if idx = 0 then some init else none,
     numVars := 1
   }
+
+/-- Defines when a (disjoint) list of variable indices
+has a total permission equal to the sum of `req` and `rem`. -/
+def PermCtx.Acquire
+  [PCM T]
+  (ctx : PermCtx T)
+  (req rem : T)
+  (tokIds : Vector Nat k)
+  (toks : Vector T k) : Prop :=
+  tokIds.toList.Nodup ∧
+  ctx.perms.getVars tokIds = some toks ∧
+  req ⊔ rem ≤ PCM.sum toks.toList
 
 /-- Relational definition for a function to be well-typed
 as a more elaborated `FnWithSpec` with explicit permissions. -/
@@ -529,43 +522,42 @@ inductive Expr.WellPermTyped
   (ioSpec : SimpleIOSpec T) :
   PermCtx T → Expr Op χ m n →
   ExprWithSpec (opSpec.toOpSpec V) (TypedName χ) m n → Prop where
-  | wpt_ret :
-    ctx.Acquire ioSpec.post rem toks →
+  | wpt_ret
+    (k : Nat) {tokIds : Vector Nat k} {toks : Vector T k} :
+    ctx.Acquire ioSpec.post rem tokIds toks →
     ctx.insertVars #v[ioSpec.post, rem] = (joined, ctx') →
-    toks' = toks.map .tok →
-    vars' = (vars.map .var).push (.tok joined[0]) →
     WellPermTyped ioSpec ctx
       (.ret vars)
-      (.op (.join toks'.length) toks'.toVector (joined.map .tok)
-        (.ret vars'))
-  | wpt_tail :
+      (.op (.join k) (tokIds.map .inr) (joined.map .inr)
+        (.ret ((vars.map .inl).push (.inr joined[0]))))
+  | wpt_tail
+    (k : Nat) {tokIds : Vector Nat k} {toks : Vector T k} :
     -- The returned permission should exactly match since the token is non-dependent
-    ctx.Acquire ioSpec.pre rem toks →
+    ctx.Acquire ioSpec.pre rem tokIds toks →
     ctx.insertVars #v[ioSpec.pre, rem] = (joined, ctx') →
-    toks' = toks.map .tok →
-    args' = (args.map .var).push (.tok joined[0]) →
     WellPermTyped ioSpec ctx
       (.tail args)
-      (.op (.join toks'.length) toks'.toVector (joined.map .tok)
-        (.tail args'))
-  | wpt_op {bind} :
-    ctx.Acquire (opSpec.pre o) rem toks →
-    ctx.removeVars toks = ctx' →
+      (.op (.join k) (tokIds.map .inr) (joined.map .inr)
+        (.tail ((args.map .inl).push (.inr joined[0]))))
+  | wpt_op
+    {bind}
+    (k : Nat) {tokIds : Vector Nat k} {toks : Vector T k} :
+    ctx.Acquire (opSpec.pre o) rem tokIds toks →
+    ctx.removeVars tokIds.toList = ctx' →
     ctx'.insertVars #v[opSpec.pre o, rem, opSpec.post o] = (joined, ctx'') →
     WellPermTyped ioSpec ctx'' cont cont' →
-    toks' = toks.map .tok →
     WellPermTyped ioSpec ctx
       (.op o args bind cont)
-      (.op (.join toks'.length) -- First call join to collect required permissions
-        toks'.toVector
-        #v[.tok joined[0], .tok joined[1]]
+      (.op (.join k) -- First call join to collect required permissions
+        (tokIds.map .inr)
+        #v[.inr joined[0], .inr joined[1]]
         (.op (.op o) -- Then call the actual operator
-        ((args.map .var).push (.tok joined[0]))
-        ((bind.map .var).push (.tok joined[2])) cont'))
+        ((args.map .inl).push (.inr joined[0]))
+        ((bind.map .inl).push (.inr joined[2])) cont'))
   | wpt_br :
     WellPermTyped ioSpec ctx left left' →
     WellPermTyped ioSpec ctx right right' →
-    WellPermTyped ioSpec ctx (.br cond left right) (.br (.var cond) left' right')
+    WellPermTyped ioSpec ctx (.br cond left right) (.br (.inl cond) left' right')
 
 def Fn.WellPermTyped
   [Arity Op] [PCM T]
@@ -574,19 +566,8 @@ def Fn.WellPermTyped
   (fn : Fn Op χ V m n)
   (fn' : FnWithSpec (opSpec.toOpSpec V) (TypedName χ) m n) :
   Prop :=
-  fn'.params = (fn.params.map .var).push (.tok 0) ∧
+  fn'.params = (fn.params.map .inl).push (.inr 0) ∧
   Expr.WellPermTyped ioSpec (.init (ioSpec.pre)) fn.body fn'.body
-
-def SimRel.ghostVars
-  {χ : Type u} {V : Type v} {T : Type w}
-  [PCM T]
-  (vars : VarMap χ V)
-  (ctx : PermCtx T) :
-  VarMap (TypedName χ) (V ⊕ T) :=
-  λ var =>
-    match var with
-    | .var v => return .inl (← ULiftable.up (vars.getVar v)).down
-    | .tok i => return .inr (← ULiftable.up (ctx.getVar i)).down
 
 def SimRel
   [Arity Op] [PCM T]
@@ -603,7 +584,50 @@ def SimRel
     ∃ ctx expr₂,
       s₂.cont = .expr expr₂ ∧
       Expr.WellPermTyped ioSpec ctx expr expr₂ ∧
-      s₂.vars = SimRel.ghostVars s₁.vars ctx)
+      s₂.vars = VarMap.disjointUnion s₁.vars ctx.perms)
+
+/-! Lemmas. TODO: move to somewhere else -/
+section Lemmas
+
+theorem var_map_disjoint_union_get_vars_left
+  {m₁ : VarMap χ₁ V₁}
+  {m₂ : VarMap χ₂ V₂}
+  (hget : m₁.getVars vars = some vals) :
+  (VarMap.disjointUnion m₁ m₂).getVars (vars.map .inl) = some (vals.map .inl)
+  := sorry
+
+theorem var_map_disjoint_union_get_vars_right
+  {m₁ : VarMap χ₁ V₁}
+  {m₂ : VarMap χ₂ V₂}
+  (hget : m₂.getVars vars = some vals) :
+  (VarMap.disjointUnion m₁ m₂).getVars (vars.map .inr) = some (vals.map .inr)
+  := sorry
+
+theorem var_map_init_disjoint_tokens
+  [DecidableEq χ] [PCM T]
+  {vars : Vector χ (n + 1)}
+  {args : Vector V n}
+  {tok : T} :
+  (VarMap.fromList (vars.zip ((args.map .inl).push (.inr tok))).toList).DisjointTokens
+:= sorry
+
+/-- Introduces a `InterpLabelStep ∘ Guard` step from a single step in the base LTS. -/
+theorem guard_interp_label_single
+  {S : Type u}
+  {lts : Lts S E}
+  {Inv : S → Prop}
+  {Interp : E → E' → Prop}
+  {s s' : S}
+  (hstep : lts.Step s e s')
+  (hinv₁ : Inv s)
+  (hinv₂ : Inv s')
+  (hinterp : Interp e e') :
+  (lts.Guard Inv).InterpLabelStep Interp s e' s'
+:= by
+  apply Lts.InterpLabelStep.step hinterp
+  apply Lts.Guard.step hinv₁ hinv₂ hstep
+
+end Lemmas
 
 theorem sim_type_check_init
   [Arity Op]
@@ -626,9 +650,20 @@ theorem sim_type_check_init
   and_intros
   · simp [hwt]
   · simp [hwt]
-  · simp [Config.DisjointTokens, VarMap.getVar, VarMap.empty]
+  · simp [Config.DisjointTokens, VarMap.DisjointTokens, VarMap.getVar, VarMap.empty]
   · simp
   · simp
+
+theorem sim_type_check_input_vars
+  [DecidableEq χ] [PCM T]
+  {params : Vector χ n}
+  {args : Vector V n}
+  {tok : T} :
+    VarMap.fromList
+      (((params.map .inl).push (.inr 0)).zip
+        ((args.map .inl).push (.inr tok))).toList =
+    VarMap.disjointUnion (VarMap.fromList (params.zip args).toList) (PermCtx.init tok).perms
+  := sorry
 
 theorem sim_type_check_input
   [Arity Op]
@@ -660,44 +695,36 @@ theorem sim_type_check_input
   rename Vector V m => args
   have hcont₂ := hinit hcont
   simp [Fn.semantics, Semantics.guard, Semantics.interpLabel, Config.init]
-  have hstep₂ : fn'.semantics.lts.Step s₂ _ _ :=
-    .step_init
-      (args := (args.map .inl).push (.inr ioSpec.pre))
-      (c := s₂) hcont₂
-  replace hstep₂ : (fn'.semantics.guard Config.DisjointTokens).lts.Step s₂ _ _ :=
-    .step hdisj (by
-      simp [Config.DisjointTokens, VarMap.getVar]
-      -- TODO: should be easy, only added one token
-      sorry) hstep₂
-  replace hstep₂ :
-    ((fn'.semantics.guard Config.DisjointTokens).interpLabel
+  have hstep₂ :
+    ((fn'.semantics.guard _).interpLabel
       (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.Step
       s₂ (.input args) _ :=
-    .step (by
-      apply SpecLabelInterp.spec_input (tok := ioSpec.pre)
-      · simp
-      · simp
-      · simp [SimpleIOSpec.toIOSpec]
-        apply pcm.eq_refl) hstep₂
+    guard_interp_label_single
+      (.step_init
+        (args := (args.map .inl).push (.inr ioSpec.pre))
+        hcont₂)
+      hdisj
+      (by exact var_map_init_disjoint_tokens)
+      (by
+        apply SpecLabelInterp.spec_input (tok := ioSpec.pre)
+        · simp
+        · simp
+        · simp [SimpleIOSpec.toIOSpec]
+          apply pcm.eq_refl)
   exact ⟨_, .single hstep₂,
     by
       and_intros
       · simp [hwt_fn.1]
       · simp [hwt_fn.2]
-      · -- TODO same as the TODO above
-        sorry
+      · exact var_map_init_disjoint_tokens
       · simp
       · simp
         exists PermCtx.init ioSpec.pre
-        sorry
+        and_intros
+        · simp [hwt_fn.2]
+        · simp [hwt_fn.1]
+          apply sim_type_check_input_vars
   ⟩
-
-theorem sim_get_vars
-  [PCM T]
-  {ctx : PermCtx T}
-  (hget : vars.getVars xs = some vs) :
-  (SimRel.ghostVars vars ctx).getVars (xs.map TypedName.var) = some (vs.map .inl)
-  := sorry
 
 theorem sim_type_check_ret
   [Arity Op]
@@ -728,9 +755,20 @@ theorem sim_type_check_ret
   | step_ret hexpr hget_vars =>
     rename_i retVals vars
     have ⟨ctx, expr₂, hcont₂, hwt, hvars⟩ := hcont _ hexpr
-    have := sim_get_vars (ctx := ctx) hget_vars
-    cases hwt with | wpt_ret hacq hins htoks' hvars' =>
-    rename_i joined ctx' rem toks toks' vars'
+    cases hwt with | wpt_ret k hacq hins =>
+    -- rename_i joined ctx' rem toks toks' vars'
+    -- -- have := sim_get_vars (ctx := ctx) hget_vars
+    -- have hstep₂ :
+    --   ((fn'.semantics.guard _).interpLabel
+    --     (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.Step
+    --     s₂ _ _ :=
+    --   guard_interp_label_single
+    --     (.step_op
+    --       hcont₂
+    --       )
+    --     sorry
+    --     sorry
+    --     sorry
     sorry
 
 /--
@@ -745,6 +783,7 @@ Need to use weak simulation here due to `join` being
 interpreted as silent steps.
 -/
 theorem sim_type_check
+  {V T : Type u} -- TODO: relax this constraint
   [Arity Op]
   [InterpConsts V]
   [PCM T] [LawfulPCM T]
