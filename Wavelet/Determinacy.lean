@@ -487,34 +487,21 @@ theorem proc_strong_confluence
         simp at h₁
       · have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj ⟨i, hi⟩ ⟨j, hj⟩ (by simp [h])
         simp [hget_i, hget_j, AtomicProc.inputs] at hdisj_inputs hdisj_outputs
-        have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
-          (by
-            exact hdisj_inputs)
-          hpop₁ hpop₂
+        have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂
         have hstep₁' : proc.semantics.lts.Step s₁'' _ _ :=
           .step_op
             (outputVals := outputVals₂)
-            (by
-              simp [← hs₁']
-              exact hmem₂)
-            (by
-              simp [← hs₁']
-              exact pop_vals_push_vals_commute hpop₁₂)
+            (by simp [← hs₁']; exact hmem₂)
+            (by simp [← hs₁']; exact pop_vals_push_vals_commute hpop₁₂)
         have hstep₂' : proc.semantics.lts.Step s₂'' _ _ :=
-          .step_op
-            (outputVals := outputVals₁)
-            (by
-              simp [← hs₂']
-              exact hmem₁)
-            (by
-              simp [← hs₂']
-              exact pop_vals_push_vals_commute hpop₂₁)
+          .step_op (outputVals := outputVals₁)
+            (by simp [← hs₂']; exact hmem₁)
+            (by simp [← hs₂']; exact pop_vals_push_vals_commute hpop₂₁)
         rw [push_vals_push_vals_disj_commute hdisj_outputs] at hstep₁'
         simp [← hs₁'] at hstep₁' ⊢
         simp [← hs₂'] at hstep₂' ⊢
         exact ⟨_, hstep₁', hstep₂'⟩
     all_goals sorry
-
 
 end Wavelet.Compile
 
