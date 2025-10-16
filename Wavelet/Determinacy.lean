@@ -181,17 +181,14 @@ inductive SpecLabelInterp [Arity Op] [PCM T]
     tok₁ ⊔ tok₂ ≡ PCM.sum toks.toList →
     SpecLabelInterp opSpec ioSpec
       (.yield (.join k) (toks.map .inr) outputs) .τ
-  | spec_input {tok vals vals'} :
-    vals'.pop = vals.map .inl →
-    vals'.back = .inr tok →
+  | spec_input {tok vals} :
     tok ≡ ioSpec.pre vals →
     SpecLabelInterp opSpec ioSpec
-      (.input vals') (.input vals)
+      (.input ((vals.map .inl).push (.inr tok))) (.input vals)
   | spec_output :
-    vals' = (vals.map .inl).push (.inr tok) →
     tok ≡ ioSpec.post vals →
     SpecLabelInterp opSpec ioSpec
-      (.output vals') (.output vals)
+      (.output ((vals.map .inl).push (.inr tok))) (.output vals)
   | spec_tau :
     SpecLabelInterp opSpec ioSpec .τ .τ
 
@@ -204,6 +201,35 @@ instance
   label_interp_input h := by cases h; simp
   label_interp_output h := by cases h; simp
   label_interp_yield h := by cases h <;> simp
+
+/--
+Same signature as `SpecLabelInterp` but does not dynamically
+check the well-formedness of the tokens.
+-/
+inductive SpecLabelInterpUnchecked [Arity Op] [PCM T]
+  {opSpec : OpSpec Op V T} :
+  Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) →
+  Label Op V m n → Prop where
+  | spec_yield
+    {op}
+    {inputs : Vector V (Arity.ι op)}
+    {outputs : Vector V (Arity.ω op)} :
+    SpecLabelInterpUnchecked
+      (.yield (.op op)
+        ((inputs.map .inl).push tok₁)
+        ((outputs.map .inl).push tok₂))
+      (.yield op inputs outputs)
+  | spec_join :
+    SpecLabelInterpUnchecked
+      (.yield (.join k) toks outputs) .τ
+  | spec_input :
+    SpecLabelInterpUnchecked
+      (.input ((vals.map .inl).push tok)) (.input vals)
+  | spec_output :
+    SpecLabelInterpUnchecked
+      (.output ((vals.map .inl).push tok)) (.output vals)
+  | spec_tau :
+    SpecLabelInterpUnchecked .τ .τ
 
 end Wavelet.Semantics
 
@@ -356,6 +382,9 @@ theorem sim_erase_ghost_forward
 /--
 TODO: this needs to assume more about how
 the operator semantics satisfies the spec.
+
+TODO: not true in general, need to assume that
+trace₁ "dominates" trace₂ in some sense.
 -/
 theorem guarded_confluence
   [Arity Op] [PCM T]
@@ -365,17 +394,118 @@ theorem guarded_confluence
   {ioSpec : IOSpec V T m n}
   {proc : ProcWithSpec opSpec χ m n}
   {trace₁ trace₂ : Trace (Label Op V m n)}
-  {sem : Semantics Op V m n}
-  {s₁ s₂ : sem.S}
-  {hguard : sem = (proc.semantics.guard Config.DisjointTokens).interpLabel (SpecLabelInterp opSpec ioSpec)}
-  (htrace₁ : sem.lts.Star sem.init trace₁ s₁)
-  (htrace₂ : sem.lts.Star sem.init trace₂ s₂) :
-  ∃ trace₁' trace₂' s₁' s₂',
-    sem.lts.Star s₁ trace₁' s₁' ∧
-    sem.lts.Star s₂ trace₂' s₂' ∧
-    trace₁ ++ trace₁' = trace₂ ++ trace₂' ∧
-    s₁' = s₂'
+  {s₁ s₂ : proc.semantics.S}
+  (haff : proc.AffineChan)
+  (htrace₁ :
+    ((proc.semantics.guard Config.DisjointTokens).interpLabel (SpecLabelInterp opSpec ioSpec)).lts.Star
+      proc.semantics.init trace₁ s₁)
+  (htrace₂ :
+    (proc.semantics.interpLabel SpecLabelInterpUnchecked).lts.Star
+      proc.semantics.init trace₂ s₂) :
+  ∃ trace₁' trace₂' s',
+    (proc.semantics.interpLabel SpecLabelInterpUnchecked).lts.Star s₁ trace₁' s' ∧
+    (proc.semantics.interpLabel SpecLabelInterpUnchecked).lts.Star s₂ trace₂' s' ∧
+    trace₁ ++ trace₁' = trace₂ ++ trace₂'
   := sorry
+
+/-- If a list of channels already have values ready to pop,
+then it can commute with any `pushVals` operation. -/
+theorem pop_vals_push_vals_commute
+  [DecidableEq χ]
+  {chans : ChanMap χ V}
+  (hpop : chans.popVals vars₂ = some (vals₂, chans')) :
+  (chans.pushVals vars₁ outputVals₁).popVals vars₂ =
+    some (vals₂, chans'.pushVals vars₁ outputVals₁)
+  := sorry
+
+theorem pop_vals_pop_vals_disj_commute
+  [DecidableEq χ]
+  {chans : ChanMap χ V}
+  (hdisj : vars₁.toList.Disjoint vars₂.toList)
+  (hpop₁ : chans.popVals vars₁ = some (vals₁, chans₁))
+  (hpop₂ : chans.popVals vars₂ = some (vals₂, chans₂)) :
+  ∃ chans',
+    chans₁.popVals vars₂ = some (vals₂, chans') ∧
+    chans₂.popVals vars₁ = some (vals₁, chans')
+  := sorry
+
+/-- Without considering the shared operator states
+a `Proc` has a strongly confluent (and thus confluence) semantics
+(when restricted to silent/yield labels). -/
+theorem proc_strong_confluence
+  [Arity Op] [DecidableEq χ]
+  [InterpConsts V]
+  {proc : Proc Op χ V m n}
+  {s s₁' s₂' : proc.semantics.S}
+  {l₁ l₂ : Label Op V m n}
+  (haff : s.proc.AffineChan)
+  (hlabel₁ : l₁.isYield ∨ l₁.isSilent)
+  (hlabel₂ : l₂.isYield ∨ l₂.isSilent)
+  -- Only consider the case when the operators are deterministic
+  (hyield_det : ∀ {op inputVals outputVals₁ outputVals₂},
+    l₁ = .yield op inputVals outputVals₁ →
+    l₂ = .yield op inputVals outputVals₂ →
+    outputVals₁ = outputVals₂)
+  (hstep₁ : proc.semantics.lts.Step s l₁ s₁')
+  (hstep₂ : proc.semantics.lts.Step s l₂ s₂')
+  : s₁' = s₂' ∨ (∃ s', proc.semantics.lts.Step s₁' l₂ s' ∧ proc.semantics.lts.Step s₂' l₁ s')
+  := by
+  have ⟨haff_nodup, haff_disj⟩ := haff
+  by_cases h₁ : s₁' = s₂'
+  · exact .inl h₁
+  · right
+    -- Keep some acronyms so that they don't get expanded
+    generalize hs₁' : s₁' = s₁''
+    generalize hs₂' : s₂' = s₂''
+    cases hstep₁ <;> cases hstep₂
+    any_goals
+      simp at hlabel₁ hlabel₂
+    case neg.h.step_op.step_op =>
+      rename_i
+        op₁ inputs₁ outputs₁ inputVals₁ outputVals₁ chans₁' hmem₁ hpop₁
+        op₂ inputs₂ outputs₂ inputVals₂ outputVals₂ chans₂' hmem₂ hpop₂
+      have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem₁
+      have ⟨j, hj, hget_j⟩ := List.getElem_of_mem hmem₂
+      by_cases h : i = j
+      · subst h
+        simp [hget_i] at hget_j
+        have ⟨h₁, h₂, h₃⟩ := hget_j
+        subst h₁; subst h₂; subst h₃
+        simp [hpop₁] at hpop₂
+        have ⟨h₄, h₅⟩ := hpop₂
+        subst h₄; subst h₅
+        have := hyield_det (by rfl) (by rfl)
+        subst this
+        simp at h₁
+      · have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj ⟨i, hi⟩ ⟨j, hj⟩ (by simp [h])
+        simp at hdisj_inputs hdisj_outputs
+        have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
+          (by
+            simp [hget_i, hget_j, AtomicProc.inputs] at hdisj_inputs
+            exact hdisj_inputs)
+          hpop₁ hpop₂
+        have hstep₁' : proc.semantics.lts.Step s₁'' _ _ :=
+          .step_op
+            (outputVals := outputVals₂)
+            (by
+              simp [← hs₁']
+              exact hmem₂)
+            (by
+              simp [← hs₁']
+              exact pop_vals_push_vals_commute hpop₁₂)
+        have hstep₂' : proc.semantics.lts.Step s₂'' _ _ :=
+          .step_op
+            (outputVals := outputVals₁)
+            (by
+              simp [← hs₂']
+              exact hmem₁)
+            (by
+              simp [← hs₂']
+              exact pop_vals_push_vals_commute hpop₂₁)
+        sorry
+    stop
+    all_goals sorry
+
 
 end Wavelet.Compile
 
@@ -721,10 +851,8 @@ theorem sim_type_check_input
       (by exact var_map_init_disjoint_tokens)
       (by
         apply SpecLabelInterp.spec_input (tok := ioSpec.pre)
-        · simp
-        · simp
-        · simp [SimpleIOSpec.toIOSpec]
-          apply pcm.eq_refl)
+        simp [SimpleIOSpec.toIOSpec]
+        apply pcm.eq_refl)
   exact ⟨_, .single hstep₂,
     by
       and_intros
@@ -813,8 +941,7 @@ theorem sim_type_check_ret
         simp [VarMap.empty, VarMap.getVar, VarMap.DisjointTokens])
       (by
         apply SpecLabelInterp.spec_output
-        · rfl
-        · apply pcm.eq_refl))
+        apply pcm.eq_refl))
   simp at hsteps₂
   exact ⟨_, hsteps₂,
     by
