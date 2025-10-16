@@ -9,58 +9,29 @@ namespace Wavelet.Dataflow
 
 open Semantics
 
-/-- Built-in asynchronous operators. -/
-inductive AsyncOp Op V [Arity Op] where
-  | switch (n : Nat)
-  | steer (n : Nat)
-  | carry (inLoop : Bool) (n : Nat)
-  | merge (n : Nat)
-  | forward (n : Nat)
-  | fork (n : Nat)
-  | const (c : V) (n : Nat)
-  | forwardc (n m : Nat) (consts : Vector V m)
-  | sink (n : Nat)
-
-/-- Input arity of asynchronous operators. -/
-def AsyncOp.ι [Arity Op] : AsyncOp Op V → Nat
-  | .switch n => n + 1
-  | .steer n => n + 1
-  | .carry _ n => n + 1
-  | .merge n => n + 1
-  | .forward n => n
-  | .fork _ => 1
-  | .const _ n => n
-  | .forwardc n _ _ => n
-  | .sink n => n
-
-/-- Output arity of asynchronous operators. -/
-def AsyncOp.ω [Arity Op] : AsyncOp Op V → Nat
-  | .switch n => n + n
-  | .steer n => n
-  | .carry _ n => n
-  | .merge n => n
-  | .forward n => n
-  | .fork n => n
-  | .const _ n => n
-  | .forwardc n m _ => n + m
-  | .sink _ => 0
-
--- /-- Returns the number of inputs to pop in the current state. -/
--- def AyncOp.numActiveInputs [Arity Op] : AsyncOp Op V → Nat
---   | .switch n => n + 1
---   | .steer n => n + 1
---   | .carry false n => n
---   | .carry true n => n + 1
-
 inductive CarryState where
   | popLeft
   | popRight
   | decider
 
+/-- Built-in asynchronous operators: `AsyncOp ... m n`
+is an asynchronous operator with a total of `m` inputs
+ports and `n` outputs ports. -/
+inductive AsyncOp V : Nat → Nat → Type u where
+  | switch (n : Nat) : AsyncOp V (n + 1) (n + n)
+  | steer (n : Nat) : AsyncOp V (n + 1) n
+  | carry (state : CarryState) (n : Nat) : AsyncOp V (n + n + 1) n
+  | merge (n : Nat) : AsyncOp V (n + n + 1) n
+  | forward (n : Nat) : AsyncOp V n n
+  | fork (n : Nat) : AsyncOp V 1 n
+  | const (c : V) (n : Nat) : AsyncOp V 0 n
+  | forwardc (n m : Nat) (consts : Vector V m) : AsyncOp V n (n + m)
+  | sink (n : Nat) : AsyncOp V n 0
+
 /-- Dataflow operators. -/
 inductive AtomicProc (Op χ V : Type*) [Arity Op] where
   | op (op : Op) (inputs : Vector χ (Arity.ι op)) (outputs : Vector χ (Arity.ω op))
-  -- | async (aop : AsyncOp Op V) (inputs : Vector χ (AsyncOp.ι aop)) (outputs : Vector χ (AsyncOp.ω aop))
+  | async (aop : AsyncOp V m n) (inputs : Vector χ m) (outputs : Vector χ n)
   | switch (decider : χ) (inputs : Vector χ n) (outputs₁ : Vector χ n) (outputs₂ : Vector χ n)
   | steer (flavor : Bool) (decider : χ) (inputs : Vector χ n) (outputs : Vector χ n)
   | carry (state : CarryState)
@@ -105,6 +76,27 @@ def Config.init
   (proc : Proc Op χ V m n) : Config Op χ V m n
   := { proc, chans := .empty }
 
+/-- Defines the semantics of each async operator -/
+inductive AsyncOp.Interp
+  [InterpConsts V] :
+  (aop : AsyncOp V m n) →
+  (aop' : AsyncOp V m n) → -- Next operator to transition to
+  Vector χ m → -- All inputs
+  Vector χ n → -- All outputs
+  (m' : Nat) × Vector χ m' × Vector V m' → -- A subset of inputs to read from
+  (n' : Nat) × Vector χ n' × Vector V n' → -- A subset of outputs to write to
+  Prop where
+  | interp_switch
+    {inputs : Vector χ k}
+    {inputVals : Vector V k}
+    {outputs₁ outputs₂ : Vector χ k} :
+    InterpConsts.toBool deciderVal = some deciderBool →
+    Interp (.switch k) (.switch k)
+      (inputs.push decider)
+      (outputs₁ ++ outputs₂)
+      ⟨k + 1, inputs.push decider, inputVals.push deciderVal⟩
+      ⟨k, if deciderBool then outputs₁ else outputs₂, inputVals⟩
+
 inductive Config.Step
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
@@ -125,6 +117,18 @@ inductive Config.Step
     .op op inputs outputs ∈ c.proc.atoms →
     c.chans.popVals inputs = some (inputVals, chans') →
     Step c (.yield op inputVals outputVals) { c with
+      chans := chans'.pushVals outputs outputVals,
+    }
+  | step_async
+    {k₁} {inputs : Vector χ k₁} {inputVals : Vector V k₁}
+    {k₂} {outputs : Vector χ k₂} {outputVals : Vector V k₂} :
+    c.proc.atoms = ctxLeft ++ [.async aop allInputs allOutputs] ++ ctxRight →
+    aop.Interp aop' allInputs allOutputs ⟨k₁, inputs, inputVals⟩ ⟨k₂, outputs, outputVals⟩ →
+    c.chans.popVals inputs = some (inputVals, chans') →
+    Step c .τ { c with
+      proc := { c.proc with
+        atoms := ctxLeft ++ [.async aop' allInputs allOutputs] ++ ctxRight,
+      },
       chans := chans'.pushVals outputs outputVals,
     }
   | step_switch

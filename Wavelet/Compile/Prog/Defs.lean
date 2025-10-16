@@ -28,6 +28,8 @@ def linkAtomicProc
     [ .forward (inputs.map .main) ((procs op.toFin).inputs.map (LinkName.dep op.toFin)) ] ++
     (procs op.toFin).atoms.mapChans (LinkName.dep op.toFin) ++
     [ .forward ((procs op.toFin).outputs.map (LinkName.dep op.toFin)) (outputs.map .main) ]
+  | .async aop inputs outputs =>
+    [.async aop (inputs.map .main) (outputs.map .main)]
   | .switch decider inputs outputs₁ outputs₂ =>
     [.switch (.main decider) (inputs.map .main) (outputs₁.map .main) (outputs₂.map .main)]
   | .steer flavor decider inputs outputs =>
