@@ -429,6 +429,14 @@ theorem pop_vals_pop_vals_disj_commute
     chans₂.popVals vars₁ = some (vals₁, chans')
   := sorry
 
+theorem push_vals_push_vals_disj_commute
+  [DecidableEq χ]
+  {chans : ChanMap χ V}
+  (hdisj : vars₁.toList.Disjoint vars₂.toList) :
+  (chans.pushVals vars₁ vals₁).pushVals vars₂ vals₂
+    = (chans.pushVals vars₂ vals₂).pushVals vars₁ vals₁
+  := sorry
+
 /-- Without considering the shared operator states
 a `Proc` has a strongly confluent (and thus confluence) semantics
 (when restricted to silent/yield labels). -/
@@ -478,10 +486,9 @@ theorem proc_strong_confluence
         subst this
         simp at h₁
       · have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj ⟨i, hi⟩ ⟨j, hj⟩ (by simp [h])
-        simp at hdisj_inputs hdisj_outputs
+        simp [hget_i, hget_j, AtomicProc.inputs] at hdisj_inputs hdisj_outputs
         have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
           (by
-            simp [hget_i, hget_j, AtomicProc.inputs] at hdisj_inputs
             exact hdisj_inputs)
           hpop₁ hpop₂
         have hstep₁' : proc.semantics.lts.Step s₁'' _ _ :=
@@ -502,8 +509,10 @@ theorem proc_strong_confluence
             (by
               simp [← hs₂']
               exact pop_vals_push_vals_commute hpop₂₁)
-        sorry
-    stop
+        rw [push_vals_push_vals_disj_commute hdisj_outputs] at hstep₁'
+        simp [← hs₁'] at hstep₁' ⊢
+        simp [← hs₂'] at hstep₂' ⊢
+        exact ⟨_, hstep₁', hstep₂'⟩
     all_goals sorry
 
 
