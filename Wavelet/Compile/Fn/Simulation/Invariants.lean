@@ -85,17 +85,19 @@ def HasCompiledProcs
   (pc : Dataflow.Config Op (ChanName χ) V m n)
   (gs : GhostState χ) : Prop :=
   ∃ (rest : AtomicProcs Op (ChanName χ) V)
-    (carryInLoop : Bool)
+    (carryState : CarryState)
     (ctxLeft ctxCurrent ctxRight : AtomicProcs Op (ChanName χ) V),
-    pc.proc.atoms = compileFn.initCarry ec.fn carryInLoop :: rest ∧
-    (compileFn hnz ec.fn).atoms = compileFn.initCarry ec.fn false :: rest ∧
+    pc.proc.atoms = compileFn.initCarry ec.fn carryState :: rest ∧
+    (compileFn hnz ec.fn).atoms = compileFn.initCarry ec.fn .popLeft :: rest ∧
     rest = ctxLeft ++ ctxCurrent ++ ctxRight ∧
-    (ec.cont = .init → ¬ carryInLoop ∧
+    (ec.cont = .init →
+      carryState = .popLeft ∧
       ctxCurrent = [] ∧
       ctxRight = [] ∧
       gs.definedVars = [] ∧
       gs.pathConds = []) ∧
-    (∀ expr, ec.cont = .expr expr → carryInLoop ∧
+    (∀ expr, ec.cont = .expr expr →
+      carryState = .decider ∧
       expr.AffineVar gs.definedVars ∧
       compileExpr hnz gs.definedVars gs.pathConds expr = ctxCurrent)
 

@@ -167,12 +167,12 @@ private theorem sim_step_ret_exec_dataflow
   (hsim : SimRel hnz gs ec pc)
   (hstep : Config.Step ec l ec')
   (hexpr : ec.cont = .expr (.ret vars))
-  (hpc_atoms : pc.proc.atoms = compileFn.initCarry ec.fn true :: rest) :
+  (hpc_atoms : pc.proc.atoms = compileFn.initCarry ec.fn .decider :: rest) :
   Dataflow.Config.Step.IORestrictedStep pc l {
     proc := {
       inputs := pc.proc.inputs,
       outputs := pc.proc.outputs,
-      atoms := compileFn.initCarry ec.fn false :: rest
+      atoms := compileFn.initCarry ec.fn .popLeft :: rest
     },
     chans := varsToChans .empty ec',
   }
@@ -343,7 +343,7 @@ private theorem sim_step_ret_exec_dataflow
   simp only [compileFn.initCarry, hcarryInLoop] at hmem_carry
   have hsteps₆ : Dataflow.Config.Step.IORestrictedStep pc _ _
     := .tail_tau (by simp) hsteps₅
-      (Dataflow.Config.Step.step_carry_false
+      (Dataflow.Config.Step.step_carry_decider
         hmem_carry
         hpop_tail_cond_steer_tail_args
         (InterpConsts.unique_fromBool_toBool _))

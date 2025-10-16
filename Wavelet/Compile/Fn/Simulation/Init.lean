@@ -115,7 +115,7 @@ theorem sim_step_init
   subst this
   have hmem_carry :
     pc₁.proc.atoms =
-      [] ++ [compileFn.initCarry ec.fn false]
+      [] ++ [compileFn.initCarry ec.fn .popLeft]
       ++ (compileFn.bodyComp hnz ec.fn ++ compileFn.resultSteers m n)
   := by
     simp only [hpc₁, hatoms, hcarryInLoop, ← hcomp_fn]
@@ -124,7 +124,7 @@ theorem sim_step_init
   have hsteps₂ :
     Dataflow.Config.Step.IORestrictedStep pc _ _
   := .tail_tau (by simp) hsteps₁
-    (Dataflow.Config.Step.step_carry_init
+    (Dataflow.Config.Step.step_carry_left
       hmem_carry
       hpop_args)
   rw [push_vals_empty] at hsteps₂

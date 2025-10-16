@@ -350,9 +350,21 @@ private theorem sim_step_tail_exec_dataflow
     (val := InterpConsts.fromBool true)
     (by simp [hpc₃, hchans₅, hchans₄, hpc₂, hchans₃, hchans₂, hpc₁,
       List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go])
+  have hmem_carry :
+    pc₃.proc.atoms = [] ++ [compileFn.initCarry ec.fn carryInLoop] ++ rest
+  := by simp [hpc₃, hpc₂, hpc₁, hatoms]
+  simp only [compileFn.initCarry, hcarryInLoop] at hmem_carry
+  have hsteps₆ : Dataflow.Config.Step.WeakStep .τ pc _ _
+    := .tail_tau hsteps₅
+      (Dataflow.Config.Step.step_carry_decider
+        hmem_carry
+        hpop_tail_cond_steer_tail_args
+        (InterpConsts.unique_fromBool_toBool _))
+  replace ⟨pc₄, hpc₄, hsteps₆⟩ := exists_eq_left.mpr hsteps₆
+  -- Step 6: Final step at the carry
   have ⟨chans₇, tailArgs', hpop_final_tail_args, hchans₇, hfinal_tail_args⟩ :=
     pop_vals_singleton _ _
-    (map := chans₆)
+    (map := pc₄.chans)
     (names := (Vector.range m).map .final_tail_arg)
     (λ name val =>
       match name with
@@ -365,7 +377,7 @@ private theorem sim_step_tail_exec_dataflow
     (by
       simp
       intros i hi
-      simp [hchans₆, hpc₃]
+      simp [hpc₄, hchans₆, hpc₃]
       split <;> rename_i h₁
       · simp at h₁
         simp
@@ -390,18 +402,15 @@ private theorem sim_step_tail_exec_dataflow
       simp [hc, hb]
   subst this
   have hmem_carry :
-    pc₃.proc.atoms = [] ++ [compileFn.initCarry ec.fn carryInLoop] ++ rest
-  := by simp [hpc₃, hpc₂, hpc₁, hatoms]
-  simp only [compileFn.initCarry, hcarryInLoop] at hmem_carry
-  have hsteps₆ : Dataflow.Config.Step.WeakStep .τ pc _ _
-    := .tail_tau hsteps₅
-      (Dataflow.Config.Step.step_carry_true
+    pc₄.proc.atoms = [] ++ [compileFn.initCarry ec.fn .popRight] ++ rest
+  := by simp [hpc₄, hpc₃, hpc₂, hpc₁, compileFn.initCarry]
+  have hsteps₇ : Dataflow.Config.Step.WeakStep .τ pc _ _
+    := .tail_tau hsteps₆
+      (Dataflow.Config.Step.step_carry_right
         hmem_carry
-        hpop_tail_cond_steer_tail_args
-        (InterpConsts.unique_fromBool_toBool _)
         hpop_final_tail_args)
   -- Simplify pushes
-  rw [push_vals_empty] at hsteps₆
+  rw [push_vals_empty] at hsteps₇
   rotate_left
   · simp [Vector.toList_map]
     apply List.Nodup.map _ hsim.wf_fn.1
@@ -409,61 +418,64 @@ private theorem sim_step_tail_exec_dataflow
   · intros name hname
     simp at hname
     have ⟨var, hmem_var, hname⟩ := hname
-    simp [← hname, hchans₇, hchans₆, hpc₃, hchans₅, hchans₄, hpc₂,
+    simp [← hname, hpc₄, hchans₇, hchans₆, hpc₃, hchans₅, hchans₄, hpc₂,
       hchans₃, hchans₂, hpc₁,
       List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go,
       hchans₁, intermChans]
-  simp at hsteps₆
-  replace ⟨pc', hpc', hsteps₆⟩ := exists_eq_left.mpr hsteps₆
-  apply hsteps₆.eq_rhs
-  simp [hpc', hpc₃, hpc₂, hpc₁,
+  simp at hsteps₇
+  replace ⟨pc', hpc', hsteps₇⟩ := exists_eq_left.mpr hsteps₇
+  apply hsteps₇.eq_rhs
+  simp [hpc', hpc₄, hpc₃, hpc₂, hpc₁,
     hchans₇, hchans₆, hchans₅, hchans₄, hchans₃, hchans₂, hchans₁,
     List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go, intermChans]
   -- Prove that the final channel maps match
-  funext name
-  simp [varsToChans]
-  cases name with
-  | var v pathConds =>
-    simp
-    if h₁ : pathConds = [] then
-      simp [h₁]
-      split <;> rename_i h₂
-      · rename_i i
-        simp at h₂
-        simp [Vector.get] at h₂
-        simp [← h₂.1]
-        simp [var_map_fromList_get_vars_index hsim.wf_fn.1]
-      · have := Option.eq_none_iff_forall_ne_some.mpr h₂
-        simp at this
-        simp
-        split <;> rename_i h₃
-        · have h₄ := var_map_fromList_get_vars.mpr ⟨_, h₃⟩
-          exact False.elim (this h₄)
-        · rfl
-    else
-      simp [h₁]
-  | dest =>
-    simp
-    intros h₁
-    simp [exprOutputs_finIdxOf?_no_match_dest h₁]
-  | tail_arg =>
-    simp
-    intros h₁
-    simp [exprOutputs_finIdxOf?_no_match_tail_args h₁]
-  | tail_cond =>
-    simp
-    intros h₁
-    simp [exprOutputs_finIdxOf?_no_match_tail_cond h₁]
-  | final_tail_arg =>
-    simp
-    split <;> rename_i h₁
-    · simp at h₁
-      omega
-    · simp
-  | input | switch_cond | merge_cond
-  | tail_cond_carry | tail_cond_steer_dests | tail_cond_steer_tail_args
-  | final_dest =>
-    simp
+  constructor
+  · congr 1
+    simp [hatoms, compileFn.initCarry, hcarryInLoop]
+  · funext name
+    simp [varsToChans]
+    cases name with
+    | var v pathConds =>
+      simp
+      if h₁ : pathConds = [] then
+        simp [h₁]
+        split <;> rename_i h₂
+        · rename_i i
+          simp at h₂
+          simp [Vector.get] at h₂
+          simp [← h₂.1]
+          simp [var_map_fromList_get_vars_index hsim.wf_fn.1]
+        · have := Option.eq_none_iff_forall_ne_some.mpr h₂
+          simp at this
+          simp
+          split <;> rename_i h₃
+          · have h₄ := var_map_fromList_get_vars.mpr ⟨_, h₃⟩
+            exact False.elim (this h₄)
+          · rfl
+      else
+        simp [h₁]
+    | dest =>
+      simp
+      intros h₁
+      simp [exprOutputs_finIdxOf?_no_match_dest h₁]
+    | tail_arg =>
+      simp
+      intros h₁
+      simp [exprOutputs_finIdxOf?_no_match_tail_args h₁]
+    | tail_cond =>
+      simp
+      intros h₁
+      simp [exprOutputs_finIdxOf?_no_match_tail_cond h₁]
+    | final_tail_arg =>
+      simp
+      split <;> rename_i h₁
+      · simp at h₁
+        omega
+      · simp
+    | input | switch_cond | merge_cond
+    | tail_cond_carry | tail_cond_steer_dests | tail_cond_steer_tail_args
+    | final_dest =>
+      simp
 
 /-- TODO: these theorems are similar to `sim_step_ret`,
 figure out a way to share these proofs. -/

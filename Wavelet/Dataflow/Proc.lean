@@ -9,12 +9,61 @@ namespace Wavelet.Dataflow
 
 open Semantics
 
+/-- Built-in asynchronous operators. -/
+inductive AsyncOp Op V [Arity Op] where
+  | switch (n : Nat)
+  | steer (n : Nat)
+  | carry (inLoop : Bool) (n : Nat)
+  | merge (n : Nat)
+  | forward (n : Nat)
+  | fork (n : Nat)
+  | const (c : V) (n : Nat)
+  | forwardc (n m : Nat) (consts : Vector V m)
+  | sink (n : Nat)
+
+/-- Input arity of asynchronous operators. -/
+def AsyncOp.ι [Arity Op] : AsyncOp Op V → Nat
+  | .switch n => n + 1
+  | .steer n => n + 1
+  | .carry _ n => n + 1
+  | .merge n => n + 1
+  | .forward n => n
+  | .fork _ => 1
+  | .const _ n => n
+  | .forwardc n _ _ => n
+  | .sink n => n
+
+/-- Output arity of asynchronous operators. -/
+def AsyncOp.ω [Arity Op] : AsyncOp Op V → Nat
+  | .switch n => n + n
+  | .steer n => n
+  | .carry _ n => n
+  | .merge n => n
+  | .forward n => n
+  | .fork n => n
+  | .const _ n => n
+  | .forwardc n m _ => n + m
+  | .sink _ => 0
+
+-- /-- Returns the number of inputs to pop in the current state. -/
+-- def AyncOp.numActiveInputs [Arity Op] : AsyncOp Op V → Nat
+--   | .switch n => n + 1
+--   | .steer n => n + 1
+--   | .carry false n => n
+--   | .carry true n => n + 1
+
+inductive CarryState where
+  | popLeft
+  | popRight
+  | decider
+
 /-- Dataflow operators. -/
 inductive AtomicProc (Op χ V : Type*) [Arity Op] where
   | op (op : Op) (inputs : Vector χ (Arity.ι op)) (outputs : Vector χ (Arity.ω op))
+  -- | async (aop : AsyncOp Op V) (inputs : Vector χ (AsyncOp.ι aop)) (outputs : Vector χ (AsyncOp.ω aop))
   | switch (decider : χ) (inputs : Vector χ n) (outputs₁ : Vector χ n) (outputs₂ : Vector χ n)
   | steer (flavor : Bool) (decider : χ) (inputs : Vector χ n) (outputs : Vector χ n)
-  | carry (inLoop : Bool)
+  | carry (state : CarryState)
     (decider : χ)
     (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
     (outputs : Vector χ n)
@@ -30,6 +79,13 @@ inductive AtomicProc (Op χ V : Type*) [Arity Op] where
   | forwardc
     (inputs : Vector χ n) (consts : Vector V m) (outputs : Vector χ (n + m))
   | sink (inputs : Vector χ n)
+
+-- def AtomicProc.switch [Arity Op]
+--   (decider : χ) (inputs : Vector χ n)
+--   (outputs₁ : Vector χ n)
+--   (outputs₂ : Vector χ n) :
+--   AtomicProc Op χ V
+--   := .async (.switch n) (inputs.push decider) (outputs₁ ++ outputs₂)
 
 abbrev AtomicProcs Op χ V [Arity Op] := List (AtomicProc Op χ V)
 
@@ -102,30 +158,34 @@ inductive Config.Step
       (if deciderBool then inputs₁ else inputs₂)
       = some (inputVals, chans'') →
     Step c .τ { c with chans := chans''.pushVals outputs inputVals }
-  | step_carry_init :
-    c.proc.atoms = ctxLeft ++ [.carry false decider inputs₁ inputs₂ outputs] ++ ctxRight →
+  | step_carry_left :
+    c.proc.atoms = ctxLeft ++ [.carry .popLeft decider inputs₁ inputs₂ outputs] ++ ctxRight →
     c.chans.popVals inputs₁ = some (inputVals, chans') →
     Step c .τ { c with
       proc := { c.proc with
-        atoms := ctxLeft ++ [.carry true decider inputs₁ inputs₂ outputs] ++ ctxRight,
+        atoms := ctxLeft ++ [.carry .decider decider inputs₁ inputs₂ outputs] ++ ctxRight,
       },
       chans := chans'.pushVals outputs inputVals,
     }
-  | step_carry_true :
-    c.proc.atoms = ctxLeft ++ [.carry true decider inputs₁ inputs₂ outputs] ++ ctxRight →
-    c.chans.popVal decider = some (deciderVal, chans') →
-    InterpConsts.toBool deciderVal = some true →
-    chans'.popVals inputs₂ = some (inputVals, chans'') →
-    Step c .τ { c with
-      chans := chans''.pushVals outputs inputVals,
-    }
-  | step_carry_false :
-    c.proc.atoms = ctxLeft ++ [.carry true decider inputs₁ inputs₂ outputs] ++ ctxRight →
-    c.chans.popVal decider = some (deciderVal, chans') →
-    InterpConsts.toBool deciderVal = some false →
+  | step_carry_right :
+    c.proc.atoms = ctxLeft ++ [.carry .popRight decider inputs₁ inputs₂ outputs] ++ ctxRight →
+    c.chans.popVals inputs₂ = some (inputVals, chans') →
     Step c .τ { c with
       proc := { c.proc with
-        atoms := ctxLeft ++ [.carry false decider inputs₁ inputs₂ outputs] ++ ctxRight,
+        atoms := ctxLeft ++ [.carry .decider decider inputs₁ inputs₂ outputs] ++ ctxRight,
+      },
+      chans := chans'.pushVals outputs inputVals,
+    }
+  | step_carry_decider :
+    c.proc.atoms = ctxLeft ++ [.carry .decider decider inputs₁ inputs₂ outputs] ++ ctxRight →
+    c.chans.popVal decider = some (deciderVal, chans') →
+    InterpConsts.toBool deciderVal = some deciderBool →
+    Step c .τ { c with
+      proc := { c.proc with
+        atoms := ctxLeft ++ [
+          .carry (if deciderBool then .popRight else .popLeft)
+            decider inputs₁ inputs₂ outputs
+        ] ++ ctxRight,
       },
       chans := chans',
     }
