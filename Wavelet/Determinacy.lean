@@ -5,7 +5,7 @@ import Wavelet.Seq
 import Wavelet.Dataflow
 import Wavelet.Compile
 
-/-! Reasoning about the determinancy of semantics. -/
+/-! Reasoning about the determinacy of semantics. -/
 
 namespace Wavelet.Semantics
 
