@@ -9,8 +9,6 @@ open Semantics
 def AtomicProc.mapChans [Arity Op] (f : χ → χ') : AtomicProc Op χ V → AtomicProc Op χ' V
   | .op o inputs outputs => .op o (inputs.map f) (outputs.map f)
   | .async aop inputs outputs => .async aop (inputs.map f) (outputs.map f)
-  | .switch decider inputs outputs₁ outputs₂ =>
-    .switch (f decider) (inputs.map f) (outputs₁.map f) (outputs₂.map f)
   | .steer flavor decider inputs outputs =>
     .steer flavor (f decider) (inputs.map f) (outputs.map f)
   | .carry inLoop decider inputs₁ inputs₂ outputs =>

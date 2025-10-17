@@ -32,7 +32,7 @@ inductive AsyncOp V : Nat → Nat → Type u where
 inductive AtomicProc (Op χ V : Type*) [Arity Op] where
   | op (op : Op) (inputs : Vector χ (Arity.ι op)) (outputs : Vector χ (Arity.ω op))
   | async (aop : AsyncOp V m n) (inputs : Vector χ m) (outputs : Vector χ n)
-  | switch (decider : χ) (inputs : Vector χ n) (outputs₁ : Vector χ n) (outputs₂ : Vector χ n)
+  -- | switch (decider : χ) (inputs : Vector χ n) (outputs₁ : Vector χ n) (outputs₂ : Vector χ n)
   | steer (flavor : Bool) (decider : χ) (inputs : Vector χ n) (outputs : Vector χ n)
   | carry (state : CarryState)
     (decider : χ)
@@ -51,12 +51,12 @@ inductive AtomicProc (Op χ V : Type*) [Arity Op] where
     (inputs : Vector χ n) (consts : Vector V m) (outputs : Vector χ (n + m))
   | sink (inputs : Vector χ n)
 
--- def AtomicProc.switch [Arity Op]
---   (decider : χ) (inputs : Vector χ n)
---   (outputs₁ : Vector χ n)
---   (outputs₂ : Vector χ n) :
---   AtomicProc Op χ V
---   := .async (.switch n) (inputs.push decider) (outputs₁ ++ outputs₂)
+def AtomicProc.switch [Arity Op]
+  (decider : χ) (inputs : Vector χ n)
+  (outputs₁ : Vector χ n)
+  (outputs₂ : Vector χ n) :
+  AtomicProc Op χ V
+  := .async (.switch n) (inputs.push decider) (outputs₁ ++ outputs₂)
 
 abbrev AtomicProcs Op χ V [Arity Op] := List (AtomicProc Op χ V)
 
@@ -131,17 +131,17 @@ inductive Config.Step
       },
       chans := chans'.pushVals outputs outputVals,
     }
-  | step_switch
-    {outputs₁ outputs₂ : Vector χ n} :
-    .switch decider inputs outputs₁ outputs₂ ∈ c.proc.atoms →
-    c.chans.popVal decider = some (deciderVal, chans') →
-    chans'.popVals inputs = some (inputVals, chans'') →
-    InterpConsts.toBool deciderVal = some deciderBool →
-    Step c .τ { c with
-      chans :=
-        let outputs := if deciderBool then outputs₁ else outputs₂
-        chans''.pushVals outputs inputVals
-    }
+  -- | step_switch
+  --   {outputs₁ outputs₂ : Vector χ n} :
+  --   .switch decider inputs outputs₁ outputs₂ ∈ c.proc.atoms →
+  --   c.chans.popVal decider = some (deciderVal, chans') →
+  --   chans'.popVals inputs = some (inputVals, chans'') →
+  --   InterpConsts.toBool deciderVal = some deciderBool →
+  --   Step c .τ { c with
+  --     chans :=
+  --       let outputs := if deciderBool then outputs₁ else outputs₂
+  --       chans''.pushVals outputs inputVals
+  --   }
   | step_steer :
     .steer flavor decider inputs outputs ∈ c.proc.atoms →
     c.chans.popVal decider = some (deciderVal, chans') →
@@ -233,5 +233,29 @@ def Proc.semantics
       cases hyield with | step_op hmem hpop =>
       exact ⟨_, .step_op hmem hpop⟩
   }
+
+/-! Alternative rules for the stepping relation. -/
+section AltStep
+
+theorem Config.Step.step_switch {Op χ V m n}
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  {c : Config Op χ V m n}
+  {decider deciderVal deciderBool}
+  {inputs inputVals}
+  {chans' chans''}
+  {outputs₁ outputs₂ : Vector χ k}
+  (hmem : .switch decider inputs outputs₁ outputs₂ ∈ c.proc.atoms)
+  (hpop_decider : c.chans.popVal decider = some (deciderVal, chans'))
+  (hpop_inputs : chans'.popVals inputs = some (inputVals, chans''))
+  (hdecider : InterpConsts.toBool deciderVal = some deciderBool) :
+  Step c .τ { c with
+    chans :=
+      let outputs := if deciderBool then outputs₁ else outputs₂
+      chans''.pushVals outputs inputVals
+  } := by
+  -- apply Config.Step.step_async
+  sorry
+
+end AltStep
 
 end Wavelet.Dataflow

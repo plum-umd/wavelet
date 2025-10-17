@@ -127,6 +127,10 @@ theorem compile_expr_preserves_aff_op
     intros
     rename_i hmem₁ hmem₂
     cases hmem₁ <;> cases hmem₂
+    any_goals
+      rename_i hmem₁ hmem₂
+      simp [AtomicProc.switch] at hmem₁ hmem₂
+    cases hmem₁ <;> cases hmem₂
     · rename_i hmem₁ hmem₂
       simp [ih₁ (hnz := hnz) haff₁ hmem₁ hmem₂]
     · rename_i hmem₁ hmem₂
