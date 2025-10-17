@@ -7,8 +7,6 @@ open Semantics
 def AtomicProc.inputs [Arity Op] : AtomicProc Op χ V → List χ
   | .op _ inputs _ => inputs.toList
   | .async _ inputs _ => inputs.toList
-  | .steer _ _ inputs _ => inputs.toList
-  | .carry _ _ inputs₁ inputs₂ _ => (inputs₁ ++ inputs₂).toList
   | .merge _ inputs₁ inputs₂ _ => (inputs₁ ++ inputs₂).toList
   | .forward inputs _ => inputs.toList
   | .fork input _ => [input]
@@ -19,8 +17,6 @@ def AtomicProc.inputs [Arity Op] : AtomicProc Op χ V → List χ
 def AtomicProc.outputs [Arity Op] : AtomicProc Op χ V → List χ
   | .op _ _ outputs => outputs.toList
   | .async _ _ outputs => outputs.toList
-  | .steer _ _ _ outputs => outputs.toList
-  | .carry _ _ _ _ outputs => outputs.toList
   | .merge _ _ _ outputs => outputs.toList
   | .forward _ outputs => outputs.toList
   | .fork _ outputs => outputs.toList

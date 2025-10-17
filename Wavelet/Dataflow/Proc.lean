@@ -20,7 +20,7 @@ is an asynchronous operator with a total of `m` inputs
 ports and `n` outputs ports. -/
 inductive AsyncOp V : Nat → Nat → Type u where
   | switch (n : Nat) : AsyncOp V (1 + n) (n + n)
-  | steer (n : Nat) : AsyncOp V (1 + n) n
+  | steer (flavor : Bool) (n : Nat) : AsyncOp V (1 + n) n
   | carry (state : CarryState) (n : Nat) : AsyncOp V (1 + n + n) n
   | merge (n : Nat) : AsyncOp V (1 + n + n) n
   | forward (n : Nat) : AsyncOp V n n
@@ -34,11 +34,11 @@ inductive AtomicProc (Op χ V : Type*) [Arity Op] where
   | op (op : Op) (inputs : Vector χ (Arity.ι op)) (outputs : Vector χ (Arity.ω op))
   | async (aop : AsyncOp V m n) (inputs : Vector χ m) (outputs : Vector χ n)
   -- | switch (decider : χ) (inputs : Vector χ n) (outputs₁ : Vector χ n) (outputs₂ : Vector χ n)
-  | steer (flavor : Bool) (decider : χ) (inputs : Vector χ n) (outputs : Vector χ n)
-  | carry (state : CarryState)
-    (decider : χ)
-    (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
-    (outputs : Vector χ n)
+  -- | steer (flavor : Bool) (decider : χ) (inputs : Vector χ n) (outputs : Vector χ n)
+  -- | carry (state : CarryState)
+  --   (decider : χ)
+  --   (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
+  --   (outputs : Vector χ n)
   | merge (decider : χ)
     (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
     (outputs : Vector χ n)
@@ -58,6 +58,21 @@ def AtomicProc.switch [Arity Op]
   (outputs₂ : Vector χ n) :
   AtomicProc Op χ V
   := .async (.switch n) (#v[decider] ++ inputs) (outputs₁ ++ outputs₂)
+
+def AtomicProc.steer [Arity Op]
+  (flavor : Bool)
+  (decider : χ) (inputs : Vector χ n)
+  (outputs : Vector χ n) :
+  AtomicProc Op χ V
+  := .async (.steer flavor n) (#v[decider] ++ inputs) outputs
+
+def AtomicProc.carry [Arity Op]
+  (state : CarryState)
+  (decider : χ)
+  (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
+  (outputs : Vector χ n) :
+  AtomicProc Op χ V
+  := .async (.carry state n) (#v[decider] ++ inputs₁ ++ inputs₂) outputs
 
 abbrev AtomicProcs Op χ V [Arity Op] := List (AtomicProc Op χ V)
 
@@ -90,15 +105,63 @@ inductive AsyncOp.Interp
   | interp_switch
     {decider : χ}
     {deciderVal : V}
-    {inputs : Vector χ k}
-    {inputVals : Vector V k}
-    {outputs₁ outputs₂ : Vector χ k} :
+    {inputs : Vector χ k} :
     InterpConsts.toBool deciderVal = some deciderBool →
     Interp (.switch k) (.switch k)
       (#v[decider] ++ inputs)
       (outputs₁ ++ outputs₂)
       ⟨1 + k, #v[decider] ++ inputs, #v[deciderVal] ++ inputVals⟩
       ⟨k, if deciderBool then outputs₁ else outputs₂, inputVals⟩
+  | interp_steer_true
+    {decider : χ}
+    {deciderVal : V}
+    {inputs : Vector χ k} :
+    InterpConsts.toBool deciderVal = some deciderBool →
+    deciderBool = flavor →
+    Interp (.steer flavor k) (.steer flavor k)
+      (#v[decider] ++ inputs)
+      outputs
+      ⟨1 + k, #v[decider] ++ inputs, #v[deciderVal] ++ inputVals⟩
+      ⟨k, outputs, inputVals⟩
+  | interp_steer_false
+    {decider : χ}
+    {deciderVal : V}
+    {inputs : Vector χ k}
+    {inputVals : Vector V k} :
+    InterpConsts.toBool deciderVal = some deciderBool →
+    deciderBool ≠ flavor →
+    Interp (.steer flavor k) (.steer flavor k)
+      (#v[decider] ++ inputs)
+      outputs
+      ⟨1 + k, #v[decider] ++ inputs, #v[deciderVal] ++ inputVals⟩
+      ⟨0, #v[], #v[]⟩
+  | interp_carry_left
+    {decider : χ}
+    {inputs₁ inputs₂ : Vector χ k} :
+    Interp (.carry .popLeft k) (.carry .decider k)
+      (#v[decider] ++ inputs₁ ++ inputs₂)
+      outputs
+      ⟨k, inputs₁, inputVals⟩
+      ⟨k, outputs, inputVals⟩
+  | interp_carry_right
+    {decider : χ}
+    {inputs₁ inputs₂ : Vector χ k} :
+    Interp (.carry .popRight k) (.carry .decider k)
+      (#v[decider] ++ inputs₁ ++ inputs₂)
+      outputs
+      ⟨k, inputs₂, inputVals⟩
+      ⟨k, outputs, inputVals⟩
+  | interp_carry_decider
+    {decider : χ}
+    {deciderVal : V}
+    {inputs₁ inputs₂ : Vector χ k} :
+    InterpConsts.toBool deciderVal = some deciderBool →
+    Interp (.carry .decider k)
+      (.carry (if deciderBool then .popRight else .popLeft) k)
+      (#v[decider] ++ inputs₁ ++ inputs₂)
+      outputs
+      ⟨1, #v[decider], #v[deciderVal]⟩
+      ⟨0, #v[], #v[]⟩
 
 inductive Config.Step
   [Arity Op] [DecidableEq χ]
@@ -134,29 +197,6 @@ inductive Config.Step
       },
       chans := chans'.pushVals outputs outputVals,
     }
-  -- | step_switch
-  --   {outputs₁ outputs₂ : Vector χ n} :
-  --   .switch decider inputs outputs₁ outputs₂ ∈ c.proc.atoms →
-  --   c.chans.popVal decider = some (deciderVal, chans') →
-  --   chans'.popVals inputs = some (inputVals, chans'') →
-  --   InterpConsts.toBool deciderVal = some deciderBool →
-  --   Step c .τ { c with
-  --     chans :=
-  --       let outputs := if deciderBool then outputs₁ else outputs₂
-  --       chans''.pushVals outputs inputVals
-  --   }
-  | step_steer :
-    .steer flavor decider inputs outputs ∈ c.proc.atoms →
-    c.chans.popVal decider = some (deciderVal, chans') →
-    chans'.popVals inputs = some (inputVals, chans'') →
-    InterpConsts.toBool deciderVal = some deciderBool →
-    Step c .τ { c with
-      chans :=
-        if deciderBool = flavor then
-          chans''.pushVals outputs inputVals
-        else
-          chans'',
-    }
   | step_merge :
     .merge decider inputs₁ inputs₂ outputs ∈ c.proc.atoms →
     c.chans.popVal decider = some (deciderVal, chans') →
@@ -165,37 +205,6 @@ inductive Config.Step
       (if deciderBool then inputs₁ else inputs₂)
       = some (inputVals, chans'') →
     Step c .τ { c with chans := chans''.pushVals outputs inputVals }
-  | step_carry_left :
-    c.proc.atoms = ctxLeft ++ [.carry .popLeft decider inputs₁ inputs₂ outputs] ++ ctxRight →
-    c.chans.popVals inputs₁ = some (inputVals, chans') →
-    Step c .τ { c with
-      proc := { c.proc with
-        atoms := ctxLeft ++ [.carry .decider decider inputs₁ inputs₂ outputs] ++ ctxRight,
-      },
-      chans := chans'.pushVals outputs inputVals,
-    }
-  | step_carry_right :
-    c.proc.atoms = ctxLeft ++ [.carry .popRight decider inputs₁ inputs₂ outputs] ++ ctxRight →
-    c.chans.popVals inputs₂ = some (inputVals, chans') →
-    Step c .τ { c with
-      proc := { c.proc with
-        atoms := ctxLeft ++ [.carry .decider decider inputs₁ inputs₂ outputs] ++ ctxRight,
-      },
-      chans := chans'.pushVals outputs inputVals,
-    }
-  | step_carry_decider :
-    c.proc.atoms = ctxLeft ++ [.carry .decider decider inputs₁ inputs₂ outputs] ++ ctxRight →
-    c.chans.popVal decider = some (deciderVal, chans') →
-    InterpConsts.toBool deciderVal = some deciderBool →
-    Step c .τ { c with
-      proc := { c.proc with
-        atoms := ctxLeft ++ [
-          .carry (if deciderBool then .popRight else .popLeft)
-            decider inputs₁ inputs₂ outputs
-        ] ++ ctxRight,
-      },
-      chans := chans',
-    }
   | step_forward :
     .forward inputs outputs ∈ c.proc.atoms →
     c.chans.popVals inputs = some (inputVals, chans') →
@@ -266,6 +275,129 @@ theorem Config.Step.step_switch
   simp
   congr 1
   exact happ.symm
+
+theorem Config.Step.step_steer
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  {c : Config Op χ V m n}
+  {inputs outputs : Vector χ k}
+  (hmem : .steer flavor decider inputs outputs ∈ c.proc.atoms)
+  (hpop_decider : c.chans.popVal decider = some (deciderVal, chans'))
+  (hpop_inputs : chans'.popVals inputs = some (inputVals, chans''))
+  (hdecider : InterpConsts.toBool deciderVal = some deciderBool) :
+  Step c .τ { c with
+    chans :=
+      if deciderBool = flavor then
+        chans''.pushVals outputs inputVals
+      else
+        chans'',
+  } := by
+  have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
+  have happ := List.to_append_cons (l := c.proc.atoms) hi
+  simp only [hget_i, AtomicProc.steer] at happ
+  by_cases h₁ : deciderBool = flavor
+  · apply Config.Step.step_async
+      (aop := .steer flavor k)
+      (aop' := .steer flavor k)
+      happ
+      (.interp_steer_true hdecider h₁)
+      (pop_vals_append (pop_val_to_pop_vals hpop_decider) hpop_inputs)
+      |> Lts.Step.eq_rhs
+    simp [h₁]
+    congr 1
+    exact happ.symm
+  · apply Config.Step.step_async
+      (aop := .steer flavor k)
+      (aop' := .steer flavor k)
+      happ
+      (.interp_steer_false hdecider h₁)
+      (pop_vals_append (pop_val_to_pop_vals hpop_decider) hpop_inputs)
+      |> Lts.Step.eq_rhs
+    simp [h₁, ChanMap.pushVals]
+    congr 1
+    exact happ.symm
+
+theorem Config.Step.step_carry_left
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  {c : Config Op χ V m n}
+  {inputs₁ inputs₂ outputs : Vector χ k}
+  {ctxLeft ctxRight : List (AtomicProc Op χ V)}
+  (happ : c.proc.atoms =
+    ctxLeft ++ [.carry .popLeft decider inputs₁ inputs₂ outputs] ++ ctxRight)
+  (hpop_inputs₁ : c.chans.popVals inputs₁ = some (inputVals, chans')) :
+  Step c .τ { c with
+    proc := { c.proc with
+      atoms := ctxLeft ++ [.carry .decider decider inputs₁ inputs₂ outputs] ++ ctxRight,
+    },
+    chans := chans'.pushVals outputs inputVals,
+  } := by
+  simp at happ
+  apply Config.Step.step_async
+    (aop := .carry .popLeft k)
+    (aop' := .carry .decider k)
+    happ
+    .interp_carry_left
+    hpop_inputs₁
+    |> Lts.Step.eq_rhs
+  simp
+  congr 1
+  simp
+
+theorem Config.Step.step_carry_right
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  {c : Config Op χ V m n}
+  {inputs₁ inputs₂ outputs : Vector χ k}
+  {ctxLeft ctxRight : List (AtomicProc Op χ V)}
+  (happ : c.proc.atoms =
+    ctxLeft ++ [.carry .popRight decider inputs₁ inputs₂ outputs] ++ ctxRight)
+  (hpop_inputs₂ : c.chans.popVals inputs₂ = some (inputVals, chans')) :
+  Step c .τ { c with
+    proc := { c.proc with
+      atoms := ctxLeft ++ [.carry .decider decider inputs₁ inputs₂ outputs] ++ ctxRight,
+    },
+    chans := chans'.pushVals outputs inputVals,
+  } := by
+  simp at happ
+  apply Config.Step.step_async
+    (aop := .carry .popRight k)
+    (aop' := .carry .decider k)
+    happ
+    .interp_carry_right
+    hpop_inputs₂
+    |> Lts.Step.eq_rhs
+  simp
+  congr 1
+  simp
+
+theorem Config.Step.step_carry_decider
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  {c : Config Op χ V m n}
+  {inputs₁ inputs₂ outputs : Vector χ k}
+  {ctxLeft ctxRight : List (AtomicProc Op χ V)}
+  (happ : c.proc.atoms =
+    ctxLeft ++ [.carry .decider decider inputs₁ inputs₂ outputs] ++ ctxRight)
+  (hpop_decider : c.chans.popVal decider = some (deciderVal, chans'))
+  (hdecider : InterpConsts.toBool deciderVal = some deciderBool) :
+  Step c .τ { c with
+    proc := { c.proc with
+      atoms := ctxLeft ++ [
+          .carry (if deciderBool then .popRight else .popLeft)
+            decider inputs₁ inputs₂ outputs
+        ] ++ ctxRight,
+    },
+    chans := chans',
+  } := by
+  simp at happ
+  apply Config.Step.step_async
+    (aop := .carry .decider k)
+    (aop' := .carry (if deciderBool then .popRight else .popLeft) k)
+    happ
+    (.interp_carry_decider hdecider)
+    (pop_val_to_pop_vals hpop_decider)
+    |> Lts.Step.eq_rhs
+  simp
+  constructor
+  · simp [AtomicProc.carry]
+  · simp [ChanMap.pushVals]
 
 end AltStep
 

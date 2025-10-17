@@ -160,6 +160,7 @@ theorem compile_fn_preserves_aff_op
   simp [compileFn, compileFn.initCarry, compileFn.resultSteers,
     Proc.AffineInrOp]
   simp [AtomicProcs.AffineInrOp] at this
+  simp [AtomicProc.carry, AtomicProc.steer]
   grind only
 
 theorem map_chans_preserves_aff_op
