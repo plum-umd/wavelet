@@ -602,7 +602,8 @@ theorem proc_strong_confluence
       by_cases h : i = j
       · exfalso
         subst h
-        -- simp [hget_i] at hget_j
+        simp [hget_i] at hget_j
+
         -- have ⟨h₁, h₂, h₃, h₄, h₅⟩ := hget_j
         -- subst h₁; subst h₂; subst h₃; subst h₄; subst h₅
         -- -- aop₁.Interp aop₁' allInputs₁ allOutputs₁ ⟨k₁'✝¹, (inputs₁, inputVals₁)⟩ ⟨k₂'✝¹, (outputs₁, outputVals₁)⟩

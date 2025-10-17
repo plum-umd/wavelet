@@ -288,60 +288,40 @@ theorem AsyncOp.Interp.eq_label
   simp [heq] at hinterp₁
   exact hinterp₁
 
--- /-- Defines when two async op labels are consistent
--- in a deterministic semantics. -/
--- def AsyncOp.Label.Deterministic
---   (l₁ l₂ : Label Op V) : Prop :=
---   ∀ {allInputs allOutputs m}
---     {inputs₁ inputVals₁ n₁ outputs₁ outputVals₁}
---     {inputs₂ inputVals₂ n₂ outputs₂ outputVals₂},
---     l₁ = .mk allInputs allOutputs m inputs₁ inputVals₁ n₁ outputs₁ outputVals₁ →
---     l₂ = .mk allInputs allOutputs m inputs₂ inputVals₂ n₂ outputs₂ outputVals₂ →
---     inputs₁ = inputs₂ ∧
---     (inputVals₁ = inputVals₂ → n₁ = n₂ ∧ outputs₁ ≍ outputs₂ ∧ outputVals₁ ≍ outputVals₂)
+/-- Defines when two async op labels are consistent
+in a deterministic semantics. -/
+def AsyncOp.Label.Deterministic
+  (l₁ l₂ : Label Op V) : Prop :=
+  ∀ {allInputs allOutputs}
+    {inputs₁ inputVals₁ outputs₁ outputVals₁}
+    {inputs₂ inputVals₂ outputs₂ outputVals₂},
+    l₁ = .mk allInputs allOutputs inputs₁ inputVals₁ outputs₁ outputVals₁ →
+    l₂ = .mk allInputs allOutputs inputs₂ inputVals₂ outputs₂ outputVals₂ →
+    inputs₁ = inputs₂ ∧ -- Same inputs to be read
+    (inputVals₁ = inputVals₂ →
+      -- If input values are the same, then output channels/values are the same
+      outputs₁ = outputs₂ ∧
+      outputVals₁ = outputVals₂)
 
--- theorem async_op_interp_det_input
---   [InterpConsts V]
---   {aop aop₁' aop₂' : AsyncOp V}
---   (hinterp₁ : aop.Interp label₁ aop₁')
---   (hinterp₂ : aop.Interp label₂ aop₂') :
---     label₁.m = label₂.m
---   := by
---   cases hinterp₁ <;> cases hinterp₂
---   all_goals simp
+theorem async_op_interp_det
+  [InterpConsts V]
+  {aop aop₁' aop₂' : AsyncOp V}
+  (hinterp₁ : aop.Interp label₁ aop₁')
+  (hinterp₂ : aop.Interp label₂ aop₂') :
+    AsyncOp.Label.Deterministic label₁ label₂
+  := by
+  simp [AsyncOp.Label.Deterministic]
+  cases hinterp₁ <;> cases hinterp₂
+  any_goals grind only [cases Or]
+  case interp_merge_true.interp_merge_false =>
+    intros
+    rename_i h₁ h₂
+    simp at h₁ h₂
+    replace ⟨_, _, _, h₁, _⟩ := h₁
+    replace ⟨_, _, _, h₂, _⟩ := h₂
 
--- theorem async_op_interp_det
---   [InterpConsts V]
---   {aop aop₁' aop₂' : AsyncOp V}
---   (hinterp₁ : aop.Interp label₁ aop₁')
---   (hinterp₂ : aop.Interp label₂ aop₂') :
---     AsyncOp.Label.Deterministic label₁ label₂
---   := by
---   cases label₁; cases label₂
---   simp [AsyncOp.Label.Deterministic]
---   intros
---   have := async_op_interp_det_input hinterp₁ hinterp₂
---   simp at this
---   subst this
---   cases hinterp₁ <;> cases hinterp₂
---   · rename_i h₁ h₂ h₃
---     subst h₁
---     simp at *
---     rename_i h₄ _ _ _ _ _ _ _ _ _ _ _ h₅ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
---     subst h₄; subst h₅
---     simp [Vector.toList] at *
---     constructor
---     ·
---       sorry
---     · sorry
---   -- · unfold AsyncOp.Label.Deterministic
---   --   intros
---   --   rename_i hlabel₁ hlabel₂
---   --   simp at hlabel₁ hlabel₂
---   --   simp [hlabel₁] at hlabel₂
-
---   --   sorry
---   all_goals sorry
+    sorry
+  all_goals sorry
 
 /-- Inputs read in each async op is a sublist of the total input list. -/
 theorem async_op_interp_input_sublist
