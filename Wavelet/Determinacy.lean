@@ -473,8 +473,8 @@ theorem proc_strong_confluence
   : s₁' = s₂' ∨ (∃ s', proc.semantics.lts.Step s₁' l₂ s' ∧ proc.semantics.lts.Step s₂' l₁ s')
   := by
   have ⟨haff_nodup, haff_disj⟩ := haff
-  by_cases h₁ : s₁' = s₂'
-  · exact .inl h₁
+  by_cases heq_state : s₁' = s₂'
+  · exact .inl heq_state
   · right
     -- Keep some acronyms so that they don't get expanded
     generalize hs₁' : s₁' = s₁''
@@ -499,7 +499,7 @@ theorem proc_strong_confluence
         subst h₄; subst h₅
         have := hyield_det (by rfl) (by rfl)
         subst this
-        simp at h₁
+        simp at heq_state
       · have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj ⟨i, hi⟩ ⟨j, hj⟩ (by simp [h])
         simp [hget_i, hget_j, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
         have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂
@@ -600,10 +600,48 @@ theorem proc_strong_confluence
         _ _ aop₂ aop₂' allInputs₂ allOutputs₂
         inputs₂ inputVals₂ outputs₂ outputVals₂ chans₂' j hinterp₂ hj hget_j hpop₂
       by_cases h : i = j
-      · exfalso
+      · -- Prove that the final states should be the same
+        apply False.elim
+        apply heq_state
         subst h
         simp [hget_i] at hget_j
+        have ⟨h₁, h₂, h₃⟩ := hget_j
+        subst h₁; subst h₂; subst h₃
+        simp at hinterp₁ hinterp₂
+        simp
+        congr 1
+        have heq_inputs : inputs₁ ≍ inputs₂ := by
+          sorry
+        · congr
+          apply (async_op_interp_det hinterp₁ hinterp₂ _ _).2.2
+          ·
+            sorry
+          · sorry
+        ·
+          sorry
 
+        -- simp
+        -- congr 1
+
+        -- -- Generealize so that we can do case analysis
+        -- generalize hinputs₁ : inputs₁.toList = inputs₁
+        -- generalize hinputVals₁ : inputVals₁.toList = inputVals₁
+        -- generalize houtputs₁ : outputs₁.toList = outputs₁
+        -- generalize houtputVals₁ : outputVals₁.toList = outputVals₁
+        -- rw [hinputs₁, hinputVals₁, houtputs₁, houtputVals₁] at hinterp₁
+        -- generalize hinputs₂ : inputs₂.toList = inputs₂
+        -- generalize hinputVals₂ : inputVals₂.toList = inputVals₂
+        -- generalize houtputs₂ : outputs₂.toList = outputs₂
+        -- generalize houtputVals₂ : outputVals₂.toList = outputVals₂
+        -- rw [hinputs₂, hinputVals₂, houtputs₂, houtputVals₂] at hinterp₂
+        -- cases hinterp₁ <;> cases hinterp₂
+        -- any_goals simp
+
+        -- ·
+        --   sorry
+
+        -- all_goals sorry
+        -- cases hinterp₁ <;> cases hinterp₂
         -- have ⟨h₁, h₂, h₃, h₄, h₅⟩ := hget_j
         -- subst h₁; subst h₂; subst h₃; subst h₄; subst h₅
         -- -- aop₁.Interp aop₁' allInputs₁ allOutputs₁ ⟨k₁'✝¹, (inputs₁, inputVals₁)⟩ ⟨k₂'✝¹, (outputs₁, outputVals₁)⟩
@@ -614,7 +652,6 @@ theorem proc_strong_confluence
         --     sorry
         --   all_goals sorry
         -- all_goals sorry
-        sorry
       · have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj
           ⟨i, hi⟩ ⟨j, hj⟩
           (by simp [h])
