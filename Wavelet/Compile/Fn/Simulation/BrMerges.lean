@@ -69,7 +69,7 @@ theorem sim_step_merges
       List.Sublist.mem (by simp) hpath_conds
     have hnot_mem_cond_tail_conds {b} : (b, condName) ∉ tailConds :=
       path_conds_nodup_alt hpath_conds_nodup hpath_conds
-    have ⟨chans₁, hpop_cond, hchans₁⟩ := pop_val_singleton _ _
+    have ⟨chans₁, hpop_cond, hchans₁⟩ := pop_val_singleton
       (map := intermChans m n gs vars
         outputVals
         ((condBool, condName) :: tailConds))
@@ -85,7 +85,7 @@ theorem sim_step_merges
           simp [hnot_mem_cond_tail_conds] at h)
     -- Pop `compileExpr.exprOutputs`
     have ⟨chans₂, outputVals', hpop_output_vals, hchans₂, houtput_vals⟩ :=
-      pop_vals_singleton _ _
+      pop_vals_singleton
       (map := chans₁)
       (names := compileExpr.exprOutputs m n ((condBool, condName) :: tailConds))
       (λ name val =>

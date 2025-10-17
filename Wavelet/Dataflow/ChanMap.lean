@@ -50,7 +50,7 @@ def ChanMap.getBuf (name : χ) (map : ChanMap χ V) : List V := map name
 /-! Lemmas about `ChanMap`. -/
 section Lemmas
 
-variable (χ V)
+variable {χ V}
 variable [DecidableEq χ]
 
 theorem push_vals_disjoint
@@ -248,6 +248,20 @@ theorem pop_vals_singleton
             simp at this
             exact this
           · exact h₅
+
+theorem pop_val_to_pop_vals
+  {map : ChanMap χ V}
+  (hpop_val : map.popVal name = some (val, map')) :
+  map.popVals #v[name] = some (#v[val], map') := sorry
+
+theorem pop_vals_append
+  {map : ChanMap χ V}
+  {names₁ : Vector χ n₁}
+  {names₂ : Vector χ n₂}
+  (hpop₁ : map.popVals names₁ = some (vals₁, map'))
+  (hpop₂ : map'.popVals names₂ = some (vals₂, map'')) :
+  map.popVals (names₁ ++ names₂) = some (vals₁ ++ vals₂, map'')
+  := sorry
 
 end Lemmas
 

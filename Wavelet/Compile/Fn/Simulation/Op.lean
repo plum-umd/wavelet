@@ -109,7 +109,7 @@ theorem sim_step_op
     | wf_op hargs_nodup hrets_nodup hrets_disj hargs_subset hwf_cont =>
     -- Step 1: Pop inputs of `o` and run `o`
     have ⟨chans₁, inputVals', hpop_input_vals, hchans₁, hinput_vals⟩ :=
-      pop_vals_singleton _ _
+      pop_vals_singleton
       (map := pc.chans)
       (names := args.map (.var · gs.pathConds))
       (λ name val =>

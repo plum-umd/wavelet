@@ -1,5 +1,6 @@
 import Mathlib.Logic.Relation
 import Wavelet.Semantics.Defs
+import Wavelet.Data.List
 
 import Wavelet.Dataflow.ChanMap
 
@@ -18,10 +19,10 @@ inductive CarryState where
 is an asynchronous operator with a total of `m` inputs
 ports and `n` outputs ports. -/
 inductive AsyncOp V : Nat → Nat → Type u where
-  | switch (n : Nat) : AsyncOp V (n + 1) (n + n)
-  | steer (n : Nat) : AsyncOp V (n + 1) n
-  | carry (state : CarryState) (n : Nat) : AsyncOp V (n + n + 1) n
-  | merge (n : Nat) : AsyncOp V (n + n + 1) n
+  | switch (n : Nat) : AsyncOp V (1 + n) (n + n)
+  | steer (n : Nat) : AsyncOp V (1 + n) n
+  | carry (state : CarryState) (n : Nat) : AsyncOp V (1 + n + n) n
+  | merge (n : Nat) : AsyncOp V (1 + n + n) n
   | forward (n : Nat) : AsyncOp V n n
   | fork (n : Nat) : AsyncOp V 1 n
   | const (c : V) (n : Nat) : AsyncOp V 0 n
@@ -56,7 +57,7 @@ def AtomicProc.switch [Arity Op]
   (outputs₁ : Vector χ n)
   (outputs₂ : Vector χ n) :
   AtomicProc Op χ V
-  := .async (.switch n) (inputs.push decider) (outputs₁ ++ outputs₂)
+  := .async (.switch n) (#v[decider] ++ inputs) (outputs₁ ++ outputs₂)
 
 abbrev AtomicProcs Op χ V [Arity Op] := List (AtomicProc Op χ V)
 
@@ -87,14 +88,16 @@ inductive AsyncOp.Interp
   (n' : Nat) × Vector χ n' × Vector V n' → -- A subset of outputs to write to
   Prop where
   | interp_switch
+    {decider : χ}
+    {deciderVal : V}
     {inputs : Vector χ k}
     {inputVals : Vector V k}
     {outputs₁ outputs₂ : Vector χ k} :
     InterpConsts.toBool deciderVal = some deciderBool →
     Interp (.switch k) (.switch k)
-      (inputs.push decider)
+      (#v[decider] ++ inputs)
       (outputs₁ ++ outputs₂)
-      ⟨k + 1, inputs.push decider, inputVals.push deciderVal⟩
+      ⟨1 + k, #v[decider] ++ inputs, #v[deciderVal] ++ inputVals⟩
       ⟨k, if deciderBool then outputs₁ else outputs₂, inputVals⟩
 
 inductive Config.Step
@@ -122,12 +125,12 @@ inductive Config.Step
   | step_async
     {k₁} {inputs : Vector χ k₁} {inputVals : Vector V k₁}
     {k₂} {outputs : Vector χ k₂} {outputVals : Vector V k₂} :
-    c.proc.atoms = ctxLeft ++ [.async aop allInputs allOutputs] ++ ctxRight →
+    c.proc.atoms = ctxLeft ++ .async aop allInputs allOutputs :: ctxRight →
     aop.Interp aop' allInputs allOutputs ⟨k₁, inputs, inputVals⟩ ⟨k₂, outputs, outputVals⟩ →
     c.chans.popVals inputs = some (inputVals, chans') →
     Step c .τ { c with
       proc := { c.proc with
-        atoms := ctxLeft ++ [.async aop' allInputs allOutputs] ++ ctxRight,
+        atoms := ctxLeft ++ .async aop' allInputs allOutputs :: ctxRight,
       },
       chans := chans'.pushVals outputs outputVals,
     }
@@ -237,12 +240,9 @@ def Proc.semantics
 /-! Alternative rules for the stepping relation. -/
 section AltStep
 
-theorem Config.Step.step_switch {Op χ V m n}
+theorem Config.Step.step_switch
   [Arity Op] [DecidableEq χ] [InterpConsts V]
   {c : Config Op χ V m n}
-  {decider deciderVal deciderBool}
-  {inputs inputVals}
-  {chans' chans''}
   {outputs₁ outputs₂ : Vector χ k}
   (hmem : .switch decider inputs outputs₁ outputs₂ ∈ c.proc.atoms)
   (hpop_decider : c.chans.popVal decider = some (deciderVal, chans'))
@@ -253,8 +253,19 @@ theorem Config.Step.step_switch {Op χ V m n}
       let outputs := if deciderBool then outputs₁ else outputs₂
       chans''.pushVals outputs inputVals
   } := by
-  -- apply Config.Step.step_async
-  sorry
+  have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
+  have happ := List.to_append_cons (l := c.proc.atoms) hi
+  simp only [hget_i, AtomicProc.switch] at happ
+  apply Config.Step.step_async
+    (aop := .switch k)
+    (aop' := .switch k)
+    happ
+    (.interp_switch hdecider)
+    (pop_vals_append (pop_val_to_pop_vals hpop_decider) hpop_inputs)
+    |> Lts.Step.eq_rhs
+  simp
+  congr 1
+  exact happ.symm
 
 end AltStep
 

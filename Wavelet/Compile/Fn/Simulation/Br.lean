@@ -45,7 +45,7 @@ private theorem sim_step_br_exec_dataflow
   generalize hright_conds : (false, .var cond gs.pathConds) :: gs.pathConds = rightConds
   simp only [hleft_conds, hright_conds] at hcurrent
   -- Step 1: Pop `cond` and fire the first `fork`.
-  have ⟨chans₁, hpop_cond, hchans₁⟩ := pop_val_singleton _ _
+  have ⟨chans₁, hpop_cond, hchans₁⟩ := pop_val_singleton
     (map := pc.chans)
     (name := .var cond gs.pathConds)
     (val := condVal)
@@ -67,13 +67,13 @@ private theorem sim_step_br_exec_dataflow
   · simp [hchans₁, hsim.vars_to_chans, varsToChans, hsim.path_conds_acyclic]
   replace ⟨pc₁, hpc₁, hsteps₁⟩ := exists_eq_left.mpr hsteps₁
   -- Step 2: Pop `switch_cond` and all live variable, and fire the `switch` operator
-  have ⟨chans₂, hpop_switch_cond, hchans₂⟩ := pop_val_singleton _ _
+  have ⟨chans₂, hpop_switch_cond, hchans₂⟩ := pop_val_singleton
     (map := pc₁.chans)
     (val := condVal)
     (name := .switch_cond (.var cond gs.pathConds))
     (by simp [hpc₁, List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go])
   have ⟨chans₃, allVals, hpop_all_vals, hchans₃, hall_vals⟩ :=
-    pop_vals_singleton _ _
+    pop_vals_singleton
     (map := chans₂)
     (names := compileExpr.allVarsExcept gs.definedVars [cond] gs.pathConds)
     (λ name val =>

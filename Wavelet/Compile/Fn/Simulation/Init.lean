@@ -80,7 +80,7 @@ theorem sim_step_init
   replace ⟨pc₁, hpc₁, hsteps₁⟩ := exists_eq_left.mpr hsteps₁
   -- Step 1: run the first carry gate to initialize variables
   have ⟨chans₁, args', hpop_args, hchans₁, hargs⟩ :=
-    pop_vals_singleton _ _
+    pop_vals_singleton
     (map := pc₁.chans)
     (names := compileFn.inputs ec.fn)
     (λ name val => pc₁.chans name = [val])

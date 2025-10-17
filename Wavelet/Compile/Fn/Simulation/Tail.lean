@@ -46,7 +46,7 @@ private theorem sim_step_tail_forwardc_sink
   simp [compileExpr] at hcurrent
   -- Step 1: Fire `forwardc`.
   have ⟨chans₁, tailArgs', hpop_tail_args, hchans₁, htail_args⟩ :=
-    pop_vals_singleton _ _
+    pop_vals_singleton
     (map := pc.chans)
     (names := vars.map (.var · gs.pathConds))
     (λ name val =>
@@ -106,7 +106,7 @@ private theorem sim_step_tail_forwardc_sink
   replace ⟨pc₁, hpc₁, hsteps₁⟩ := exists_eq_left.mpr hsteps₁
   -- Step 2: Fire `sink` to consume all unused channels in the current context.
   have ⟨chans₂, otherVals, hpop_other_vals, hchans₂, hother_vals⟩ :=
-    pop_vals_singleton _ _
+    pop_vals_singleton
     (map := pc₁.chans)
     (names := compileExpr.allVarsExcept gs.definedVars vars.toList gs.pathConds)
     (λ name val => True)
@@ -210,7 +210,7 @@ private theorem sim_step_tail_exec_dataflow
     hsim.path_conds_nodup hsteps₁
   -- Step 3: Fire the `fork` in `compileFn`.
   simp [compileFn, compileFn.resultSteers] at hcomp_fn
-  have ⟨chans₁, hpop_tail_cond, hchans₁⟩ := pop_val_singleton _ _
+  have ⟨chans₁, hpop_tail_cond, hchans₁⟩ := pop_val_singleton
     (map := intermChans m n gs vars
       (tailArgsToExprOutputs tailArgs)
       [])
@@ -233,13 +233,13 @@ private theorem sim_step_tail_exec_dataflow
   simp at hsteps₃
   replace ⟨pc₁, hpc₁, hsteps₃⟩ := exists_eq_left.mpr hsteps₃
   -- Step 4: Fire the first `steer` in `compileFn` for return values.
-  have ⟨chans₂, hpop_tail_cond_steer_dests, hchans₂⟩ := pop_val_singleton _ _
+  have ⟨chans₂, hpop_tail_cond_steer_dests, hchans₂⟩ := pop_val_singleton
     (map := pc₁.chans)
     (name := .tail_cond_steer_dests)
     (val := InterpConsts.fromBool true)
     (by simp [hpc₁, List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go])
   have ⟨chans₃, retVals, hpop_ret_vals, hchans₃, hret_vals⟩ :=
-    pop_vals_singleton _ _
+    pop_vals_singleton
     (map := chans₂)
     (names := (Vector.range n).map (.dest · []))
     (λ name val => True)
@@ -280,7 +280,7 @@ private theorem sim_step_tail_exec_dataflow
   simp at hsteps₄
   replace ⟨pc₂, hpc₂, hsteps₄⟩ := exists_eq_left.mpr hsteps₄
   -- Step 5: Fire the second `steer` in `compileFn` for tail call args.
-  have ⟨chans₄, hpop_tail_cond_steer_tail_args, hchans₄⟩ := pop_val_singleton _ _
+  have ⟨chans₄, hpop_tail_cond_steer_tail_args, hchans₄⟩ := pop_val_singleton
     (map := pc₂.chans)
     (name := .tail_cond_steer_tail_args)
     (val := InterpConsts.fromBool true)
@@ -288,7 +288,7 @@ private theorem sim_step_tail_exec_dataflow
       simp [hpc₂, hchans₃, hchans₂, hpc₁,
         List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go])
   have ⟨chans₅, tailArgVals, hpop_tail_arg_vals, hchans₅, htail_arg_vals⟩ :=
-    pop_vals_singleton _ _
+    pop_vals_singleton
     (map := chans₄)
     (names := (Vector.range m).map (.tail_arg · []))
     (λ name val =>
@@ -344,7 +344,7 @@ private theorem sim_step_tail_exec_dataflow
   simp at hsteps₅
   replace ⟨pc₃, hpc₃, hsteps₅⟩ := exists_eq_left.mpr hsteps₅
   -- Step 6: Fire the first `carry` in `compileFn`.
-  have ⟨chans₆, hpop_tail_cond_steer_tail_args, hchans₆⟩ := pop_val_singleton _ _
+  have ⟨chans₆, hpop_tail_cond_steer_tail_args, hchans₆⟩ := pop_val_singleton
     (map := pc₃.chans)
     (name := .tail_cond_carry)
     (val := InterpConsts.fromBool true)
@@ -363,7 +363,7 @@ private theorem sim_step_tail_exec_dataflow
   replace ⟨pc₄, hpc₄, hsteps₆⟩ := exists_eq_left.mpr hsteps₆
   -- Step 6: Final step at the carry
   have ⟨chans₇, tailArgs', hpop_final_tail_args, hchans₇, hfinal_tail_args⟩ :=
-    pop_vals_singleton _ _
+    pop_vals_singleton
     (map := pc₄.chans)
     (names := (Vector.range m).map .final_tail_arg)
     (λ name val =>
