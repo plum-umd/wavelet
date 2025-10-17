@@ -863,7 +863,9 @@ inductive Expr.WellPermTyped
     ctx.Acquire (opSpec.pre o) rem tokIds toks →
     ctx.removeVars tokIds.toList = ctx' →
     ctx'.insertVars #v[opSpec.pre o, rem, opSpec.post o] = (joined, ctx'') →
-    WellPermTyped ioSpec ctx'' cont cont' →
+    -- consume `opSpec.pre o`
+    ctx''.removeVars [joined[0]] = ctx''' →
+    WellPermTyped ioSpec ctx''' cont cont' →
     WellPermTyped ioSpec ctx
       (.op o args bind cont)
       (.op (.join k) -- First call join to collect required permissions
