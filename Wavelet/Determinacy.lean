@@ -1,4 +1,5 @@
 import Mathlib.Control.ULiftable
+import Mathlib.Logic.Basic
 
 import Wavelet.Semantics
 import Wavelet.Seq
@@ -437,6 +438,36 @@ theorem push_vals_push_vals_disj_commute
     = (chans.pushVals vars₂ vals₂).pushVals vars₁ vals₁
   := sorry
 
+/-- TODO: use the mathlib version. -/
+lemma heq_iff_exists_eq_cast
+  {a : α} {b : β} : a ≍ b ↔ ∃ (h : β = α), a = cast h b :=
+  ⟨fun h ↦ ⟨type_eq_of_heq h.symm, eq_cast_iff_heq.mpr h⟩,
+    by rintro ⟨rfl, h⟩; rw [h, cast_eq]⟩
+
+-- def AsyncLabel.Deterministic
+--   [Arity Op]
+--   (l₁ l₂ : Label Op V m n) : Prop :=
+--   ∀ {allInputs allOutputs m' inputs } :
+--     aop₁ ≍ aop₂
+
+-- theorem async_op_interp_det_inputs
+--   [InterpConsts V]
+--   {aop₁ aop₁' : AsyncOp V m₁ n₁}
+--   {aop₂ aop₂' : AsyncOp V m₂ n₂}
+--   (heq : aop₁ ≍ aop₂)
+--   (hinterp₁ : aop₁.Interp label₁ aop₁')
+--   (hinterp₂ : aop₂.Interp label₂ aop₂') :
+--     label₁.m' ≍ label₂.m'
+--   := by
+--   cases aop₁ <;> cases aop₂
+--   case switch.merge =>
+--     -- injection heq
+
+--     have ⟨heq_ty, h⟩ := heq_iff_exists_eq_cast.mp heq
+
+--     sorry
+--   all_goals sorry
+
 /-- Without considering the shared operator states
 a `Proc` has a strongly confluent (and thus confluence) semantics
 (when restricted to silent/yield labels). -/
@@ -450,10 +481,7 @@ theorem proc_strong_confluence
   (hlabel₁ : l₁.isYield ∨ l₁.isSilent)
   (hlabel₂ : l₂.isYield ∨ l₂.isSilent)
   -- Only consider the case when the operators are deterministic
-  (hyield_det : ∀ {op inputVals outputVals₁ outputVals₂},
-    l₁ = .yield op inputVals outputVals₁ →
-    l₂ = .yield op inputVals outputVals₂ →
-    outputVals₁ = outputVals₂)
+  (hyield_det : Label.Deterministic l₁ l₂)
   (hstep₁ : proc.semantics.lts.Step s l₁ s₁')
   (hstep₂ : proc.semantics.lts.Step s l₂ s₂')
   : s₁' = s₂' ∨ (∃ s', proc.semantics.lts.Step s₁' l₂ s' ∧ proc.semantics.lts.Step s₂' l₁ s')
@@ -468,6 +496,7 @@ theorem proc_strong_confluence
     cases hstep₁ <;> cases hstep₂
     any_goals
       simp at hlabel₁ hlabel₂
+    -- Commute two `step_op`s
     case neg.h.step_op.step_op =>
       rename_i
         op₁ inputs₁ outputs₁ inputVals₁ outputVals₁ chans₁' hmem₁ hpop₁
@@ -486,7 +515,7 @@ theorem proc_strong_confluence
         subst this
         simp at h₁
       · have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj ⟨i, hi⟩ ⟨j, hj⟩ (by simp [h])
-        simp [hget_i, hget_j, AtomicProc.inputs] at hdisj_inputs hdisj_outputs
+        simp [hget_i, hget_j, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
         have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂
         have hstep₁' : proc.semantics.lts.Step s₁'' _ _ :=
           .step_op
@@ -501,7 +530,135 @@ theorem proc_strong_confluence
         simp [← hs₁'] at hstep₁' ⊢
         simp [← hs₂'] at hstep₂' ⊢
         exact ⟨_, hstep₁', hstep₂'⟩
-    all_goals sorry
+    -- Commute `step_op` and `step_async`
+    case neg.h.step_op.step_async =>
+      rename_i
+        op₁ inputs₁ outputs₁ inputVals₁ outputVals₁ chans₁' hmem₁ hpop₁
+        _ _ _ _ aop₂ aop₂' allInputs₂ allOutputs₂
+        inputs₂ outputs₂ inputVals₂ outputVals₂ chans₂' j hinterp₂ hj hget_j hpop₂
+      have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem₁
+      have hne : i ≠ j := by
+        intro heq; subst heq
+        simp [hget_i] at hget_j
+      have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj
+        ⟨i, hi⟩ ⟨j, hj⟩
+        (by simp [hne])
+      simp [hget_i, hget_j, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
+      replace hdisj_inputs := List.disjoint_of_subset_right
+        (async_op_interp_input_sublist hinterp₂).subset hdisj_inputs
+      replace hdisj_outputs := List.disjoint_of_subset_right
+        (async_op_interp_output_sublist hinterp₂).subset hdisj_outputs
+      have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂
+      -- simp [happ₂] at hmem₁
+      have hstep₁' : proc.semantics.lts.Step s₁'' _ _ :=
+        .step_async (i := j)
+          (by simp [← hs₁']; exact hj)
+          (by simp [← hs₁']; exact hget_j)
+          hinterp₂
+          (by simp [← hs₁']; exact pop_vals_push_vals_commute hpop₁₂)
+      have hstep₂' : proc.semantics.lts.Step s₂'' _ _ :=
+        .step_op (outputVals := outputVals₁)
+          (by
+            simp [← hs₂']
+            apply List.mem_set_ne
+            exact hget_i
+            exact hne.symm)
+          (by simp [← hs₂']; exact pop_vals_push_vals_commute hpop₂₁)
+      rw [push_vals_push_vals_disj_commute hdisj_outputs] at hstep₁'
+      simp [← hs₁'] at hstep₁' ⊢
+      simp [← hs₂'] at hstep₂' ⊢
+      exact ⟨_, hstep₁', hstep₂'⟩
+    -- Commute `step_async` and `step_op`
+    case neg.h.step_async.step_op =>
+      rename_i
+        _ _ _ _ aop₂ aop₂' allInputs₂ allOutputs₂
+        inputs₂ outputs₂ inputVals₂ outputVals₂ chans₂' j hinterp₂ hj hget_j hpop₂
+        op₁ inputs₁ outputs₁ inputVals₁ outputVals₁ chans₁' hmem₁ hpop₁
+      have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem₁
+      have hne : i ≠ j := by
+        intro heq; subst heq
+        simp [hget_i] at hget_j
+      have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj
+        ⟨i, hi⟩ ⟨j, hj⟩
+        (by simp [hne])
+      simp [hget_i, hget_j, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
+      replace hdisj_inputs := List.disjoint_of_subset_right
+        (async_op_interp_input_sublist hinterp₂).subset hdisj_inputs
+      replace hdisj_outputs := List.disjoint_of_subset_right
+        (async_op_interp_output_sublist hinterp₂).subset hdisj_outputs
+      have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂
+      -- simp [happ₂] at hmem₁
+      have hstep₂' : proc.semantics.lts.Step s₂'' _ _ :=
+        .step_async (i := j)
+          (by simp [← hs₂']; exact hj)
+          (by simp [← hs₂']; exact hget_j)
+          hinterp₂
+          (by simp [← hs₂']; exact pop_vals_push_vals_commute hpop₁₂)
+      have hstep₁' : proc.semantics.lts.Step s₁'' _ _ :=
+        .step_op (outputVals := outputVals₁)
+          (by
+            simp [← hs₁']
+            apply List.mem_set_ne
+            exact hget_i
+            exact hne.symm)
+          (by simp [← hs₁']; exact pop_vals_push_vals_commute hpop₂₁)
+      rw [push_vals_push_vals_disj_commute hdisj_outputs] at hstep₂'
+      simp [← hs₁'] at hstep₁' ⊢
+      simp [← hs₂'] at hstep₂' ⊢
+      exact ⟨_, hstep₁', hstep₂'⟩
+    -- Commute two `step_async`s
+    case neg.h.step_async.step_async =>
+      rename_i
+        _ _ _ _ aop₁ aop₁' allInputs₁ allOutputs₁
+        inputs₁ outputs₁ inputVals₁ outputVals₁ chans₁' i hinterp₁ hi hget_i hpop₁
+        _ _ _ _ aop₂ aop₂' allInputs₂ allOutputs₂
+        inputs₂ outputs₂ inputVals₂ outputVals₂ chans₂' j hinterp₂ hj hget_j hpop₂
+      by_cases h : i = j
+      · subst h
+        simp [hget_i] at hget_j
+        have ⟨h₁, h₂, h₃, h₄, h₅⟩ := hget_j
+        subst h₁; subst h₂; subst h₃; subst h₄; subst h₅
+        -- aop₁.Interp aop₁' allInputs₁ allOutputs₁ ⟨k₁'✝¹, (inputs₁, inputVals₁)⟩ ⟨k₂'✝¹, (outputs₁, outputVals₁)⟩
+        -- aop₁.Interp aop₂' allInputs₁ allOutputs₁ ⟨k₁'✝, (inputs₂, inputVals₂)⟩ ⟨k₂'✝, (outputs₂, outputVals₂)⟩
+        cases aop₁
+        · simp at hinterp₁
+          sorry
+        all_goals sorry
+      · have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj
+          ⟨i, hi⟩ ⟨j, hj⟩
+          (by simp [h])
+        simp [hget_i, hget_j, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
+        replace hdisj_inputs := List.disjoint_of_subset_left
+          (async_op_interp_input_sublist hinterp₁).subset hdisj_inputs
+        replace hdisj_inputs := List.disjoint_of_subset_right
+          (async_op_interp_input_sublist hinterp₂).subset hdisj_inputs
+        replace hdisj_outputs := List.disjoint_of_subset_left
+          (async_op_interp_output_sublist hinterp₁).subset hdisj_outputs
+        replace hdisj_outputs := List.disjoint_of_subset_right
+          (async_op_interp_output_sublist hinterp₂).subset hdisj_outputs
+        have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂
+        have hstep₁' : proc.semantics.lts.Step s₁'' _ _ :=
+          .step_async (i := j)
+            (by simp [← hs₁', hj])
+            (by simp [← hs₁', h]; exact hget_j)
+            hinterp₂
+            (by simp [← hs₁']; exact pop_vals_push_vals_commute hpop₁₂)
+        have hstep₂' : proc.semantics.lts.Step s₂'' _ _ :=
+          .step_async (i := i)
+            (by simp [← hs₂', hi])
+            (by simp [← hs₂', Ne.symm h]; exact hget_i)
+            hinterp₁
+            (by simp [← hs₂']; exact pop_vals_push_vals_commute hpop₂₁)
+        rw [push_vals_push_vals_disj_commute hdisj_outputs] at hstep₁'
+        simp [← hs₁'] at hstep₁' ⊢
+        simp [← hs₂'] at hstep₂' ⊢
+        exact ⟨_, hstep₁',
+          by
+            apply Lts.Step.eq_rhs hstep₂'
+            congr 2
+            apply List.set_comm
+            exact Ne.symm h
+        ⟩
 
 end Wavelet.Compile
 

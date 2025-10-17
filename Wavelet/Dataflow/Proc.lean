@@ -1,4 +1,5 @@
 import Mathlib.Logic.Relation
+
 import Wavelet.Semantics.Defs
 import Wavelet.Data.List
 
@@ -10,6 +11,7 @@ namespace Wavelet.Dataflow
 
 open Semantics
 
+/-! Local state of a carry gate -/
 inductive CarryState where
   | popLeft
   | popRight
@@ -111,37 +113,46 @@ def Config.init
   (proc : Proc Op χ V m n) : Config Op χ V m n
   := { proc, chans := .empty }
 
+structure AsyncOp.Label χ V m n where
+  allInputs : Vector χ m
+  allOutputs : Vector χ n
+  -- A subset of inputs to read from
+  m' : Nat
+  inputs : Vector χ m'
+  inputVals : Vector V m'
+  -- A subset of outputs to write to
+  n' : Nat
+  outputs : Vector χ n'
+  outputVals : Vector V n'
+
 /-- Defines the semantics of each built-in async operator -/
 inductive AsyncOp.Interp
-  [InterpConsts V] :
-  (aop : AsyncOp V m n) →
-  (aop' : AsyncOp V m n) → -- Next operator to transition to
-  Vector χ m → -- All inputs
-  Vector χ n → -- All outputs
-  (m' : Nat) × Vector χ m' × Vector V m' → -- A subset of inputs to read from
-  (n' : Nat) × Vector χ n' × Vector V n' → -- A subset of outputs to write to
-  Prop where
+  [InterpConsts V] : Lts (AsyncOp V m n) (AsyncOp.Label χ V m n) where
   | interp_switch
     {decider : χ}
     {deciderVal : V}
     {inputs : Vector χ k} :
     InterpConsts.toBool deciderVal = some deciderBool →
-    Interp (.switch k) (.switch k)
-      (#v[decider] ++ inputs)
-      (outputs₁ ++ outputs₂)
-      ⟨1 + k, #v[decider] ++ inputs, #v[deciderVal] ++ inputVals⟩
-      ⟨k, if deciderBool then outputs₁ else outputs₂, inputVals⟩
+    Interp (.switch k)
+      (.mk
+        (#v[decider] ++ inputs)
+        (outputs₁ ++ outputs₂)
+        (1 + k) (#v[decider] ++ inputs) (#v[deciderVal] ++ inputVals)
+        k (if deciderBool then outputs₁ else outputs₂) inputVals)
+      (.switch k)
   | interp_steer_true
     {decider : χ}
     {deciderVal : V}
     {inputs : Vector χ k} :
     InterpConsts.toBool deciderVal = some deciderBool →
     deciderBool = flavor →
-    Interp (.steer flavor k) (.steer flavor k)
-      (#v[decider] ++ inputs)
-      outputs
-      ⟨1 + k, #v[decider] ++ inputs, #v[deciderVal] ++ inputVals⟩
-      ⟨k, outputs, inputVals⟩
+    Interp (.steer flavor k)
+      (.mk
+        (#v[decider] ++ inputs)
+        outputs
+        (1 + k) (#v[decider] ++ inputs) (#v[deciderVal] ++ inputVals)
+        k outputs inputVals)
+      (.steer flavor k)
   | interp_steer_false
     {decider : χ}
     {deciderVal : V}
@@ -149,85 +160,106 @@ inductive AsyncOp.Interp
     {inputVals : Vector V k} :
     InterpConsts.toBool deciderVal = some deciderBool →
     deciderBool ≠ flavor →
-    Interp (.steer flavor k) (.steer flavor k)
-      (#v[decider] ++ inputs)
-      outputs
-      ⟨1 + k, #v[decider] ++ inputs, #v[deciderVal] ++ inputVals⟩
-      ⟨0, #v[], #v[]⟩
+    Interp (.steer flavor k)
+      (.mk
+        (#v[decider] ++ inputs)
+        outputs
+        (1 + k) (#v[decider] ++ inputs) (#v[deciderVal] ++ inputVals)
+        0 #v[] #v[])
+      (.steer flavor k)
   | interp_carry_left
     {decider : χ}
     {inputs₁ inputs₂ : Vector χ k} :
-    Interp (.carry .popLeft k) (.carry .decider k)
-      (#v[decider] ++ inputs₁ ++ inputs₂)
-      outputs
-      ⟨k, inputs₁, inputVals⟩
-      ⟨k, outputs, inputVals⟩
+    Interp (.carry .popLeft k)
+      (.mk
+        (#v[decider] ++ inputs₁ ++ inputs₂)
+        outputs
+        k inputs₁ inputVals
+        k outputs inputVals)
+      (.carry .decider k)
   | interp_carry_right
     {decider : χ}
     {inputs₁ inputs₂ : Vector χ k} :
-    Interp (.carry .popRight k) (.carry .decider k)
-      (#v[decider] ++ inputs₁ ++ inputs₂)
-      outputs
-      ⟨k, inputs₂, inputVals⟩
-      ⟨k, outputs, inputVals⟩
+    Interp (.carry .popRight k)
+      (.mk
+        (#v[decider] ++ inputs₁ ++ inputs₂)
+        outputs
+        k inputs₂ inputVals
+        k outputs inputVals)
+      (.carry .decider k)
   | interp_carry_decider
     {decider : χ}
     {deciderVal : V}
     {inputs₁ inputs₂ : Vector χ k} :
     InterpConsts.toBool deciderVal = some deciderBool →
     Interp (.carry .decider k)
+      (.mk
+        (#v[decider] ++ inputs₁ ++ inputs₂)
+        outputs
+        1 #v[decider] #v[deciderVal]
+        0 #v[] #v[])
       (.carry (if deciderBool then .popRight else .popLeft) k)
-      (#v[decider] ++ inputs₁ ++ inputs₂)
-      outputs
-      ⟨1, #v[decider], #v[deciderVal]⟩
-      ⟨0, #v[], #v[]⟩
   | interp_merge_true
     {decider : χ}
     {deciderVal : V}
     {inputs₁ inputs₂ : Vector χ k} :
     InterpConsts.toBool deciderVal = some deciderBool →
     deciderBool →
-    Interp (.merge k) (.merge k)
-      (#v[decider] ++ inputs₁ ++ inputs₂)
-      outputs
-      ⟨1 + k, #v[decider] ++ inputs₁, #v[deciderVal] ++ inputVals⟩
-      ⟨k, outputs, inputVals⟩
+    Interp (.merge k)
+      (.mk
+        (#v[decider] ++ inputs₁ ++ inputs₂)
+        outputs
+        (1 + k) (#v[decider] ++ inputs₁) (#v[deciderVal] ++ inputVals)
+        k outputs inputVals)
+      (.merge k)
   | interp_merge_false
     {decider : χ}
     {deciderVal : V}
     {inputs₁ inputs₂ : Vector χ k} :
     InterpConsts.toBool deciderVal = some deciderBool →
     ¬deciderBool →
-    Interp (.merge k) (.merge k)
-      (#v[decider] ++ inputs₁ ++ inputs₂)
-      outputs
-      ⟨1 + k, #v[decider] ++ inputs₂, #v[deciderVal] ++ inputVals⟩
-      ⟨k, outputs, inputVals⟩
+    Interp (.merge k)
+      (.mk
+        (#v[decider] ++ inputs₁ ++ inputs₂)
+        outputs
+        (1 + k) (#v[decider] ++ inputs₂) (#v[deciderVal] ++ inputVals)
+        k outputs inputVals)
+      (.merge k)
   | interp_forward :
-    Interp (.forward k) (.forward k)
-      inputs outputs
-      ⟨k, inputs, inputVals⟩
-      ⟨k, outputs, inputVals⟩
+    Interp (.forward k)
+      (.mk
+        inputs outputs
+        k inputs inputVals
+        k outputs inputVals)
+      (.forward k)
   | interp_fork :
-    Interp (.fork k) (.fork k)
-      #v[input] outputs
-      ⟨1, #v[input], #v[inputVal]⟩
-      ⟨k, outputs, Vector.replicate _ inputVal⟩
+    Interp (.fork k)
+      (.mk
+        #v[input] outputs
+        1 #v[input] #v[inputVal]
+        k outputs (Vector.replicate _ inputVal))
+      (.fork k)
   | interp_const :
-    Interp (.const c k) (.const c k)
-      #v[act] outputs
-      ⟨1, #v[act], #v[actVal]⟩
-      ⟨k, outputs, Vector.replicate _ c⟩
+    Interp (.const c k)
+      (.mk
+        #v[act] outputs
+        1 #v[act] #v[actVal]
+        k outputs (Vector.replicate _ c))
+      (.const c k)
   | interp_forwardc :
-    Interp (.forwardc n m consts) (.forwardc n m consts)
-      inputs outputs
-      ⟨n, inputs, inputVals⟩
-      ⟨n + m, outputs, inputVals ++ consts⟩
+    Interp (.forwardc n m consts)
+      (.mk
+        inputs outputs
+        n inputs inputVals
+        (n + m) outputs (inputVals ++ consts))
+      (.forwardc n m consts)
   | interp_sink :
-    Interp (.sink k) (.sink k)
-      inputs #v[]
-      ⟨k, inputs, inputVals⟩
-      ⟨0, #v[], #v[]⟩
+    Interp (.sink k)
+      (.mk
+        inputs #v[]
+        k inputs inputVals
+        0 #v[] #v[])
+      (.sink k)
 
 /-- Main stepping relation for dataflow. -/
 inductive Config.Step
@@ -253,14 +285,21 @@ inductive Config.Step
       chans := chans'.pushVals outputs outputVals,
     }
   | step_async
-    {k₁} {inputs : Vector χ k₁} {inputVals : Vector V k₁}
-    {k₂} {outputs : Vector χ k₂} {outputVals : Vector V k₂} :
-    c.proc.atoms = ctxLeft ++ .async aop allInputs allOutputs :: ctxRight →
-    aop.Interp aop' allInputs allOutputs ⟨k₁, inputs, inputVals⟩ ⟨k₂, outputs, outputVals⟩ →
+    {c : Config Op χ V _ _}
+    {k₁ k₂ k₁' k₂'}
+    {aop aop' : AsyncOp V k₁ k₂}
+    {allInputs allOutputs}
+    {inputs : Vector χ k₁'}
+    {outputs : Vector χ k₂'}
+    {inputVals outputVals chans'}
+    {i : Nat} :
+    (_ : i < c.proc.atoms.length) →
+    c.proc.atoms[i] = .async aop allInputs allOutputs →
+    aop.Interp (.mk allInputs allOutputs k₁' inputs inputVals k₂' outputs outputVals) aop' →
     c.chans.popVals inputs = some (inputVals, chans') →
     Step c .τ { c with
       proc := { c.proc with
-        atoms := ctxLeft ++ .async aop' allInputs allOutputs :: ctxRight,
+        atoms := c.proc.atoms.set i (.async aop' allInputs allOutputs),
       },
       chans := chans'.pushVals outputs outputVals,
     }
@@ -277,8 +316,60 @@ def Proc.semantics
       exact ⟨_, .step_op hmem hpop⟩
   }
 
+/-- Inputs read in each async op is a sublist of the total input list. -/
+theorem async_op_interp_input_sublist
+  [InterpConsts V]
+  {aop aop' : AsyncOp V k₁ k₂}
+  (hinterp : AsyncOp.Interp aop
+    (.mk allInputs allOutputs k₁' inputs inputVals k₂' outputs outputVals)
+    aop') :
+  inputs.toList.Sublist allInputs.toList := by
+  cases hinterp
+  any_goals simp [Vector.toList]
+
+/-- Outputs read in each async op is a sublist of the total output list. -/
+theorem async_op_interp_output_sublist
+  [InterpConsts V]
+  {aop aop' : AsyncOp V k₁ k₂}
+  (hinterp : AsyncOp.Interp aop
+    (.mk allInputs allOutputs k₁' inputs inputVals k₂' outputs outputVals)
+    aop') :
+  outputs.toList.Sublist allOutputs.toList := by
+  cases hinterp
+  any_goals simp [Vector.toList]
+  case interp_switch =>
+    split <;> simp
+
 /-! Alternative rules for the stepping relation. -/
 section AltStep
+
+theorem Config.Step.step_async_alt
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  {c : Config Op χ V m n}
+  {k₁ k₂ k₁' k₂'}
+  {aop aop' : AsyncOp V k₁ k₂}
+  {ctxLeft ctxRight}
+  {allInputs allOutputs}
+  {inputs : Vector χ k₁'}
+  {outputs : Vector χ k₂'}
+  {inputVals outputVals chans'}
+  (happ : c.proc.atoms = ctxLeft ++ .async aop allInputs allOutputs :: ctxRight)
+  (hinterp : aop.Interp
+    (.mk allInputs allOutputs k₁' inputs inputVals k₂' outputs outputVals)
+    aop')
+  (hpop_inputs : c.chans.popVals inputs = some (inputVals, chans')) :
+  Step c .τ { c with
+    proc := { c.proc with
+      atoms := ctxLeft ++ .async aop' allInputs allOutputs :: ctxRight,
+    },
+    chans := chans'.pushVals outputs outputVals,
+  } := by
+  have hget := List.getElem_of_append_cons happ
+  apply Config.Step.step_async
+    (by simp [happ])
+    hget hinterp hpop_inputs
+    |> Lts.Step.eq_rhs
+  simp [happ]
 
 theorem Config.Step.step_switch
   [Arity Op] [DecidableEq χ] [InterpConsts V]
@@ -296,7 +387,7 @@ theorem Config.Step.step_switch
   have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
   have happ := List.to_append_cons (l := c.proc.atoms) hi
   simp only [hget_i, AtomicProc.switch] at happ
-  apply Config.Step.step_async
+  apply Config.Step.step_async_alt
     (aop := .switch k)
     (aop' := .switch k)
     happ
@@ -326,7 +417,7 @@ theorem Config.Step.step_steer
   have happ := List.to_append_cons (l := c.proc.atoms) hi
   simp only [hget_i, AtomicProc.steer] at happ
   by_cases h₁ : deciderBool = flavor
-  · apply Config.Step.step_async
+  · apply Config.Step.step_async_alt
       (aop := .steer flavor k)
       (aop' := .steer flavor k)
       happ
@@ -336,7 +427,7 @@ theorem Config.Step.step_steer
     simp [h₁]
     congr 1
     exact happ.symm
-  · apply Config.Step.step_async
+  · apply Config.Step.step_async_alt
       (aop := .steer flavor k)
       (aop' := .steer flavor k)
       happ
@@ -362,7 +453,7 @@ theorem Config.Step.step_carry_left
     chans := chans'.pushVals outputs inputVals,
   } := by
   simp at happ
-  apply Config.Step.step_async
+  apply Config.Step.step_async_alt
     (aop := .carry .popLeft k)
     (aop' := .carry .decider k)
     happ
@@ -388,7 +479,7 @@ theorem Config.Step.step_carry_right
     chans := chans'.pushVals outputs inputVals,
   } := by
   simp at happ
-  apply Config.Step.step_async
+  apply Config.Step.step_async_alt
     (aop := .carry .popRight k)
     (aop' := .carry .decider k)
     happ
@@ -418,7 +509,7 @@ theorem Config.Step.step_carry_decider
     chans := chans',
   } := by
   simp at happ
-  apply Config.Step.step_async
+  apply Config.Step.step_async_alt
     (aop := .carry .decider k)
     (aop' := .carry (if deciderBool then .popRight else .popLeft) k)
     happ
@@ -446,7 +537,7 @@ theorem Config.Step.step_merge
   have happ := List.to_append_cons (l := c.proc.atoms) hi
   simp only [hget_i, AtomicProc.merge] at happ
   by_cases h₁ : deciderBool <;> simp [h₁] at hpop_inputs
-  · apply Config.Step.step_async
+  · apply Config.Step.step_async_alt
       (aop := .merge k)
       (aop' := .merge k)
       happ
@@ -457,7 +548,7 @@ theorem Config.Step.step_merge
     congr 1
     simp only [Vector.append_assoc] at happ
     exact happ.symm
-  · apply Config.Step.step_async
+  · apply Config.Step.step_async_alt
       (aop := .merge k)
       (aop' := .merge k)
       happ
@@ -481,7 +572,7 @@ theorem Config.Step.step_forward
   have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
   have happ := List.to_append_cons (l := c.proc.atoms) hi
   simp only [hget_i, AtomicProc.forward] at happ
-  apply Config.Step.step_async
+  apply Config.Step.step_async_alt
     (aop := .forward k)
     (aop' := .forward k)
     happ
@@ -505,7 +596,7 @@ theorem Config.Step.step_fork
   have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
   have happ := List.to_append_cons (l := c.proc.atoms) hi
   simp only [hget_i, AtomicProc.fork] at happ
-  apply Config.Step.step_async
+  apply Config.Step.step_async_alt
     (aop := .fork k)
     (aop' := .fork k)
     happ
@@ -530,7 +621,7 @@ theorem Config.Step.step_const
   have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
   have happ := List.to_append_cons (l := c.proc.atoms) hi
   simp only [hget_i, AtomicProc.const] at happ
-  apply Config.Step.step_async
+  apply Config.Step.step_async_alt
     (aop := .const val k)
     (aop' := .const val k)
     happ
@@ -555,7 +646,7 @@ theorem Config.Step.step_forwardc
   have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
   have happ := List.to_append_cons (l := c.proc.atoms) hi
   simp only [hget_i, AtomicProc.forwardc] at happ
-  apply Config.Step.step_async
+  apply Config.Step.step_async_alt
     (aop := .forwardc n' m' consts)
     (aop' := .forwardc n' m' consts)
     happ
@@ -577,7 +668,7 @@ theorem Config.Step.step_sink
   have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
   have happ := List.to_append_cons (l := c.proc.atoms) hi
   simp only [hget_i, AtomicProc.sink] at happ
-  apply Config.Step.step_async
+  apply Config.Step.step_async_alt
     (aop := .sink k)
     (aop' := .sink k)
     happ

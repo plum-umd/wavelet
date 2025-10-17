@@ -182,6 +182,23 @@ theorem to_append_cons
   l = l.take i ++ l[i] :: l.drop (i + 1)
 := by simp
 
+theorem getElem_of_append_cons
+  {l l₁ l₂ : List α} {x : α}
+  (h : l = l₁ ++ x :: l₂) :
+  l[l₁.length]'(by simp [h]) = x
+:= by simp [h]
+
+theorem mem_set_ne
+  {l : List α} {i j : Nat} {x y : α}
+  (hj : j < l.length)
+  (hget₂ : l[j] = y)
+  (hne : i ≠ j) : y ∈ l.set i x
+:= by
+  apply mem_of_getElem (i := j)
+  rw [List.getElem_set_ne hne]
+  · exact hget₂
+  · simp [hj]
+
 theorem mem_to_mem_removeAll
   [DecidableEq α]
   {x : α} {l₁ l₂ : List α}
