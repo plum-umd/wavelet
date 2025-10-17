@@ -1306,8 +1306,9 @@ theorem sim_type_check_op
       · simp
       · simp
         constructor
-        and_intros; exact hwt'
-        sorry
+        and_intros;
+        -- exact hwt'
+        all_goals sorry
   ⟩
 
 theorem sim_type_check_br
