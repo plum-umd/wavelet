@@ -438,35 +438,21 @@ theorem push_vals_push_vals_disj_commute
     = (chans.pushVals vars₂ vals₂).pushVals vars₁ vals₁
   := sorry
 
-/-- TODO: use the mathlib version. -/
-lemma heq_iff_exists_eq_cast
-  {a : α} {b : β} : a ≍ b ↔ ∃ (h : β = α), a = cast h b :=
-  ⟨fun h ↦ ⟨type_eq_of_heq h.symm, eq_cast_iff_heq.mpr h⟩,
-    by rintro ⟨rfl, h⟩; rw [h, cast_eq]⟩
-
--- def AsyncLabel.Deterministic
---   [Arity Op]
---   (l₁ l₂ : Label Op V m n) : Prop :=
---   ∀ {allInputs allOutputs m' inputs } :
---     aop₁ ≍ aop₂
+-- /-- TODO: use the mathlib version. -/
+-- lemma heq_iff_exists_eq_cast
+--   {a : α} {b : β} : a ≍ b ↔ ∃ (h : β = α), a = cast h b :=
+--   ⟨fun h ↦ ⟨type_eq_of_heq h.symm, eq_cast_iff_heq.mpr h⟩,
+--     by rintro ⟨rfl, h⟩; rw [h, cast_eq]⟩
 
 -- theorem async_op_interp_det_inputs
 --   [InterpConsts V]
---   {aop₁ aop₁' : AsyncOp V m₁ n₁}
---   {aop₂ aop₂' : AsyncOp V m₂ n₂}
---   (heq : aop₁ ≍ aop₂)
---   (hinterp₁ : aop₁.Interp label₁ aop₁')
---   (hinterp₂ : aop₂.Interp label₂ aop₂') :
---     label₁.m' ≍ label₂.m'
+--   {aop aop₁' aop₂' : AsyncOp V}
+--   (hinterp₁ : aop.Interp label₁ aop₁')
+--   (hinterp₂ : aop.Interp label₂ aop₂') :
+--     label₁.m' = label₂.m'
 --   := by
---   cases aop₁ <;> cases aop₂
---   case switch.merge =>
---     -- injection heq
-
---     have ⟨heq_ty, h⟩ := heq_iff_exists_eq_cast.mp heq
-
---     sorry
---   all_goals sorry
+--   cases hinterp₁ <;> cases hinterp₂
+--   all_goals simp
 
 /-- Without considering the shared operator states
 a `Proc` has a strongly confluent (and thus confluence) semantics
@@ -534,8 +520,8 @@ theorem proc_strong_confluence
     case neg.h.step_op.step_async =>
       rename_i
         op₁ inputs₁ outputs₁ inputVals₁ outputVals₁ chans₁' hmem₁ hpop₁
-        _ _ _ _ aop₂ aop₂' allInputs₂ allOutputs₂
-        inputs₂ outputs₂ inputVals₂ outputVals₂ chans₂' j hinterp₂ hj hget_j hpop₂
+        _ _ aop₂ aop₂' allInputs₂ allOutputs₂
+        inputs₂ inputVals₂ outputs₂ outputVals₂ chans₂' j hinterp₂ hj hget_j hpop₂
       have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem₁
       have hne : i ≠ j := by
         intro heq; subst heq
@@ -571,8 +557,8 @@ theorem proc_strong_confluence
     -- Commute `step_async` and `step_op`
     case neg.h.step_async.step_op =>
       rename_i
-        _ _ _ _ aop₂ aop₂' allInputs₂ allOutputs₂
-        inputs₂ outputs₂ inputVals₂ outputVals₂ chans₂' j hinterp₂ hj hget_j hpop₂
+        _ _ aop₂ aop₂' allInputs₂ allOutputs₂
+        inputs₂ inputVals₂ outputs₂ outputVals₂ chans₂' j hinterp₂ hj hget_j hpop₂
         op₁ inputs₁ outputs₁ inputVals₁ outputVals₁ chans₁' hmem₁ hpop₁
       have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem₁
       have hne : i ≠ j := by
@@ -609,21 +595,25 @@ theorem proc_strong_confluence
     -- Commute two `step_async`s
     case neg.h.step_async.step_async =>
       rename_i
-        _ _ _ _ aop₁ aop₁' allInputs₁ allOutputs₁
-        inputs₁ outputs₁ inputVals₁ outputVals₁ chans₁' i hinterp₁ hi hget_i hpop₁
-        _ _ _ _ aop₂ aop₂' allInputs₂ allOutputs₂
-        inputs₂ outputs₂ inputVals₂ outputVals₂ chans₂' j hinterp₂ hj hget_j hpop₂
+        _ _ aop₁ aop₁' allInputs₁ allOutputs₁
+        inputs₁ inputVals₁ outputs₁ outputVals₁ chans₁' i hinterp₁ hi hget_i hpop₁
+        _ _ aop₂ aop₂' allInputs₂ allOutputs₂
+        inputs₂ inputVals₂ outputs₂ outputVals₂ chans₂' j hinterp₂ hj hget_j hpop₂
       by_cases h : i = j
-      · subst h
-        simp [hget_i] at hget_j
-        have ⟨h₁, h₂, h₃, h₄, h₅⟩ := hget_j
-        subst h₁; subst h₂; subst h₃; subst h₄; subst h₅
-        -- aop₁.Interp aop₁' allInputs₁ allOutputs₁ ⟨k₁'✝¹, (inputs₁, inputVals₁)⟩ ⟨k₂'✝¹, (outputs₁, outputVals₁)⟩
-        -- aop₁.Interp aop₂' allInputs₁ allOutputs₁ ⟨k₁'✝, (inputs₂, inputVals₂)⟩ ⟨k₂'✝, (outputs₂, outputVals₂)⟩
-        cases aop₁
-        · simp at hinterp₁
-          sorry
-        all_goals sorry
+      · exfalso
+        subst h
+        -- simp [hget_i] at hget_j
+        -- have ⟨h₁, h₂, h₃, h₄, h₅⟩ := hget_j
+        -- subst h₁; subst h₂; subst h₃; subst h₄; subst h₅
+        -- -- aop₁.Interp aop₁' allInputs₁ allOutputs₁ ⟨k₁'✝¹, (inputs₁, inputVals₁)⟩ ⟨k₂'✝¹, (outputs₁, outputVals₁)⟩
+        -- -- aop₁.Interp aop₂' allInputs₁ allOutputs₁ ⟨k₁'✝, (inputs₂, inputVals₂)⟩ ⟨k₂'✝, (outputs₂, outputVals₂)⟩
+        -- cases aop₁
+        -- · apply AsyncOp.rec (motive := λ _ _ (_ : AsyncOp V _ _) => False)
+        --   ·
+        --     sorry
+        --   all_goals sorry
+        -- all_goals sorry
+        sorry
       · have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj
           ⟨i, hi⟩ ⟨j, hj⟩
           (by simp [h])
