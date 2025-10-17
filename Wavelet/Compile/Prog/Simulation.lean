@@ -680,7 +680,7 @@ private theorem sim_link_procs_step_dep
         (by
           simp [hsim_proc]
           apply List.mem_flatten_map (List.mem_of_getElem frame.get_op)
-          simp [linkAtomicProc, AtomicProcs.mapChans]
+          simp [linkAtomicProc, AtomicProcs.mapChans, AtomicProc.forward]
           exists AtomicProc.op op inputs outputs)
         (by
           simp [hsim_chans]

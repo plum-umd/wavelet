@@ -30,13 +30,6 @@ def linkAtomicProc
     [ .forward ((procs op.toFin).outputs.map (LinkName.dep op.toFin)) (outputs.map .main) ]
   | .async aop inputs outputs =>
     [.async aop (inputs.map .main) (outputs.map .main)]
-  | .merge decider inputs₁ inputs₂ outputs =>
-    [.merge (.main decider) (inputs₁.map .main) (inputs₂.map .main) (outputs.map .main)]
-  | .forward inputs outputs => [.forward (inputs.map .main) (outputs.map .main)]
-  | .fork input outputs => [.fork (.main input) (outputs.map .main)]
-  | .const c act outputs => [.const c act (outputs.map .main)]
-  | .forwardc inputs consts outputs => [.forwardc (inputs.map .main) consts (outputs.map .main)]
-  | .sink inputs => [.sink (inputs.map .main)]
 
 /--
 Inline calls to the given `k` processes while preserving a forward simulation.

@@ -25,54 +25,73 @@ inductive AsyncOp V : Nat → Nat → Type u where
   | merge (n : Nat) : AsyncOp V (1 + n + n) n
   | forward (n : Nat) : AsyncOp V n n
   | fork (n : Nat) : AsyncOp V 1 n
-  | const (c : V) (n : Nat) : AsyncOp V 0 n
-  | forwardc (n m : Nat) (consts : Vector V m) : AsyncOp V n (n + m)
-  | sink (n : Nat) : AsyncOp V n 0
-
-/-- Dataflow operators. -/
-inductive AtomicProc (Op χ V : Type*) [Arity Op] where
-  | op (op : Op) (inputs : Vector χ (Arity.ι op)) (outputs : Vector χ (Arity.ω op))
-  | async (aop : AsyncOp V m n) (inputs : Vector χ m) (outputs : Vector χ n)
-  -- | switch (decider : χ) (inputs : Vector χ n) (outputs₁ : Vector χ n) (outputs₂ : Vector χ n)
-  -- | steer (flavor : Bool) (decider : χ) (inputs : Vector χ n) (outputs : Vector χ n)
-  -- | carry (state : CarryState)
-  --   (decider : χ)
-  --   (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
-  --   (outputs : Vector χ n)
-  | merge (decider : χ)
-    (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
-    (outputs : Vector χ n)
-  | forward (inputs : Vector χ n) (outputs : Vector χ n)
-  | fork (input : χ) (outputs : Vector χ n)
-  | const (c : V) (act : χ) (outputs : Vector χ n)
+  | const (c : V) (n : Nat) : AsyncOp V 1 n
   -- A combination of `forward` and `const` to wait for inputs to arrive,
   -- forward the inputs to the first `n` outputs, and then send constants
   -- to the last `m` outputs.
-  | forwardc
-    (inputs : Vector χ n) (consts : Vector V m) (outputs : Vector χ (n + m))
-  | sink (inputs : Vector χ n)
+  | forwardc (n m : Nat) (consts : Vector V m) : AsyncOp V n (n + m)
+  | sink (n : Nat) : AsyncOp V n 0
 
-def AtomicProc.switch [Arity Op]
+/-- Dataflow operators in two kinds:
+  - (Synchronous) operators always consume exactly one value
+    from each input channel and always output exactly one value
+    to each output channel.
+  - Asynchronous operators can change the number of inputs/outputs
+    depending on internal state or input values. -/
+inductive AtomicProc (Op χ V : Type*) [Arity Op] where
+  | op (op : Op) (inputs : Vector χ (Arity.ι op)) (outputs : Vector χ (Arity.ω op))
+  | async (aop : AsyncOp V m n) (inputs : Vector χ m) (outputs : Vector χ n)
+
+/-! Built-in asynchronous operators. -/
+namespace AtomicProc
+
+def switch [Arity Op]
   (decider : χ) (inputs : Vector χ n)
   (outputs₁ : Vector χ n)
-  (outputs₂ : Vector χ n) :
-  AtomicProc Op χ V
+  (outputs₂ : Vector χ n) : AtomicProc Op χ V
   := .async (.switch n) (#v[decider] ++ inputs) (outputs₁ ++ outputs₂)
 
-def AtomicProc.steer [Arity Op]
+def steer [Arity Op]
   (flavor : Bool)
   (decider : χ) (inputs : Vector χ n)
-  (outputs : Vector χ n) :
-  AtomicProc Op χ V
+  (outputs : Vector χ n) : AtomicProc Op χ V
   := .async (.steer flavor n) (#v[decider] ++ inputs) outputs
 
-def AtomicProc.carry [Arity Op]
+def carry [Arity Op]
   (state : CarryState)
   (decider : χ)
   (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
-  (outputs : Vector χ n) :
-  AtomicProc Op χ V
+  (outputs : Vector χ n) : AtomicProc Op χ V
   := .async (.carry state n) (#v[decider] ++ inputs₁ ++ inputs₂) outputs
+
+def merge [Arity Op]
+  (decider : χ)
+  (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
+  (outputs : Vector χ n) : AtomicProc Op χ V
+  := .async (.merge n) (#v[decider] ++ inputs₁ ++ inputs₂) outputs
+
+def forward [Arity Op]
+  (inputs : Vector χ n) (outputs : Vector χ n) : AtomicProc Op χ V
+  := .async (.forward n) inputs outputs
+
+def fork [Arity Op]
+  (input : χ) (outputs : Vector χ n) : AtomicProc Op χ V
+  := .async (.fork n) #v[input] outputs
+
+def const [Arity Op]
+  (c : V) (act : χ) (outputs : Vector χ n) : AtomicProc Op χ V
+  := .async (.const c n) #v[act] outputs
+
+def forwardc [Arity Op]
+  (inputs : Vector χ n) (consts : Vector V m)
+  (outputs : Vector χ (n + m)) : AtomicProc Op χ V
+  := .async (.forwardc n m consts) inputs outputs
+
+def sink [Arity Op]
+  (inputs : Vector χ n) : AtomicProc Op χ V
+  := .async (.sink n) inputs #v[]
+
+end AtomicProc
 
 abbrev AtomicProcs Op χ V [Arity Op] := List (AtomicProc Op χ V)
 
@@ -92,7 +111,7 @@ def Config.init
   (proc : Proc Op χ V m n) : Config Op χ V m n
   := { proc, chans := .empty }
 
-/-- Defines the semantics of each async operator -/
+/-- Defines the semantics of each built-in async operator -/
 inductive AsyncOp.Interp
   [InterpConsts V] :
   (aop : AsyncOp V m n) →
@@ -162,7 +181,55 @@ inductive AsyncOp.Interp
       outputs
       ⟨1, #v[decider], #v[deciderVal]⟩
       ⟨0, #v[], #v[]⟩
+  | interp_merge_true
+    {decider : χ}
+    {deciderVal : V}
+    {inputs₁ inputs₂ : Vector χ k} :
+    InterpConsts.toBool deciderVal = some deciderBool →
+    deciderBool →
+    Interp (.merge k) (.merge k)
+      (#v[decider] ++ inputs₁ ++ inputs₂)
+      outputs
+      ⟨1 + k, #v[decider] ++ inputs₁, #v[deciderVal] ++ inputVals⟩
+      ⟨k, outputs, inputVals⟩
+  | interp_merge_false
+    {decider : χ}
+    {deciderVal : V}
+    {inputs₁ inputs₂ : Vector χ k} :
+    InterpConsts.toBool deciderVal = some deciderBool →
+    ¬deciderBool →
+    Interp (.merge k) (.merge k)
+      (#v[decider] ++ inputs₁ ++ inputs₂)
+      outputs
+      ⟨1 + k, #v[decider] ++ inputs₂, #v[deciderVal] ++ inputVals⟩
+      ⟨k, outputs, inputVals⟩
+  | interp_forward :
+    Interp (.forward k) (.forward k)
+      inputs outputs
+      ⟨k, inputs, inputVals⟩
+      ⟨k, outputs, inputVals⟩
+  | interp_fork :
+    Interp (.fork k) (.fork k)
+      #v[input] outputs
+      ⟨1, #v[input], #v[inputVal]⟩
+      ⟨k, outputs, Vector.replicate _ inputVal⟩
+  | interp_const :
+    Interp (.const c k) (.const c k)
+      #v[act] outputs
+      ⟨1, #v[act], #v[actVal]⟩
+      ⟨k, outputs, Vector.replicate _ c⟩
+  | interp_forwardc :
+    Interp (.forwardc n m consts) (.forwardc n m consts)
+      inputs outputs
+      ⟨n, inputs, inputVals⟩
+      ⟨n + m, outputs, inputVals ++ consts⟩
+  | interp_sink :
+    Interp (.sink k) (.sink k)
+      inputs #v[]
+      ⟨k, inputs, inputVals⟩
+      ⟨0, #v[], #v[]⟩
 
+/-- Main stepping relation for dataflow. -/
 inductive Config.Step
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
@@ -197,42 +264,6 @@ inductive Config.Step
       },
       chans := chans'.pushVals outputs outputVals,
     }
-  | step_merge :
-    .merge decider inputs₁ inputs₂ outputs ∈ c.proc.atoms →
-    c.chans.popVal decider = some (deciderVal, chans') →
-    InterpConsts.toBool deciderVal = some deciderBool →
-    chans'.popVals
-      (if deciderBool then inputs₁ else inputs₂)
-      = some (inputVals, chans'') →
-    Step c .τ { c with chans := chans''.pushVals outputs inputVals }
-  | step_forward :
-    .forward inputs outputs ∈ c.proc.atoms →
-    c.chans.popVals inputs = some (inputVals, chans') →
-    Step c .τ { c with
-      chans := chans'.pushVals outputs inputVals,
-    }
-  | step_fork :
-    .fork input outputs ∈ c.proc.atoms →
-    c.chans.popVal input = some (inputVal, chans') →
-    Step c .τ { c with
-      chans := chans'.pushVals outputs (Vector.replicate _ inputVal),
-    }
-  | step_const :
-    .const val act outputs ∈ c.proc.atoms →
-    c.chans.popVal act = some (actVal, chans') →
-    Step c .τ { c with
-      chans := chans'.pushVals outputs (Vector.replicate _ val),
-    }
-  | step_forwardc :
-    .forwardc inputs consts outputs ∈ c.proc.atoms →
-    c.chans.popVals inputs = some (inputVals, chans') →
-    Step c .τ { c with
-      chans := chans'.pushVals outputs (inputVals ++ consts),
-    }
-  | step_sink :
-    .sink inputs ∈ c.proc.atoms →
-    c.chans.popVals inputs = some (inputVals, chans') →
-    Step c .τ { c with chans := chans' }
 
 def Proc.semantics
   [Arity Op] [DecidableEq χ] [InterpConsts V]
@@ -398,6 +429,164 @@ theorem Config.Step.step_carry_decider
   constructor
   · simp [AtomicProc.carry]
   · simp [ChanMap.pushVals]
+
+theorem Config.Step.step_merge
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  {c : Config Op χ V m n}
+  {inputs₁ inputs₂ outputs : Vector χ k}
+  (hmem : .merge decider inputs₁ inputs₂ outputs ∈ c.proc.atoms)
+  (hpop_decider : c.chans.popVal decider = some (deciderVal, chans'))
+  (hdecider : InterpConsts.toBool deciderVal = some deciderBool)
+  (hpop_inputs : chans'.popVals
+    (if deciderBool then inputs₁ else inputs₂) = some (inputVals, chans'')) :
+  Step c .τ { c with
+    chans := chans''.pushVals outputs inputVals
+  } := by
+  have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
+  have happ := List.to_append_cons (l := c.proc.atoms) hi
+  simp only [hget_i, AtomicProc.merge] at happ
+  by_cases h₁ : deciderBool <;> simp [h₁] at hpop_inputs
+  · apply Config.Step.step_async
+      (aop := .merge k)
+      (aop' := .merge k)
+      happ
+      (.interp_merge_true hdecider h₁)
+      (pop_vals_append (pop_val_to_pop_vals hpop_decider) hpop_inputs)
+      |> Lts.Step.eq_rhs
+    simp
+    congr 1
+    simp only [Vector.append_assoc] at happ
+    exact happ.symm
+  · apply Config.Step.step_async
+      (aop := .merge k)
+      (aop' := .merge k)
+      happ
+      (.interp_merge_false hdecider h₁)
+      (pop_vals_append (pop_val_to_pop_vals hpop_decider) hpop_inputs)
+      |> Lts.Step.eq_rhs
+    simp [ChanMap.pushVals]
+    congr 1
+    simp only [Vector.append_assoc] at happ
+    exact happ.symm
+
+theorem Config.Step.step_forward
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  {c : Config Op χ V m n}
+  {inputs outputs : Vector χ k}
+  (hmem : .forward inputs outputs ∈ c.proc.atoms)
+  (hpop_inputs : c.chans.popVals inputs = some (inputVals, chans')) :
+  Step c .τ { c with
+    chans := chans'.pushVals outputs inputVals,
+  } := by
+  have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
+  have happ := List.to_append_cons (l := c.proc.atoms) hi
+  simp only [hget_i, AtomicProc.forward] at happ
+  apply Config.Step.step_async
+    (aop := .forward k)
+    (aop' := .forward k)
+    happ
+    .interp_forward
+    hpop_inputs
+    |> Lts.Step.eq_rhs
+  simp
+  congr 1
+  exact happ.symm
+
+theorem Config.Step.step_fork
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  {c : Config Op χ V m n}
+  {input : χ}
+  {outputs : Vector χ k}
+  (hmem : .fork input outputs ∈ c.proc.atoms)
+  (hpop_input : c.chans.popVal input = some (inputVal, chans')) :
+  Step c .τ { c with
+    chans := chans'.pushVals outputs (Vector.replicate _ inputVal),
+  } := by
+  have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
+  have happ := List.to_append_cons (l := c.proc.atoms) hi
+  simp only [hget_i, AtomicProc.fork] at happ
+  apply Config.Step.step_async
+    (aop := .fork k)
+    (aop' := .fork k)
+    happ
+    .interp_fork
+    (pop_val_to_pop_vals hpop_input)
+    |> Lts.Step.eq_rhs
+  simp
+  congr 1
+  exact happ.symm
+
+theorem Config.Step.step_const
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  {c : Config Op χ V m n}
+  {val : V}
+  {act : χ}
+  {outputs : Vector χ k}
+  (hmem : .const val act outputs ∈ c.proc.atoms)
+  (hpop_act : c.chans.popVal act = some (actVal, chans')) :
+  Step c .τ { c with
+    chans := chans'.pushVals outputs (Vector.replicate _ val),
+  } := by
+  have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
+  have happ := List.to_append_cons (l := c.proc.atoms) hi
+  simp only [hget_i, AtomicProc.const] at happ
+  apply Config.Step.step_async
+    (aop := .const val k)
+    (aop' := .const val k)
+    happ
+    .interp_const
+    (pop_val_to_pop_vals hpop_act)
+    |> Lts.Step.eq_rhs
+  simp
+  congr 1
+  exact happ.symm
+
+theorem Config.Step.step_forwardc
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  {c : Config Op χ V m n}
+  {inputs : Vector χ n'}
+  {consts : Vector V m'}
+  {outputs : Vector χ (n' + m')}
+  (hmem : .forwardc inputs consts outputs ∈ c.proc.atoms)
+  (hpop_inputs : c.chans.popVals inputs = some (inputVals, chans')) :
+  Step c .τ { c with
+    chans := chans'.pushVals outputs (inputVals ++ consts),
+  } := by
+  have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
+  have happ := List.to_append_cons (l := c.proc.atoms) hi
+  simp only [hget_i, AtomicProc.forwardc] at happ
+  apply Config.Step.step_async
+    (aop := .forwardc n' m' consts)
+    (aop' := .forwardc n' m' consts)
+    happ
+    (.interp_forwardc)
+    hpop_inputs
+    |> Lts.Step.eq_rhs
+  simp
+  congr 1
+  exact happ.symm
+
+theorem Config.Step.step_sink
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  {c : Config Op χ V m n}
+  {inputs : Vector χ k}
+  (hmem : .sink inputs ∈ c.proc.atoms)
+  (hpop_inputs : c.chans.popVals inputs = some (inputVals, chans')) :
+    Step c .τ { c with chans := chans' }
+  := by
+  have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
+  have happ := List.to_append_cons (l := c.proc.atoms) hi
+  simp only [hget_i, AtomicProc.sink] at happ
+  apply Config.Step.step_async
+    (aop := .sink k)
+    (aop' := .sink k)
+    happ
+    (.interp_sink)
+    hpop_inputs
+    |> Lts.Step.eq_rhs
+  simp [ChanMap.pushVals]
+  congr 1
+  exact happ.symm
 
 end AltStep
 

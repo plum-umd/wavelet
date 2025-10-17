@@ -82,8 +82,10 @@ theorem compile_expr_preserves_aff_op
   : (compileExpr (V := V) hnz definedVars pathConds expr).AffineInrOp usedOps
   := by
   induction expr generalizing definedVars pathConds usedOps with
-  | ret => simp [compileExpr, AtomicProcs.AffineInrOp]
-  | tail => simp [compileExpr, AtomicProcs.AffineInrOp]
+  | ret => simp [compileExpr, AtomicProcs.AffineInrOp,
+    AtomicProc.forwardc, AtomicProc.sink]
+  | tail => simp [compileExpr, AtomicProcs.AffineInrOp,
+    AtomicProc.forwardc, AtomicProc.sink]
   | op o args rets cont ih =>
     cases o with
     | inl op₁ =>
@@ -129,7 +131,7 @@ theorem compile_expr_preserves_aff_op
     cases hmem₁ <;> cases hmem₂
     any_goals
       rename_i hmem₁ hmem₂
-      simp [AtomicProc.switch] at hmem₁ hmem₂
+      simp [AtomicProc.switch, AtomicProc.merge, AtomicProc.fork] at hmem₁ hmem₂
     cases hmem₁ <;> cases hmem₂
     · rename_i hmem₁ hmem₂
       simp [ih₁ (hnz := hnz) haff₁ hmem₁ hmem₂]
@@ -160,7 +162,7 @@ theorem compile_fn_preserves_aff_op
   simp [compileFn, compileFn.initCarry, compileFn.resultSteers,
     Proc.AffineInrOp]
   simp [AtomicProcs.AffineInrOp] at this
-  simp [AtomicProc.carry, AtomicProc.steer]
+  simp [AtomicProc.carry, AtomicProc.steer, AtomicProc.fork]
   grind only
 
 theorem map_chans_preserves_aff_op
