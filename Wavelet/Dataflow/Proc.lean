@@ -314,7 +314,7 @@ theorem AsyncOp.Interp.eq_label
 /-- If two async op invocations reads the same values from the same input channels,
 then the transition is deterministic. Note that this does not rule out the case
 when the async operator can non-deterministically choose different inputs to read. -/
-theorem async_op_interp_det
+theorem async_op_interp_det_outputs
   [InterpConsts V]
   {aop aop₁' aop₂' : AsyncOp V}
   (hinterp₁ : aop.Interp (.mk allInputs allOutputs inputs₁ inputVals₁ outputs₁ outputVals₁) aop₁')
@@ -327,6 +327,17 @@ theorem async_op_interp_det
   := by
   cases hinterp₁ <;> cases hinterp₂
   any_goals grind only [cases Or]
+
+theorem async_op_interp_det_inputs_len
+  [InterpConsts V]
+  {aop aop₁' aop₂' : AsyncOp V}
+  (hinterp₁ : aop.Interp (.mk allInputs₁ allOutputs₁ inputs₁ inputVals₁ outputs₁ outputVals₁) aop₁')
+  (hinterp₂ : aop.Interp (.mk allInputs₂ allOutputs₂ inputs₂ inputVals₂ outputs₂ outputVals₂) aop₂') :
+    inputs₁.length = inputs₂.length
+  := by
+  cases hinterp₁ <;> cases hinterp₂
+  any_goals grind only [List.length_cons, = List.length_drop,
+    = List.length_take, = Nat.min_def, cases Or, List.length]
 
 /-- Inputs read in each async op is a sublist of the total input list. -/
 theorem async_op_interp_input_sublist

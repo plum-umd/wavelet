@@ -438,22 +438,6 @@ theorem push_vals_push_vals_disj_commute
     = (chans.pushVals vars₂ vals₂).pushVals vars₁ vals₁
   := sorry
 
--- /-- TODO: use the mathlib version. -/
--- lemma heq_iff_exists_eq_cast
---   {a : α} {b : β} : a ≍ b ↔ ∃ (h : β = α), a = cast h b :=
---   ⟨fun h ↦ ⟨type_eq_of_heq h.symm, eq_cast_iff_heq.mpr h⟩,
---     by rintro ⟨rfl, h⟩; rw [h, cast_eq]⟩
-
--- theorem async_op_interp_det_inputs
---   [InterpConsts V]
---   {aop aop₁' aop₂' : AsyncOp V}
---   (hinterp₁ : aop.Interp label₁ aop₁')
---   (hinterp₂ : aop.Interp label₂ aop₂') :
---     label₁.m' = label₂.m'
---   := by
---   cases hinterp₁ <;> cases hinterp₂
---   all_goals simp
-
 /-- Without considering the shared operator states
 a `Proc` has a strongly confluent (and thus confluence) semantics
 (when restricted to silent/yield labels). -/
@@ -600,8 +584,8 @@ theorem proc_strong_confluence
         _ _ aop₂ aop₂' allInputs₂ allOutputs₂
         inputs₂ inputVals₂ outputs₂ outputVals₂ chans₂' j hinterp₂ hj hget_j hpop₂
       by_cases h : i = j
-      · -- Prove that the final states should be the same
-        apply False.elim
+      -- Firing the same async op => final state should be the same
+      · apply False.elim
         apply heq_state
         subst h
         simp [hget_i] at hget_j
@@ -609,49 +593,55 @@ theorem proc_strong_confluence
         subst h₁; subst h₂; subst h₃
         simp at hinterp₁ hinterp₂
         simp
+        have heq_inputs_len := async_op_interp_det_inputs_len hinterp₁ hinterp₂
+        simp at heq_inputs_len
+        subst heq_inputs_len
+        have heq_inputs : inputs₁ = inputs₂ := by
+          -- Generealize so that we can do case analysis
+          generalize hinputs₁ : inputs₁.toList = inputs₁
+          generalize hinput_vals₁ : inputVals₁.toList = inputVals₁
+          generalize houtputs₁ : outputs₁.toList = outputs₁
+          generalize houtput_vals₁ : outputVals₁.toList = outputVals₁
+          rw [hinputs₁, hinput_vals₁, houtputs₁, houtput_vals₁] at hinterp₁
+          generalize hinputs₂ : inputs₂.toList = inputs₂
+          generalize hinput_vals₂ : inputVals₂.toList = inputVals₂
+          generalize houtputs₂ : outputs₂.toList = outputs₂
+          generalize houtput_vals₂ : outputVals₂.toList = outputVals₂
+          rw [hinputs₂, hinput_vals₂, houtputs₂, houtput_vals₂] at hinterp₂
+          cases hinterp₁ <;> cases hinterp₂
+          any_goals
+            simp [← hinputs₁, Vector.toList_inj] at hinputs₂
+            simp [hinputs₂]
+          -- Merges are slightly complicated,
+          -- since the inputs can depend on input decider value...
+          -- TODO: a better solution would be to add local states
+          -- to merge similar to carry.
+          case
+            interp_merge_true.interp_merge_false |
+            interp_merge_false.interp_merge_true =>
+            have := pop_vals_eq_head hinputs₁ hinputs₂ hpop₁ hpop₂
+            simp [hinput_vals₁, hinput_vals₂] at this
+            subst this
+            grind only
+        have heq_input_vals : inputVals₁ = inputVals₂ := by
+          simp [heq_inputs] at hpop₁
+          simp [hpop₁] at hpop₂
+          simp [hpop₂]
+        have heq_outputs := async_op_interp_det_outputs hinterp₁ hinterp₂
+          (by simp [heq_inputs])
+          (by simp [heq_input_vals])
+        have heq_chans : chans₁' = chans₂' := by
+          simp [heq_inputs] at hpop₁
+          simp [hpop₁] at hpop₂
+          simp [hpop₂]
         congr 1
-        have heq_inputs : inputs₁ ≍ inputs₂ := by
-          sorry
         · congr
-          apply (async_op_interp_det hinterp₁ hinterp₂ _ _).2.2
-          ·
-            sorry
-          · sorry
-        ·
-          sorry
-
-        -- simp
-        -- congr 1
-
-        -- -- Generealize so that we can do case analysis
-        -- generalize hinputs₁ : inputs₁.toList = inputs₁
-        -- generalize hinputVals₁ : inputVals₁.toList = inputVals₁
-        -- generalize houtputs₁ : outputs₁.toList = outputs₁
-        -- generalize houtputVals₁ : outputVals₁.toList = outputVals₁
-        -- rw [hinputs₁, hinputVals₁, houtputs₁, houtputVals₁] at hinterp₁
-        -- generalize hinputs₂ : inputs₂.toList = inputs₂
-        -- generalize hinputVals₂ : inputVals₂.toList = inputVals₂
-        -- generalize houtputs₂ : outputs₂.toList = outputs₂
-        -- generalize houtputVals₂ : outputVals₂.toList = outputVals₂
-        -- rw [hinputs₂, hinputVals₂, houtputs₂, houtputVals₂] at hinterp₂
-        -- cases hinterp₁ <;> cases hinterp₂
-        -- any_goals simp
-
-        -- ·
-        --   sorry
-
-        -- all_goals sorry
-        -- cases hinterp₁ <;> cases hinterp₂
-        -- have ⟨h₁, h₂, h₃, h₄, h₅⟩ := hget_j
-        -- subst h₁; subst h₂; subst h₃; subst h₄; subst h₅
-        -- -- aop₁.Interp aop₁' allInputs₁ allOutputs₁ ⟨k₁'✝¹, (inputs₁, inputVals₁)⟩ ⟨k₂'✝¹, (outputs₁, outputVals₁)⟩
-        -- -- aop₁.Interp aop₂' allInputs₁ allOutputs₁ ⟨k₁'✝, (inputs₂, inputVals₂)⟩ ⟨k₂'✝, (outputs₂, outputVals₂)⟩
-        -- cases aop₁
-        -- · apply AsyncOp.rec (motive := λ _ _ (_ : AsyncOp V _ _) => False)
-        --   ·
-        --     sorry
-        --   all_goals sorry
-        -- all_goals sorry
+          simp [heq_outputs]
+        · have ⟨h, _⟩ := Vector.toList_inj_heq heq_outputs.1
+          subst h
+          simp [Vector.toList_inj] at heq_outputs
+          simp [heq_outputs, heq_chans]
+      -- Firing two different async ops
       · have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj
           ⟨i, hi⟩ ⟨j, hj⟩
           (by simp [h])

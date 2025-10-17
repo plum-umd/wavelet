@@ -139,4 +139,18 @@ theorem back_zip
 := by
   grind only [= getElem_zip, back_eq_getElem]
 
+theorem toList_inj_heq
+  {xs : Vector α n} {ys : Vector α m}
+  (h : xs.toList = ys.toList) :
+    n = m ∧ xs ≍ ys
+:= by
+  have h₁ : n = xs.toList.length := by simp
+  have h₂ : m = ys.toList.length := by simp
+  have h₃ : n = m := by rw [h₁, h₂, h]
+  subst h₃
+  constructor
+  · rfl
+  · simp
+    exact Vector.toList_inj.mp h
+
 end Vector

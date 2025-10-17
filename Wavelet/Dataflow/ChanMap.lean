@@ -263,6 +263,15 @@ theorem pop_vals_append
   map.popVals (names₁ ++ names₂) = some (vals₁ ++ vals₂, map'')
   := sorry
 
+theorem pop_vals_eq_head
+  {map : ChanMap χ V}
+  (hhead₁ : names₁.toList = name :: names₁')
+  (hhead₂ : names₂.toList = name :: names₂')
+  (hpop₁ : map.popVals names₁ = some (vals₁, map'))
+  (hpop₂ : map.popVals names₂ = some (vals₂, map'')) :
+  vals₁.toList.head? = vals₂.toList.head?
+  := sorry
+
 end Lemmas
 
 end Wavelet.Dataflow
