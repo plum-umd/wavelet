@@ -263,6 +263,35 @@ theorem pop_vals_append
   map.popVals (names₁ ++ names₂) = some (vals₁ ++ vals₂, map'')
   := sorry
 
+/-- If a list of channels already have values ready to pop,
+then it can commute with any `pushVals` operation. -/
+theorem pop_vals_push_vals_commute
+  [DecidableEq χ]
+  {chans : ChanMap χ V}
+  (hpop : chans.popVals vars₂ = some (vals₂, chans')) :
+  (chans.pushVals vars₁ outputVals₁).popVals vars₂ =
+    some (vals₂, chans'.pushVals vars₁ outputVals₁)
+  := sorry
+
+theorem pop_vals_pop_vals_disj_commute
+  [DecidableEq χ]
+  {chans : ChanMap χ V}
+  (hdisj : vars₁.toList.Disjoint vars₂.toList)
+  (hpop₁ : chans.popVals vars₁ = some (vals₁, chans₁))
+  (hpop₂ : chans.popVals vars₂ = some (vals₂, chans₂)) :
+  ∃ chans',
+    chans₁.popVals vars₂ = some (vals₂, chans') ∧
+    chans₂.popVals vars₁ = some (vals₁, chans')
+  := sorry
+
+theorem push_vals_push_vals_disj_commute
+  [DecidableEq χ]
+  {chans : ChanMap χ V}
+  (hdisj : vars₁.toList.Disjoint vars₂.toList) :
+  (chans.pushVals vars₁ vals₁).pushVals vars₂ vals₂
+    = (chans.pushVals vars₂ vals₂).pushVals vars₁ vals₁
+  := sorry
+
 theorem pop_vals_eq_head
   {map : ChanMap χ V}
   (hhead₁ : names₁.toList = name :: names₁')

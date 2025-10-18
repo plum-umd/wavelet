@@ -22,7 +22,11 @@ def AtomicProcs.AffineChan [Arity Op] (aps : AtomicProcs Op χ V) : Prop
     aps[i].outputs.Disjoint aps[j].outputs)
 
 /-- Each channel name is used at most once. -/
-def Proc.AffineChan [Arity Op] (proc : Proc Op χ V m n) : Prop
-  := proc.atoms.AffineChan
+def Proc.AffineChan [Arity Op] (proc : Proc Op χ V m n) : Prop :=
+  proc.inputs.toList.Nodup ∧
+  proc.outputs.toList.Nodup ∧
+  proc.atoms.AffineChan ∧
+  (∀ input ∈ proc.inputs, ∀ ap ∈ proc.atoms, input ∉ ap.outputs) ∧
+  (∀ output ∈ proc.outputs, ∀ ap ∈ proc.atoms, output ∉ ap.inputs)
 
 end Wavelet.Dataflow

@@ -409,38 +409,9 @@ theorem guarded_confluence
     trace₁ ++ trace₁' = trace₂ ++ trace₂'
   := sorry
 
-/-- If a list of channels already have values ready to pop,
-then it can commute with any `pushVals` operation. -/
-theorem pop_vals_push_vals_commute
-  [DecidableEq χ]
-  {chans : ChanMap χ V}
-  (hpop : chans.popVals vars₂ = some (vals₂, chans')) :
-  (chans.pushVals vars₁ outputVals₁).popVals vars₂ =
-    some (vals₂, chans'.pushVals vars₁ outputVals₁)
-  := sorry
-
-theorem pop_vals_pop_vals_disj_commute
-  [DecidableEq χ]
-  {chans : ChanMap χ V}
-  (hdisj : vars₁.toList.Disjoint vars₂.toList)
-  (hpop₁ : chans.popVals vars₁ = some (vals₁, chans₁))
-  (hpop₂ : chans.popVals vars₂ = some (vals₂, chans₂)) :
-  ∃ chans',
-    chans₁.popVals vars₂ = some (vals₂, chans') ∧
-    chans₂.popVals vars₁ = some (vals₁, chans')
-  := sorry
-
-theorem push_vals_push_vals_disj_commute
-  [DecidableEq χ]
-  {chans : ChanMap χ V}
-  (hdisj : vars₁.toList.Disjoint vars₂.toList) :
-  (chans.pushVals vars₁ vals₁).pushVals vars₂ vals₂
-    = (chans.pushVals vars₂ vals₂).pushVals vars₁ vals₁
-  := sorry
-
-/-- Without considering the shared operator states
-a `Proc` has a strongly confluent (and thus confluence) semantics
-(when restricted to silent/yield labels). -/
+/-- Without considering shared operator states, and when
+restricted to silent/yield labels, a well-formed `Proc` has
+a strongly confluent (and thus confluent) semantics. -/
 theorem proc_strong_confluence
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
@@ -456,7 +427,7 @@ theorem proc_strong_confluence
   (hstep₂ : proc.semantics.lts.Step s l₂ s₂')
   : s₁' = s₂' ∨ (∃ s', proc.semantics.lts.Step s₁' l₂ s' ∧ proc.semantics.lts.Step s₂' l₁ s')
   := by
-  have ⟨haff_nodup, haff_disj⟩ := haff
+  have ⟨_, _, ⟨haff_nodup, haff_disj⟩, _⟩ := haff
   by_cases heq_state : s₁' = s₂'
   · exact .inl heq_state
   · right
