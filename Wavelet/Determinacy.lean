@@ -114,6 +114,21 @@ structure OpSpec Op V T [Arity Op] [PCM T] where
   post : (op : Op) → Vector V (Arity.ι op) → Vector V (Arity.ω op) → T
   frame_preserving : ∀ op inputs outputs, pre op inputs ⟹ post op inputs outputs
 
+/-- Two labels are compatible if their inputs correspond to disjoint resources
+and are deterministic. -/
+def OpSpec.CompatLabels
+  [Arity Op] [PCM T]
+  (opSpec : OpSpec Op V T) :
+  RespLabel Op V → RespLabel Op V → Prop
+  | .respond op₁ inputs₁ _, .respond op₂ inputs₂ _ =>
+    (opSpec.pre op₁ inputs₁) ⊥ (opSpec.pre op₂ inputs₂)
+
+def OpSpec.Sound
+  [Arity Op] [PCM T]
+  (opSpec : OpSpec Op V T)
+  (interp : OpInterp Op V) : Prop :=
+  ∀ s, interp.lts.StronglyConfluentAt s (OpSpec.CompatLabels opSpec)
+
 /-- Specification on input/output labels. -/
 structure IOSpec V T [PCM T] m n where
   pre : Vector V m → T
@@ -231,6 +246,24 @@ inductive SpecLabelInterpUnchecked [Arity Op] [PCM T]
       (.output ((vals.map .inl).push tok)) (.output vals)
   | spec_tau :
     SpecLabelInterpUnchecked .τ .τ
+
+/-- Composing a confluent semantics and a confluent op interpretation
+results in a confluent semantics (restricted to silent steps). -/
+theorem op_interp_confl
+  [Arity Op] [PCM T]
+  (sem : Semantics Op V m n)
+  {States : sem.S → Prop}
+  {CompatSem : Label Op V m n → Label Op V m n → Prop}
+  (interp : OpInterp Op V)
+  (opSpec : OpSpec Op V T)
+  (hsound : OpSpec.Sound opSpec interp)
+  (hdet : interp.Deterministic)
+  (hconfl_sem : sem.lts.StronglyConfluent States CompatSem)
+  (htau : CompatSem .τ .τ) :
+    (sem.interpret interp).lts.StronglyConfluent
+      (States ∘ Prod.fst)
+      (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent)
+  := sorry
 
 end Wavelet.Semantics
 
@@ -387,7 +420,7 @@ the operator semantics satisfies the spec.
 TODO: not true in general, need to assume that
 trace₁ "dominates" trace₂ in some sense.
 -/
-theorem guarded_confluence
+theorem guarded_confl
   [Arity Op] [PCM T]
   [InterpConsts V]
   [DecidableEq χ]
@@ -409,24 +442,27 @@ theorem guarded_confluence
     trace₁ ++ trace₁' = trace₂ ++ trace₂'
   := sorry
 
+/-- If two labels are either yield or silent and are deterministic. -/
+def Label.IsYieldOrSilentAndDet
+  [Arity Op]
+  (l₁ : Label Op V m n) (l₂ : Label Op V m n) : Prop :=
+  (l₁.isYield ∨ l₁.isSilent) ∧
+  (l₂.isYield ∨ l₂.isSilent) ∧
+  Label.Deterministic l₁ l₂
+
 /-- Without considering shared operator states, and when
 restricted to silent/yield labels, a well-formed `Proc` has
 a strongly confluent (and thus confluent) semantics. -/
-theorem proc_strong_confluence
+theorem proc_strong_confl
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
   {proc : Proc Op χ V m n}
-  {s s₁' s₂' : proc.semantics.S}
-  {l₁ l₂ : Label Op V m n}
-  (haff : s.proc.AffineChan)
-  (hlabel₁ : l₁.isYield ∨ l₁.isSilent)
-  (hlabel₂ : l₂.isYield ∨ l₂.isSilent)
-  -- Only consider the case when the operators are deterministic
-  (hyield_det : Label.Deterministic l₁ l₂)
-  (hstep₁ : proc.semantics.lts.Step s l₁ s₁')
-  (hstep₂ : proc.semantics.lts.Step s l₂ s₂')
-  : s₁' = s₂' ∨ (∃ s', proc.semantics.lts.Step s₁' l₂ s' ∧ proc.semantics.lts.Step s₂' l₁ s')
+  {s : proc.semantics.S}
+  (haff : s.proc.AffineChan) :
+    proc.semantics.lts.StronglyConfluentAt s Label.IsYieldOrSilentAndDet
   := by
+  intros s₁' s₂' l₁ l₂ hstep₁ hstep₂ hcompat
+  have ⟨hlabel₁, hlabel₂, hyield_det⟩ := hcompat
   have ⟨_, _, ⟨haff_nodup, haff_disj⟩, _⟩ := haff
   by_cases heq_state : s₁' = s₂'
   · exact .inl heq_state
@@ -648,6 +684,10 @@ theorem proc_strong_confluence
             apply List.set_comm
             exact Ne.symm h
         ⟩
+
+-- TODO: guarding a confluent semantics is confluent
+
+-- TODO: enforcing SpecLabelInterp on a confluent semantics is confluent
 
 end Wavelet.Compile
 

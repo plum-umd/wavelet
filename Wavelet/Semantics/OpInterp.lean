@@ -15,6 +15,10 @@ instance : Arity Empty where
   ι e := e.elim
   ω e := e.elim
 
+/-- The dual action of `Label.yield`. -/
+inductive RespLabel Op V [Arity Op] where
+  | respond (op : Op) (inputs : Vector V (Arity.ι op)) (outputs : Vector V (Arity.ω op))
+
 /-- Base semantics interprets all of the operators in the same LTS
 with potentially shared states.
 
@@ -24,11 +28,9 @@ and `Semantics`) is a bit unfortunate. Try unify?
 class OpInterp (Op : Type u) (V : Type v) [Arity Op] where
   S : Type w
   init : S
-  interp :
-    (op : Op) →
-    Vector V (Arity.ι op) → S →
-    Vector V (Arity.ω op) → S → Prop
+  lts : Lts S (RespLabel Op V)
 
+/-- Parallel composition of `sem` and `interp`. -/
 inductive InterpStep
   [Arity Op]
   (sem : Semantics Op V m n)
@@ -45,11 +47,11 @@ inductive InterpStep
     InterpStep sem interp (s, t) (.output outputVals) (s', t)
   | step_yield :
     sem.lts.Step s (.yield op inputs outputs) s' →
-    interp.interp op inputs t outputs t' →
+    interp.lts.Step t (.respond op inputs outputs) t' →
     InterpStep sem interp (s, t) .τ (s', t')
 
-/-- Fully interpret all operators using a `OpInterp`
-to get a transition system with only input/output/silent events. -/
+/-- Fully interpret all operators using a `OpInterp` to get
+a transition system with only input/output/silent events. -/
 def interpret
   [Arity Op]
   (sem : Semantics Op V m n)
@@ -61,5 +63,14 @@ def interpret
     lts := sem.InterpStep interp,
     yields_functional hyield := by cases hyield
   }
+
+/-- Deterministic operator set. -/
+def OpInterp.Deterministic
+  [Arity Op]
+  (interp : OpInterp Op V) : Prop :=
+  ∀ {s s₁' s₂' op inputs outputs₁ outputs₂},
+    interp.lts.Step s (.respond op inputs outputs₁) s₁' →
+    interp.lts.Step s (.respond op inputs outputs₂) s₂' →
+    s₁' = s₂' ∧ outputs₁ = outputs₂
 
 end Wavelet.Semantics
