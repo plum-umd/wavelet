@@ -18,9 +18,6 @@ def guardState
     S := sem.S,
     init := sem.init,
     lts := sem.lts.GuardState Inv,
-    -- TODO: this is actually not true,
-    -- maybe remove this requirement?
-    yields_functional := sorry
   }
 
 /-- Modifies labels with a relation. -/
@@ -37,7 +34,6 @@ def guardLabel
     S := sem.S,
     init := sem.init,
     lts := sem.lts.GuardLabel Guard,
-    yields_functional := sorry
   }
 
 /-- Combines `GuardState` and `GuardLabel`. -/

@@ -79,10 +79,6 @@ structure Semantics.{u, v, w} (Op : Type u) (V : Type v) [Arity Op] m n : Type (
   S : Type w
   init : S
   lts : Lts S (Label Op V m n)
-  /-- Yield transitions behave like a function. -/
-  yields_functional {s op inputs outputs s'} :
-    lts.Step s (.yield op inputs outputs) s' →
-    ∀ outputs', ∃ s', lts.Step s (.yield op inputs outputs') s'
 
 end Wavelet
 
