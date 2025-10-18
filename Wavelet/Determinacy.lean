@@ -8,268 +8,31 @@ import Wavelet.Compile
 
 /-! Reasoning about the determinacy of semantics. -/
 
-namespace Wavelet.Semantics
+-- namespace Wavelet.Semantics
 
-open Semantics
+-- /-- Composing a confluent semantics and a confluent op interpretation
+-- results in a confluent semantics (restricted to silent steps). -/
+-- theorem op_interp_confl
+--   [Arity Op] [PCM T]
+--   (sem : Semantics Op V m n)
+--   {States : sem.S → Prop}
+--   {CompatSem : Label Op V m n → Label Op V m n → Prop}
+--   (interp : OpInterp Op V)
+--   (opSpec : OpSpec Op V T)
+--   (hsound : OpSpec.Sound opSpec interp)
+--   (hdet : interp.Deterministic)
+--   (hconfl_sem : sem.lts.StronglyConfluent States CompatSem)
+--   (htau : CompatSem .τ .τ) :
+--     (sem.interpret interp).lts.StronglyConfluent
+--       (States ∘ Prod.fst)
+--       (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent)
+--   := sorry
 
-/-- Restricts an LTS by imposing a state invariant. -/
-inductive Lts.Guard {S} (Inv : S → Prop) (lts : Lts S E) : Lts S E where
-  | step : Inv s → Inv s' → lts.Step s e s' → Guard Inv lts s e s'
-
-/-- Guards the transition of a semantics with the given invariant. -/
-def guard
-  [Arity Op]
-  (sem : Semantics Op V m n)
-  (Inv : sem.S → Prop) :
-  Semantics Op V m n :=
-  {
-    S := sem.S,
-    init := sem.init,
-    lts := sem.lts.Guard Inv,
-    -- TODO: this is actually not true,
-    -- maybe remove this requirement?
-    yields_functional := sorry
-  }
-
-/-- Modifies labels with a relation. -/
-inductive Lts.InterpLabelStep {S} (Interp : E → E' → Prop) (lts : Lts S E) : Lts S E' where
-  | step : Interp e e' → lts.Step s e s' → InterpLabelStep Interp lts s e' s'
-
-/-- Interprets the labels as another set of operators. -/
-def interpLabel
-  [Arity Op] [Arity Op']
-  (sem : Semantics Op V m n)
-  (Interp : Label Op V m n → Label Op' V' m' n' → Prop) :
-  Semantics Op' V' m' n' :=
-  {
-    S := sem.S,
-    init := sem.init,
-    lts := sem.lts.InterpLabelStep Interp,
-    yields_functional := sorry
-  }
-
-/-- Some well-formedness constraints on label interpretations. -/
-class LawfulLabelInterp [Arity Op] [Arity Op']
-  (Interp : Label Op V m n → Label Op' V' m' n' → Prop) where
-  label_interp_tau : Interp .τ .τ
-  label_interp_tau_only : ∀ {l}, Interp .τ l → l.isSilent
-  label_interp_input : ∀ {vals l}, Interp (.input vals) l → l.isSilent ∨ l.isInput
-  label_interp_output : ∀ {vals l}, Interp (.output vals) l → l.isSilent ∨ l.isOutput
-  label_interp_yield : ∀ {op inputs outputs l}, Interp (.yield op inputs outputs) l → l.isSilent ∨ l.isYield
-
-/-- `interpLabel` preserves IO-restricted simulation. -/
-theorem sim_interp_label
-  [Arity Op] [Arity Op']
-  [DecidableEq χ]
-  [DecidableEq χ']
-  [InterpConsts V]
-  [InterpConsts V']
-  {sem₁ sem₂ : Semantics Op V m n}
-  {Interp : Label Op V m n → Label Op' V' m' n' → Prop}
-  [hinterp : LawfulLabelInterp Interp]
-  (hsim : sem₁ ≲ᵣ sem₂) :
-  sem₁.interpLabel Interp ≲ᵣ sem₂.interpLabel Interp
-  := by
-  apply Lts.Similarity.intro hsim.Sim
-  constructor
-  · exact hsim.sim_init
-  · intros s₁ s₂ l s₁' hR hstep
-    simp [Semantics.interpLabel] at hstep
-    cases hstep with | step hlabel hstep =>
-    rename Label Op V m n => l'
-    have ⟨s₂', hstep_s₂, hR₂⟩ := hsim.sim_step _ _ _ _ hR hstep
-    exists s₂'
-    constructor
-    · cases hstep_s₂ with
-      | step_yield hstep_yield_s₂ =>
-        replace hstep_yield_s₂ := Lts.InterpLabelStep.step hlabel hstep_yield_s₂
-        cases hinterp.label_interp_yield hlabel <;>
-          rename_i h₁ <;> cases l <;> simp at h₁
-        · exact .step_tau (.single hstep_yield_s₂)
-        · exact .step_yield hstep_yield_s₂
-      | step_input hstep_input_s₂ hstep_tau =>
-        replace hstep_input_s₂ := Lts.InterpLabelStep.step hlabel hstep_input_s₂
-        replace hstep_tau := hstep_tau.map (Lts.InterpLabelStep.step hinterp.label_interp_tau)
-        cases hinterp.label_interp_input hlabel <;>
-          rename_i h₁ <;> cases l <;> simp at h₁
-        · exact .step_tau (hstep_tau.prepend hstep_input_s₂)
-        · exact .step_input hstep_input_s₂ hstep_tau
-      | step_output hstep_tau hstep_output_s₂ =>
-        replace hstep_output_s₂ := Lts.InterpLabelStep.step hlabel hstep_output_s₂
-        replace hstep_tau := hstep_tau.map (Lts.InterpLabelStep.step hinterp.label_interp_tau)
-        cases hinterp.label_interp_output hlabel <;>
-          rename_i h₁ <;> cases l <;> simp at h₁
-        · exact .step_tau (hstep_tau.tail hstep_output_s₂)
-        · exact .step_output hstep_tau hstep_output_s₂
-      | step_tau hstep_tau_s₂ =>
-        replace hstep_tau_s₂ := hstep_tau_s₂.map (Lts.InterpLabelStep.step hinterp.label_interp_tau)
-        have := hinterp.label_interp_tau_only hlabel
-        cases l <;> simp at this
-        exact .step_tau hstep_tau_s₂
-    · exact hR₂
-
-/-- PCM specification of an operator set -/
-structure OpSpec Op V T [Arity Op] [PCM T] where
-  pre : (op : Op) → Vector V (Arity.ι op) → T
-  post : (op : Op) → Vector V (Arity.ι op) → Vector V (Arity.ω op) → T
-  frame_preserving : ∀ op inputs outputs, pre op inputs ⟹ post op inputs outputs
-
-/-- Two labels are compatible if their inputs correspond to disjoint resources
-and are deterministic. -/
-def OpSpec.CompatLabels
-  [Arity Op] [PCM T]
-  (opSpec : OpSpec Op V T) :
-  RespLabel Op V → RespLabel Op V → Prop
-  | .respond op₁ inputs₁ _, .respond op₂ inputs₂ _ =>
-    (opSpec.pre op₁ inputs₁) ⊥ (opSpec.pre op₂ inputs₂)
-
-def OpSpec.Sound
-  [Arity Op] [PCM T]
-  (opSpec : OpSpec Op V T)
-  (interp : OpInterp Op V) : Prop :=
-  ∀ s, interp.lts.StronglyConfluentAt s (OpSpec.CompatLabels opSpec)
-
-/-- Specification on input/output labels. -/
-structure IOSpec V T [PCM T] m n where
-  pre : Vector V m → T
-  -- This can only depend on the outputs, due
-  -- to a technical issue that we can't access
-  -- the input values at an output event.
-  post : Vector V n → T
-
-/-- Augments the operator set with an additional ghost argument
-to pass a PCM token, as well as two operators to split and join PCMs. -/
-inductive WithSpec (Op : Type u) [Arity Op] [PCM T] (spec : OpSpec Op V T) where
-  | op (op : Op)
-  | join (k : Nat) -- Number of input tokens to combine
-
-/-- Uses only the LHS `InterpConsts` of a sum for constants. -/
-instance instInterpConstsSum [left : InterpConsts V] : InterpConsts (V ⊕ V') where
-  junkVal := .inl (left.junkVal)
-  toBool
-    | .inl v => left.toBool v
-    | .inr _ => none
-  fromBool := .inl ∘ left.fromBool
-  unique_fromBool_toBool b := left.unique_fromBool_toBool b
-  unique_toBool_fromBool b v hv := by
-    split at hv
-    · rename_i v'
-      have := left.unique_toBool_fromBool b v' hv
-      simp [this]
-    · contradiction
-
-instance instArityWithSpec
-  [arity : Arity Op] [PCM T]
-  {spec : OpSpec Op V T} :
-  Arity (WithSpec Op spec) where
-  ι | .op o => arity.ι o + 1
-    | .join k => k
-  ω | .op o => arity.ω o + 1
-    | .join _ => 2
-
-/-- Interprets the labels with ghost values using the base operators,
-but with dynamic checks for ghost tokens satisfying the specs. -/
-inductive SpecLabelInterp [Arity Op] [PCM T]
-  (opSpec : OpSpec Op V T)
-  (ioSpec : IOSpec V T m n) :
-  Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) →
-  Label Op V m n → Prop where
-  | spec_yield
-    {op}
-    {inputs : Vector V (Arity.ι op)}
-    {outputs : Vector V (Arity.ω op)} :
-    tok₁ ≡ opSpec.pre op inputs →
-    tok₂ ≡ opSpec.post op inputs outputs →
-    SpecLabelInterp opSpec ioSpec
-      (.yield (.op op)
-        ((inputs.map .inl).push (.inr tok₁))
-        ((outputs.map .inl).push (.inr tok₂)))
-      (.yield op inputs outputs)
-  -- NOTE: the exact output split of permissions
-  -- is intentionally left unspecified, because
-  -- we want this to be dynamic without restricting
-  -- to a static annotation.
-  | spec_join
-    {toks : Vector T k}
-    {outputs : Vector (V ⊕ T) 2} :
-    outputs[0] = .inr tok₁ →
-    outputs[1] = .inr tok₂ →
-    tok₁ ⊔ tok₂ ≡ PCM.sum toks.toList →
-    SpecLabelInterp opSpec ioSpec
-      (.yield (.join k) (toks.map .inr) outputs) .τ
-  | spec_input {tok vals} :
-    tok ≡ ioSpec.pre vals →
-    SpecLabelInterp opSpec ioSpec
-      (.input ((vals.map .inl).push (.inr tok))) (.input vals)
-  | spec_output :
-    tok ≡ ioSpec.post vals →
-    SpecLabelInterp opSpec ioSpec
-      (.output ((vals.map .inl).push (.inr tok))) (.output vals)
-  | spec_tau :
-    SpecLabelInterp opSpec ioSpec .τ .τ
-
-instance
-  [Arity Op] [PCM T]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n} : LawfulLabelInterp (SpecLabelInterp opSpec ioSpec) where
-  label_interp_tau := .spec_tau
-  label_interp_tau_only h := by cases h; rfl
-  label_interp_input h := by cases h; simp
-  label_interp_output h := by cases h; simp
-  label_interp_yield h := by cases h <;> simp
-
-/--
-Same signature as `SpecLabelInterp` but does not dynamically
-check the well-formedness of the tokens.
--/
-inductive SpecLabelInterpUnchecked [Arity Op] [PCM T]
-  {opSpec : OpSpec Op V T} :
-  Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) →
-  Label Op V m n → Prop where
-  | spec_yield
-    {op}
-    {inputs : Vector V (Arity.ι op)}
-    {outputs : Vector V (Arity.ω op)} :
-    SpecLabelInterpUnchecked
-      (.yield (.op op)
-        ((inputs.map .inl).push tok₁)
-        ((outputs.map .inl).push tok₂))
-      (.yield op inputs outputs)
-  | spec_join :
-    SpecLabelInterpUnchecked
-      (.yield (.join k) toks outputs) .τ
-  | spec_input :
-    SpecLabelInterpUnchecked
-      (.input ((vals.map .inl).push tok)) (.input vals)
-  | spec_output :
-    SpecLabelInterpUnchecked
-      (.output ((vals.map .inl).push tok)) (.output vals)
-  | spec_tau :
-    SpecLabelInterpUnchecked .τ .τ
-
-/-- Composing a confluent semantics and a confluent op interpretation
-results in a confluent semantics (restricted to silent steps). -/
-theorem op_interp_confl
-  [Arity Op] [PCM T]
-  (sem : Semantics Op V m n)
-  {States : sem.S → Prop}
-  {CompatSem : Label Op V m n → Label Op V m n → Prop}
-  (interp : OpInterp Op V)
-  (opSpec : OpSpec Op V T)
-  (hsound : OpSpec.Sound opSpec interp)
-  (hdet : interp.Deterministic)
-  (hconfl_sem : sem.lts.StronglyConfluent States CompatSem)
-  (htau : CompatSem .τ .τ) :
-    (sem.interpret interp).lts.StronglyConfluent
-      (States ∘ Prod.fst)
-      (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent)
-  := sorry
-
-end Wavelet.Semantics
+-- end Wavelet.Semantics
 
 namespace Wavelet.Seq
 
-open Semantics Compile
+open Semantics
 
 def VarMap.DisjointTokens
   [PCM T]
@@ -376,8 +139,8 @@ theorem sim_compile_fn'
   {ioSpec : IOSpec V T m n}
   (fn : FnWithSpec opSpec χ m n)
   (hwf : fn.AffineVar) :
-  fn.semantics.guard Config.DisjointTokens
-    ≲ᵣ (compileFn (by simp) fn).semantics.guard Config.DisjointTokens
+  fn.semantics.guardState Config.DisjointTokens
+    ≲ᵣ (compileFn (by simp) fn).semantics.guardState Config.DisjointTokens
   := sorry
 
 /-- Erase ghost tokens. -/
@@ -397,7 +160,7 @@ theorem sim_erase_ghost
   {ioSpec : IOSpec V T m n}
   (proc : ProcWithSpec opSpec χ m n) :
   (eraseGhost proc).semantics ≲ᵣ
-    (proc.semantics.guard Config.DisjointTokens).interpLabel (SpecLabelInterp opSpec ioSpec)
+    proc.semantics.guard Config.DisjointTokens (opSpec.Guard ioSpec)
   := sorry
 
 /-- Forward simulation for liveness. -/
@@ -409,37 +172,8 @@ theorem sim_erase_ghost_forward
   {opSpec : Semantics.OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
   (proc : ProcWithSpec opSpec χ m n) :
-  (proc.semantics.guard Config.DisjointTokens).interpLabel (SpecLabelInterp opSpec ioSpec)
+  proc.semantics.guard Config.DisjointTokens (opSpec.Guard ioSpec)
     ≲ᵣ (eraseGhost proc).semantics
-  := sorry
-
-/--
-TODO: this needs to assume more about how
-the operator semantics satisfies the spec.
-
-TODO: not true in general, need to assume that
-trace₁ "dominates" trace₂ in some sense.
--/
-theorem guarded_confl
-  [Arity Op] [PCM T]
-  [InterpConsts V]
-  [DecidableEq χ]
-  {opSpec : Semantics.OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {proc : ProcWithSpec opSpec χ m n}
-  {trace₁ trace₂ : Trace (Label Op V m n)}
-  {s₁ s₂ : proc.semantics.S}
-  (haff : proc.AffineChan)
-  (htrace₁ :
-    ((proc.semantics.guard Config.DisjointTokens).interpLabel (SpecLabelInterp opSpec ioSpec)).lts.Star
-      proc.semantics.init trace₁ s₁)
-  (htrace₂ :
-    (proc.semantics.interpLabel SpecLabelInterpUnchecked).lts.Star
-      proc.semantics.init trace₂ s₂) :
-  ∃ trace₁' trace₂' s',
-    (proc.semantics.interpLabel SpecLabelInterpUnchecked).lts.Star s₁ trace₁' s' ∧
-    (proc.semantics.interpLabel SpecLabelInterpUnchecked).lts.Star s₂ trace₂' s' ∧
-    trace₁ ++ trace₁' = trace₂ ++ trace₂'
   := sorry
 
 /-- If two labels are either yield or silent and are deterministic. -/
@@ -864,9 +598,7 @@ inductive Expr.WellPermTyped
     ctx.Acquire (opSpec.pre o) rem tokIds toks →
     ctx.removeVars tokIds.toList = ctx' →
     ctx'.insertVars #v[opSpec.pre o, rem, opSpec.post o] = (joined, ctx'') →
-    -- consume `opSpec.pre o`
-    ctx''.removeVars [joined[0]] = ctx''' →
-    WellPermTyped ioSpec ctx''' cont cont' →
+    WellPermTyped ioSpec (ctx''.removeVars [joined[0]]) cont cont' →
     WellPermTyped ioSpec ctx
       (.op o args bind cont)
       (.op (.join k) -- First call join to collect required permissions
@@ -939,22 +671,6 @@ theorem var_map_init_disjoint_tokens
   (VarMap.fromList (vars.zip ((args.map .inl).push (.inr tok))).toList).DisjointTokens
 := sorry
 
-/-- Introduces a `InterpLabelStep ∘ Guard` step from a single step in the base LTS. -/
-theorem guard_interp_label_single
-  {S : Type u}
-  {lts : Lts S E}
-  {Inv : S → Prop}
-  {Interp : E → E' → Prop}
-  {s s' : S}
-  (hstep : lts.Step s e s')
-  (hinv₁ : Inv s)
-  (hinv₂ : Inv s')
-  (hinterp : Interp e e') :
-  (lts.Guard Inv).InterpLabelStep Interp s e' s'
-:= by
-  apply Lts.InterpLabelStep.step hinterp
-  apply Lts.Guard.step hinv₁ hinv₂ hstep
-
 end Lemmas
 
 theorem sim_type_check_init
@@ -970,10 +686,10 @@ theorem sim_type_check_init
   (hwt : fn.WellPermTyped ioSpec fn') :
     SimRel ioSpec
       fn.semantics.init
-      ((fn'.semantics.guard Config.DisjointTokens).interpLabel
-          (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).init
+      (fn'.semantics.guard Config.DisjointTokens
+          ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).init
   := by
-  simp [Fn.semantics, Semantics.guard, Semantics.interpLabel, Config.init]
+  simp [Fn.semantics, Semantics.guard, Semantics.guardState, Semantics.guardLabel, Config.init]
   simp [Fn.WellPermTyped] at hwt
   and_intros
   · simp [hwt]
@@ -1010,8 +726,8 @@ theorem sim_type_check_input
   (hcont : s₁.cont = .init)
   (hstep : fn.semantics.lts.Step s₁ l s₁') :
     ∃ s₂',
-      ((fn'.semantics.guard Config.DisjointTokens).interpLabel
-        (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.WeakStep
+      (fn'.semantics.guard Config.DisjointTokens
+        ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep
         .τ s₂ l s₂' ∧
       SimRel ioSpec s₁' s₂'
   := by
@@ -1022,19 +738,19 @@ theorem sim_type_check_input
   | step_init =>
   rename Vector V m => args
   have hcont₂ := hinit hcont
-  simp [Fn.semantics, Semantics.guard, Semantics.interpLabel, Config.init]
+  simp [Fn.semantics, Semantics.guard, Semantics.guardState, Semantics.guardLabel, Config.init]
   have hstep₂ :
-    ((fn'.semantics.guard _).interpLabel
-      (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.Step
+    (fn'.semantics.guard _
+      ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ (.input args) _ :=
-    guard_interp_label_single
+    guard_single
       (.step_init
         (args := (args.map .inl).push (.inr ioSpec.pre))
         hcont₂)
       hdisj
       (by exact var_map_init_disjoint_tokens)
       (by
-        apply SpecLabelInterp.spec_input (tok := ioSpec.pre)
+        apply OpSpec.Guard.spec_input (tok := ioSpec.pre)
         simp [SimpleIOSpec.toIOSpec]
         apply pcm.eq_refl)
   exact ⟨_, .single hstep₂,
@@ -1069,8 +785,8 @@ theorem sim_type_check_ret
   (hret : s₁.cont = .expr (.ret vars))
   (hstep : fn.semantics.lts.Step s₁ l s₁') :
     ∃ s₂',
-      ((fn'.semantics.guard Config.DisjointTokens).interpLabel
-        (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.WeakStep
+      (fn'.semantics.guard Config.DisjointTokens
+        ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep
         .τ s₂ l s₂' ∧
       SimRel ioSpec s₁' s₂'
   := by
@@ -1089,10 +805,10 @@ theorem sim_type_check_ret
   have ⟨hacq₁, hacq₂, hacq₃⟩ := hacq
   -- Join required permissions
   have hstep₂ :
-    ((fn'.semantics.guard _).interpLabel
-      (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.Step
+    (fn'.semantics.guard _
+      ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ _ _ :=
-    guard_interp_label_single
+    guard_single
       (e' := .τ)
       (.step_op (outputVals := #v[.inr ioSpec.post, .inr rem])
         hcont₂
@@ -1104,13 +820,13 @@ theorem sim_type_check_ret
         -- TODO: remove tokens and add new tokens
         simp
         sorry)
-      (SpecLabelInterp.spec_join (by rfl) (by rfl) hacq₃)
+      (.spec_join (by rfl) (by rfl) hacq₃)
   -- Run the actual return expression
   have hsteps₂ :
-    ((fn'.semantics.guard _).interpLabel
-      (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.WeakStep .τ
+    (fn'.semantics.guard _
+      ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep .τ
       s₂ (.output retVals) _ := (Lts.WeakStep.single hstep₂).tail_non_tau
-    (guard_interp_label_single
+    (guard_single
       (.step_ret (retVals := (retVals.map .inl).push (.inr ioSpec.post))
         (by rfl)
         (by
@@ -1124,7 +840,7 @@ theorem sim_type_check_ret
       (by
         simp [VarMap.empty, VarMap.getVar, VarMap.DisjointTokens])
       (by
-        apply SpecLabelInterp.spec_output
+        apply OpSpec.Guard.spec_output
         apply pcm.eq_refl))
   simp at hsteps₂
   exact ⟨_, hsteps₂,
@@ -1154,8 +870,8 @@ theorem sim_type_check_tail
   (htail : s₁.cont = .expr (.tail vars))
   (hstep : fn.semantics.lts.Step s₁ l s₁') :
     ∃ s₂',
-      ((fn'.semantics.guard Config.DisjointTokens).interpLabel
-        (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.WeakStep
+      (fn'.semantics.guard Config.DisjointTokens
+        ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep
         .τ s₂ l s₂' ∧
       SimRel ioSpec s₁' s₂'
   := by
@@ -1174,10 +890,10 @@ theorem sim_type_check_tail
   have ⟨hacq₁, hacq₂, hacq₃⟩ := hacq
   -- Join required permissions
   have hstep₂ :
-    ((fn'.semantics.guard _).interpLabel
-      (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.Step
+    (fn'.semantics.guard _
+      ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ _ _ :=
-    guard_interp_label_single
+    guard_single
       (e' := .τ)
       (.step_op (outputVals := #v[.inr ioSpec.pre, .inr rem])
         hcont₂
@@ -1189,13 +905,13 @@ theorem sim_type_check_tail
         -- TODO: remove tokens and add new tokens
         simp
         sorry)
-      (SpecLabelInterp.spec_join (by rfl) (by rfl) hacq₃)
+      (.spec_join (by rfl) (by rfl) hacq₃)
   -- Run the actual return expression
   have hsteps₂ :
-    ((fn'.semantics.guard _).interpLabel
-      (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.WeakStep .τ
+    (fn'.semantics.guard _
+      ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep .τ
       s₂ .τ _ := (Lts.WeakStep.single hstep₂).tail_non_tau
-    (guard_interp_label_single
+    (guard_single
       (.step_tail (tailArgs := (tailArgs.map .inl).push (.inr ioSpec.pre))
         (by rfl)
         (by
@@ -1208,7 +924,7 @@ theorem sim_type_check_tail
         sorry)
       (by
         sorry)
-      SpecLabelInterp.spec_tau)
+      .spec_tau)
   simp at hsteps₂
   exact ⟨_, hsteps₂,
     by
@@ -1244,8 +960,8 @@ theorem sim_type_check_op
   (hret : s₁.cont = .expr (.op op args bind cont'))
   (hstep : fn.semantics.lts.Step s₁ l s₁') :
     ∃ s₂',
-      ((fn'.semantics.guard Config.DisjointTokens).interpLabel
-        (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.WeakStep
+      (fn'.semantics.guard Config.DisjointTokens
+        ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep
         .τ s₂ l s₂' ∧
       SimRel ioSpec s₁' s₂'
   := by
@@ -1261,10 +977,10 @@ theorem sim_type_check_op
   have ⟨hacq₁, hacq₂, hacq₃⟩ := hacq
   -- Join permissions
   have hstep₂ :
-    ((fn'.semantics.guard _).interpLabel
-      (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.Step
+    (fn'.semantics.guard _
+      ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ .τ _ :=
-    guard_interp_label_single
+    guard_single
       (.step_op (outputVals := #v[.inr (opSpec.pre op), .inr rem])
         hcont₂
         (by
@@ -1275,7 +991,7 @@ theorem sim_type_check_op
         -- TODO: remove tokens and add new tokens
         simp
         sorry)
-      (SpecLabelInterp.spec_join (by rfl) (by rfl) hacq₃)
+      (.spec_join (by rfl) (by rfl) hacq₃)
   replace ⟨s₂', hstep₂, hs₂'⟩ := exists_eq_right.mpr hstep₂
   have hstep₂' :
     fn'.semantics.lts.Step s₂' (.yield (.op _) _ _) _
@@ -1288,10 +1004,10 @@ theorem sim_type_check_op
           simp [hs₂']
           sorry)
   have hsteps₂ :
-    ((fn'.semantics.guard _).interpLabel
-      (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.WeakStep .τ
+    (fn'.semantics.guard _
+      ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep .τ
       s₂ (.yield op inputVals outputVals) _ := (Lts.WeakStep.single hstep₂).tail_non_tau
-    (guard_interp_label_single
+    (guard_single
       hstep₂'
       (by
         simp [hs₂']
@@ -1301,7 +1017,7 @@ theorem sim_type_check_op
         simp [hs₂']
         sorry)
       (by
-        apply SpecLabelInterp.spec_yield
+        apply OpSpec.Guard.spec_yield
           (tok₁ := opSpec.pre op)
           (tok₂ := opSpec.post op)
         · apply pcm.eq_refl
@@ -1340,8 +1056,8 @@ theorem sim_type_check_br
   (hret : s₁.cont = .expr (.br cond left right))
   (hstep : fn.semantics.lts.Step s₁ l s₁') :
     ∃ s₂',
-      ((fn'.semantics.guard Config.DisjointTokens).interpLabel
-        (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.WeakStep
+      (fn'.semantics.guard Config.DisjointTokens
+        ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep
         .τ s₂ l s₂' ∧
       SimRel ioSpec s₁' s₂'
   := by
@@ -1353,10 +1069,10 @@ theorem sim_type_check_br
   have ⟨ctx, expr₂, hcont₂, hwt, hvars⟩ := hcont _ hexpr
   cases hwt with | wpt_br hwt₁ hwt₂ =>
   have hstep₂ :
-    ((fn'.semantics.guard _).interpLabel
-      (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))).lts.Step
+    (fn'.semantics.guard _
+      ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ .τ _ :=
-    guard_interp_label_single
+    guard_single
       (.step_br
         hcont₂
         (by
@@ -1368,7 +1084,7 @@ theorem sim_type_check_br
         -- TODO: remove a variable
         simp
         sorry)
-      SpecLabelInterp.spec_tau
+      .spec_tau
   exact ⟨_, .single hstep₂,
     by
       and_intros
@@ -1411,8 +1127,8 @@ theorem sim_type_check
   (hwf : fn.AffineVar)
   (hwt : fn.WellPermTyped ioSpec fn') :
   fn.semantics ≲
-    (fn'.semantics.guard Config.DisjointTokens).interpLabel
-      (SpecLabelInterp (opSpec.toOpSpec V) (ioSpec.toIOSpec m n))
+    fn'.semantics.guard Config.DisjointTokens
+      ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))
   := by
   apply Lts.Similarity.intro (SimRel ioSpec)
   constructor
