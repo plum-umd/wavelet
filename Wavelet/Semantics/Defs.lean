@@ -351,19 +351,35 @@ theorem IORestrictedSimilarity.to_weak_sim
       | step_tau htau => exact .from_tau_star htau
     · exact hR'
 
-/-- A property `P` is an invariant if it is satisfied
-by every reachable state from the initial state. -/
-def IsInvariant
-  [Arity Op]
-  (sem : Semantics Op V m n)
-  (P : sem.S → Prop) : Prop :=
-  ∀ s tr, sem.lts.Star sem.init tr s → P s
-
+/-- A property `P` is an invariant at `s` if it is satisfied
+by every reachable state from `s`. -/
 def IsInvariantAt
   [Arity Op]
   (sem : Semantics Op V m n)
   (P : sem.S → Prop)
   (s : sem.S) : Prop :=
   ∀ s' tr, sem.lts.Star s tr s' → P s'
+
+def IsInvariant
+  [Arity Op]
+  (sem : Semantics Op V m n)
+  (P : sem.S → Prop) : Prop := sem.IsInvariantAt P sem.init
+
+/-- Prove an invariant by induction. -/
+theorem IsInvariantAt.by_induction
+  [Arity Op]
+  {sem : Semantics Op V m n}
+  {P : sem.S → Prop}
+  {s : sem.S}
+  (hbase : P s)
+  (hstep : ∀ {s₁ s₂ l},
+    P s₁ →
+    sem.lts.Step s₁ l s₂ →
+    P s₂) :
+  sem.IsInvariantAt P s := by
+  intros s' tr hstar
+  induction hstar with
+  | refl => exact hbase
+  | tail pref tail ih => exact hstep (ih hbase) tail
 
 end Wavelet.Semantics

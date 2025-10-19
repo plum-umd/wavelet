@@ -427,6 +427,52 @@ theorem proc_strong_confl_at
             exact Ne.symm h
         ⟩
 
+-- theorem guard_state_strong_confl_at
+--   [Arity Op] [Arity Op']
+--   (sem : Semantics Op V m n)
+--   (s : sem.S)
+--   {Inv : sem.S → Prop}
+--   {Compat : Label Op V m n → Label Op V m n → Prop}
+--   (hinv : sem.IsInvariantAt Inv s)
+--   (hconfl : sem.lts.StronglyConfluentAt s Compat) :
+--     (sem.guardState Inv).lts.StronglyConfluentAt s Compat
+--   := by
+--   -- This requires `Inv` to be an invariant, so maybe
+--   -- the guard is not needed in the first place?
+--   sorry
+
+/--
+Applying `guardState (Config.Pairwise P)` preserves confluence.
+
+NOTE: `guardState` does not preserve confluence in general.
+-/
+theorem proc_gaurd_pairwise_strong_confl_at
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  {P : V → V → Prop}
+  {Compat : Label Op V m n → Label Op V m n → Prop}
+  (proc : Proc Op χ V m n)
+  (s : proc.semantics.S)
+  -- (haff : s.proc.AffineChan)
+  (hconfl : proc.semantics.lts.StronglyConfluentAt s Compat) :
+    (proc.semantics.guardState (Config.Pairwise P)).lts.StronglyConfluentAt s Compat
+  := by
+  intros s₁' s₂' l₁ l₂ hstep₁ hstep₂ hcompat
+  rcases hstep₁ with ⟨hinv₁, hinv₁', hstep₁⟩
+  rcases hstep₂ with ⟨hinv₂, hinv₂', hstep₂⟩
+  cases hconfl hstep₁ hstep₂ hcompat with
+  | inl heq => exact .inl heq
+  | inr h =>
+    right
+    have ⟨s', hstep₁', hstep₂'⟩ := h
+    exists s'
+    constructor
+    · apply Lts.GuardState.step
+      · exact hinv₁'
+      · -- TODO: actually this probably not true.
+        sorry
+      · exact hstep₁'
+    · sorry
+
 theorem guard_label_strong_confl_at
   [Arity Op] [Arity Op']
   (sem : Semantics Op V m n)
@@ -434,7 +480,7 @@ theorem guard_label_strong_confl_at
   {Guard : Label Op V m n → Label Op' V' m' n' → Prop}
   {Compat : Label Op V m n → Label Op V m n → Prop}
   (hconfl : sem.lts.StronglyConfluentAt s Compat) :
-    (sem.guard Guard).lts.StronglyConfluentAt s
+    (sem.guardLabel Guard).lts.StronglyConfluentAt s
       (λ l₁' l₂' => ∀ {l₁ l₂},
         Guard l₁ l₁' →
         Guard l₂ l₂' →
@@ -455,34 +501,18 @@ theorem guard_label_strong_confl_at
     · exact ⟨hguard₁', hstep₂'⟩
 
 /-- `Config.DisjointTokens` is a state invariant of a guarded `Proc` semantics. -/
-theorem proc_guard_inv_disj
+theorem proc_guard_label_inv_disj
   [Arity Op] [PCM T] [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
   (proc : ProcWithSpec opSpec χ m n) :
-    (proc.semantics.guard (opSpec.Guard ioSpec)).IsInvariant
+    (proc.semantics.guardLabel (opSpec.Guard ioSpec)).IsInvariant
       Config.DisjointTokens
   := by
   apply IsInvariantAt.by_induction
-  · simp [Dataflow.Config.init, Semantics.guard,
+  · simp [Dataflow.Config.init, Semantics.guardLabel,
       Proc.semantics, Config.Pairwise]
-  · intros s s' l hinv hstep
-    sorry
-
-/-- `Config.DisjointTokens` is a state invariant of a guarded `Fn` semantics. -/
-theorem fn_guard_inv_disj
-  [Arity Op] [PCM T] [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  (fn : FnWithSpec opSpec χ m n) :
-    (fn.semantics.guard (opSpec.Guard ioSpec)).IsInvariant
-      Config.DisjointTokens
-  := by
-  apply IsInvariantAt.by_induction
-  · simp [Seq.Config.init, Semantics.guard,
-      Fn.semantics, VarMap.DisjointTokens]
   · intros s s' l hinv hstep
     sorry
 
@@ -497,7 +527,7 @@ theorem proc_interp_strong_confl
   (interp : OpInterp Op V)
   (hsound : OpSpec.Sound opSpec interp)
   (hdet : interp.Deterministic) :
-    ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret interp).lts.StronglyConfluent
+    ((proc.semantics.guardLabel (opSpec.Guard ioSpec)).interpret interp).lts.StronglyConfluent
       (λ (s, _) => s.proc.AffineChan)
       (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent)
   := by
@@ -785,9 +815,10 @@ theorem sim_type_check_init
   (hwt : fn.WellPermTyped ioSpec fn') :
     SimRel ioSpec
       fn.semantics.init
-      (fn'.semantics.guard ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).init
+      (fn'.semantics.guard Config.DisjointTokens
+          ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).init
   := by
-  simp [Fn.semantics, Semantics.guard, Semantics.guard, Config.init]
+  simp [Fn.semantics, Semantics.guard, Semantics.guardState, Semantics.guardLabel, Config.init]
   simp [Fn.WellPermTyped] at hwt
   and_intros
   · simp [hwt]
@@ -824,7 +855,7 @@ theorem sim_type_check_input
   (hcont : s₁.cont = .init)
   (hstep : fn.semantics.lts.Step s₁ l s₁') :
     ∃ s₂',
-      (fn'.semantics.guard
+      (fn'.semantics.guard Config.DisjointTokens
         ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep
         .τ s₂ l s₂' ∧
       SimRel ioSpec s₁' s₂'
@@ -836,19 +867,21 @@ theorem sim_type_check_input
   | step_init =>
   rename Vector V m => args
   have hcont₂ := hinit hcont
-  simp [Fn.semantics, Semantics.guard, Semantics.guard, Config.init]
+  simp [Fn.semantics, Semantics.guard, Semantics.guardState, Semantics.guardLabel, Config.init]
   have hstep₂ :
-    (fn'.semantics.guard
+    (fn'.semantics.guard Config.DisjointTokens
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ (.input args) _ :=
     guard_single
+      (.step_init
+        (args := (args.map .inl).push (.inr ioSpec.pre))
+        hcont₂)
+      hdisj
+      (by exact var_map_init_disjoint_tokens)
       (by
         apply OpSpec.Guard.spec_input (tok := ioSpec.pre)
         simp [SimpleIOSpec.toIOSpec]
         apply pcm.eq_refl)
-      (.step_init
-        (args := (args.map .inl).push (.inr ioSpec.pre))
-        hcont₂)
   exact ⟨_, .single hstep₂,
     by
       and_intros
@@ -881,7 +914,7 @@ theorem sim_type_check_ret
   (hret : s₁.cont = .expr (.ret vars))
   (hstep : fn.semantics.lts.Step s₁ l s₁') :
     ∃ s₂',
-      (fn'.semantics.guard
+      (fn'.semantics.guard Config.DisjointTokens
         ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep
         .τ s₂ l s₂' ∧
       SimRel ioSpec s₁' s₂'
@@ -901,32 +934,43 @@ theorem sim_type_check_ret
   have ⟨hacq₁, hacq₂, hacq₃⟩ := hacq
   -- Join required permissions
   have hstep₂ :
-    (fn'.semantics.guard
+    (fn'.semantics.guard Config.DisjointTokens
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ _ _ :=
     guard_single
       (e' := .τ)
-      (.spec_join (by rfl) (by rfl) hacq₃)
       (.step_op (outputVals := #v[.inr ioSpec.post, .inr rem])
         hcont₂
         (by
           simp [hvars]
           apply var_map_disjoint_union_get_vars_right hacq₂))
+      hdisj
+      (by
+        -- TODO: remove tokens and add new tokens
+        simp
+        sorry)
+      (.spec_join (by rfl) (by rfl) hacq₃)
   -- Run the actual return expression
   have hsteps₂ :
-    (fn'.semantics.guard
+    (fn'.semantics.guard Config.DisjointTokens
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep .τ
       s₂ (.output retVals) _ := (Lts.WeakStep.single hstep₂).tail_non_tau
     (guard_single
-      (by
-        apply OpSpec.Guard.spec_output
-        apply pcm.eq_refl)
       (.step_ret (retVals := (retVals.map .inl).push (.inr ioSpec.post))
         (by rfl)
         (by
           simp
           -- TODO: some var map manipulation
-          sorry)))
+          sorry))
+      (by
+        simp
+        -- TODO: remove tokens and add new tokens
+        sorry)
+      (by
+        simp [VarMap.DisjointTokens])
+      (by
+        apply OpSpec.Guard.spec_output
+        apply pcm.eq_refl))
   simp at hsteps₂
   exact ⟨_, hsteps₂,
     by
@@ -955,7 +999,7 @@ theorem sim_type_check_tail
   (htail : s₁.cont = .expr (.tail vars))
   (hstep : fn.semantics.lts.Step s₁ l s₁') :
     ∃ s₂',
-      (fn'.semantics.guard
+      (fn'.semantics.guard Config.DisjointTokens
         ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep
         .τ s₂ l s₂' ∧
       SimRel ioSpec s₁' s₂'
@@ -975,29 +1019,41 @@ theorem sim_type_check_tail
   have ⟨hacq₁, hacq₂, hacq₃⟩ := hacq
   -- Join required permissions
   have hstep₂ :
-    (fn'.semantics.guard
+    (fn'.semantics.guard Config.DisjointTokens
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ _ _ :=
     guard_single
-      (.spec_join (by rfl) (by rfl) hacq₃)
+      (e' := .τ)
       (.step_op (outputVals := #v[.inr ioSpec.pre, .inr rem])
         hcont₂
         (by
           simp [hvars]
           apply var_map_disjoint_union_get_vars_right hacq₂))
+      hdisj
+      (by
+        -- TODO: remove tokens and add new tokens
+        simp
+        sorry)
+      (.spec_join (by rfl) (by rfl) hacq₃)
   -- Run the actual return expression
   have hsteps₂ :
-    (fn'.semantics.guard
+    (fn'.semantics.guard Config.DisjointTokens
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep .τ
       s₂ .τ _ := (Lts.WeakStep.single hstep₂).tail_non_tau
     (guard_single
-      .spec_tau
       (.step_tail (tailArgs := (tailArgs.map .inl).push (.inr ioSpec.pre))
         (by rfl)
         (by
           simp
           -- TODO: some var map manipulation
-          sorry)))
+          sorry))
+      (by
+        simp
+        -- TODO: remove tokens and add new tokens
+        sorry)
+      (by
+        sorry)
+      .spec_tau)
   simp at hsteps₂
   exact ⟨_, hsteps₂,
     by
@@ -1033,7 +1089,7 @@ theorem sim_type_check_op
   (hret : s₁.cont = .expr (.op op args bind cont'))
   (hstep : fn.semantics.lts.Step s₁ l s₁') :
     ∃ s₂',
-      (fn'.semantics.guard
+      (fn'.semantics.guard Config.DisjointTokens
         ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep
         .τ s₂ l s₂' ∧
       SimRel ioSpec s₁' s₂'
@@ -1050,16 +1106,21 @@ theorem sim_type_check_op
   have ⟨hacq₁, hacq₂, hacq₃⟩ := hacq
   -- Join permissions
   have hstep₂ :
-    (fn'.semantics.guard
+    (fn'.semantics.guard Config.DisjointTokens
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ .τ _ :=
     guard_single
-      (.spec_join (by rfl) (by rfl) hacq₃)
       (.step_op (outputVals := #v[.inr (opSpec.pre op), .inr rem])
         hcont₂
         (by
           simp [hvars]
           apply var_map_disjoint_union_get_vars_right hacq₂))
+      hdisj
+      (by
+        -- TODO: remove tokens and add new tokens
+        simp
+        sorry)
+      (.spec_join (by rfl) (by rfl) hacq₃)
   replace ⟨s₂', hstep₂, hs₂'⟩ := exists_eq_right.mpr hstep₂
   have hstep₂' :
     fn'.semantics.lts.Step s₂' (.yield (.op _) _ _) _
@@ -1072,17 +1133,24 @@ theorem sim_type_check_op
           simp [hs₂']
           sorry)
   have hsteps₂ :
-    (fn'.semantics.guard
+    (fn'.semantics.guard _
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep .τ
       s₂ (.yield op inputVals outputVals) _ := (Lts.WeakStep.single hstep₂).tail_non_tau
     (guard_single
+      hstep₂'
+      (by
+        simp [hs₂']
+        -- TODO: remove tokens and add new tokens
+        sorry)
+      (by
+        simp [hs₂']
+        sorry)
       (by
         apply OpSpec.Guard.spec_yield
           (tok₁ := opSpec.pre op)
           (tok₂ := opSpec.post op)
         · apply pcm.eq_refl
-        · apply pcm.eq_refl)
-      hstep₂')
+        · apply pcm.eq_refl))
   simp [hs₂'] at hsteps₂
   exact ⟨_, hsteps₂,
     by
@@ -1117,7 +1185,7 @@ theorem sim_type_check_br
   (hret : s₁.cont = .expr (.br cond left right))
   (hstep : fn.semantics.lts.Step s₁ l s₁') :
     ∃ s₂',
-      (fn'.semantics.guard
+      (fn'.semantics.guard Config.DisjointTokens
         ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep
         .τ s₂ l s₂' ∧
       SimRel ioSpec s₁' s₂'
@@ -1130,17 +1198,22 @@ theorem sim_type_check_br
   have ⟨ctx, expr₂, hcont₂, hwt, hvars⟩ := hcont _ hexpr
   cases hwt with | wpt_br hwt₁ hwt₂ =>
   have hstep₂ :
-    (fn'.semantics.guard
+    (fn'.semantics.guard Config.DisjointTokens
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ .τ _ :=
     guard_single
-      .spec_tau
       (.step_br
         hcont₂
         (by
           simp [hvars]
           apply var_map_disjoint_union_get_var_left hget_cond)
         hcond_bool)
+      hdisj
+      (by
+        -- TODO: remove a variable
+        simp
+        sorry)
+      .spec_tau
   exact ⟨_, .single hstep₂,
     by
       and_intros
@@ -1183,7 +1256,7 @@ theorem sim_type_check
   (hwf : fn.AffineVar)
   (hwt : fn.WellPermTyped ioSpec fn') :
   fn.semantics ≲
-    fn'.semantics.guard
+    fn'.semantics.guard Config.DisjointTokens
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))
   := by
   apply Lts.Similarity.intro (SimRel ioSpec)

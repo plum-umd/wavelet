@@ -109,31 +109,40 @@ inductive OpSpec.Guard
   | spec_tau :
     Guard opSpec ioSpec .τ .τ
 
-instance
-  [Arity Op] [PCM T]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n} : LawfulLabelGuard (opSpec.Guard ioSpec) where
-  label_guard_tau := .spec_tau
-  label_guard_tau_only h := by cases h; rfl
-  label_guard_input h := by cases h; simp
-  label_guard_output h := by cases h; simp
-  label_guard_yield h := by cases h <;> simp
-
 /--
 Same signature as `OpSpec.TrivGuard` but does not dynamically
 check the well-formedness of the tokens.
 -/
 inductive OpSpec.TrivGuard [Arity Op] [PCM T]
-  {opSpec : OpSpec Op V T} :
+  (opSpec : OpSpec Op V T) :
   Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) →
   Label Op V m n → Prop where
   | spec_yield :
-    TrivGuard
+    opSpec.TrivGuard
       (.yield (.op op) ((inputs.map .inl).push tok₁) ((outputs.map .inl).push tok₂))
       (.yield op inputs outputs)
-  | spec_join : TrivGuard (.yield (.join k) toks outputs) .τ
-  | spec_input : TrivGuard (.input ((vals.map .inl).push tok)) (.input vals)
-  | spec_output : TrivGuard (.output ((vals.map .inl).push tok)) (.output vals)
-  | spec_tau : TrivGuard .τ .τ
+  | spec_join : opSpec.TrivGuard (.yield (.join k) toks outputs) .τ
+  | spec_input : opSpec.TrivGuard (.input ((vals.map .inl).push tok)) (.input vals)
+  | spec_output : opSpec.TrivGuard (.output ((vals.map .inl).push tok)) (.output vals)
+  | spec_tau : opSpec.TrivGuard .τ .τ
+
+instance
+  [Arity Op] [PCM T]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n} : LawfulGuard (opSpec.Guard ioSpec) where
+  guard_tau := .spec_tau
+  guard_tau_only h := by cases h; rfl
+  guard_input h := by cases h; simp
+  guard_output h := by cases h; simp
+  guard_yield h := by cases h <;> simp
+
+instance
+  [Arity Op] [PCM T]
+  {opSpec : OpSpec Op V T} : LawfulGuard (opSpec.TrivGuard (m := m) (n := n)) where
+  guard_tau := .spec_tau
+  guard_tau_only h := by cases h; rfl
+  guard_input h := by cases h; simp
+  guard_output h := by cases h; simp
+  guard_yield h := by cases h <;> simp
 
 end Wavelet.Semantics
