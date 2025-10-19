@@ -1,4 +1,5 @@
 import Mathlib.Logic.Function.Basic
+import Batteries.Data.List.Basic
 
 import Wavelet.Semantics.Lts
 
@@ -54,17 +55,6 @@ def Label.isInput [Arity Op] : Label Op V m n → Bool
 def Label.isYield [Arity Op] : Label Op V m n → Bool
   | .yield _ _ _ => true
   | _ => false
-
-/-- A constraint on two yield labels that if their
-operator and inputs match, the outputs should match. -/
-def Label.Deterministic
-  [Arity Op]
-  {V : Type v} {m n}
-  (l₁ l₂ : Label Op V m n) : Prop :=
-    ∀ {op inputVals outputVals₁ outputVals₂},
-      l₁ = .yield op inputVals outputVals₁ →
-      l₂ = .yield op inputVals outputVals₂ →
-      outputVals₁ = outputVals₂
 
 end Wavelet.Semantics
 

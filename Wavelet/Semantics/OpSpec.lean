@@ -27,7 +27,7 @@ def OpSpec.Sound
   [Arity Op] [PCM T]
   (opSpec : OpSpec Op V T)
   (interp : OpInterp Op V) : Prop :=
-  ∀ s, interp.lts.StronglyConfluentAt s (OpSpec.CompatLabels opSpec)
+  ∀ s, interp.lts.StronglyConfluentAt (OpSpec.CompatLabels opSpec) s
 
 /-- Specification on input/output labels. -/
 structure IOSpec V T [PCM T] m n where

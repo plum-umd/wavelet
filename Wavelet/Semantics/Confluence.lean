@@ -9,8 +9,8 @@ by the compatibility relation `Compat`. -/
 def Lts.StronglyConfluentAt
   {C : Type u} {E : Type v}
   (lts : Lts C E)
-  (c : C)
-  (Compat : E → E → Prop) : Prop :=
+  (Compat : E → E → Prop)
+  (c : C) : Prop :=
   ∀ {c₁ c₂ : C} {l₁ l₂ : E},
     lts.Step c l₁ c₁ →
     lts.Step c l₂ c₂ →
@@ -26,6 +26,23 @@ def Lts.StronglyConfluent
   (lts : Lts C E)
   (States : C → Prop)
   (Compat : E → E → Prop) : Prop :=
-  ∀ {c : C}, States c → lts.StronglyConfluentAt c Compat
+  ∀ {c : C}, States c → lts.StronglyConfluentAt Compat c
+
+/-- Similar to `StronglyConfluentAt`, but modulo an equivalence relation on states. -/
+def Lts.StronglyConfluentAtMod
+  {C : Type u} {E : Type v}
+  (lts : Lts C E)
+  (Compat : E → E → Prop)
+  (Eq : C → C → Prop)
+  (c : C) : Prop :=
+  ∀ {c₁ c₂ : C} {l₁ l₂ : E},
+    lts.Step c l₁ c₁ →
+    lts.Step c l₂ c₂ →
+    Compat l₁ l₂ →
+    Eq c₁ c₂ ∨
+    ∃ c₁' c₂',
+      lts.Step c₁ l₂ c₁' ∧
+      lts.Step c₂ l₁ c₂' ∧
+      Eq c₁' c₂'
 
 end Wavelet.Semantics
