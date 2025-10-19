@@ -14,34 +14,65 @@ import Wavelet.Compile
 -- results in a confluent semantics (restricted to silent steps). -/
 -- theorem op_interp_confl
 --   [Arity Op] [PCM T]
---   (sem : Semantics Op V m n)
---   {States : sem.S → Prop}
---   {CompatSem : Label Op V m n → Label Op V m n → Prop}
---   (interp : OpInterp Op V)
 --   (opSpec : OpSpec Op V T)
+--   (ioSpec : IOSpec V T m n)
+--   (sem : Semantics (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1))
+--   {States : sem.S → Prop}
+--   {CompatSem :
+--     Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) →
+--     Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) → Prop}
+--   (interp : OpInterp Op V)
 --   (hsound : OpSpec.Sound opSpec interp)
 --   (hdet : interp.Deterministic)
 --   (hconfl_sem : sem.lts.StronglyConfluent States CompatSem)
 --   (htau : CompatSem .τ .τ) :
---     (sem.interpret interp).lts.StronglyConfluent
+--     ((sem.guardLabel (opSpec.Guard ioSpec)).interpret interp).lts.StronglyConfluent
 --       (States ∘ Prod.fst)
 --       (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent)
---   := sorry
+--   := by
+--   intros s hinv s₁' s₂' l₁ l₂ hstep₁ hstep₂ hcompat
+--   cases hstep₁ <;> cases hstep₂ <;> simp at hcompat
+
+--   all_goals sorry
 
 -- end Wavelet.Semantics
+
+namespace Wavelet.Semantics
+
+def InrDisjointTokens
+  [PCM T]
+  (v₁ v₂ : V ⊕ T) : Prop :=
+  ∀ {t₁ t₂},
+    v₁ = .inr t₁ →
+    v₂ = .inr t₂ →
+    t₁ ⊥ t₂
+
+end Wavelet.Semantics
 
 namespace Wavelet.Seq
 
 open Semantics
 
+def VarMap.Pairwise
+  (vars : VarMap χ V)
+  (P : V → V → Prop) : Prop :=
+  ∀ {x₁ x₂ v₁ v₂},
+    x₁ ≠ x₂ →
+    vars.getVar x₁ = some v₁ →
+    vars.getVar x₂ = some v₂ →
+    P v₁ v₂
+
 def VarMap.DisjointTokens
   [PCM T]
   (vars : VarMap χ (V ⊕ T)) : Prop :=
-  ∀ x₁ x₂ t₁ t₂,
-    x₁ ≠ x₂ →
-    vars.getVar x₁ = some (.inr t₁) →
-    vars.getVar x₂ = some (.inr t₂) →
-    t₁ ⊥ t₂
+  vars.Pairwise InrDisjointTokens
+
+@[simp]
+theorem VarMap.pairwise_empty
+  (P : V → V → Prop) :
+  (VarMap.empty (χ := χ)).Pairwise P := by
+  intros x₁ x₂ v₁ v₂ hne hget₁ hget₂
+  simp [getVar, empty] at hget₁
 
 @[simp]
 def Config.DisjointTokens
@@ -64,19 +95,26 @@ namespace Wavelet.Dataflow
 
 open Semantics
 
-def Config.DisjointTokens
-  [Arity Op] [PCM T]
-  (c : Config Op χ (V ⊕ T) m n) : Prop :=
-  ∀ x₁ x₂
-    (buf₁ buf₂ : List (V ⊕ T))
-    (i : Fin buf₁.length) (j : Fin buf₂.length)
+/-- Defines a config property that imposes a
+constraint on every pair of values in the config. -/
+def Config.Pairwise
+  [Arity Op]
+  (c : Config Op χ V m n)
+  (P : V → V → Prop) : Prop :=
+  ∀ {x₁ x₂}
+    {buf₁ buf₂ : List V}
+    {i : Fin buf₁.length}
+    {j : Fin buf₂.length}
     t₁ t₂,
     x₁ ≠ x₂ ∨ i.val ≠ j.val →
     c.chans x₁ = some buf₁ →
     c.chans x₂ = some buf₂ →
-    buf₁[i] = .inr t₁ →
-    buf₂[j] = .inr t₂ →
-    t₁ ⊥ t₂
+    P buf₁[i] buf₂[j]
+
+def Config.DisjointTokens
+  [Arity Op] [PCM T]
+  (c : Config Op χ (V ⊕ T) m n) : Prop :=
+  c.Pairwise InrDisjointTokens
 
 abbrev ProcWithSpec
   [Arity Op] [PCM T]
@@ -187,11 +225,11 @@ def Label.IsYieldOrSilentAndDet
 /-- Without considering shared operator states, and when
 restricted to silent/yield labels, a well-formed `Proc` has
 a strongly confluent (and thus confluent) semantics. -/
-theorem proc_strong_confl
+theorem proc_strong_confl_at
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
-  {proc : Proc Op χ V m n}
-  {s : proc.semantics.S}
+  (proc : Proc Op χ V m n)
+  (s : proc.semantics.S)
   (haff : s.proc.AffineChan) :
     proc.semantics.lts.StronglyConfluentAt s Label.IsYieldOrSilentAndDet
   := by
@@ -418,6 +456,91 @@ theorem proc_strong_confl
             apply List.set_comm
             exact Ne.symm h
         ⟩
+
+theorem guard_state_strong_confl_at
+  [Arity Op] [Arity Op']
+  (sem : Semantics Op V m n)
+  (s : sem.S)
+  {Inv : sem.S → Prop}
+  {Compat : Label Op V m n → Label Op V m n → Prop}
+  (hinv : sem.IsInvariantAt Inv s)
+  (hconfl : sem.lts.StronglyConfluentAt s Compat) :
+    (sem.guardState Inv).lts.StronglyConfluentAt s Compat
+  := by
+  -- This requires `Inv` to be an invariant, so maybe
+  -- the guard is not needed in the first place?
+  sorry
+  -- intros s₁' s₂' l₁' l₂' hstep₁ hstep₂ hcompat
+  -- rcases hstep₁ with ⟨hinv₁, hinv₁', hstep₁⟩
+  -- rcases hstep₂ with ⟨hinv₂, hinv₂', hstep₂⟩
+  -- cases hconfl hstep₁ hstep₂ hcompat with
+  -- | inl heq => exact .inl heq
+  -- | inr h =>
+  --   right
+  --   have ⟨s', hstep₁', hstep₂'⟩ := h
+  --   exists s'
+  --   constructor
+  --   · exact ⟨hinv₁', hinv₂', hstep₁'⟩
+  --   · sorry
+
+theorem guard_label_strong_confl_at
+  [Arity Op] [Arity Op']
+  (sem : Semantics Op V m n)
+  (s : sem.S)
+  {Guard : Label Op V m n → Label Op' V' m' n' → Prop}
+  {Compat : Label Op V m n → Label Op V m n → Prop}
+  (hconfl : sem.lts.StronglyConfluentAt s Compat) :
+    (sem.guardLabel Guard).lts.StronglyConfluentAt s
+      (λ l₁' l₂' => ∀ {l₁ l₂},
+        Guard l₁ l₁' →
+        Guard l₂ l₂' →
+        Compat l₁ l₂)
+  := by
+  intros s₁' s₂' l₁' l₂' hstep₁ hstep₂ hcompat
+  rcases hstep₁ with ⟨hguard₁', hstep₁⟩
+  rcases hstep₂ with ⟨hguard₂', hstep₂⟩
+  have hcompat' := hcompat hguard₁' hguard₂'
+  cases hconfl hstep₁ hstep₂ hcompat' with
+  | inl heq => exact .inl heq
+  | inr h =>
+    right
+    have ⟨s', hstep₁', hstep₂'⟩ := h
+    exists s'
+    constructor
+    · exact ⟨hguard₂', hstep₁'⟩
+    · exact ⟨hguard₁', hstep₂'⟩
+
+/-- Strong confluence of a `ProcWithSpec` when interpreted. -/
+theorem proc_interp_strong_confl
+  [Arity Op] [PCM T] [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  (proc : ProcWithSpec opSpec χ m n)
+  -- Sound (wrt. opSpec) and deterministic interpretation
+  (interp : OpInterp Op V)
+  (hsound : OpSpec.Sound opSpec interp)
+  (hdet : interp.Deterministic) :
+    ((proc.semantics.guardLabel (opSpec.Guard ioSpec)).interpret interp).lts.StronglyConfluent
+      (λ (s, _) => s.proc.AffineChan)
+      (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent)
+  := by
+  intros s hinv s₁' s₂' l₁ l₂ hstep₁ hstep₂ hcompat
+  rcases s with ⟨s, t⟩
+  rcases s₁' with ⟨s₁', t₁'⟩
+  rcases s₂' with ⟨s₂', t₂'⟩
+  case mk.mk.mk =>
+  simp at hinv
+  cases hstep₁ <;> cases hstep₂ <;> simp at hcompat
+  case step_tau.step_tau hstep₁ hstep₂ =>
+    cases hstep₁ with | step hguard₁ hstep₁ =>
+    cases hstep₂ with | step hguard₂ hstep₂ =>
+    cases hguard₁ <;> cases hguard₂
+    · have := proc_strong_confl_at proc s hinv hstep₁ hstep₂
+      -- There is some non-determinism with join...
+      sorry
+    all_goals sorry
+  all_goals sorry
 
 -- TODO: guarding a confluent semantics is confluent
 
@@ -694,7 +817,7 @@ theorem sim_type_check_init
   and_intros
   · simp [hwt]
   · simp [hwt]
-  · simp [Config.DisjointTokens, VarMap.DisjointTokens, VarMap.getVar, VarMap.empty]
+  · simp [VarMap.DisjointTokens]
   · simp
   · simp
 
@@ -740,7 +863,7 @@ theorem sim_type_check_input
   have hcont₂ := hinit hcont
   simp [Fn.semantics, Semantics.guard, Semantics.guardState, Semantics.guardLabel, Config.init]
   have hstep₂ :
-    (fn'.semantics.guard _
+    (fn'.semantics.guard Config.DisjointTokens
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ (.input args) _ :=
     guard_single
@@ -805,7 +928,7 @@ theorem sim_type_check_ret
   have ⟨hacq₁, hacq₂, hacq₃⟩ := hacq
   -- Join required permissions
   have hstep₂ :
-    (fn'.semantics.guard _
+    (fn'.semantics.guard Config.DisjointTokens
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ _ _ :=
     guard_single
@@ -823,7 +946,7 @@ theorem sim_type_check_ret
       (.spec_join (by rfl) (by rfl) hacq₃)
   -- Run the actual return expression
   have hsteps₂ :
-    (fn'.semantics.guard _
+    (fn'.semantics.guard Config.DisjointTokens
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep .τ
       s₂ (.output retVals) _ := (Lts.WeakStep.single hstep₂).tail_non_tau
     (guard_single
@@ -838,7 +961,7 @@ theorem sim_type_check_ret
         -- TODO: remove tokens and add new tokens
         sorry)
       (by
-        simp [VarMap.empty, VarMap.getVar, VarMap.DisjointTokens])
+        simp [VarMap.DisjointTokens])
       (by
         apply OpSpec.Guard.spec_output
         apply pcm.eq_refl))
@@ -848,7 +971,7 @@ theorem sim_type_check_ret
       and_intros
       · simp [hwt_fn.1]
       · simp [hwt_fn.2]
-      · simp [VarMap.empty, VarMap.getVar, VarMap.DisjointTokens]
+      · simp [VarMap.DisjointTokens]
       · simp
       · simp
   ⟩
@@ -890,7 +1013,7 @@ theorem sim_type_check_tail
   have ⟨hacq₁, hacq₂, hacq₃⟩ := hacq
   -- Join required permissions
   have hstep₂ :
-    (fn'.semantics.guard _
+    (fn'.semantics.guard Config.DisjointTokens
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ _ _ :=
     guard_single
@@ -908,7 +1031,7 @@ theorem sim_type_check_tail
       (.spec_join (by rfl) (by rfl) hacq₃)
   -- Run the actual return expression
   have hsteps₂ :
-    (fn'.semantics.guard _
+    (fn'.semantics.guard Config.DisjointTokens
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep .τ
       s₂ .τ _ := (Lts.WeakStep.single hstep₂).tail_non_tau
     (guard_single
@@ -977,7 +1100,7 @@ theorem sim_type_check_op
   have ⟨hacq₁, hacq₂, hacq₃⟩ := hacq
   -- Join permissions
   have hstep₂ :
-    (fn'.semantics.guard _
+    (fn'.semantics.guard Config.DisjointTokens
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ .τ _ :=
     guard_single
@@ -1069,7 +1192,7 @@ theorem sim_type_check_br
   have ⟨ctx, expr₂, hcont₂, hwt, hvars⟩ := hcont _ hexpr
   cases hwt with | wpt_br hwt₁ hwt₂ =>
   have hstep₂ :
-    (fn'.semantics.guard _
+    (fn'.semantics.guard Config.DisjointTokens
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ .τ _ :=
     guard_single

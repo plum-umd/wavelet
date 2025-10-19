@@ -29,8 +29,7 @@ def guardLabel
   [Arity Op] [Arity Op']
   (sem : Semantics Op V m n)
   (Guard : Label Op V m n → Label Op' V' m' n' → Prop) :
-  Semantics Op' V' m' n' :=
-  {
+  Semantics Op' V' m' n' := {
     S := sem.S,
     init := sem.init,
     lts := sem.lts.GuardLabel Guard,
