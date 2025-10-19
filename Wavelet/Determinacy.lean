@@ -21,11 +21,8 @@ def EqModGhost : V ⊕ T → V ⊕ T → Prop
   | .inr _, .inr _ => True
   | _, _ => False
 
-def EqModGhost.equiv : Equivalence (EqModGhost (V := V) (T := T)) := by
-  constructor
-  · simp [EqModGhost]
-  · simp [EqModGhost]
-  · simp [EqModGhost]
+instance : IsRefl (V ⊕ T) EqModGhost where
+  refl v := by cases v <;> simp [EqModGhost]
 
 end Wavelet.Semantics
 
@@ -102,11 +99,10 @@ def ChanMap.EqMod
   (map₁ map₂ : ChanMap χ V) : Prop :=
   ∀ {name : χ}, List.Forall₂ Eq (map₁ name) (map₂ name)
 
-theorem ChanMap.EqMod.equiv
-  {Eq : V → V → Prop}
-  (heqv : Equivalence Eq) :
-    Equivalence (ChanMap.EqMod (χ := χ) Eq)
-  := sorry
+instance {Eq : V → V → Prop} [IsRefl V Eq] : IsRefl (ChanMap χ V) (ChanMap.EqMod Eq) where
+  refl map := by
+    intros name
+    apply List.forall₂_refl
 
 /-- Defines a config property that imposes a
 constraint on every pair of values in the config. -/
@@ -129,13 +125,13 @@ def Config.EqMod
   c₁.proc = c₂.proc ∧
   ChanMap.EqMod Eq c₁.chans c₂.chans
 
-theorem Config.EqMod.equiv
-  [Arity Op]
-  {Eq : V → V → Prop}
-  (heqv : Equivalence Eq) :
-    Equivalence (Config.EqMod (Op := Op) (χ := χ) (m := m) (n := n) Eq)
-  := by
-  sorry
+instance instConfigEqModIsRefl
+  {Eq : V → V → Prop} [Arity Op] [IsRefl V Eq] :
+  IsRefl (Config Op χ V m n) (Config.EqMod Eq) where
+  refl c := by
+    constructor
+    · rfl
+    · apply IsRefl.refl
 
 abbrev ProcWithSpec
   [Arity Op] [PCM T]
@@ -260,6 +256,26 @@ def Label.IsYieldOrSilentAndDet
   (l₂.isYield ∨ l₂.isSilent) ∧
   Label.Deterministic l₁ l₂
 
+def Label.EqMod
+  [Arity Op]
+  (Eq : V → V → Prop)
+  (l₁ l₂ : Label Op V m n) : Prop :=
+  match l₁, l₂ with
+  | .input vals₁, .input vals₂ =>
+      List.Forall₂ Eq vals₁.toList vals₂.toList
+  | .output vals₁, .output vals₂ =>
+      List.Forall₂ Eq vals₁.toList vals₂.toList
+  | .yield op₁ inputs₁ outputs₁, .yield op₂ inputs₂ outputs₂ =>
+      op₁ = op₂ ∧
+      List.Forall₂ Eq inputs₁.toList inputs₂.toList ∧
+      List.Forall₂ Eq outputs₁.toList outputs₂.toList
+  | .τ, .τ => True
+  | _, _ => False
+
+instance {Eq : V → V → Prop} [Arity Op] [IsRefl V Eq] :
+  IsRefl (Label Op V m n) (Label.EqMod Eq) where
+  refl l := by cases l <;> simp [Label.EqMod, IsRefl.refl]
+
 theorem chan_map_push_vals_equiv
   [DecidableEq χ]
   {map : ChanMap χ V}
@@ -282,21 +298,28 @@ theorem proc_strong_confl_at_mod
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
   (EqV : V → V → Prop)
-  (hequiv : Equivalence EqV)
+  [hrefl : IsRefl V EqV]
   (proc : Proc Op χ V m n)
   (s : proc.semantics.S)
   (haff : s.proc.AffineChan) :
     proc.semantics.lts.StronglyConfluentAtMod
       (Label.IsYieldOrSilentAndDetMod EqV)
       (Config.EqMod EqV)
+      (Label.EqMod EqV)
       s
   := by
   intros s₁' s₂' l₁ l₂ hstep₁ hstep₂ hcompat
   have ⟨hlabel₁, hlabel₂, hyield_det⟩ := hcompat
   have ⟨_, _, ⟨haff_nodup, haff_disj⟩, _⟩ := haff
-  by_cases heq_state : s₁' = s₂'
-  · simp [heq_state, (Config.EqMod.equiv hequiv).refl]
-  · -- Keep some acronyms so that they don't get expanded
+  by_cases heq : l₁ = l₂ ∧ s₁' = s₂'
+  · left
+    simp [heq]
+    constructor
+    · apply IsRefl.refl
+    · simp [Proc.semantics] at s₂'
+      apply IsRefl.refl
+  · simp at heq
+    -- Keep some acronyms so that they don't get expanded
     generalize hs₁' : s₁' = s₁''
     generalize hs₂' : s₂' = s₂''
     cases hstep₁ <;> cases hstep₂
@@ -318,12 +341,18 @@ theorem proc_strong_confl_at_mod
         simp [hpop₁] at hpop₂
         have ⟨h₄, h₅⟩ := hpop₂
         subst h₄; subst h₅
-        have := hyield_det (by rfl) (by rfl)
+        have heq_outputs := hyield_det (by rfl) (by rfl)
         simp only [← hs₁', ← hs₂']
         constructor
-        · rfl
-        · simp
-          exact chan_map_push_vals_equiv this
+        · constructor
+          · rfl
+          · constructor
+            · apply List.forall₂_refl
+            · exact heq_outputs
+        · constructor
+          · rfl
+          · simp
+            exact chan_map_push_vals_equiv heq_outputs
       · right
         have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj ⟨i, hi⟩ ⟨j, hj⟩ (by simp [h])
         simp [hget_i, hget_j, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
@@ -340,8 +369,7 @@ theorem proc_strong_confl_at_mod
         rw [push_vals_push_vals_disj_commute hdisj_outputs] at hstep₁'
         simp only [← hs₁'] at hstep₁' ⊢
         simp only [← hs₂'] at hstep₂' ⊢
-        exact ⟨_, _, hstep₁', hstep₂',
-          by apply (Config.EqMod.equiv hequiv).refl⟩
+        exact ⟨_, _, hstep₁', hstep₂', by simp⟩
     -- Commute `step_op` and `step_async`
     case neg.step_op.step_async =>
       right
@@ -380,8 +408,7 @@ theorem proc_strong_confl_at_mod
       rw [push_vals_push_vals_disj_commute hdisj_outputs] at hstep₁'
       simp only [← hs₁'] at hstep₁' ⊢
       simp only [← hs₂'] at hstep₂' ⊢
-      exact ⟨_, _, hstep₁', hstep₂',
-        by apply (Config.EqMod.equiv hequiv).refl⟩
+      exact ⟨_, _, hstep₁', hstep₂', by simp⟩
     -- Commute `step_async` and `step_op`
     case neg.step_async.step_op =>
       right
@@ -420,8 +447,7 @@ theorem proc_strong_confl_at_mod
       rw [push_vals_push_vals_disj_commute hdisj_outputs] at hstep₂'
       simp only [← hs₁'] at hstep₁' ⊢
       simp only [← hs₂'] at hstep₂' ⊢
-      exact ⟨_, _, hstep₁', hstep₂',
-        by apply (Config.EqMod.equiv hequiv).refl⟩
+      exact ⟨_, _, hstep₁', hstep₂', by simp⟩
     -- Commute two `step_async`s
     case neg.step_async.step_async =>
       right
@@ -433,13 +459,13 @@ theorem proc_strong_confl_at_mod
       by_cases h : i = j
       -- Firing the same async op => final state should be the same
       · apply False.elim
-        apply heq_state
+        simp at heq
+        apply heq
         subst h
         simp [hget_i] at hget_j
         have ⟨h₁, h₂, h₃⟩ := hget_j
         subst h₁; subst h₂; subst h₃
         simp at hinterp₁ hinterp₂
-        simp
         have heq_inputs_len := async_op_interp_det_inputs_len hinterp₁ hinterp₂
         simp at heq_inputs_len
         subst heq_inputs_len
@@ -522,12 +548,9 @@ theorem proc_strong_confl_at_mod
             apply Lts.Step.eq_rhs hstep₂'
             rfl),
           (by
-            constructor
-            · simp
-              apply List.set_comm
-              exact h
-            · simp
-              apply (ChanMap.EqMod.equiv hequiv).refl)
+            congr 2
+            apply List.set_comm
+            exact h)
         ⟩
 
 theorem guard_strong_confl_at
@@ -536,6 +559,7 @@ theorem guard_strong_confl_at
   (s : sem.S)
   {Guard : Label Op V m n → Label Op' V' m' n' → Prop}
   {Compat : Label Op V m n → Label Op V m n → Prop}
+  (hguard_congr : ∀ {l₁ l₂ l₁' l₂'}, Guard l₁ l₁' → Guard l₂ l₂' → l₁ = l₂ → l₁' = l₂')
   (hconfl : sem.lts.StronglyConfluentAt Compat s) :
     (sem.guard Guard).lts.StronglyConfluentAt
       (λ l₁' l₂' => ∀ {l₁ l₂},
@@ -549,7 +573,9 @@ theorem guard_strong_confl_at
   rcases hstep₂ with ⟨hguard₂', hstep₂⟩
   have hcompat' := hcompat hguard₁' hguard₂'
   cases hconfl hstep₁ hstep₂ hcompat' with
-  | inl heq => exact .inl heq
+  | inl heq =>
+    left
+    simp [heq.2, hguard_congr hguard₁' hguard₂' heq.1]
   | inr h =>
     right
     have ⟨s', hstep₁', hstep₂'⟩ := h
@@ -564,22 +590,27 @@ theorem guard_strong_confl_at_mod
   (sem : Semantics Op V m n)
   (s : sem.S)
   {Guard : Label Op V m n → Label Op' V' m' n' → Prop}
-  {Eq : sem.S → sem.S → Prop}
+  {EqS : sem.S → sem.S → Prop}
+  {EqL : Label Op V m n → Label Op V m n → Prop}
+  {EqL' : Label Op' V' m' n' → Label Op' V' m' n' → Prop}
   {Compat : Label Op V m n → Label Op V m n → Prop}
-  (hconfl : sem.lts.StronglyConfluentAtMod Compat Eq s) :
+  (hguard_congr : ∀ {l₁ l₂ l₁' l₂'}, Guard l₁ l₁' → Guard l₂ l₂' → EqL l₁ l₂ → EqL' l₁' l₂')
+  (hconfl : sem.lts.StronglyConfluentAtMod Compat EqS EqL s) :
     (sem.guard Guard).lts.StronglyConfluentAtMod
       (λ l₁' l₂' => ∀ {l₁ l₂},
         Guard l₁ l₁' →
         Guard l₂ l₂' →
         Compat l₁ l₂)
-      Eq s
+      EqS EqL' s
   := by
   intros s₁' s₂' l₁' l₂' hstep₁ hstep₂ hcompat
   rcases hstep₁ with ⟨hguard₁', hstep₁⟩
   rcases hstep₂ with ⟨hguard₂', hstep₂⟩
   have hcompat' := hcompat hguard₁' hguard₂'
   cases hconfl hstep₁ hstep₂ hcompat' with
-  | inl heq => exact .inl heq
+  | inl heq =>
+    left
+    simp [heq.2, hguard_congr hguard₁' hguard₂' heq.1]
   | inr h =>
     right
     have ⟨s₁'', s₂'', hstep₁', hstep₂', heq⟩ := h
@@ -646,8 +677,20 @@ theorem guard_label_compat_inversion
 
   all_goals sorry
 
+theorem op_spec_guard_eq_congr
+  [Arity Op] [PCM T]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {l₁ l₂ : Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1)}
+  {l₁' l₂' : Label Op V m n}
+  (hguard₁ : opSpec.Guard ioSpec l₁ l₁')
+  (hguard₂ : opSpec.Guard ioSpec l₂ l₂')
+  (heq : Label.EqMod EqModGhost l₁ l₂) :
+    l₁' = l₂'
+  := sorry
+
 /-- Strong confluence of a `ProcWithSpec` when interpreted. -/
-theorem proc_interp_strong_confl
+theorem proc_interp_strong_confl_at_mod
   [Arity Op] [PCM T] [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
@@ -663,19 +706,23 @@ theorem proc_interp_strong_confl
     ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret interp).lts.StronglyConfluentAtMod
       (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent)
       (λ (s₁, _) (s₂, _) => Config.EqMod EqModGhost s₁ s₂)
+      (· = ·)
       (s, t)
   := by
   intros s₁' s₂' l₁ l₂ hstep₁ hstep₂ hcompat
   rcases s₁' with ⟨s₁', t₁'⟩
   rcases s₂' with ⟨s₂', t₂'⟩
   case mk.mk =>
-  have hconfl_base : Lts.StronglyConfluentAtMod _ _ _ _ :=
-    proc_strong_confl_at_mod EqModGhost EqModGhost.equiv proc s haff
-  have hconfl_guard : Lts.StronglyConfluentAtMod _ _ _ _ :=
+  have hconfl_base : Lts.StronglyConfluentAtMod _ _ _ _ _ :=
+    proc_strong_confl_at_mod EqModGhost proc s haff
+  have hconfl_guard : Lts.StronglyConfluentAtMod _ _ _ _ _ :=
     guard_strong_confl_at_mod
       (Op := WithSpec Op opSpec) (Op' := Op)
       (Guard := opSpec.Guard ioSpec)
-      proc.semantics s hconfl_base
+      (EqL' := (· = ·))
+      proc.semantics s
+      op_spec_guard_eq_congr
+      hconfl_base
   cases hstep₁ <;> cases hstep₂ <;> simp at hcompat
   case step_tau.step_tau hstep₁ hstep₂ =>
     have := hconfl_guard hstep₁ hstep₂
@@ -690,7 +737,7 @@ theorem proc_interp_strong_confl
       exact ⟨
         InterpStep.step_tau hstep₁',
         InterpStep.step_tau hstep₂',
-        heq,
+        by simp [heq],
       ⟩
   case step_tau.step_yield hstep₁ _ _ _ hstep₂ hstep_op₂ =>
     have := hconfl_guard hstep₁ hstep₂
@@ -705,7 +752,7 @@ theorem proc_interp_strong_confl
       exact ⟨
         InterpStep.step_yield hstep₁' hstep_op₂,
         InterpStep.step_tau hstep₂',
-        heq,
+        by simp [heq],
       ⟩
   case step_yield.step_tau _ _ _ _ hstep₁ hstep_op₁ hstep₂ =>
     have := hconfl_guard hstep₁ hstep₂
@@ -720,42 +767,38 @@ theorem proc_interp_strong_confl
       exact ⟨
         InterpStep.step_tau hstep₁',
         InterpStep.step_yield hstep₂' hstep_op₁,
-        heq,
+        by simp [heq],
       ⟩
   case step_yield.step_yield _ hstep₁ hstep_op₁ _ _ _ hstep₂ hstep_op₂ =>
     have hconfl_sem := hconfl_guard hstep₁ hstep₂
       (guard_label_compat_inversion (by
-        simp [Label.IsYieldOrSilentAndDet, Label.Deterministic]
-        -- TODO: use `hdet`
-        sorry))
-    have hconfl_op := hsound t hstep_op₁ hstep_op₂
+        -- By `hdet`
+        simp only [Label.IsYieldOrSilentAndDet, Label.Deterministic]
+        and_intros
+        · simp
+        · simp
+        · intros op inputVals outputVals₁ outputVals₂ heq_yield₁ heq_yield₂
+          simp at heq_yield₁ heq_yield₂
+          have ⟨heq_op₁, heq_inputs₁, heq_outputs₁⟩ := heq_yield₁
+          have ⟨heq_op₂, heq_inputs₂, heq_outputs₂⟩ := heq_yield₂
+          subst heq_op₁; subst heq_inputs₁; subst heq_outputs₁
+          subst heq_op₂; subst heq_inputs₂; subst heq_outputs₂
+          simp [hdet hstep_op₁ hstep_op₂]))
+    have ⟨t', hstep_op₁', hstep_op₂'⟩ := hsound hstep_op₁ hstep_op₂
       (by
         -- TODO: this requires disjoint state
         sorry)
-    cases hconfl_op with
-    | inl heq_op =>
-      -- Same operator state
-      cases hconfl_sem with
-      | inl heq => simp [heq]
-      | inr h =>
-        subst heq_op
-        right
-        replace ⟨s₁'', s₂'', hstep₁', hstep₂', heq⟩ := h
-        exists (s₁'', t₁'), (s₂'', t₁')
-        -- exact ⟨
-        --   InterpStep.step_yield hstep₁' hstep_op₁,
-        --   InterpStep.step_yield hstep₂' hstep_op₁,
-        --   heq,
-        -- ⟩
-        -- TODO: This is a bit tricky: even if the operator states
-        -- are the same after both steps, we can't really
-        -- say that they are ok to fire again...
-        sorry
+    cases hconfl_sem with
+    | inl heq => simp [heq]
     | inr h =>
       right
-      -- TODO: similarly, if the operator semantics can proceed
-      -- but the base semantics cannot...
-      sorry
+      replace ⟨s₁'', s₂'', hstep₁', hstep₂', heq⟩ := h
+      exists (s₁'', t'), (s₂'', t')
+      exact ⟨
+        InterpStep.step_yield hstep₁' hstep_op₁',
+        InterpStep.step_yield hstep₂' hstep_op₂',
+        by simp [heq],
+      ⟩
 
 -- TODO: guarding a confluent semantics is confluent
 

@@ -2,7 +2,6 @@ import Wavelet.Semantics.Defs
 import Wavelet.Semantics.OpInterp
 import Wavelet.Semantics.Guard
 import Wavelet.Semantics.PCM
-import Wavelet.Semantics.Confluence
 
 /-! Putting a resource specification on an operator set. -/
 
@@ -27,7 +26,16 @@ def OpSpec.Sound
   [Arity Op] [PCM T]
   (opSpec : OpSpec Op V T)
   (interp : OpInterp Op V) : Prop :=
-  ∀ s, interp.lts.StronglyConfluentAt (OpSpec.CompatLabels opSpec) s
+  ∀ {s s₁ s₂ l₁ l₂},
+    -- Confluence like the following is not sufficient, since we
+    -- need to allow firing the same operator twice.
+    -- `interp.lts.StronglyConfluentAt (OpSpec.CompatLabels opSpec) s`
+    interp.lts.Step s l₁ s₁ →
+    interp.lts.Step s l₂ s₂ →
+    opSpec.CompatLabels l₁ l₂ →
+    ∃ s',
+      interp.lts.Step s₁ l₂ s' ∧
+      interp.lts.Step s₂ l₁ s'
 
 /-- Specification on input/output labels. -/
 structure IOSpec V T [PCM T] m n where

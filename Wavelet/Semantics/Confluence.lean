@@ -15,7 +15,7 @@ def Lts.StronglyConfluentAt
     lts.Step c l₁ c₁ →
     lts.Step c l₂ c₂ →
     Compat l₁ l₂ →
-    c₁ = c₂ ∨
+    (l₁ = l₂ ∧ c₁ = c₂) ∨
     ∃ c',
       lts.Step c₁ l₂ c' ∧
       lts.Step c₂ l₁ c'
@@ -33,13 +33,14 @@ def Lts.StronglyConfluentAtMod
   {C : Type u} {E : Type v}
   (lts : Lts C E)
   (Compat : E → E → Prop)
-  (Eq : C → C → Prop)
+  (EqC : C → C → Prop)
+  (EqE : E → E → Prop)
   (c : C) : Prop :=
   ∀ {c₁ c₂ : C} {l₁ l₂ : E},
     lts.Step c l₁ c₁ →
     lts.Step c l₂ c₂ →
     Compat l₁ l₂ →
-    Eq c₁ c₂ ∨
+    (EqE l₁ l₂ ∧ EqC c₁ c₂) ∨
     ∃ c₁' c₂',
       lts.Step c₁ l₂ c₁' ∧
       lts.Step c₂ l₁ c₂' ∧
