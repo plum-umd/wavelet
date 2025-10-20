@@ -674,7 +674,6 @@ theorem guard_label_compat_inversion
     intros
     -- TODO: all ghost tokens, should be easy
     sorry
-
   all_goals sorry
 
 theorem op_spec_guard_eq_congr
@@ -689,9 +688,23 @@ theorem op_spec_guard_eq_congr
     l₁' = l₂'
   := sorry
 
+theorem pop_vals_disj_preserves_pairwise
+  [DecidableEq χ]
+  {map : ChanMap χ V}
+  {P : V → V → Prop}
+  {names₁ : Vector χ m} {vals₁ : Vector V m}
+  {names₂ : Vector χ n} {vals₂ : Vector V n}
+  (hpw : map.Pairwise P)
+  (hdisj : List.Disjoint names₁.toList names₂.toList)
+  (hpop₁ : map.popVals names₁ = some (vals₁, map'))
+  (hpop₂ : map.popVals names₂ = some (vals₂, map'')) :
+    ∀ v₁ v₂, v₁ ∈ vals₁ → v₂ ∈ vals₂ → P v₁ v₂
+  := sorry
+
 /-- Strong confluence of a `ProcWithSpec` when interpreted. -/
 theorem proc_interp_strong_confl_at_mod
-  [Arity Op] [PCM T] [DecidableEq χ]
+  [Arity Op] [PCM T] [PCM.Lawful T]
+  [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
@@ -702,7 +715,8 @@ theorem proc_interp_strong_confl_at_mod
   (hdet : interp.Deterministic)
   (s : proc.semantics.S)
   (t : interp.S)
-  (haff : s.proc.AffineChan) :
+  (haff : s.proc.AffineChan)
+  (hdisj : s.DisjointTokens) :
     ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret interp).lts.StronglyConfluentAtMod
       (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent)
       (λ (s₁, _) (s₂, _) => Config.EqMod EqModGhost s₁ s₂)
@@ -784,21 +798,53 @@ theorem proc_interp_strong_confl_at_mod
           subst heq_op₁; subst heq_inputs₁; subst heq_outputs₁
           subst heq_op₂; subst heq_inputs₂; subst heq_outputs₂
           simp [hdet hstep_op₁ hstep_op₂]))
-    have ⟨t', hstep_op₁', hstep_op₂'⟩ := hsound hstep_op₁ hstep_op₂
-      (by
-        -- TODO: this requires disjoint state
-        sorry)
     cases hconfl_sem with
     | inl heq => simp [heq]
     | inr h =>
-      right
-      replace ⟨s₁'', s₂'', hstep₁', hstep₂', heq⟩ := h
-      exists (s₁'', t'), (s₂'', t')
-      exact ⟨
-        InterpStep.step_yield hstep₁' hstep_op₁',
-        InterpStep.step_yield hstep₂' hstep_op₂',
-        by simp [heq],
-      ⟩
+      cases hstep₁ with | step hguard₁ hstep₁ =>
+      cases hstep₂ with | step hguard₂ hstep₂ =>
+      cases hguard₁ with | spec_yield htok₁ htok₁' =>
+      rename_i tok₁ tok₁'
+      cases hguard₂ with | spec_yield htok₂ htok₂' =>
+      rename_i tok₂ tok₂'
+      cases hstep₁ with | step_op hmem₁ hpop₁ =>
+      cases hstep₂ with | step_op hmem₂ hpop₂ =>
+      have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem₁
+      have ⟨j, hj, hget_j⟩ := List.getElem_of_mem hmem₂
+      by_cases heq_ij : i = j
+      · -- Firing the same atom, so the result must be the same by `hdet`
+        left
+        subst heq_ij
+        simp [hget_i] at hget_j
+        have ⟨h₁, h₂, h₃⟩ := hget_j
+        subst h₁; subst h₂; subst h₃
+        simp [hpop₁, Vector.push_eq_push] at hpop₂
+        have ⟨⟨h₄, h₅⟩, h₆⟩ := hpop₂
+        replace h₅ := Vector.inj_map (by simp [Function.Injective]) h₅
+        subst h₄; subst h₅; subst h₆
+        simp [htok₁', htok₂']
+        have ⟨_, h₇⟩ := hdet hstep_op₁ hstep_op₂
+        subst h₇
+        apply IsRefl.refl
+      · right
+        have ⟨t', hstep_op₁', hstep_op₂'⟩ := hsound hstep_op₁ hstep_op₂
+          (by
+            -- Firing different atoms, so the tokens must be disjoint by `DisjointTokens`.
+            simp [OpSpec.CompatLabels]
+            apply PCM.eq_congr_disj htok₁ htok₂
+            have := haff.atom_inputs_disjoint ⟨i, hi⟩ ⟨j, hj⟩ (by simp [heq_ij])
+            simp [hget_i, hget_j, AtomicProc.inputs] at this
+            have := pop_vals_disj_preserves_pairwise hdisj this hpop₁ hpop₂
+            have := this (.inr tok₁) (.inr tok₂)
+            apply this
+            all_goals simp)
+        replace ⟨s₁'', s₂'', hstep₁', hstep₂', heq⟩ := h
+        exists (s₁'', t'), (s₂'', t')
+        exact ⟨
+          InterpStep.step_yield hstep₁' hstep_op₁',
+          InterpStep.step_yield hstep₂' hstep_op₂',
+          by simp [heq],
+        ⟩
 
 -- TODO: guarding a confluent semantics is confluent
 
@@ -1092,7 +1138,7 @@ theorem sim_type_check_input_vars
 theorem sim_type_check_input
   [Arity Op]
   [InterpConsts V]
-  [PCM T] [pcm : LawfulPCM T]
+  [PCM T] [pcm : PCM.Lawful T]
   [DecidableEq χ]
   [DecidableLE T]
   {opSpec : SimpleOpSpec Op T}
@@ -1149,7 +1195,7 @@ theorem sim_type_check_input
 theorem sim_type_check_ret
   [Arity Op]
   [InterpConsts V]
-  [PCM T] [pcm : LawfulPCM T]
+  [PCM T] [pcm : PCM.Lawful T]
   [DecidableEq χ]
   [DecidableLE T]
   {opSpec : SimpleOpSpec Op T}
@@ -1223,7 +1269,7 @@ theorem sim_type_check_ret
 theorem sim_type_check_tail
   [Arity Op]
   [InterpConsts V]
-  [PCM T] [pcm : LawfulPCM T]
+  [PCM T] [pcm : PCM.Lawful T]
   [DecidableEq χ]
   [DecidableLE T]
   {opSpec : SimpleOpSpec Op T}
@@ -1300,7 +1346,7 @@ theorem sim_type_check_tail
 theorem sim_type_check_op
   [Arity Op]
   [InterpConsts V]
-  [PCM T] [pcm : LawfulPCM T]
+  [PCM T] [pcm : PCM.Lawful T]
   [DecidableEq χ]
   [DecidableLE T]
   {opSpec : SimpleOpSpec Op T}
@@ -1384,7 +1430,7 @@ theorem sim_type_check_op
 theorem sim_type_check_br
   [Arity Op]
   [InterpConsts V]
-  [PCM T] [pcm : LawfulPCM T]
+  [PCM T] [pcm : PCM.Lawful T]
   [DecidableEq χ]
   [DecidableLE T]
   {opSpec : SimpleOpSpec Op T}
@@ -1455,7 +1501,7 @@ theorem sim_type_check
   {V T : Type u} -- TODO: relax this constraint
   [Arity Op]
   [InterpConsts V]
-  [PCM T] [LawfulPCM T]
+  [PCM T] [PCM.Lawful T]
   [DecidableEq χ]
   [DecidableLE T]
   (opSpec : SimpleOpSpec Op T)

@@ -153,4 +153,12 @@ theorem toList_inj_heq
   · simp
     exact Vector.toList_inj.mp h
 
+theorem inj_map
+  {f : α → β}
+  (hf : Function.Injective f)
+  {xs ys : Vector α n}
+  (h : xs.map f = ys.map f) :
+    xs = ys
+:= sorry
+
 end Vector

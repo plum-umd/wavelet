@@ -29,4 +29,15 @@ def Proc.AffineChan [Arity Op] (proc : Proc Op χ V m n) : Prop :=
   (∀ input ∈ proc.inputs, ∀ ap ∈ proc.atoms, input ∉ ap.outputs) ∧
   (∀ output ∈ proc.outputs, ∀ ap ∈ proc.atoms, output ∉ ap.inputs)
 
+theorem Proc.AffineChan.atom_inputs_disjoint
+  [Arity Op]
+  {proc : Proc Op χ V m n}
+  (haff : proc.AffineChan)
+  (i j : Fin proc.atoms.length)
+  (hne : i ≠ j) :
+    proc.atoms[i].inputs.Disjoint proc.atoms[j].inputs
+  := by
+  have ⟨_, _, hatoms, _, _⟩ := haff
+  exact (hatoms.2 i j hne).1
+
 end Wavelet.Dataflow

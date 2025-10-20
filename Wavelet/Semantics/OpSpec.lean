@@ -88,7 +88,7 @@ inductive OpSpec.Guard
     {inputs : Vector V (Arity.ι op)}
     {outputs : Vector V (Arity.ω op)} :
     tok₁ ≡ opSpec.pre op inputs →
-    tok₂ ≡ opSpec.post op inputs outputs →
+    tok₂ = opSpec.post op inputs outputs → -- Using `=` here for less determinism
     Guard opSpec ioSpec
       (.yield (.op op)
         ((inputs.map .inl).push (.inr tok₁))
