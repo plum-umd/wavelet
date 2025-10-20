@@ -719,7 +719,7 @@ theorem proc_interp_strong_confl_at_mod
   (hdisj : s.DisjointTokens) :
     ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret interp).lts.StronglyConfluentAtMod
       (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent)
-      (λ (s₁, _) (s₂, _) => Config.EqMod EqModGhost s₁ s₂)
+      (λ (s₁, t₁) (s₂, t₂) => Config.EqMod EqModGhost s₁ s₂ ∧ t₁ = t₂)
       (· = ·)
       (s, t)
   := by
@@ -758,7 +758,7 @@ theorem proc_interp_strong_confl_at_mod
       (guard_label_compat_inversion (by
         simp [Label.IsYieldOrSilentAndDet, Label.Deterministic]))
     cases this with
-    | inl heq => simp [heq]
+    | inl heq => simp at heq
     | inr h =>
       right
       replace ⟨s₁'', s₂'', hstep₁', hstep₂', heq⟩ := h
@@ -773,7 +773,7 @@ theorem proc_interp_strong_confl_at_mod
       (guard_label_compat_inversion (by
         simp [Label.IsYieldOrSilentAndDet, Label.Deterministic]))
     cases this with
-    | inl heq => simp [heq]
+    | inl heq => simp at heq
     | inr h =>
       right
       replace ⟨s₁'', s₂'', hstep₁', hstep₂', heq⟩ := h
@@ -799,7 +799,12 @@ theorem proc_interp_strong_confl_at_mod
           subst heq_op₂; subst heq_inputs₂; subst heq_outputs₂
           simp [hdet hstep_op₁ hstep_op₂]))
     cases hconfl_sem with
-    | inl heq => simp [heq]
+    | inl heq =>
+      left
+      simp at heq
+      have ⟨⟨h₁, h₂, h₃⟩, h₄⟩ := heq
+      subst h₁; subst h₂; subst h₃
+      simp [h₄, hdet hstep_op₁ hstep_op₂]
     | inr h =>
       cases hstep₁ with | step hguard₁ hstep₁ =>
       cases hstep₂ with | step hguard₂ hstep₂ =>
@@ -823,9 +828,11 @@ theorem proc_interp_strong_confl_at_mod
         replace h₅ := Vector.inj_map (by simp [Function.Injective]) h₅
         subst h₄; subst h₅; subst h₆
         simp [htok₁', htok₂']
-        have ⟨_, h₇⟩ := hdet hstep_op₁ hstep_op₂
-        subst h₇
-        apply IsRefl.refl
+        have ⟨h₇, h₈⟩ := hdet hstep_op₁ hstep_op₂
+        subst h₈
+        constructor
+        · apply IsRefl.refl
+        · exact h₇
       · right
         have ⟨t', hstep_op₁', hstep_op₂'⟩ := hsound hstep_op₁ hstep_op₂
           (by
