@@ -1409,7 +1409,7 @@ theorem sim_type_check_op
           (tok₁ := opSpec.pre op)
           (tok₂ := opSpec.post op)
         · apply pcm.eq_refl
-        · apply pcm.eq_refl)
+        · rfl)
       hstep₂')
   simp [hs₂'] at hsteps₂
   exact ⟨_, hsteps₂,
