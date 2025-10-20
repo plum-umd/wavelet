@@ -828,7 +828,6 @@ Then any trace in the original semantics should terminate in the same state.
 --   (htau : lts.TauStar τ c₁ c₂) :
 --     motive htau
 --   := by
-
 --   sorry
 
 theorem proc_guarded_weak_normalization
