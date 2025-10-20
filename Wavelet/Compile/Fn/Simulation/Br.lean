@@ -130,7 +130,7 @@ private theorem sim_step_br_exec_dataflow
       intros name hname
       simp only [compileExpr.allVarsExcept, Vector.mem_map] at hname
       replace ⟨var, hvar, hname⟩ := hname
-      simp only [List.toVector, Vector.mem_mk, Array.mem_toArray] at hvar
+      simp only [List.toVector, Vector.mem_mk, List.mem_toArray] at hvar
       simp [hchans₁, hchans₂, hchans₃, hpc₁, ← hname,
         compileExpr.allVarsExcept, List.toVector,
         List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go,

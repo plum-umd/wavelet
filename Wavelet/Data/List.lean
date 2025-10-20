@@ -218,11 +218,9 @@ theorem mem_flatten_mapIdx
   := by
   have ⟨i, hlt, hget_x⟩ := List.mem_iff_getElem.mp hmem_x
   apply List.mem_flatten.mpr
-  simp
-  exists f i xs[i]
-  constructor
-  · exists i, hlt
-  · simp [hget_x, hmem_x']
+  simp only [mem_mapIdx, ↓existsAndEq, true_and]
+  exists i, hlt
+  simp [hget_x, hmem_x']
 
 theorem mem_flatten_map
   {xs : List α} {x : α} {x' : β}

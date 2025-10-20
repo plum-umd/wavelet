@@ -81,6 +81,24 @@ theorem Lts.TauStar.trans
     have := Lts.TauStar.prepend hstep h₂
     exact ih this
 
+/-- Induction principal for `TauStar` from the left of the trace. -/
+def TauStar.reverseInduction
+  {lts : Lts C E} {τ : E}
+  {motive : ∀ {c₁ c₂}, lts.TauStar τ c₁ c₂ → Prop}
+  (refl : ∀ c, motive (.refl : lts.TauStar τ c c))
+  (head : ∀ {c₁ c₂ c₃}
+    (hstep : lts c₁ τ c₂)
+    (htau : lts.TauStar τ c₂ c₃),
+    motive htau → motive (.prepend hstep htau))
+  (htau : lts.TauStar τ c₁ c₂) :
+    motive htau
+  := by
+  cases htau with
+  | refl => apply refl
+  | tail pref tail =>
+
+    sorry
+
 /-- A non-τ step preceded and followed by zero or more tau steps,
 or zero or more τ steps. -/
 inductive Lts.WeakStep (lts : Lts C E) (τ : E) : Lts C E where

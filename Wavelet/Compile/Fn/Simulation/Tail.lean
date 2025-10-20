@@ -519,15 +519,14 @@ theorem sim_step_tail
         · exact hsim.wf_fn.2
         · exact hsim.inputs
         · exact hsim.outputs
-        · simp [compileFn.initCarry, HasCompiledProcs]
-          exists rest
-          simp [hatoms, compileFn, compileFn.initCarry, hcarryInLoop]
-          simp [compileFn] at hcomp_fn
-          simp [hcomp_fn]
-          constructor
-          · exists [], compileFn.resultSteers m n
-            simp [← hcomp_fn, compileFn.bodyComp]
-          · exact hsim.wf_fn.2
+        · simp only [HasCompiledProcs, ↓existsAndEq, compileFn.initCarry,
+            List.append_assoc, reduceCtorEq, GhostState.init, Vector.toList_eq_nil_iff,
+            and_true, IsEmpty.forall_iff, Cont.expr.injEq, forall_eq', true_and]
+          exists [], compileFn.resultSteers m n
+          simp only [hatoms, compileFn, compileFn.initCarry, hcarryInLoop]
+          simp only [compileFn, List.cons.injEq, true_and] at hcomp_fn
+          simp only [← hcomp_fn, compileFn.bodyComp, List.nil_append, true_and]
+          exact hsim.wf_fn.2
     ⟩
 
 end Wavelet.Compile.Fn

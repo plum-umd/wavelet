@@ -816,19 +816,35 @@ If a guarded proc semantics reaches a terminating state
 Then any trace in the original semantics should terminate in the same state.
 -/
 
--- /-- Induction principal for `TauStar` from the left of the trace. -/
--- def induction_from_left
---   {lts : Lts C E} {τ : E}
---   {motive : ∀ {c₁ c₂}, lts.TauStar τ c₁ c₂ → Sort u}
---   (hrefl : ∀ c, motive (.refl : lts.TauStar τ c c))
---   (htail : ∀ {c₁ c₂ c₃}
---     (hstep : lts c₁ τ c₂)
---     (htau : lts.TauStar τ c₂ c₃),
---     motive htau → motive (.prepend hstep htau))
---   (htau : lts.TauStar τ c₁ c₂) :
---     motive htau
---   := by
---   sorry
+theorem proc_guarded_weak_normalization_single
+  [Arity Op] [PCM T] [PCM.Lawful T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {opInterp : OpInterp Op V}
+  {ioSpec : IOSpec V T m n}
+  (proc : ProcWithSpec opSpec χ m n)
+  {s s₁' s₂' : proc.semantics.S × opInterp.S}
+  (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar
+    .τ s s₁')
+  (hstep₂ : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.Step s .τ s₂')
+  -- Note: this has to require that `s'` is final in the original, unguarded semantics
+  (hterm : proc.semantics.IsFinal s₁'.1) :
+    ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar
+      .τ s₂' s₁'
+  := by
+  -- induction htrace₁ using TauStar.reverseInduction with
+  -- | refl =>
+  --   simp [Semantics.interpret, Semantics.guard, Lts.Step] at hstep₂
+  --   cases hstep₂ with
+  --   | _ => sorry
+  -- | head => sorry
+  cases htrace₁ with
+  | refl =>
+    simp [Semantics.interpret, Semantics.guard] at hstep₂
+    -- cases hstep₂
+    sorry
+  | _ => sorry
 
 theorem proc_guarded_weak_normalization
   [Arity Op] [PCM T] [PCM.Lawful T]
@@ -891,7 +907,6 @@ theorem proc_interp_strong_confl_at_mod
   intros s₁' s₂' l₁ l₂ hstep₁ hstep₂ hcompat
   rcases s₁' with ⟨s₁', t₁'⟩
   rcases s₂' with ⟨s₂', t₂'⟩
-  case mk.mk =>
   have hconfl_base : Lts.StronglyConfluentAtMod _ _ _ _ _ :=
     proc_strong_confl_at_mod EqModGhost proc s haff
   have hconfl_guard : Lts.StronglyConfluentAtMod _ _ _ _ _ :=

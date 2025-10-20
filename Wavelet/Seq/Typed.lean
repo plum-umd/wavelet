@@ -1,4 +1,5 @@
 import Mathlib.Data.Finset.Basic
+import Mathlib.Data.Finset.Lattice.Lemmas
 import Wavelet.Seq.Fn
 
 namespace Wavelet.Seq
