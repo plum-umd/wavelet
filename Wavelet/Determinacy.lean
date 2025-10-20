@@ -24,6 +24,22 @@ def EqModGhost : V ⊕ T → V ⊕ T → Prop
 instance : IsRefl (V ⊕ T) EqModGhost where
   refl v := by cases v <;> simp [EqModGhost]
 
+/-- Map permission tokens in the spec through a PCM map. -/
+def OpSpec.mapTokens
+  [Arity Op]
+  (opSpec : OpSpec Op V T₁)
+  (hom : T₁ → T₂) : OpSpec Op V T₂ := {
+    pre op inputs := hom (opSpec.pre op inputs),
+    post op inputs outputs := hom (opSpec.post op inputs outputs),
+  }
+
+def IOSpec.mapTokens
+  (ioSpec : IOSpec V T₁ m n)
+  (hom : T₁ → T₂) : IOSpec V T₂ m n := {
+    pre vals := hom (ioSpec.pre vals),
+    post vals := hom (ioSpec.post vals),
+  }
+
 end Wavelet.Semantics
 
 namespace Wavelet.Seq
@@ -133,6 +149,55 @@ instance instConfigEqModIsRefl
 abbrev ProcWithSpec
   [Arity Op] (opSpec : Semantics.OpSpec Op V T) χ m n
   := Proc (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
+
+def AsyncOp.mapValues
+  (f : V₁ → V₂) : AsyncOp V₁ → AsyncOp V₂
+  | .switch n => .switch n
+  | .steer flavor n => .steer flavor n
+  | .carry state n => .carry state n
+  | .merge n => .merge n
+  | .forward n => .forward n
+  | .fork n => .fork n
+  | .const c n => .const (f c) n
+  | .forwardc n m consts => .forwardc n m (consts.map f)
+  | .sink n => .sink n
+
+def AtomicProc.mapTokens
+  [Arity Op]
+  {opSpec : OpSpec Op V T₁}
+  (hom : T₁ → T₂) :
+  AtomicProc (WithSpec Op opSpec) χ (V ⊕ T₁) → AtomicProc (WithSpec Op (opSpec.mapTokens hom)) χ (V ⊕ T₂)
+  | .op (.op o) inputs outputs => .op (.op o) inputs outputs
+  | .op (.join k) inputs outputs => .op (.join k) inputs outputs
+  | .async o inputs outputs =>
+    .async (o.mapValues mapValue) inputs outputs
+  where
+    mapValue : V ⊕ T₁ → V ⊕ T₂
+      | .inl v => .inl v
+      | .inr t => .inr (hom t)
+
+def AtomicProcs.mapTokens
+  [Arity Op]
+  {opSpec : OpSpec Op V T₁}
+  (hom : T₁ → T₂)
+  (aps : AtomicProcs (WithSpec Op opSpec) χ (V ⊕ T₁)) :
+    AtomicProcs (WithSpec Op (opSpec.mapTokens hom)) χ (V ⊕ T₂)
+  := aps.map (.mapTokens hom)
+
+/-- Map the tokens through a PCM map. Note that on a well-formed
+process, this should not change anything, since we should not have
+token constants in the processes. -/
+def Proc.mapTokens
+  [Arity Op]
+  {opSpec : OpSpec Op V T₁}
+  (hom : T₁ → T₂)
+  (proc : ProcWithSpec opSpec χ m n) :
+    ProcWithSpec (OpSpec.mapTokens opSpec hom) χ m n
+  := {
+    inputs := proc.inputs,
+    outputs := proc.outputs,
+    atoms := proc.atoms.mapTokens hom,
+  }
 
 end Wavelet.Dataflow
 
@@ -281,6 +346,21 @@ theorem chan_map_push_vals_equiv
     ChanMap.EqMod EqV
       (ChanMap.pushVals names vals₁ map)
       (ChanMap.pushVals names vals₂ map)
+  := sorry
+
+/-- A PCM homomorphism induces a simulation. -/
+theorem sim_map_tokens
+  [Arity Op] [PCM T₁] [PCM T₂]
+  [InterpConsts V]
+  [DecidableEq χ]
+  [DecidableEq χ']
+  {opSpec : Semantics.OpSpec Op V T₁}
+  {ioSpec : IOSpec V T₁ m n}
+  (hom : T₁ → T₂) [PCM.Hom hom]
+  (proc : ProcWithSpec opSpec χ m n) :
+    proc.semantics.guard (opSpec.Guard ioSpec)
+      ≲ᵣ (proc.mapTokens hom).semantics.guard
+        ((opSpec.mapTokens hom).Guard (ioSpec.mapTokens hom))
   := sorry
 
 /--
@@ -616,7 +696,11 @@ theorem guard_strong_confl_at_mod
     · exact ⟨hguard₁', hstep₂'⟩
     · exact heq
 
-/-- `Config.DisjointTokens` is a state invariant of a guarded `Proc` semantics. -/
+/--
+`Config.DisjointTokens` is a state invariant of a guarded `Proc` semantics.
+
+TODO: this requires the `opSpec` to be frame preserving.
+-/
 theorem proc_guard_inv_disj
   [Arity Op] [PCM T] [DecidableEq χ]
   [InterpConsts V]
@@ -697,24 +781,6 @@ theorem pop_vals_disj_preserves_pairwise
     ∀ v₁ v₂, v₁ ∈ vals₁ → v₂ ∈ vals₂ → P v₁ v₂
   := sorry
 
-def OpSpec.mapTokens
-  [Arity Op]
-  (opSpec : OpSpec Op V T₁)
-  (hom : T₁ → T₂) : OpSpec Op V T₂ := {
-    pre op inputs := hom (opSpec.pre op inputs),
-    post op inputs outputs := hom (opSpec.post op inputs outputs),
-    -- frame_preserving := by
-    --   intros op inputs outputs frame hdisj
-    --   -- TODO: requires `hom` to be surjective?
-    --   have ⟨frame', hframe⟩ : ∃ frame', frame = hom frame' := sorry
-    --   simp [hframe] at hdisj ⊢
-    --   apply PCM.Lawful.eq_congr_valid
-    --   · apply PCM.Hom.hom_add
-    --   · apply PCM.Hom.hom_valid
-    --     apply opSpec.frame_preserving
-    --     sorry
-  }
-
 -- theorem sim_proc_spec_hom
 --   [Arity Op] [PCM T₁] [PCM T₂]
 --   [PCM.Lawful T₁] [PCM.Lawful T₂]
@@ -741,6 +807,59 @@ def OpSpec.mapTokens
 --       .fork proc.inputs.back #v[]
 --     ],
 --   }
+
+/-
+TODO:
+
+If a guarded proc semantics reaches a terminating state
+(terminating in the original semantics)
+Then any trace in the original semantics should terminate in the same state.
+-/
+
+-- /-- Induction principal for `TauStar` from the left of the trace. -/
+-- def induction_from_left
+--   {lts : Lts C E} {τ : E}
+--   {motive : ∀ {c₁ c₂}, lts.TauStar τ c₁ c₂ → Sort u}
+--   (hrefl : ∀ c, motive (.refl : lts.TauStar τ c c))
+--   (htail : ∀ {c₁ c₂ c₃}
+--     (hstep : lts c₁ τ c₂)
+--     (htau : lts.TauStar τ c₂ c₃),
+--     motive htau → motive (.prepend hstep htau))
+--   (htau : lts.TauStar τ c₁ c₂) :
+--     motive htau
+--   := by
+
+--   sorry
+
+theorem proc_guarded_weak_normalization
+  [Arity Op] [PCM T] [PCM.Lawful T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {opInterp : OpInterp Op V}
+  {ioSpec : IOSpec V T m n}
+  (proc : ProcWithSpec opSpec χ m n)
+  {s s₁' s₂' : proc.semantics.S}
+  {t t₁' t₂' : opInterp.S}
+  (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar
+    .τ (s, t) (s₁', t₁'))
+  (htrace₂ : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.TauStar
+    .τ (s, t) (s₂', t₂'))
+  -- Note: this has to require that `s'` is final in the original, unguarded semantics
+  (hterm : proc.semantics.IsFinal s₁') :
+    ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.TauStar
+      .τ (s₂', t₂') (s₁', t₁')
+    -- TODO: prove that `htrace₂` is bounded (strong normalization)
+  := by
+  -- Sketch:
+  -- 1. Take the first transition of both `htrace₁` and `htrace₂`
+  -- 2. If they are the same, recurse
+  -- 3. If they are different, the same op fired in `htrace₁` must be
+  --    fired at some point in `htrace₁` with valid tokens (otherwise
+  --    it violates `hterm`). Use a separate lemma to commute that future
+  --    step back to the first (using `proc_interp_strong_confl_at_mod`)
+  --    and recurse.
+  sorry
 
 /--
 Strong confluence of a `ProcWithSpec` when interpreted with
