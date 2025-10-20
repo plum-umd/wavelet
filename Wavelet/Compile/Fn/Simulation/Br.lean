@@ -20,8 +20,7 @@ private theorem sim_step_br_exec_dataflow
   {ec : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
   {gs : GhostState χ}
-  {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz gs ec pc)
+  (hsim : SimRel gs ec pc)
   (hbr : ec.cont = .expr (.br cond left right))
   (hcond : ec.vars.getVar cond = some condVal)
   (hcondBool : InterpConsts.toBool condVal = some condBool) :
@@ -226,13 +225,12 @@ theorem sim_step_br
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
   {gs : GhostState χ}
-  {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz gs ec pc)
+  (hsim : SimRel gs ec pc)
   (hstep : Config.Step ec l ec')
   (hbr : ec.cont = .expr (.br cond left right)) :
   ∃ pc',
     Config.Step.IORestrictedStep pc l pc' ∧
-    ∃ gs', SimRel hnz gs' ec' pc' := by
+    ∃ gs', SimRel gs' ec' pc' := by
   -- Deduce some facts from `hstep`
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,

@@ -37,10 +37,10 @@ class Lawful (R : Type u) [inst : PCM R] where
   add_ident : ∀ {a : R}, a ⊔ inst.zero ≡ a
   valid_add : ∀ {a b : R}, ✓ a ⊔ b → ✓ a
   valid_zero : ✓ inst.zero
-  valid_eq : ∀ {a b : R}, a ≡ b → ✓ a → ✓ b
   eq_refl : ∀ {a : R}, a ≡ a
   eq_symm : ∀ {a b : R}, a ≡ b → b ≡ a
   eq_trans : ∀ {a b c : R}, a ≡ b → b ≡ c → a ≡ c
+  eq_congr_valid : ∀ {a b : R}, a ≡ b → ✓ a → ✓ b
   eq_congr_add :
     ∀ {a₁ a₂ b₁ b₂ : R},
       a₁ ≡ a₂ →
@@ -56,9 +56,35 @@ theorem eq_congr_disj
     a₂ ⊥ b₂
   := by
   simp [disjoint]
-  apply Lawful.valid_eq
+  apply Lawful.eq_congr_valid
   apply Lawful.eq_congr_add ha hb
   exact hdisj
+
+/-- PCM homomorphism. -/
+class Hom [instR : PCM R] [instS : PCM S] (h : R → S) where
+  hom_zero : h PCM.zero = PCM.zero
+  hom_add : ∀ {a b : R}, h (a ⊔ b) ≡ h a ⊔ h b
+  hom_valid : ∀ {a : R}, ✓ a → ✓ h a
+  hom_eq : ∀ {a b : R}, a ≡ b → h a ≡ h b
+
+/-- A trivial PCM with only one element. -/
+inductive Triv where | zero
+
+instance : PCM Triv where
+  add _ _ := Triv.zero
+  zero := Triv.zero
+  valid _ := True
+  eq _ _ := True
+
+instance : Lawful Triv := by
+  constructor
+  all_goals intros; trivial
+
+def Triv.homFrom R [PCM R] : R → Triv := λ _ => Triv.zero
+
+instance [PCM R] : Hom (Triv.homFrom R) := by
+  constructor
+  all_goals intros; trivial
 
 end PCM
 

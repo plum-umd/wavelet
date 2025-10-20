@@ -120,7 +120,6 @@ chooses to perform a tail call (with `m` arguments) or return
 -/
 def compileExpr
   [Arity Op] [InterpConsts V] [DecidableEq χ]
-  (hnz : m > 0 ∧ n > 0)
   (definedVars : List χ)
   (pathConds : List (Bool × ChanName χ))
   : Expr Op χ m n → AtomicProcs Op (ChanName χ) V
@@ -130,6 +129,7 @@ def compileExpr
     let falseVal : V := InterpConsts.fromBool false
     let consts : Vector V (m + 1) := junks ++ #v[falseVal]
     [
+      -- NOTE: This is only correct if `n > 0`
       .forwardc
         chans consts
         (compileExpr.exprOutputs m n pathConds),
@@ -142,6 +142,7 @@ def compileExpr
     let trueVal : V := InterpConsts.fromBool true
     let consts : Vector V (n + 1) := junks ++ #v[trueVal]
     [
+      -- NOTE: This is only correct if `m > 0`
       .forwardc
         chans consts
         (compileExpr.tailExprOutputs m n pathConds),
@@ -151,16 +152,16 @@ def compileExpr
   | .op o args rets cont =>
     let inputChans := args.map (.var · pathConds)
     (.op o inputChans (rets.map (.var · pathConds))) ::
-      compileExpr hnz
+      compileExpr
         (definedVars.removeAll args.toList ++ rets.toList)
         pathConds cont
   | .br cond left right =>
     let condChan := .var cond pathConds
     let leftConds := (true, condChan) :: pathConds
     let rightConds := (false, condChan) :: pathConds
-    let leftComp := compileExpr hnz
+    let leftComp := compileExpr
       (definedVars.removeAll [cond]) leftConds left
-    let rightComp := compileExpr hnz
+    let rightComp := compileExpr
       (definedVars.removeAll [cond]) rightConds right
     [
       -- Copy condition variables
@@ -185,7 +186,6 @@ edges of channels with the name `.tail_cond []` or `.tail_arg i []`.
 -/
 def compileFn
   [Arity Op] [DecidableEq χ] [InterpConsts V]
-  (hnz : m > 0 ∧ n > 0)
   (fn : Fn Op χ V m n) : Proc Op (ChanName χ) V m n
   := {
     inputs, outputs,
@@ -201,8 +201,7 @@ def compileFn
         inputs
         ((Vector.range m).map .final_tail_arg)
         (fn.params.map λ v => .var v [])
-    bodyComp := compileExpr hnz
-      fn.params.toList [] fn.body
+    bodyComp := compileExpr fn.params.toList [] fn.body
     resultSteers m n := [
       .fork (.tail_cond []) #v[
         .tail_cond_carry,

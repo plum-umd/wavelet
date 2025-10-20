@@ -71,14 +71,13 @@ def compileProg
   [Arity Op] [DecidableEq χ] [InterpConsts V]
   (sigs : Vector Sig k)
   (prog : Prog Op χ V sigs)
-  (hnz : ∀ i : Fin k, sigs[i].ι > 0 ∧ sigs[i].ω > 0)
   (i : Fin k) : Proc Op (LinkName (ChanName χ)) V sigs[i].ι sigs[i].ω :=
   -- Compile the current function
   let proc : Proc (Op ⊕ SigOps sigs i.castSucc) (LinkName (ChanName χ)) V _ _ :=
-    compileFn (by apply hnz) (prog i) |>.mapChans LinkName.base
+    compileFn (prog i) |>.mapChans LinkName.base
   -- Compile dependencies
   let deps : (j : Fin i) → Proc Op (LinkName (ChanName χ)) V sigs[j].ι sigs[j].ω :=
-    λ j => compileProg sigs prog hnz (j.castLT (by omega))
+    λ j => compileProg sigs prog (j.castLT (by omega))
   -- Link everything into one dataflow graph
   linkProcs sigs i.castSucc deps proc
 

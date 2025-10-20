@@ -845,10 +845,9 @@ theorem sim_compile_prog
   (prog : Prog Op χ V sigs)
   (i : Nat)
   (hlt : i < k)
-  (hnz : ∀ (i : Fin k), sigs[i].ι > 0 ∧ sigs[i].ω > 0)
   (hwf : ∀ i, (prog i).AffineVar)
   (haff : prog.AffineInrOp) :
-  prog.semantics ⟨i, hlt⟩ ≲ᵣ (compileProg sigs prog hnz ⟨i, hlt⟩).semantics
+  prog.semantics ⟨i, hlt⟩ ≲ᵣ (compileProg sigs prog ⟨i, hlt⟩).semantics
   := by
   induction i using Nat.strong_induction_on with
   | _ i ih =>
@@ -862,7 +861,6 @@ theorem sim_compile_prog
       omega
     · apply IORestrictedSimilarity.trans
         (sim_compile_fn _
-          (by apply hnz ⟨i, by omega⟩)
           (by apply hwf))
         (sim_map_chans_inj (f := LinkName.base) (by simp [Function.Injective]))
     apply sim_link_procs

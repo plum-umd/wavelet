@@ -80,7 +80,6 @@ to the compiled expressions/fns. -/
 @[grind]
 def HasCompiledProcs
   [Arity Op] [DecidableEq χ] [InterpConsts V]
-  (hnz : m > 0 ∧ n > 0)
   (ec : Seq.Config Op χ V m n)
   (pc : Dataflow.Config Op (ChanName χ) V m n)
   (gs : GhostState χ) : Prop :=
@@ -88,7 +87,7 @@ def HasCompiledProcs
     (carryState : CarryState)
     (ctxLeft ctxCurrent ctxRight : AtomicProcs Op (ChanName χ) V),
     pc.proc.atoms = compileFn.initCarry ec.fn carryState :: rest ∧
-    (compileFn hnz ec.fn).atoms = compileFn.initCarry ec.fn .popLeft :: rest ∧
+    (compileFn ec.fn).atoms = compileFn.initCarry ec.fn .popLeft :: rest ∧
     rest = ctxLeft ++ ctxCurrent ++ ctxRight ∧
     (ec.cont = .init →
       carryState = .popLeft ∧
@@ -99,12 +98,11 @@ def HasCompiledProcs
     (∀ expr, ec.cont = .expr expr →
       carryState = .decider ∧
       expr.AffineVar gs.definedVars ∧
-      compileExpr hnz gs.definedVars gs.pathConds expr = ctxCurrent)
+      compileExpr gs.definedVars gs.pathConds expr = ctxCurrent)
 
 @[grind]
 def SimRel
   [Arity Op] [DecidableEq χ] [InterpConsts V]
-  (hnz : m > 0 ∧ n > 0)
   (gs : GhostState χ)
   (ec : Seq.Config Op χ V m n)
   (pc : Dataflow.Config Op (ChanName χ) V m n) : Prop :=
@@ -120,7 +118,7 @@ def SimRel
   ec.fn.AffineVar ∧
   pc.proc.inputs = ec.fn.params.map .input ∧
   pc.proc.outputs = (Vector.range n).map .final_dest ∧
-  HasCompiledProcs hnz ec pc gs
+  HasCompiledProcs ec pc gs
 
 /-! Utility functions to extract facts from the simulation relation. -/
 section Utilities
@@ -131,7 +129,7 @@ variable {ec : Seq.Config Op χ V m n}
 variable {pc : Dataflow.Config Op (ChanName χ) V m n}
 variable {gs : GhostState χ}
 variable {hnz : m > 0 ∧ n > 0}
-variable (hsim : SimRel hnz gs ec pc)
+variable (hsim : SimRel gs ec pc)
 
 def SimRel.vars_to_chans : pc.chans = varsToChans gs ec := hsim.1
 
@@ -178,7 +176,7 @@ def SimRel.outputs : pc.proc.outputs = (Vector.range n).map .final_dest := by
   have ⟨_, _, _, _, _, _, _, _, h, _⟩ := hsim
   exact h
 
-def SimRel.has_compiled_procs : HasCompiledProcs hnz ec pc gs := by
+def SimRel.has_compiled_procs : HasCompiledProcs ec pc gs := by
   have ⟨_, _, _, _, _, _, _, _, _, h⟩ := hsim
   exact h
 

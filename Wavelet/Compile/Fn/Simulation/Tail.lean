@@ -27,8 +27,7 @@ private theorem sim_step_tail_forwardc_sink
   {ec : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
   {gs : GhostState χ}
-  {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz gs ec pc)
+  (hsim : SimRel gs ec pc)
   (hexpr : ec.cont = .expr (.tail vars))
   (hvars : VarMap.getVars vars ec.vars = some tailArgs)
   (hvars_nodup : vars.toList.Nodup) :
@@ -180,8 +179,7 @@ private theorem sim_step_tail_exec_dataflow
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
   {gs : GhostState χ}
-  {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz gs ec pc)
+  (hsim : SimRel gs ec pc)
   (hstep : Config.Step ec l ec')
   (hexpr : ec.cont = .expr (.tail vars)) :
   Dataflow.Config.Step.WeakStep .τ pc l {
@@ -485,13 +483,12 @@ theorem sim_step_tail
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
   {gs : GhostState χ}
-  {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz gs ec pc)
+  (hsim : SimRel gs ec pc)
   (hstep : Config.Step ec l ec')
   (hexpr : ec.cont = .expr (.tail vars)) :
   ∃ pc',
     Config.Step.IORestrictedStep pc l pc' ∧
-    ∃ gs', SimRel hnz gs' ec' pc' := by
+    ∃ gs', SimRel gs' ec' pc' := by
   have hsteps := sim_step_tail_exec_dataflow hsim hstep hexpr
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,

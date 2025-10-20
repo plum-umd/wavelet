@@ -8,10 +8,10 @@ import Wavelet.Semantics.PCM
 namespace Wavelet.Semantics
 
 /-- PCM specification of an operator set -/
-structure OpSpec Op V T [Arity Op] [PCM T] where
+structure OpSpec Op V T [Arity Op] where
   pre : (op : Op) → Vector V (Arity.ι op) → T
   post : (op : Op) → Vector V (Arity.ι op) → Vector V (Arity.ω op) → T
-  frame_preserving : ∀ op inputs outputs, pre op inputs ⟹ post op inputs outputs
+  -- frame_preserving : ∀ op inputs outputs, pre op inputs ⟹ post op inputs outputs
 
 /-- Two labels are compatible if their inputs correspond to disjoint resources
 and are deterministic. -/
@@ -38,7 +38,7 @@ def OpSpec.Sound
       interp.lts.Step s₂ l₁ s'
 
 /-- Specification on input/output labels. -/
-structure IOSpec V T [PCM T] m n where
+structure IOSpec V T m n where
   pre : Vector V m → T
   -- This can only depend on the outputs, due
   -- to a technical issue that we can't access
@@ -47,7 +47,7 @@ structure IOSpec V T [PCM T] m n where
 
 /-- Augments the operator set with an additional ghost argument
 to pass a PCM token, as well as two operators to split and join PCMs. -/
-inductive WithSpec (Op : Type u) [Arity Op] [PCM T] (spec : OpSpec Op V T) where
+inductive WithSpec (Op : Type u) [Arity Op] (spec : OpSpec Op V T) where
   | op (op : Op)
   | join (k : Nat) -- Number of input tokens to combine
 
@@ -67,7 +67,7 @@ instance instInterpConstsSum [left : InterpConsts V] : InterpConsts (V ⊕ V') w
     · contradiction
 
 instance instArityWithSpec
-  [arity : Arity Op] [PCM T]
+  [arity : Arity Op]
   {spec : OpSpec Op V T} :
   Arity (WithSpec Op spec) where
   ι | .op o => arity.ι o + 1
@@ -121,7 +121,7 @@ inductive OpSpec.Guard
 Same signature as `OpSpec.TrivGuard` but does not dynamically
 check the well-formedness of the tokens.
 -/
-inductive OpSpec.TrivGuard [Arity Op] [PCM T]
+inductive OpSpec.TrivGuard [Arity Op]
   (opSpec : OpSpec Op V T) :
   Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) →
   Label Op V m n → Prop where
@@ -145,7 +145,7 @@ instance
   guard_yield h := by cases h <;> simp
 
 instance
-  [Arity Op] [PCM T]
+  [Arity Op]
   {opSpec : OpSpec Op V T} : LawfulGuard (opSpec.TrivGuard (m := m) (n := n)) where
   guard_tau := .spec_tau
   guard_tau_only h := by cases h; rfl

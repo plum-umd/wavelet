@@ -18,9 +18,8 @@ private theorem sim_compile_fn_init
   [InterpConsts V]
   [DecidableEq χ]
   (fn : Fn Op χ V m n)
-  (hnz : m > 0 ∧ n > 0)
   (hwf : fn.AffineVar) :
-  SimRel hnz .empty fn.semantics.init (compileFn hnz fn).semantics.init
+  SimRel .empty fn.semantics.init (compileFn fn).semantics.init
   := by
   simp [semantics, Fn.semantics, Seq.Config.init,
     Proc.semantics, Dataflow.Config.init]
@@ -46,13 +45,12 @@ theorem sim_compile_fn
   [InterpConsts V]
   [DecidableEq χ]
   (fn : Fn Op χ V m n)
-  (hnz : m > 0 ∧ n > 0)
   (hwf : fn.AffineVar) :
-  fn.semantics ≲ᵣ (compileFn hnz fn).semantics
+  fn.semantics ≲ᵣ (compileFn fn).semantics
   := by
-  apply Lts.Similarity.intro (∃ gs, SimRel hnz gs · ·)
+  apply Lts.Similarity.intro (∃ gs, SimRel gs · ·)
   constructor
-  · exact ⟨_, sim_compile_fn_init fn hnz hwf⟩
+  · exact ⟨_, sim_compile_fn_init fn hwf⟩
   · intros ec pc l ec' hsim hstep
     replace ⟨_, hsim⟩ := hsim
     cases h₁ : ec.cont with

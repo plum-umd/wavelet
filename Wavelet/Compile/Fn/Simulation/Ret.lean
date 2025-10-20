@@ -28,8 +28,7 @@ private theorem sim_step_ret_forwardc_sink
   {ec : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
   {gs : GhostState χ}
-  {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz gs ec pc)
+  (hsim : SimRel gs ec pc)
   (hexpr : ec.cont = .expr (.ret vars))
   (hvars : VarMap.getVars vars ec.vars = some retVals)
   (hvars_nodup : vars.toList.Nodup) :
@@ -163,8 +162,7 @@ private theorem sim_step_ret_exec_dataflow
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
   {gs : GhostState χ}
-  {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz gs ec pc)
+  (hsim : SimRel gs ec pc)
   (hstep : Config.Step ec l ec')
   (hexpr : ec.cont = .expr (.ret vars))
   (hpc_atoms : pc.proc.atoms = compileFn.initCarry ec.fn .decider :: rest) :
@@ -427,13 +425,12 @@ theorem sim_step_ret
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
   {gs : GhostState χ}
-  {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz gs ec pc)
+  (hsim : SimRel gs ec pc)
   (hstep : Config.Step ec l ec')
   (hexpr : ec.cont = .expr (.ret vars)) :
   ∃ pc',
     Config.Step.IORestrictedStep pc l pc' ∧
-    ∃ gs', SimRel hnz gs' ec' pc' := by
+    ∃ gs', SimRel gs' ec' pc' := by
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
     hatoms, hcomp_fn, hrest, hret, hcont,

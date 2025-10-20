@@ -39,8 +39,7 @@ def VarMap.Pairwise
     vars.getVar x₂ = some v₂ →
     P v₁ v₂
 
-def VarMap.DisjointTokens
-  [PCM T]
+def VarMap.DisjointTokens [PCM T]
   (vars : VarMap χ (V ⊕ T)) : Prop :=
   vars.Pairwise InrDisjointTokens
 
@@ -57,13 +56,11 @@ def Config.DisjointTokens
   (c : Config Op χ (V ⊕ T) m n) : Prop := c.vars.DisjointTokens
 
 abbrev ExprWithSpec
-  [Arity Op] [PCM T]
-  (opSpec : Semantics.OpSpec Op V T) χ m n
+  [Arity Op] (opSpec : Semantics.OpSpec Op V T) χ m n
   := Expr (WithSpec Op opSpec) χ (m + 1) (n + 1)
 
 abbrev FnWithSpec
-  [Arity Op] [PCM T]
-  (opSpec : Semantics.OpSpec Op V T) χ m n
+  [Arity Op] (opSpec : Semantics.OpSpec Op V T) χ m n
   := Fn (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
 
 end Wavelet.Seq
@@ -134,8 +131,7 @@ instance instConfigEqModIsRefl
     · apply IsRefl.refl
 
 abbrev ProcWithSpec
-  [Arity Op] [PCM T]
-  (opSpec : Semantics.OpSpec Op V T) χ m n
+  [Arity Op] (opSpec : Semantics.OpSpec Op V T) χ m n
   := Proc (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
 
 end Wavelet.Dataflow
@@ -185,38 +181,38 @@ And we have:
    `eraseGhost proc` should have at least one trace simulating `fn`.
 -/
 
-/-- Erase ghost tokens. -/
-def eraseGhost
-  [Arity Op] [PCM T]
-  {opSpec : Semantics.OpSpec Op V T}
-  (proc : ProcWithSpec opSpec χ m n) : Proc Op χ V m n
-  := sorry
+-- /-- Erase ghost tokens. -/
+-- def eraseGhost
+--   [Arity Op] [PCM T]
+--   {opSpec : Semantics.OpSpec Op V T}
+--   (proc : ProcWithSpec opSpec χ m n) : Proc Op χ V m n
+--   := sorry
 
-/-- Backward simulation for `eraseGhost`. -/
-theorem sim_erase_ghost
-  [Arity Op] [PCM T]
-  [InterpConsts V]
-  [DecidableEq χ]
-  [DecidableEq χ']
-  {opSpec : Semantics.OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  (proc : ProcWithSpec opSpec χ m n) :
-  (eraseGhost proc).semantics ≲ᵣ
-    proc.semantics.guard (opSpec.Guard ioSpec)
-  := sorry
+-- /-- Backward simulation for `eraseGhost`. -/
+-- theorem sim_erase_ghost
+--   [Arity Op] [PCM T]
+--   [InterpConsts V]
+--   [DecidableEq χ]
+--   [DecidableEq χ']
+--   {opSpec : Semantics.OpSpec Op V T}
+--   {ioSpec : IOSpec V T m n}
+--   (proc : ProcWithSpec opSpec χ m n) :
+--   (eraseGhost proc).semantics ≲ᵣ
+--     proc.semantics.guard (opSpec.Guard ioSpec)
+--   := sorry
 
-/-- Forward simulation for liveness. -/
-theorem sim_erase_ghost_forward
-  [Arity Op] [PCM T]
-  [InterpConsts V]
-  [DecidableEq χ]
-  [DecidableEq χ']
-  {opSpec : Semantics.OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  (proc : ProcWithSpec opSpec χ m n) :
-  proc.semantics.guard (opSpec.Guard ioSpec)
-    ≲ᵣ (eraseGhost proc).semantics
-  := sorry
+-- /-- Forward simulation for liveness. -/
+-- theorem sim_erase_ghost_forward
+--   [Arity Op] [PCM T]
+--   [InterpConsts V]
+--   [DecidableEq χ]
+--   [DecidableEq χ']
+--   {opSpec : Semantics.OpSpec Op V T}
+--   {ioSpec : IOSpec V T m n}
+--   (proc : ProcWithSpec opSpec χ m n) :
+--   proc.semantics.guard (opSpec.Guard ioSpec)
+--     ≲ᵣ (eraseGhost proc).semantics
+--   := sorry
 
 /-- A constraint on two yield labels that if their
 operator and inputs match, the outputs should match. -/
@@ -701,23 +697,74 @@ theorem pop_vals_disj_preserves_pairwise
     ∀ v₁ v₂, v₁ ∈ vals₁ → v₂ ∈ vals₂ → P v₁ v₂
   := sorry
 
-/-- Strong confluence of a `ProcWithSpec` when interpreted. -/
+def OpSpec.mapTokens
+  [Arity Op]
+  (opSpec : OpSpec Op V T₁)
+  (hom : T₁ → T₂) : OpSpec Op V T₂ := {
+    pre op inputs := hom (opSpec.pre op inputs),
+    post op inputs outputs := hom (opSpec.post op inputs outputs),
+    -- frame_preserving := by
+    --   intros op inputs outputs frame hdisj
+    --   -- TODO: requires `hom` to be surjective?
+    --   have ⟨frame', hframe⟩ : ∃ frame', frame = hom frame' := sorry
+    --   simp [hframe] at hdisj ⊢
+    --   apply PCM.Lawful.eq_congr_valid
+    --   · apply PCM.Hom.hom_add
+    --   · apply PCM.Hom.hom_valid
+    --     apply opSpec.frame_preserving
+    --     sorry
+  }
+
+-- theorem sim_proc_spec_hom
+--   [Arity Op] [PCM T₁] [PCM T₂]
+--   [PCM.Lawful T₁] [PCM.Lawful T₂]
+--   {opSpec : OpSpec Op V T₁}
+--   (proc : ProcWithSpec opSpec χ m n)
+--   (hom : T₁ → T₂)
+--   [PCM.Hom hom] :
+--     ProcWithSpec (OpSpec.mapTokens opSpec hom) χ m n
+--   := sorry
+
+-- inductive ErasedName χ where
+--   | base : χ → ErasedName χ
+--   | inputAct : ErasedName χ
+
+-- def eraseGhost
+--   [Arity Op] [PCM T]
+--   {opSpec : OpSpec Op V T}
+--   (proc : ProcWithSpec opSpec χ m n) :
+--     Proc Op χ (V ⊕ PCM.Triv) m n
+--   := {
+--     inputs := proc.inputs.pop.map .base,
+--     outputs := proc.outputs.pop.map .base,
+--     atoms := [
+--       .fork proc.inputs.back #v[]
+--     ],
+--   }
+
+/--
+Strong confluence of a `ProcWithSpec` when interpreted with
+a sound and deterministic interpretation.
+
+TODO: this is probably generalizable to a general confluent `Semantics`.
+-/
 theorem proc_interp_strong_confl_at_mod
   [Arity Op] [PCM T] [PCM.Lawful T]
   [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
+  {opInterp : OpInterp Op V}
   {ioSpec : IOSpec V T m n}
   (proc : ProcWithSpec opSpec χ m n)
   -- Sound (wrt. opSpec) and deterministic interpretation
-  (interp : OpInterp Op V)
-  (hsound : OpSpec.Sound opSpec interp)
-  (hdet : interp.Deterministic)
+  (hsound : OpSpec.Sound opSpec opInterp)
+  (hdet : opInterp.Deterministic)
   (s : proc.semantics.S)
-  (t : interp.S)
+  (t : opInterp.S)
+  -- Some required state invariants
   (haff : s.proc.AffineChan)
   (hdisj : s.DisjointTokens) :
-    ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret interp).lts.StronglyConfluentAtMod
+    ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.StronglyConfluentAtMod
       (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent)
       (λ (s₁, t₁) (s₂, t₂) => Config.EqMod EqModGhost s₁ s₂ ∧ t₁ = t₂)
       (· = ·)
@@ -853,10 +900,6 @@ theorem proc_interp_strong_confl_at_mod
           by simp [heq],
         ⟩
 
--- TODO: guarding a confluent semantics is confluent
-
--- TODO: enforcing SpecLabelInterp on a confluent semantics is confluent
-
 end Wavelet.Compile
 
 namespace Wavelet.Seq
@@ -864,27 +907,24 @@ namespace Wavelet.Seq
 open Semantics
 
 /-- Simple non-dependent resource specs. -/
-structure SimpleOpSpec Op T [PCM T] where
+structure SimpleOpSpec Op T where
   pre : Op → T
   post : Op → T
-  frame_preserving : ∀ op, pre op ⟹ post op
+  -- frame_preserving : ∀ op, pre op ⟹ post op
 
 def SimpleOpSpec.toOpSpec
-  V [Arity Op] [PCM T]
-  (spec : SimpleOpSpec Op T) :
+  V [Arity Op] (spec : SimpleOpSpec Op T) :
   Semantics.OpSpec Op V T := {
     pre op _ := spec.pre op,
     post op _ _ := spec.post op,
-    frame_preserving := by intros; apply spec.frame_preserving
+    -- frame_preserving := by intros; apply spec.frame_preserving
   }
 
-structure SimpleIOSpec T [PCM T] where
+structure SimpleIOSpec T where
   pre : T
   post : T
 
-def SimpleIOSpec.toIOSpec
-  [PCM T]
-  (spec : SimpleIOSpec T) m n :
+def SimpleIOSpec.toIOSpec (spec : SimpleIOSpec T) m n :
   IOSpec V T m n := {
     pre _ := spec.pre,
     post _ := spec.post,
@@ -968,7 +1008,6 @@ structure PermCtx T where
 
 /-- Insert `n` new permission tokens and return the fresh indices -/
 def PermCtx.insertVars
-  [PCM T]
   (ctx : PermCtx T) (tys : Vector T n) :
   Vector Nat n × PermCtx T :=
   let newIdxs := Vector.range' ctx.numVars n
@@ -978,13 +1017,12 @@ def PermCtx.insertVars
   })
 
 def PermCtx.removeVars
-  [PCM T]
   (ctx : PermCtx T) (idxs : List Nat) : PermCtx T :=
   { ctx with perms := ctx.perms.removeVars idxs }
 
 /-- Initial context with a single permission variable. -/
 def PermCtx.init
-  [PCM T] (init : T) : PermCtx T := {
+  (init : T) : PermCtx T := {
     perms idx := if idx = 0 then some init else none,
     numVars := 1
   }

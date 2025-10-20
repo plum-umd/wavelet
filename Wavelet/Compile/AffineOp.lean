@@ -79,7 +79,7 @@ theorem compile_expr_preserves_aff_op
   [InterpConsts V]
   {expr : Expr (Op₁ ⊕ Op₂) χ m n}
   (haff : expr.AffineInrOp usedOps)
-  : (compileExpr (V := V) hnz definedVars pathConds expr).AffineInrOp usedOps
+  : (compileExpr (V := V) definedVars pathConds expr).AffineInrOp usedOps
   := by
   induction expr generalizing definedVars pathConds usedOps with
   | ret => simp [compileExpr, AtomicProcs.AffineInrOp,
@@ -93,7 +93,7 @@ theorem compile_expr_preserves_aff_op
       simp [compileExpr, AtomicProcs.AffineInrOp]
       intros
       rename_i hmem₁ hmem₂
-      exact ih (hnz := hnz) haff hmem₁ hmem₂
+      exact ih haff hmem₁ hmem₂
     | inr op₂ =>
       cases haff with | aff_op_inr hnot_mem haff =>
       simp [compileExpr, AtomicProcs.AffineInrOp]
@@ -114,15 +114,15 @@ theorem compile_expr_preserves_aff_op
         simp [this]
         assumption
       · rename_i hmem₁ hmem₂
-        have := ih (hnz := hnz) haff hmem₂ hmem₂
+        have := ih haff hmem₂ hmem₂
         simp [hmem₁.1] at this
         exact False.elim (hnot_mem this)
       · rename_i hmem₁ hmem₂
-        have := ih (hnz := hnz) haff hmem₁ hmem₁
+        have := ih haff hmem₁ hmem₁
         simp [hmem₂.1] at this
         exact False.elim (hnot_mem this)
       · rename_i hmem₁ hmem₂
-        simp [ih (hnz := hnz) haff hmem₁ hmem₂]
+        simp [ih haff hmem₁ hmem₂]
   | br cond left right ih₁ ih₂ =>
     cases haff with | aff_br haff₁ haff₂ hdisj
     simp [compileExpr, AtomicProcs.AffineInrOp, compileExpr.branchMerge]
@@ -134,18 +134,18 @@ theorem compile_expr_preserves_aff_op
       simp [AtomicProc.switch, AtomicProc.merge, AtomicProc.fork] at hmem₁ hmem₂
     cases hmem₁ <;> cases hmem₂
     · rename_i hmem₁ hmem₂
-      simp [ih₁ (hnz := hnz) haff₁ hmem₁ hmem₂]
+      simp [ih₁ haff₁ hmem₁ hmem₂]
     · rename_i hmem₁ hmem₂
-      have ⟨_, _, h₁⟩ := ih₁ (hnz := hnz) haff₁ hmem₁ hmem₁
-      have ⟨_, _, h₂⟩ := ih₂ (hnz := hnz) haff₂ hmem₂ hmem₂
+      have ⟨_, _, h₁⟩ := ih₁ haff₁ hmem₁ hmem₁
+      have ⟨_, _, h₂⟩ := ih₂ haff₂ hmem₂ hmem₂
       exact False.elim (hdisj h₁ h₂)
     · rename_i hmem₂ hmem₁
-      have ⟨_, _, h₁⟩ := ih₁ (hnz := hnz) haff₁ hmem₁ hmem₁
-      have ⟨_, _, h₂⟩ := ih₂ (hnz := hnz) haff₂ hmem₂ hmem₂
+      have ⟨_, _, h₁⟩ := ih₁ haff₁ hmem₁ hmem₁
+      have ⟨_, _, h₂⟩ := ih₂ haff₂ hmem₂ hmem₂
       exact False.elim (hdisj h₁ h₂)
     · rename_i hmem₁ hmem₂
-      have := ih₂ (hnz := hnz) haff₂ hmem₁ hmem₂
-      simp [ih₂ (hnz := hnz) haff₂ hmem₁ hmem₂]
+      have := ih₂ haff₂ hmem₁ hmem₂
+      simp [ih₂ haff₂ hmem₁ hmem₂]
 
 /-- `compileFn` preserves `AffineInrOp`. -/
 theorem compile_fn_preserves_aff_op
@@ -154,10 +154,10 @@ theorem compile_fn_preserves_aff_op
   [InterpConsts V]
   {fn : Fn (Op₁ ⊕ Op₂) χ V m n}
   (haff : fn.AffineInrOp)
-  : (compileFn hnz fn).AffineInrOp
+  : (compileFn fn).AffineInrOp
   := by
   have ⟨used, haff_body⟩ := haff
-  have : (compileFn.bodyComp hnz fn).AffineInrOp used
+  have : (compileFn.bodyComp fn).AffineInrOp used
     := compile_expr_preserves_aff_op haff_body
   simp [compileFn, compileFn.initCarry, compileFn.resultSteers,
     Proc.AffineInrOp]

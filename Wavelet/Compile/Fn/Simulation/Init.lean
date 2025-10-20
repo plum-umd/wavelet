@@ -18,8 +18,7 @@ private theorem init_chans_empty
   {ec : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
   {gs : GhostState χ}
-  {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz gs ec pc)
+  (hsim : SimRel gs ec pc)
   (hinit : ec.cont = .init) :
   pc.chans = ChanMap.empty := by
   have ⟨
@@ -50,13 +49,12 @@ theorem sim_step_init
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
   {gs : GhostState χ}
-  {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz gs ec pc)
+  (hsim : SimRel gs ec pc)
   (hstep : Config.Step ec l ec')
   (hinit : ec.cont = .init) :
   ∃ pc',
     Dataflow.Config.Step.IORestrictedStep pc l pc' ∧
-    ∃ gs', SimRel hnz gs' ec' pc' := by
+    ∃ gs', SimRel gs' ec' pc' := by
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
     hatoms, hcomp_fn, hrest, hret, hcont,
@@ -116,7 +114,7 @@ theorem sim_step_init
   have hmem_carry :
     pc₁.proc.atoms =
       [] ++ [compileFn.initCarry ec.fn .popLeft]
-      ++ (compileFn.bodyComp hnz ec.fn ++ compileFn.resultSteers m n)
+      ++ (compileFn.bodyComp ec.fn ++ compileFn.resultSteers m n)
   := by
     simp only [hpc₁, hatoms, hcarryInLoop, ← hcomp_fn]
     simp [compileFn]

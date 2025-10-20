@@ -82,13 +82,12 @@ theorem sim_step_op
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
   {gs : GhostState χ}
-  {hnz : m > 0 ∧ n > 0}
-  (hsim : SimRel hnz gs ec pc)
+  (hsim : SimRel gs ec pc)
   (hstep : Config.Step ec l ec')
   (hop : ec.cont = .expr (.op o args rets cont)) :
   ∃ pc',
     Config.Step.IORestrictedStep pc l pc' ∧
-    ∃ gs', SimRel hnz gs' ec' pc' := by
+    ∃ gs', SimRel gs' ec' pc' := by
   have ⟨
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
     hatoms, hcomp_fn, hrest, hret, hcont,
@@ -261,7 +260,7 @@ theorem sim_step_op
             ]
           -- ctxCurrent
           exists
-            compileExpr hnz (gs.definedVars.removeAll args.toList ++ rets.toList) gs.pathConds cont
+            compileExpr (gs.definedVars.removeAll args.toList ++ rets.toList) gs.pathConds cont
           -- ctxRight
           exists ctxRight
           grind
