@@ -372,10 +372,13 @@ theorem IsInvariantAt.by_induction
   | refl => exact hbase
   | tail pref tail ih => exact hstep (ih hbase) tail
 
+def Lts.IsFinal (lts : Lts C E) (c : C) : Prop :=
+  ∀ {c' l}, ¬ lts.Step c l c'
+
+@[simp]
 def IsFinal
   [Arity Op]
   (sem : Semantics Op V m n)
-  (s : sem.S) : Prop :=
-  ∀ {s' l}, ¬ sem.lts.Step s l s'
+  (s : sem.S) : Prop := sem.lts.IsFinal s
 
 end Wavelet.Semantics

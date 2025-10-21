@@ -808,72 +808,6 @@ theorem pop_vals_disj_preserves_pairwise
 --     ],
 --   }
 
-/-
-TODO:
-
-If a guarded proc semantics reaches a terminating state
-(terminating in the original semantics)
-Then any trace in the original semantics should terminate in the same state.
--/
-
-theorem proc_guarded_weak_normalization_single
-  [Arity Op] [PCM T] [PCM.Lawful T]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {opInterp : OpInterp Op V}
-  {ioSpec : IOSpec V T m n}
-  (proc : ProcWithSpec opSpec χ m n)
-  {s s₁' s₂' : proc.semantics.S × opInterp.S}
-  (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar
-    .τ s s₁')
-  (hstep₂ : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.Step s .τ s₂')
-  -- Note: this has to require that `s'` is final in the original, unguarded semantics
-  (hterm : proc.semantics.IsFinal s₁'.1) :
-    ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar
-      .τ s₂' s₁'
-  := by
-  cases htrace₁ with
-  | refl =>
-    match hstep₂ with
-    | .step_tau hstep₂ =>
-      cases hstep₂ with | step _ hstep₂ =>
-      exact False.elim (hterm hstep₂)
-    | .step_yield hstep₂ _ =>
-      cases hstep₂ with | step _ hstep₂ =>
-      exact False.elim (hterm hstep₂)
-  | _ => sorry
-
-theorem proc_guarded_weak_normalization
-  [Arity Op] [PCM T] [PCM.Lawful T]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {opInterp : OpInterp Op V}
-  {ioSpec : IOSpec V T m n}
-  (proc : ProcWithSpec opSpec χ m n)
-  {s s₁' s₂' : proc.semantics.S}
-  {t t₁' t₂' : opInterp.S}
-  (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar
-    .τ (s, t) (s₁', t₁'))
-  (htrace₂ : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.TauStar
-    .τ (s, t) (s₂', t₂'))
-  -- Note: this has to require that `s'` is final in the original, unguarded semantics
-  (hterm : proc.semantics.IsFinal s₁') :
-    ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.TauStar
-      .τ (s₂', t₂') (s₁', t₁')
-    -- TODO: prove that `htrace₂` is bounded (strong normalization)
-  := by
-  -- Sketch:
-  -- 1. Take the first transition of both `htrace₁` and `htrace₂`
-  -- 2. If they are the same, recurse
-  -- 3. If they are different, the same op fired in `htrace₁` must be
-  --    fired at some point in `htrace₁` with valid tokens (otherwise
-  --    it violates `hterm`). Use a separate lemma to commute that future
-  --    step back to the first (using `proc_interp_strong_confl_at_mod`)
-  --    and recurse.
-  sorry
-
 /--
 Strong confluence of a `ProcWithSpec` when interpreted with
 a sound and deterministic interpretation.
@@ -1030,6 +964,141 @@ theorem proc_interp_strong_confl_at_mod
           InterpStep.step_yield hstep₂' hstep_op₂',
           by simp [heq],
         ⟩
+
+/-
+TODO:
+
+If a guarded proc semantics reaches a terminating state
+(terminating in the original semantics)
+Then any trace in the original semantics should terminate in the same state.
+-/
+
+/-- Special case restricted to a single label `τ`. -/
+theorem strong_confl_final_confl_tau
+  {lts : Lts C E} {c : C} {τ : E}
+  {Compat : E → E → Prop}
+  {EqC : C → C → Prop}
+  {EqE : E → E → Prop}
+  (hconfl : lts.StronglyConfluentAtMod Compat EqC EqE c)
+  {tr : List E}
+  (htau : ∀ {l l'}, Compat l l' ↔ l = τ ∧ l' = τ)
+  (hsteps₁ : lts.TauStar τ c c₁)
+  (hstep₂ : lts.Step c τ c₂)
+  (hterm : lts.IsFinal c₁) :
+    ∃ c₁', lts.TauStar τ c₂ c₁' ∧ EqC c₁' c₁
+  := by
+  induction hsteps₁
+    using Lts.TauStar.reverse_induction with
+  | refl =>
+    exact False.elim (hterm hstep₂)
+  | head hstep₁ htail₁ ih =>
+    rename_i c c₁'
+    -- TODO: need to assume `StronglyConfluentAtMod` being an invariant
+    have hconfl' : lts.StronglyConfluentAtMod Compat EqC EqE c₁' := sorry
+    have := hconfl hstep₁ hstep₂ (by simp [htau])
+    cases this with
+    | inl heq =>
+      -- exists c₂
+      -- EqC is too weak!
+      sorry
+    | inr =>
+      sorry
+
+theorem proc_guarded_weak_normalization_confl
+  [Arity Op] [PCM T] [PCM.Lawful T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {opInterp : OpInterp Op V}
+  {ioSpec : IOSpec V T m n}
+  (proc : ProcWithSpec opSpec χ m n)
+  {s s₁' s₂' : proc.semantics.S × opInterp.S}
+  (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar .τ s s₁')
+  (hstep₂ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.Step s .τ s₂')
+  (hterm : proc.semantics.IsFinal s₁'.1) :
+    ∃ s',
+      ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar .τ s₂' s' ∧
+      Config.EqMod EqModGhost s'.1 s₁'.1 ∧
+      s'.2 = s₁'.2
+  := by
+  induction htrace₁
+    using Lts.TauStar.reverse_induction with
+  | refl =>
+    match hstep₂ with
+    | .step_tau hstep₂ =>
+      cases hstep₂ with | step _ hstep₂ =>
+      exact False.elim (hterm hstep₂)
+    | .step_yield hstep₂ _ =>
+      cases hstep₂ with | step _ hstep₂ =>
+      exact False.elim (hterm hstep₂)
+  | head hstep₁ htail₁ ih =>
+    rename_i s s'
+
+    apply ih
+
+    sorry
+
+theorem proc_guarded_weak_normalization_single
+  [Arity Op] [PCM T] [PCM.Lawful T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {opInterp : OpInterp Op V}
+  {ioSpec : IOSpec V T m n}
+  (proc : ProcWithSpec opSpec χ m n)
+  {s s₁' s₂' : proc.semantics.S × opInterp.S}
+  (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar
+    .τ s s₁')
+  (hstep₂ : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.Step s .τ s₂')
+  -- Note: this has to require that `s'` is final in the original, unguarded semantics
+  (hterm : proc.semantics.IsFinal s₁'.1) :
+    ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.Step s .τ s₂'
+    -- TauStar .τ s₂' s₁'
+  := by
+  induction htrace₁
+    using Lts.TauStar.reverse_induction with
+  | refl =>
+    match hstep₂ with
+    | .step_tau hstep₂ =>
+      cases hstep₂ with | step _ hstep₂ =>
+      exact False.elim (hterm hstep₂)
+    | .step_yield hstep₂ _ =>
+      cases hstep₂ with | step _ hstep₂ =>
+      exact False.elim (hterm hstep₂)
+  | head hstep₁ htail₁ ih =>
+    rename_i s s'
+
+    sorry
+
+theorem proc_guarded_weak_normalization
+  [Arity Op] [PCM T] [PCM.Lawful T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {opInterp : OpInterp Op V}
+  {ioSpec : IOSpec V T m n}
+  (proc : ProcWithSpec opSpec χ m n)
+  {s s₁' s₂' : proc.semantics.S}
+  {t t₁' t₂' : opInterp.S}
+  (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar
+    .τ (s, t) (s₁', t₁'))
+  (htrace₂ : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.TauStar
+    .τ (s, t) (s₂', t₂'))
+  -- Note: this has to require that `s'` is final in the original, unguarded semantics
+  (hterm : proc.semantics.IsFinal s₁') :
+    ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.TauStar
+      .τ (s₂', t₂') (s₁', t₁')
+    -- TODO: prove that `htrace₂` is bounded (strong normalization)
+  := by
+  -- Sketch:
+  -- 1. Take the first transition of both `htrace₁` and `htrace₂`
+  -- 2. If they are the same, recurse
+  -- 3. If they are different, the same op fired in `htrace₁` must be
+  --    fired at some point in `htrace₁` with valid tokens (otherwise
+  --    it violates `hterm`). Use a separate lemma to commute that future
+  --    step back to the first (using `proc_interp_strong_confl_at_mod`)
+  --    and recurse.
+  sorry
 
 end Wavelet.Compile
 

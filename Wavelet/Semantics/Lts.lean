@@ -81,23 +81,25 @@ theorem Lts.TauStar.trans
     have := Lts.TauStar.prepend hstep h₂
     exact ih this
 
-/-- Induction principal for `TauStar` from the left of the trace. -/
-def TauStar.reverseInduction
-  {lts : Lts C E} {τ : E}
-  {motive : ∀ {c₁ c₂}, lts.TauStar τ c₁ c₂ → Prop}
-  (refl : ∀ c, motive (.refl : lts.TauStar τ c c))
-  (head : ∀ {c₁ c₂ c₃}
-    (hstep : lts c₁ τ c₂)
-    (htau : lts.TauStar τ c₂ c₃),
-    motive htau → motive (.prepend hstep htau))
-  (htau : lts.TauStar τ c₁ c₂) :
-    motive htau
+/-- Alternative induction principal for `TauStar`. -/
+theorem Lts.TauStar.reverse_induction
+  {lts : Lts C E}
+  {motive : ∀ c₁, lts.TauStar τ c₁ c₂ → Prop} {c₁ : C}
+  (refl : motive c₂ .refl)
+  (head : ∀ {c₁ c₁'}
+    (hstep : lts.Step c₁ τ c₁')
+    (htail : lts.TauStar τ c₁' c₂),
+    motive c₁' htail → motive c₁ (htail.prepend hstep))
+  (hsteps : lts.TauStar τ c₁ c₂) :
+    motive c₁ hsteps
   := by
-  cases htau with
-  | refl => apply refl
-  | tail pref tail =>
-
-    sorry
+  induction hsteps with
+  | refl => exact refl
+  | tail pref tail ih =>
+    rename_i c₁' c₂
+    apply ih (head tail _ refl)
+    intros _ _ hstep htail
+    apply head hstep
 
 /-- A non-τ step preceded and followed by zero or more tau steps,
 or zero or more τ steps. -/
