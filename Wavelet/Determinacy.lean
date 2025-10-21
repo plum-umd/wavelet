@@ -833,17 +833,15 @@ theorem proc_guarded_weak_normalization_single
     ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar
       .τ s₂' s₁'
   := by
-  -- induction htrace₁ using TauStar.reverseInduction with
-  -- | refl =>
-  --   simp [Semantics.interpret, Semantics.guard, Lts.Step] at hstep₂
-  --   cases hstep₂ with
-  --   | _ => sorry
-  -- | head => sorry
   cases htrace₁ with
   | refl =>
-    simp [Semantics.interpret, Semantics.guard] at hstep₂
-    -- cases hstep₂
-    sorry
+    match hstep₂ with
+    | .step_tau hstep₂ =>
+      cases hstep₂ with | step _ hstep₂ =>
+      exact False.elim (hterm hstep₂)
+    | .step_yield hstep₂ _ =>
+      cases hstep₂ with | step _ hstep₂ =>
+      exact False.elim (hterm hstep₂)
   | _ => sorry
 
 theorem proc_guarded_weak_normalization
