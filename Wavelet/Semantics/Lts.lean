@@ -169,6 +169,8 @@ abbrev Trace.single (e : E) : Trace E := [e]
 
 abbrev Trace.cons (tr : Trace E) (e : E) : Trace E := tr ++ [e]
 
+abbrev Trace.prepend (e : E) (tr : Trace E) : Trace E := e :: tr
+
 inductive Lts.Plus (R : Lts C E) : Lts C (Trace E) where
   | single : R c tr c' → Plus R c (.single tr) c'
   | tail : Plus R c tr c' → R c' tr' c'' → Plus R c (.cons tr tr') c''
@@ -176,6 +178,15 @@ inductive Lts.Plus (R : Lts C E) : Lts C (Trace E) where
 inductive Lts.Star (R : Lts C E) : Lts C (Trace E) where
   | refl : Star R c .ε c
   | tail : Star R c tr c' → R c' tr' c'' → Star R c (.cons tr tr') c''
+
+theorem Lts.Star.prepend
+  {lts : Lts C E} {l : E}
+  (hhead : lts.Step c₁ l c₂)
+  (htail : lts.Star c₂ tr c₃) :
+    lts.Star c₁ (tr.prepend l) c₃ := by
+  induction htail with
+  | refl => exact .tail (.refl) hhead
+  | tail _ h ih => exact .tail (ih hhead) h
 
 structure Lts.Simulation
   (lts₁ : Lts C₁ E)

@@ -341,14 +341,17 @@ theorem IORestrictedSimilarity.to_weak_sim
       | step_tau htau => exact .from_tau_star htau
     · exact hR'
 
+def Lts.IsInvariantAt
+  (lts : Lts C E) (P : C → Prop) (c : C) : Prop :=
+  ∀ {c' tr}, lts.Star c tr c' → P c'
+
 /-- A property `P` is an invariant at `s` if it is satisfied
 by every reachable state from `s`. -/
 def IsInvariantAt
   [Arity Op]
   (sem : Semantics Op V m n)
   (P : sem.S → Prop)
-  (s : sem.S) : Prop :=
-  ∀ s' tr, sem.lts.Star s tr s' → P s'
+  (s : sem.S) : Prop := sem.lts.IsInvariantAt P s
 
 def IsInvariant
   [Arity Op]
@@ -356,21 +359,36 @@ def IsInvariant
   (P : sem.S → Prop) : Prop := sem.IsInvariantAt P sem.init
 
 /-- Prove an invariant by induction. -/
-theorem IsInvariantAt.by_induction
-  [Arity Op]
-  {sem : Semantics Op V m n}
-  {P : sem.S → Prop}
-  {s : sem.S}
-  (hbase : P s)
-  (hstep : ∀ {s₁ s₂ l},
-    P s₁ →
-    sem.lts.Step s₁ l s₂ →
-    P s₂) :
-  sem.IsInvariantAt P s := by
-  intros s' tr hstar
+theorem Lts.IsInvariantAt.by_induction
+  {lts : Lts C E}
+  {P : C → Prop}
+  {c : C}
+  (hbase : P c)
+  (hstep : ∀ {c₁ c₂ l},
+    P c₁ → lts.Step c₁ l c₂ → P c₂) :
+  lts.IsInvariantAt P c := by
+  intros c' tr hstar
   induction hstar with
   | refl => exact hbase
   | tail pref tail ih => exact hstep (ih hbase) tail
+
+theorem Lts.IsInvariantAt.base
+  {lts : Lts C E}
+  {P : C → Prop} {c : C}
+  (hinv : lts.IsInvariantAt P c) : P c := hinv .refl
+
+theorem Lts.IsInvariantAt.step
+  {lts : Lts C E}
+  {P : C → Prop} {c c' : C} {l : E}
+  (hinv : lts.IsInvariantAt P c)
+  (hstep : lts.Step c l c') :
+    P c' ∧ lts.IsInvariantAt P c'
+  := ⟨
+    hinv (Lts.Star.tail .refl hstep),
+    by
+      intros c'' tr hstar
+      exact hinv (hstar.prepend hstep)
+  ⟩
 
 def Lts.IsFinal (lts : Lts C E) (c : C) : Prop :=
   ∀ {c' l}, ¬ lts.Step c l c'

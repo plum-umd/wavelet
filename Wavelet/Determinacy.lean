@@ -786,7 +786,7 @@ theorem proc_guard_inv_disj
     (proc.semantics.guard (opSpec.Guard ioSpec)).IsInvariant
       Config.DisjointTokens
   := by
-  apply IsInvariantAt.by_induction
+  apply Lts.IsInvariantAt.by_induction
   · simp [Dataflow.Config.init, Semantics.guard,
       Proc.semantics, Config.Pairwise]
   · intros s s' l hinv hstep
@@ -802,7 +802,7 @@ theorem fn_guard_inv_disj
     (fn.semantics.guard (opSpec.Guard ioSpec)).IsInvariant
       Config.DisjointTokens
   := by
-  apply IsInvariantAt.by_induction
+  apply Lts.IsInvariantAt.by_induction
   · simp [Seq.Config.init, Semantics.guard,
       Fn.semantics, VarMap.DisjointTokens]
   · intros s s' l hinv hstep
@@ -1045,32 +1045,28 @@ Then any trace in the original semantics should terminate in the same state.
 theorem strong_confl_final_confl_tau
   {lts : Lts C E} {c : C} {τ : E}
   {Compat : E → E → Prop}
-  {EqC : C → C → Prop}
-  {EqE : E → E → Prop}
-  (hconfl : lts.StronglyConfluentAtMod Compat EqC EqE c)
-  {tr : List E}
+  (hinv : lts.IsInvariantAt (lts.StronglyConfluentAt Compat) c)
   (htau : ∀ {l l'}, Compat l l' ↔ l = τ ∧ l' = τ)
   (hsteps₁ : lts.TauStar τ c c₁)
-  (hstep₂ : lts.Step c τ c₂)
-  (hterm : lts.IsFinal c₁) :
-    ∃ c₁', lts.TauStar τ c₂ c₁' ∧ EqC c₁' c₁
+  (hterm : lts.IsFinal c₁)
+  (hstep₂ : lts.Step c τ c₂) :
+    lts.TauStar τ c₂ c₁
   := by
   induction hsteps₁
-    using Lts.TauStar.reverse_induction with
+    using Lts.TauStar.reverse_induction
+    generalizing c₂ with
   | refl =>
     exact False.elim (hterm hstep₂)
   | head hstep₁ htail₁ ih =>
-    rename_i c c₁'
-    -- TODO: need to assume `StronglyConfluentAtMod` being an invariant
-    have hconfl' : lts.StronglyConfluentAtMod Compat EqC EqE c₁' := sorry
-    have := hconfl hstep₁ hstep₂ (by simp [htau])
+    rename_i c c'
+    have ⟨hconfl', hinv'⟩ := hinv.step hstep₁
+    have := hinv.base hstep₁ hstep₂ (by simp [htau])
     cases this with
-    | inl heq =>
-      -- exists c₂
-      -- EqC is too weak!
-      sorry
-    | inr =>
-      sorry
+    | inl heq => simp [← heq, htail₁]
+    | inr h =>
+      have ⟨c'', hstep₁', hstep₂'⟩ := h
+      have := ih hinv' hstep₁'
+      exact this.prepend hstep₂'
 
 theorem proc_guarded_weak_normalization_confl
   [Arity Op] [PCM T] [PCM.Lawful T]
@@ -1080,14 +1076,11 @@ theorem proc_guarded_weak_normalization_confl
   {opInterp : OpInterp Op V}
   {ioSpec : IOSpec V T m n}
   (proc : ProcWithSpec opSpec χ m n)
-  {s s₁' s₂' : proc.semantics.S × opInterp.S}
-  (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar .τ s s₁')
-  (hstep₂ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.Step s .τ s₂')
-  (hterm : proc.semantics.IsFinal s₁'.1) :
-    ∃ s',
-      ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar .τ s₂' s' ∧
-      Config.EqMod EqModGhost s'.1 s₁'.1 ∧
-      s'.2 = s₁'.2
+  {s s₁ s₂ : proc.semantics.S × opInterp.S}
+  (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar .τ s s₁)
+  (hterm : proc.semantics.IsFinal s₁.1)
+  (hstep₂ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.Step s .τ s₂) :
+    ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar .τ s₂ s₁
   := by
   induction htrace₁
     using Lts.TauStar.reverse_induction with
@@ -1101,9 +1094,7 @@ theorem proc_guarded_weak_normalization_confl
       exact False.elim (hterm hstep₂)
   | head hstep₁ htail₁ ih =>
     rename_i s s'
-
     apply ih
-
     sorry
 
 theorem proc_guarded_weak_normalization_single
