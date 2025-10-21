@@ -168,7 +168,7 @@ def AtomicProc.mapTokens
   (hom : T₁ → T₂) :
   AtomicProc (WithSpec Op opSpec) χ (V ⊕ T₁) → AtomicProc (WithSpec Op (opSpec.mapTokens hom)) χ (V ⊕ T₂)
   | .op (.op o) inputs outputs => .op (.op o) inputs outputs
-  | .op (.join k) inputs outputs => .op (.join k) inputs outputs
+  | .op (.join k l req) inputs outputs => .op (.join k l (hom ∘ req)) inputs outputs
   | .async o inputs outputs =>
     .async (o.mapValues mapValue) inputs outputs
   where
@@ -895,7 +895,9 @@ theorem proc_interp_strong_confl_at_mod
         InterpStep.step_yield hstep₂' hstep_op₁,
         by simp [heq],
       ⟩
-  case step_yield.step_yield _ hstep₁ hstep_op₁ _ _ _ hstep₂ hstep_op₂ =>
+  case step_yield.step_yield
+    op₁ inputVals₁ _ hstep₁ hstep_op₁
+    op₂ inputVals₂ _ hstep₂ hstep_op₂ =>
     have hconfl_sem := hconfl_guard hstep₁ hstep₂
       (guard_label_compat_inversion (by
         -- By `hdet`
@@ -920,10 +922,10 @@ theorem proc_interp_strong_confl_at_mod
     | inr h =>
       cases hstep₁ with | step hguard₁ hstep₁ =>
       cases hstep₂ with | step hguard₂ hstep₂ =>
-      cases hguard₁ with | spec_yield htok₁ htok₁' =>
-      rename_i tok₁ tok₁'
-      cases hguard₂ with | spec_yield htok₂ htok₂' =>
-      rename_i tok₂ tok₂'
+      cases hguard₁ with | spec_yield =>
+      -- rename_i tok₁ tok₁'
+      cases hguard₂ with | spec_yield =>
+      -- rename_i tok₂ tok₂'
       cases hstep₁ with | step_op hmem₁ hpop₁ =>
       cases hstep₂ with | step_op hmem₂ hpop₂ =>
       have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem₁
@@ -938,24 +940,24 @@ theorem proc_interp_strong_confl_at_mod
         simp [hpop₁, Vector.push_eq_push] at hpop₂
         have ⟨⟨h₄, h₅⟩, h₆⟩ := hpop₂
         replace h₅ := Vector.inj_map (by simp [Function.Injective]) h₅
-        subst h₄; subst h₅; subst h₆
-        simp [htok₁', htok₂']
+        subst h₅; subst h₆
+        -- simp [h₄, htok₁', htok₂']
         have ⟨h₇, h₈⟩ := hdet hstep_op₁ hstep_op₂
         subst h₈
         constructor
         · apply IsRefl.refl
-        · exact h₇
+        · simp [IsRefl.refl, h₇]
       · right
         have ⟨t', hstep_op₁', hstep_op₂'⟩ := hsound hstep_op₁ hstep_op₂
           (by
             -- Firing different atoms, so the tokens must be disjoint by `DisjointTokens`.
             simp [OpSpec.CompatLabels]
-            apply PCM.eq_congr_disj htok₁ htok₂
+            -- apply PCM.eq_congr_disj htok₁ htok₂
             have := haff.atom_inputs_disjoint ⟨i, hi⟩ ⟨j, hj⟩ (by simp [heq_ij])
             simp [hget_i, hget_j, AtomicProc.inputs] at this
             have := pop_vals_disj_preserves_pairwise hdisj this hpop₁ hpop₂
-            have := this (.inr tok₁) (.inr tok₂)
-            apply this
+            -- have := this (.inr _) (.inr _)
+            apply this (.inr (opSpec.pre op₁ inputVals₁)) (.inr (opSpec.pre op₂ inputVals₂))
             all_goals simp)
         replace ⟨s₁'', s₂'', hstep₁', hstep₂', heq⟩ := h
         exists (s₁'', t'), (s₂'', t')
@@ -1133,74 +1135,6 @@ def SimpleIOSpec.toIOSpec (spec : SimpleIOSpec T) m n :
 /-- `.inl` for base vars, `.inr` for token variables. -/
 abbrev TypedName χ := χ ⊕ Nat
 
-/-- Tries to find a set of `ts : Fin numToks`
-such that `req ≤ sum of (ts.map ctx)`. -/
-def tryAcquire
-  (ctx : Nat → Option T)
-  (numToks : Nat)
-  (req : T) : Option (List Nat) :=
-  sorry
-
-/-- Helper function for `typeCheck`. -/
-noncomputable def typeCheckInternal
-  [Arity Op] [PCM T]
-  [DecidableLE T]
-  (opSpec : SimpleOpSpec Op T)
-  (ioSpec : SimpleIOSpec T)
-  (ctx : Nat → Option T)
-  (numToks : Nat) :
-  Expr Op χ m n →
-  Option (ExprWithSpec (opSpec.toOpSpec V) (TypedName χ) m n)
-  | .ret args => do
-    let toks ← tryAcquire ctx numToks ioSpec.post
-    return .op (.join toks.length)
-      (toks.toVector.map .inr)
-      #v[.inr numToks, .inr (numToks + 1)]
-      (.ret ((args.map .inl).push (.inr numToks)))
-  | .tail args => do
-    let toks ← tryAcquire ctx numToks ioSpec.pre
-    return .op (.join toks.length)
-      (toks.toVector.map .inr)
-      #v[.inr numToks, .inr (numToks + 1)]
-      (.tail ((args.map .inl).push (.inr numToks)))
-  | .op o args bind cont => do
-    let toks ← tryAcquire ctx numToks (opSpec.pre o)
-    let tok₁ := .inr numToks
-    let tok₂ := .inr (numToks + 1)
-    let tok₃ := .inr (numToks + 2)
-    let newCtx₁ := λ i => if i ∈ toks then none else ctx i
-    let newCtx₂ := Function.update newCtx₁ numToks (some (opSpec.pre o))
-    let sumToks ← toks.foldlM (λ acc i => return acc ⊔ (← ctx i)) PCM.zero
-    if h : opSpec.pre o ≤ sumToks then
-      let newCtx₃ := Function.update newCtx₂ (numToks + 1) (some (PCM.sub sumToks (opSpec.pre o) h))
-      let newCtx₄ := Function.update newCtx₃ (numToks + 2) (some (opSpec.post o))
-      return .op (.join toks.length) (toks.toVector.map .inr) #v[tok₁, tok₂]
-        (.op (.op o)
-          ((args.map .inl).push tok₁)
-          ((bind.map .inl).push tok₃)
-          (← typeCheckInternal opSpec ioSpec newCtx₄ (numToks + 3) cont))
-    else
-      none
-  | .br cond left right => do
-    let left' ← typeCheckInternal opSpec ioSpec ctx numToks left
-    let right' ← typeCheckInternal opSpec ioSpec ctx numToks right
-    return .br (.inl cond) left' right'
-
-/-- Type check a function against the given specs,
-and insert split/join to concretize the flow of permissions. -/
-noncomputable def typeCheck
-  [Arity Op] [PCM T]
-  [DecidableLE T]
-  (opSpec : SimpleOpSpec Op T)
-  (ioSpec : SimpleIOSpec T)
-  (fn : Fn Op χ V m n) :
-  Option (FnWithSpec (opSpec.toOpSpec V) (TypedName χ) m n)
-  := return {
-    params := (fn.params.map .inl).push (.inr 0),
-    body := ← typeCheckInternal opSpec ioSpec
-      (Function.update (Function.const _ none) 0 (some ioSpec.pre)) 1 fn.body,
-  }
-
 /-- Map from ghost variable names to their concrete permission. -/
 structure PermCtx T where
   perms : VarMap Nat T
@@ -1237,7 +1171,7 @@ def PermCtx.Acquire
   (toks : Vector T k) : Prop :=
   tokIds.toList.Nodup ∧
   ctx.perms.getVars tokIds = some toks ∧
-  req ⊔ rem ≡ PCM.sum toks.toList
+  req ⊔ rem = PCM.sum toks.toList
 
 /-- Relational definition for a function to be well-typed
 as a more elaborated `FnWithSpec` with explicit permissions. -/
@@ -1253,7 +1187,7 @@ inductive Expr.WellPermTyped
     ctx.insertVars #v[ioSpec.post, rem] = (joined, ctx') →
     WellPermTyped ioSpec ctx
       (.ret vars)
-      (.op (.join k) (tokIds.map .inr) (joined.map .inr)
+      (.op (.join k 0 (λ _ => ioSpec.post)) (tokIds.map .inr) (joined.map .inr)
         (.ret ((vars.map .inl).push (.inr joined[0]))))
   | wpt_tail {joined ctx' ctx args rem}
     (k : Nat) {tokIds : Vector Nat k} {toks : Vector T k} :
@@ -1262,7 +1196,7 @@ inductive Expr.WellPermTyped
     ctx.insertVars #v[ioSpec.pre, rem] = (joined, ctx') →
     WellPermTyped ioSpec ctx
       (.tail args)
-      (.op (.join k) (tokIds.map .inr) (joined.map .inr)
+      (.op (.join k 0 (λ _ => ioSpec.pre)) (tokIds.map .inr) (joined.map .inr)
         (.tail ((args.map .inl).push (.inr joined[0]))))
   | wpt_op {ctx' joined ctx'' cont cont' ctx o args rem}
     {bind}
@@ -1273,7 +1207,7 @@ inductive Expr.WellPermTyped
     WellPermTyped ioSpec (ctx''.removeVars [joined[0]]) cont cont' →
     WellPermTyped ioSpec ctx
       (.op o args bind cont)
-      (.op (.join k) -- First call join to collect required permissions
+      (.op (.join k 0 (λ _ => opSpec.pre o)) -- First call join to collect required permissions
         (tokIds.map .inr)
         #v[.inr joined[0], .inr joined[1]]
         (.op (.op o) -- Then call the actual operator
@@ -1416,9 +1350,7 @@ theorem sim_type_check_input
       s₂ (.input args) _ :=
     guard_single
       (by
-        apply OpSpec.Guard.spec_input (tok := ioSpec.pre)
-        simp [SimpleIOSpec.toIOSpec]
-        apply pcm.eq_refl)
+        apply OpSpec.Guard.spec_input)
       (.step_init
         (args := (args.map .inl).push (.inr ioSpec.pre))
         hcont₂)
@@ -1479,7 +1411,7 @@ theorem sim_type_check_ret
       s₂ _ _ :=
     guard_single
       (e' := .τ)
-      (.spec_join (by rfl) (by rfl) hacq₃)
+      (.spec_join (vals := #v[]) (by rfl) (by rfl) hacq₃)
       (.step_op (outputVals := #v[.inr ioSpec.post, .inr rem])
         hcont₂
         (by
@@ -1492,8 +1424,7 @@ theorem sim_type_check_ret
       s₂ (.output retVals) _ := (Lts.WeakStep.single hstep₂).tail_non_tau
     (guard_single
       (by
-        apply OpSpec.Guard.spec_output
-        apply pcm.eq_refl)
+        apply OpSpec.Guard.spec_output)
       (.step_ret (retVals := (retVals.map .inl).push (.inr ioSpec.post))
         (by rfl)
         (by
@@ -1552,7 +1483,7 @@ theorem sim_type_check_tail
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ _ _ :=
     guard_single
-      (.spec_join (by rfl) (by rfl) hacq₃)
+      (.spec_join (vals := #v[]) (by rfl) (by rfl) hacq₃)
       (.step_op (outputVals := #v[.inr ioSpec.pre, .inr rem])
         hcont₂
         (by
@@ -1627,7 +1558,7 @@ theorem sim_type_check_op
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.Step
       s₂ .τ _ :=
     guard_single
-      (.spec_join (by rfl) (by rfl) hacq₃)
+      (.spec_join (vals := #v[]) (by rfl) (by rfl) hacq₃)
       (.step_op (outputVals := #v[.inr (opSpec.pre op), .inr rem])
         hcont₂
         (by
@@ -1649,12 +1580,7 @@ theorem sim_type_check_op
       ((opSpec.toOpSpec V).Guard (ioSpec.toIOSpec m n))).lts.WeakStep .τ
       s₂ (.yield op inputVals outputVals) _ := (Lts.WeakStep.single hstep₂).tail_non_tau
     (guard_single
-      (by
-        apply OpSpec.Guard.spec_yield
-          (tok₁ := opSpec.pre op)
-          (tok₂ := opSpec.post op)
-        · apply pcm.eq_refl
-        · rfl)
+      (by apply OpSpec.Guard.spec_yield)
       hstep₂')
   simp [hs₂'] at hsteps₂
   exact ⟨_, hsteps₂,

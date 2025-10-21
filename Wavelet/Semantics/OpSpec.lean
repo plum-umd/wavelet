@@ -47,9 +47,12 @@ structure IOSpec V T m n where
 
 /-- Augments the operator set with an additional ghost argument
 to pass a PCM token, as well as two operators to split and join PCMs. -/
-inductive WithSpec (Op : Type u) [Arity Op] (spec : OpSpec Op V T) where
+inductive WithSpec {T : Type u} (Op : Type u) [Arity Op] (spec : OpSpec Op V T) where
   | op (op : Op)
-  | join (k : Nat) -- Number of input tokens to combine
+  | join
+      (k : Nat) -- Number of input tokens to combine
+      (l : Nat) -- Number of values that the token depends on
+      (req : Vector V l → T)
 
 /-- Uses only the LHS `InterpConsts` of a sum for constants. -/
 instance instInterpConstsSum [left : InterpConsts V] : InterpConsts (V ⊕ V') where
@@ -71,9 +74,9 @@ instance instArityWithSpec
   {spec : OpSpec Op V T} :
   Arity (WithSpec Op spec) where
   ι | .op o => arity.ι o + 1
-    | .join k => k
+    | .join k l _ => k + l
   ω | .op o => arity.ω o + 1
-    | .join _ => 2
+    | .join _ _ _ => 2
 
 /-- Interprets the labels with ghost values using the base operators,
 but with dynamic checks for ghost tokens satisfying the specs. -/
@@ -87,33 +90,29 @@ inductive OpSpec.Guard
     {op}
     {inputs : Vector V (Arity.ι op)}
     {outputs : Vector V (Arity.ω op)} :
-    tok₁ ≡ opSpec.pre op inputs →
-    tok₂ = opSpec.post op inputs outputs → -- Using `=` here for less determinism
     Guard opSpec ioSpec
       (.yield (.op op)
-        ((inputs.map .inl).push (.inr tok₁))
-        ((outputs.map .inl).push (.inr tok₂)))
+        ((inputs.map .inl).push (.inr (opSpec.pre op inputs)))
+        ((outputs.map .inl).push (.inr (opSpec.post op inputs outputs))))
       (.yield op inputs outputs)
-  -- NOTE: the exact output split of permissions
-  -- is intentionally left unspecified, because
-  -- we want this to be dynamic without restricting
-  -- to a static annotation.
   | spec_join
     {toks : Vector T k}
+    {vals : Vector V l}
     {outputs : Vector (V ⊕ T) 2} :
-    outputs[0] = .inr tok₁ →
-    outputs[1] = .inr tok₂ →
-    tok₁ ⊔ tok₂ ≡ PCM.sum toks.toList →
+    outputs[0] = .inr (req vals) →
+    outputs[1] = .inr rem →
+    -- For this to be deterministic, we need a `Cancellative` PCM.
+    req vals ⊔ rem = PCM.sum toks.toList →
     Guard opSpec ioSpec
-      (.yield (.join k) (toks.map .inr) outputs) .τ
-  | spec_input {tok vals} :
-    tok ≡ ioSpec.pre vals →
+      (.yield (.join k l req)
+        ((toks.map .inr : Vector (V ⊕ T) k) ++
+          (vals.map .inl : Vector (V ⊕ T) l)) outputs) .τ
+  | spec_input :
     Guard opSpec ioSpec
-      (.input ((vals.map .inl).push (.inr tok))) (.input vals)
+      (.input ((vals.map .inl).push (.inr (ioSpec.pre vals)))) (.input vals)
   | spec_output :
-    tok ≡ ioSpec.post vals →
     Guard opSpec ioSpec
-      (.output ((vals.map .inl).push (.inr tok))) (.output vals)
+      (.output ((vals.map .inl).push (.inr (ioSpec.post vals)))) (.output vals)
   | spec_tau :
     Guard opSpec ioSpec .τ .τ
 
@@ -129,7 +128,7 @@ inductive OpSpec.TrivGuard [Arity Op]
     opSpec.TrivGuard
       (.yield (.op op) ((inputs.map .inl).push tok₁) ((outputs.map .inl).push tok₂))
       (.yield op inputs outputs)
-  | spec_join : opSpec.TrivGuard (.yield (.join k) toks outputs) .τ
+  | spec_join : opSpec.TrivGuard (.yield (.join k l req) toks outputs) .τ
   | spec_input : opSpec.TrivGuard (.input ((vals.map .inl).push tok)) (.input vals)
   | spec_output : opSpec.TrivGuard (.output ((vals.map .inl).push tok)) (.output vals)
   | spec_tau : opSpec.TrivGuard .τ .τ
