@@ -1068,7 +1068,36 @@ theorem strong_confl_final_confl_tau
       have := ih hinv' hstep₁'
       exact this.prepend hstep₂'
 
-theorem proc_guarded_weak_normalization_confl
+-- theorem proc_guarded_weak_normalization_confl
+--   [Arity Op] [PCM T] [PCM.Lawful T]
+--   [DecidableEq χ]
+--   [InterpConsts V]
+--   {opSpec : OpSpec Op V T}
+--   {opInterp : OpInterp Op V}
+--   {ioSpec : IOSpec V T m n}
+--   (proc : ProcWithSpec opSpec χ m n)
+--   {s s₁ s₂ : proc.semantics.S × opInterp.S}
+--   (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar .τ s s₁)
+--   (hterm : proc.semantics.IsFinal s₁.1)
+--   (hstep₂ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.Step s .τ s₂) :
+--     ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar .τ s₂ s₁
+--   := by
+--   induction htrace₁
+--     using Lts.TauStar.reverse_induction with
+--   | refl =>
+--     match hstep₂ with
+--     | .step_tau hstep₂ =>
+--       cases hstep₂ with | step _ hstep₂ =>
+--       exact False.elim (hterm hstep₂)
+--     | .step_yield hstep₂ _ =>
+--       cases hstep₂ with | step _ hstep₂ =>
+--       exact False.elim (hterm hstep₂)
+--   | head hstep₁ htail₁ ih =>
+--     rename_i s s'
+--     apply ih
+--     sorry
+
+theorem proc_unguarded_to_guarded
   [Arity Op] [PCM T] [PCM.Lawful T]
   [DecidableEq χ]
   [InterpConsts V]
@@ -1077,42 +1106,15 @@ theorem proc_guarded_weak_normalization_confl
   {ioSpec : IOSpec V T m n}
   (proc : ProcWithSpec opSpec χ m n)
   {s s₁ s₂ : proc.semantics.S × opInterp.S}
-  (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar .τ s s₁)
-  (hterm : proc.semantics.IsFinal s₁.1)
-  (hstep₂ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.Step s .τ s₂) :
-    ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar .τ s₂ s₁
-  := by
-  induction htrace₁
-    using Lts.TauStar.reverse_induction with
-  | refl =>
-    match hstep₂ with
-    | .step_tau hstep₂ =>
-      cases hstep₂ with | step _ hstep₂ =>
-      exact False.elim (hterm hstep₂)
-    | .step_yield hstep₂ _ =>
-      cases hstep₂ with | step _ hstep₂ =>
-      exact False.elim (hterm hstep₂)
-  | head hstep₁ htail₁ ih =>
-    rename_i s s'
-    apply ih
-    sorry
-
-theorem proc_guarded_weak_normalization_single
-  [Arity Op] [PCM T] [PCM.Lawful T]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {opInterp : OpInterp Op V}
-  {ioSpec : IOSpec V T m n}
-  (proc : ProcWithSpec opSpec χ m n)
-  {s s₁' s₂' : proc.semantics.S × opInterp.S}
   (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar
-    .τ s s₁')
-  (hstep₂ : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.Step s .τ s₂')
+    .τ s s₁)
   -- Note: this has to require that `s'` is final in the original, unguarded semantics
-  (hterm : proc.semantics.IsFinal s₁'.1) :
-    ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.Step s .τ s₂'
-    -- TauStar .τ s₂' s₁'
+  (hterm : proc.semantics.IsFinal s₁.1)
+  (hstep₂ : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.Step s .τ s₂) :
+    ∃ s₂',
+      ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.Step s .τ s₂' ∧
+      Config.EqMod EqModGhost s₂'.1 s₂.1 ∧
+      s₂'.2 = s₂.2
   := by
   induction htrace₁
     using Lts.TauStar.reverse_induction with

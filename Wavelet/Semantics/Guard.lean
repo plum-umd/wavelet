@@ -39,6 +39,18 @@ theorem guard_single
   (lts.Guard P).Step s e' s'
 := Lts.Guard.step hguard hstep
 
+theorem guard_tau_star
+  {lts : Lts C E}
+  {P : E → E' → Prop}
+  (hsteps : lts.TauStar τ s₁ s₁')
+  (hguard : P τ τ') : (lts.Guard P).TauStar τ' s₁ s₁'
+  := by
+  induction hsteps with
+  | refl => exact .refl
+  | tail pref tail ih =>
+    have := Lts.Guard.step hguard tail
+    exact .tail ih this
+
 /-- `guard` preserves IO-restricted simulation. -/
 theorem sim_guard
   [Arity Op] [Arity Op']
@@ -88,6 +100,42 @@ theorem sim_guard
         have := hguard.guard_tau_only hlabel
         cases l <;> simp at this
         exact .step_tau hstep_tau_s₂
+    · exact hR₂
+
+/-- `guard` preserves weak simulation. -/
+theorem sim_weak_guard
+  [Arity Op] [Arity Op']
+  [DecidableEq χ]
+  [DecidableEq χ']
+  [InterpConsts V]
+  [InterpConsts V']
+  {sem₁ sem₂ : Semantics Op V m n}
+  {P : Label Op V m n → Label Op' V' m' n' → Prop}
+  [hguard : LawfulGuard P]
+  (hsim : sem₁ ≲ sem₂) :
+  sem₁.guard P ≲ sem₂.guard P
+  := by
+  apply Lts.Similarity.intro hsim.Sim
+  constructor
+  · exact hsim.sim_init
+  · intros s₁ s₂ l s₁' hR hstep
+    simp [Semantics.guard] at hstep
+    cases hstep with | step hlabel hstep =>
+    rename Label Op V m n => l'
+    have ⟨s₂', hstep_s₂, hR₂⟩ := hsim.sim_step _ _ _ _ hR hstep
+    exists s₂'
+    constructor
+    · cases hstep_s₂ with
+      | refl =>
+        have := hguard.guard_tau_only hlabel
+        cases l <;> simp at this
+        exact .refl
+      | step htau₁ hstep₂ htau₂ =>
+        rename_i s₂₁ s₂₂
+        apply Lts.WeakStep.step
+        · exact guard_tau_star htau₁ hguard.guard_tau
+        · exact Lts.Guard.step hlabel hstep₂
+        · exact guard_tau_star htau₂ hguard.guard_tau
     · exact hR₂
 
 end Wavelet.Semantics
