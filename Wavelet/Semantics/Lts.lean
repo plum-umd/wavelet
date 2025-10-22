@@ -188,6 +188,26 @@ theorem Lts.Star.prepend
   | refl => exact .tail (.refl) hhead
   | tail _ h ih => exact .tail (ih hhead) h
 
+/-- Alternative induction principal for `Star`. -/
+theorem Lts.Star.reverse_induction
+  {lts : Lts C E}
+  {motive : ∀ tr c₁, lts.Star c₁ tr c₂ → Prop} {c₁ : C}
+  (refl : motive [] c₂ .refl)
+  (head : ∀ {c₁ c₁' l tr}
+    (hstep : lts.Step c₁ l c₁')
+    (htail : lts.Star c₁' tr c₂),
+    motive tr c₁' htail → motive (tr.prepend l) c₁ (htail.prepend hstep))
+  (hsteps : lts.Star c₁ tr c₂) :
+    motive tr c₁ hsteps
+  := by
+  induction hsteps with
+  | refl => exact refl
+  | tail pref tail ih =>
+    rename_i c₁' c₂
+    apply ih (head tail _ refl)
+    intros _ _ _ _ hstep htail
+    apply head hstep
+
 structure Lts.Simulation
   (lts₁ : Lts C₁ E)
   (lts₂ : Lts C₂ E)

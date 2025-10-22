@@ -399,4 +399,14 @@ def IsFinal
   (sem : Semantics Op V m n)
   (s : sem.S) : Prop := sem.lts.IsFinal s
 
+def Lts.IsFinalFor (lts : Lts C E) (Labels : E → Prop) (c : C) : Prop :=
+  ∀ {c' l}, Labels l → ¬ lts.Step c l c'
+
+@[simp]
+def IsFinalFor
+  [Arity Op]
+  (sem : Semantics Op V m n)
+  (Labels : Label Op V m n → Prop)
+  (s : sem.S) : Prop := sem.lts.IsFinalFor Labels s
+
 end Wavelet.Semantics

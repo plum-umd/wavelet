@@ -1048,15 +1048,14 @@ theorem strong_confl_final_confl_tau
   (hinv : lts.IsInvariantAt (lts.StronglyConfluentAt Compat) c)
   (htau : ∀ {l l'}, Compat l l' ↔ l = τ ∧ l' = τ)
   (hsteps₁ : lts.TauStar τ c c₁)
-  (hterm : lts.IsFinal c₁)
-  (hstep₂ : lts.Step c τ c₂) :
-    lts.TauStar τ c₂ c₁
+  (hterm : lts.IsFinalFor (· = τ) c₁)
+  (hstep₂ : lts.Step c τ c₂) : lts.TauStar τ c₂ c₁
   := by
   induction hsteps₁
     using Lts.TauStar.reverse_induction
     generalizing c₂ with
   | refl =>
-    exact False.elim (hterm hstep₂)
+    exact False.elim (hterm (by rfl) hstep₂)
   | head hstep₁ htail₁ ih =>
     rename_i c c'
     have ⟨hconfl', hinv'⟩ := hinv.step hstep₁
@@ -1097,7 +1096,76 @@ theorem strong_confl_final_confl_tau
 --     apply ih
 --     sorry
 
+/-- Turns a guarded trace of τ steps into an unguarded one
+one a state `EqModGhost` to the original state. -/
+theorem proc_guarded_steps_congr_eq_mod
+  [Arity Op] [PCM T] [PCM.Lawful T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {opInterp : OpInterp Op V}
+  {ioSpec : IOSpec V T m n}
+  (proc : ProcWithSpec opSpec χ m n)
+  {s₁ s₁' s₂ : proc.semantics.S × opInterp.S}
+  (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar .τ s₁ s₂)
+  (heq : Config.EqMod EqModGhost s₁.1 s₁'.1 ∧ s₁.2 = s₁'.2) :
+    ∃ s₂',
+      ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.TauStar .τ s₁' s₂' ∧
+      Config.EqMod EqModGhost s₂.1 s₂'.1 ∧
+      s₂.2 = s₂'.2
+  := by
+  sorry
+
+/--
+If there is a guarded τ trace from `s` to a final state `s₁`,
+then we can turn any *unguarded* τ step from `s` to `s₂`,
+into a guarded τ step, modulo potentially different ghost tokens.
+-/
 theorem proc_unguarded_to_guarded
+  [Arity Op] [PCM T] [PCM.Lawful T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  (proc : ProcWithSpec opSpec χ m n)
+  {s s₁ s₂ : proc.semantics.S}
+  {tr : List (Label Op V m n)}
+  {l : Label Op V m n}
+  (htrace₁ : (proc.semantics.guard (opSpec.Guard ioSpec)).lts.Star s tr s₁)
+  (htr : ∀ l ∈ tr, l.isSilent ∨ l.isYield)
+  (hterm : proc.semantics.IsFinalFor (λ l => l.isSilent ∨ l.isYield) s₁)
+  (hstep₂ : (proc.semantics.guard opSpec.TrivGuard).lts.Step s l s₂)
+  (hl : l.isSilent ∨ l.isYield) :
+    ∃ s₂',
+      (proc.semantics.guard (opSpec.Guard ioSpec)).lts.Step s l s₂' ∧
+      Config.EqMod EqModGhost s₂' s₂
+  := by
+  induction htrace₁
+    using Lts.Star.reverse_induction with
+  | refl =>
+    cases hstep₂ with | step hguard hstep₂ =>
+    cases l <;> simp at hl
+    all_goals
+      cases hguard <;> exact False.elim (hterm (by simp) hstep₂)
+  | head hstep₁ htail₁ ih =>
+    rename_i s s' l' tr'
+    have hl' := htr l' (by simp)
+    cases l <;> simp at hl
+    case yield op inputVals outputVals =>
+      cases l' <;> simp at hl'
+      case yield op' inputVals' outputVals' =>
+        sorry
+      case τ =>
+        sorry
+    case τ =>
+      sorry
+
+/--
+If there is a guarded τ trace from `s` to a final state `s₁`,
+then we can turn any *unguarded* τ step from `s` to `s₂`,
+into a guarded τ step, modulo potentially different ghost tokens.
+-/
+theorem proc_unguarded_to_guarded_interp
   [Arity Op] [PCM T] [PCM.Lawful T]
   [DecidableEq χ]
   [InterpConsts V]
@@ -1109,7 +1177,7 @@ theorem proc_unguarded_to_guarded
   (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar
     .τ s s₁)
   -- Note: this has to require that `s'` is final in the original, unguarded semantics
-  (hterm : proc.semantics.IsFinal s₁.1)
+  (hterm : proc.semantics.IsFinalFor (λ l => l.isSilent ∨ l.isYield) s₁.1)
   (hstep₂ : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.Step s .τ s₂) :
     ∃ s₂',
       ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.Step s .τ s₂' ∧
@@ -1121,11 +1189,12 @@ theorem proc_unguarded_to_guarded
   | refl =>
     match hstep₂ with
     | .step_tau hstep₂ =>
-      cases hstep₂ with | step _ hstep₂ =>
-      exact False.elim (hterm hstep₂)
+      cases hstep₂ with | step hguard hstep₂ =>
+      cases hguard <;> exact False.elim (hterm (by simp) hstep₂)
     | .step_yield hstep₂ _ =>
-      cases hstep₂ with | step _ hstep₂ =>
-      exact False.elim (hterm hstep₂)
+      cases hstep₂ with | step hguard hstep₂ =>
+      cases hguard
+      exact False.elim (hterm (by simp) hstep₂)
   | head hstep₁ htail₁ ih =>
     rename_i s s'
 
