@@ -126,11 +126,18 @@ inductive OpSpec.TrivGuard [Arity Op]
   Label Op V m n → Prop where
   | triv_yield :
     opSpec.TrivGuard
-      (.yield (.op op) ((inputs.map .inl).push tok₁) ((outputs.map .inl).push tok₂))
+      (.yield (.op op) ((inputs.map .inl).push (.inr tok₁)) ((outputs.map .inl).push (.inr tok₂)))
       (.yield op inputs outputs)
-  | triv_join : opSpec.TrivGuard (.yield (.join k l req) toks outputs) .τ
-  | triv_input : opSpec.TrivGuard (.input ((vals.map .inl).push tok)) (.input vals)
-  | triv_output : opSpec.TrivGuard (.output ((vals.map .inl).push tok)) (.output vals)
+  | triv_join
+    {toks : Vector T k}
+    {vals : Vector V l}
+    {outputs : Vector T 2} :
+    opSpec.TrivGuard (.yield (.join k l req)
+      ((toks.map .inr : Vector (V ⊕ T) k) ++
+        (vals.map .inl : Vector (V ⊕ T) l))
+      (outputs.map .inr)) .τ
+  | triv_input : opSpec.TrivGuard (.input ((vals.map .inl).push (.inr tok))) (.input vals)
+  | triv_output : opSpec.TrivGuard (.output ((vals.map .inl).push (.inr tok))) (.output vals)
   | triv_tau : opSpec.TrivGuard .τ .τ
 
 instance
@@ -159,7 +166,16 @@ theorem OpSpec.spec_guard_implies_triv_guard
   {l₁ l₂} :
     opSpec.Guard ioSpec l₁ l₂ → opSpec.TrivGuard l₁ l₂
   | .spec_yield => by exact .triv_yield
-  | .spec_join .. => by exact .triv_join
+  | .spec_join .. => by
+    rename_i k l req rem toks vals outputs h₁ h₂ hsum
+    have : outputs = #v[req vals, rem].map .inr := by
+      apply Vector.ext
+      intros i hi
+      match i with
+      | 0 => simp [h₁]
+      | 1 => simp [h₂]
+    simp only [this]
+    exact .triv_join
   | .spec_input => by exact .triv_input
   | .spec_output => by exact .triv_output
   | .spec_tau => by exact .triv_tau

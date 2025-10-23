@@ -798,7 +798,7 @@ theorem op_spec_guard_eq_congr
     cases hguard₂
     rfl
 
-theorem forall₂_push_toList
+theorem forall₂_push_toList_to_forall₂
   {α β}
   {xs : Vector α n}
   {ys : Vector β n}
@@ -806,6 +806,17 @@ theorem forall₂_push_toList
   {R : α → β → Prop}
   (hforall₂ : List.Forall₂ R (xs.push x).toList (ys.push y).toList) :
     List.Forall₂ R xs.toList ys.toList ∧ R x y := by
+  sorry
+
+theorem forall₂_to_forall₂_push_toList
+  {α β}
+  {xs : Vector α n}
+  {ys : Vector β n}
+  {x : α} {y : β}
+  {R : α → β → Prop}
+  (hforall₂ : List.Forall₂ R xs.toList ys.toList)
+  (hxy : R x y) :
+    List.Forall₂ R (xs.push x).toList (ys.push y).toList := by
   sorry
 
 /-- Similar to `theorem op_spec_guard_eq_congr` but for `OpSpec.TrivGuard`. -/
@@ -825,17 +836,17 @@ theorem op_spec_triv_guard_eq_congr
   case yield.yield.triv_yield.triv_yield =>
     have ⟨h₁, heq₂, heq₃⟩ := heq
     subst h₁
-    replace ⟨heq₂, _⟩ := forall₂_push_toList heq₂
-    replace ⟨heq₃, _⟩ := forall₂_push_toList heq₃
+    replace ⟨heq₂, _⟩ := forall₂_push_toList_to_forall₂ heq₂
+    replace ⟨heq₃, _⟩ := forall₂_push_toList_to_forall₂ heq₃
     simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₂
     simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₃
     simp [heq₂, heq₃]
   case input.input.triv_input.triv_input =>
-    replace ⟨heq, _⟩ := forall₂_push_toList heq
+    replace ⟨heq, _⟩ := forall₂_push_toList_to_forall₂ heq
     simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq
     simp [heq]
   case output.output.triv_output.triv_output =>
-    replace ⟨heq, _⟩ := forall₂_push_toList heq
+    replace ⟨heq, _⟩ := forall₂_push_toList_to_forall₂ heq
     simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq
     simp [heq]
 
@@ -930,11 +941,34 @@ theorem guard_label_triv_compat_inversion
     intros op
     cases op <;> simp
   case yield.yield.triv_yield.triv_yield.op =>
-
-    sorry
+    rename_i
+      op₁ inputs₁ outputs₁ tok₁₁ tok₁₂
+      op₂ inputs₂ outputs₂ tok₂₁ tok₂₂ _
+    intros inputs' outputs₁' outputs₂'
+      hop₁ hinputs₁' houtputs₁'
+      hop₂ hinputs₂' houtputs₂'
+    subst hop₁; subst hop₂
+    have heq_inputs : inputs₁ = inputs₂ := by
+      simp at hinputs₁' hinputs₂'
+      simp [← hinputs₁', Vector.push_eq_push] at hinputs₂'
+      have heq_inputs := Vector.inj_map (by simp [Function.Injective]) hinputs₂'.2
+      simp [heq_inputs]
+    subst heq_inputs
+    have heq_outputs : outputs₁ = outputs₂ := by
+      apply hcompat
+      any_goals rfl
+    subst heq_outputs
+    simp at houtputs₁' houtputs₂'
+    simp [← houtputs₁', ← houtputs₂']
+    apply forall₂_to_forall₂_push_toList
+    · simp [EqModGhost]
+    · simp [EqModGhost]
   case yield.yield.triv_join.triv_join.join =>
-
-    sorry
+    intros
+    rename_i houtputs₁ _ _ _ _ houtputs₂
+    simp [← houtputs₁, ← houtputs₂, Vector.toList_map, EqModGhost]
+    apply List.forall₂_iff_get.mpr
+    simp
 
 theorem proc_guard_spec_strong_confl_at
   [Arity Op] [PCM T] [PCM.Cancellative T]
@@ -1208,10 +1242,14 @@ to the unguarded semantics:
 
 We know that for a `proc` and good `s`
 
-- `proc.semantics.StronglyConfluentAt s`
-- `(proc.semantics.guard (opSpec.Guard ioSpec)).StronglyConfluentAt IsYieldOrSilentAndDet s`
-- `(proc.semantics.guard opSpec.TrivGuard).StronglyConfluentAtMod IsYieldOrSilentAndDet EqModGhost s`
-- `((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).StronglyConfluentAt (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent) (s, t)`
+- proc_strong_confl_at:
+    `proc.semantics.StronglyConfluentAt s`
+- proc_guard_spec_strong_confl_at:
+    `(proc.semantics.guard (opSpec.Guard ioSpec)).StronglyConfluentAt IsYieldOrSilentAndDet s`
+- proc_guard_triv_strong_confl_at_mod:
+    `(proc.semantics.guard opSpec.TrivGuard).StronglyConfluentAtMod IsYieldOrSilentAndDet EqModGhost s`
+- proc_interp_strong_confl_at:
+    `((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).StronglyConfluentAt (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent) (s, t)`
 
 -/
 
