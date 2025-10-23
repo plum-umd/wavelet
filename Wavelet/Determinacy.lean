@@ -469,7 +469,7 @@ theorem proc_strong_confl_at_mod
         rw [push_vals_push_vals_disj_commute hdisj_outputs] at hstep₁'
         simp only [← hs₁'] at hstep₁' ⊢
         simp only [← hs₂'] at hstep₂' ⊢
-        exact ⟨_, _, hstep₁', hstep₂', by simp⟩
+        exact ⟨_, _, hstep₁', hstep₂', by simp [IsRefl.refl]⟩
     -- Commute `step_op` and `step_async`
     case neg.step_op.step_async =>
       right
@@ -508,7 +508,7 @@ theorem proc_strong_confl_at_mod
       rw [push_vals_push_vals_disj_commute hdisj_outputs] at hstep₁'
       simp only [← hs₁'] at hstep₁' ⊢
       simp only [← hs₂'] at hstep₂' ⊢
-      exact ⟨_, _, hstep₁', hstep₂', by simp⟩
+      exact ⟨_, _, hstep₁', hstep₂', by simp [IsRefl.refl]⟩
     -- Commute `step_async` and `step_op`
     case neg.step_async.step_op =>
       right
@@ -547,7 +547,7 @@ theorem proc_strong_confl_at_mod
       rw [push_vals_push_vals_disj_commute hdisj_outputs] at hstep₂'
       simp only [← hs₁'] at hstep₁' ⊢
       simp only [← hs₂'] at hstep₂' ⊢
-      exact ⟨_, _, hstep₁', hstep₂', by simp⟩
+      exact ⟨_, _, hstep₁', hstep₂', by simp [IsRefl.refl]⟩
     -- Commute two `step_async`s
     case neg.step_async.step_async =>
       right
@@ -648,9 +648,9 @@ theorem proc_strong_confl_at_mod
             apply Lts.Step.eq_rhs hstep₂'
             rfl),
           (by
-            congr 2
-            apply List.set_comm
-            exact h)
+            rw [List.set_comm]
+            · simp [IsRefl.refl]
+            · exact h)
         ⟩
 
 theorem proc_strong_confl_at
@@ -1249,63 +1249,63 @@ We know that for a `proc` and good `s`
 - proc_guard_triv_strong_confl_at_mod:
     `(proc.semantics.guard opSpec.TrivGuard).StronglyConfluentAtMod IsYieldOrSilentAndDet EqModGhost s`
 - proc_interp_strong_confl_at:
-    `((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).StronglyConfluentAt (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent) (s, t)`
-
+    `((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).StronglyConfluentAt
+      (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent) (s, t)`
 -/
 
-theorem hmm?
-  {lts₁ lts₂ : Lts C E}
-  {tr : Trace E}
-  {c₁ c₂ c₁' : C}
-  {Labels : E → Prop}
-  {EqC : C → C → Prop}
-  (htrace₁ : lts₁.Star c₁ tr c₁')
-  (htr : ∀ l ∈ tr, Labels l)
-  (hterm : lts₂.IsFinalFor Labels c₁')
+-- theorem hmm?
+--   {lts₁ lts₂ : Lts C E}
+--   {tr : Trace E}
+--   {c₁ c₂ c₁' : C}
+--   {Labels : E → Prop}
+--   {EqC : C → C → Prop}
+--   (htrace₁ : lts₁.Star c₁ tr c₁')
+--   (htr : ∀ l ∈ tr, Labels l)
+--   (hterm : lts₂.IsFinalFor Labels c₁')
 
-  (heq : EqC c₁ c₂)
+--   (heq : EqC c₁ c₂)
 
-  : True := sorry
+--   : True := sorry
 
-theorem hmm
-  [Arity Op] [Arity Op']
-  {opInterp : OpInterp Op' V'}
-  {sem : Semantics Op V m n}
-  {s s' s₁' sₜ : sem.S × opInterp.S}
-  {Compat : Label Op V m n → Label Op V m n → Prop}
-  {EqS : sem.S → sem.S → Prop}
-  {Guard₁ Guard₂ : Label Op V m n → Label Op' V' m' n' → Prop}
-  (hconfl_sem : sem.lts.StronglyConfluentAt Compat s.1)
+-- theorem hmm
+--   [Arity Op] [Arity Op']
+--   {opInterp : OpInterp Op' V'}
+--   {sem : Semantics Op V m n}
+--   {s s' s₁' sₜ : sem.S × opInterp.S}
+--   {Compat : Label Op V m n → Label Op V m n → Prop}
+--   {EqS : sem.S → sem.S → Prop}
+--   {Guard₁ Guard₂ : Label Op V m n → Label Op' V' m' n' → Prop}
+--   (hconfl_sem : sem.lts.StronglyConfluentAt Compat s.1)
 
-  -- (hguard_compat₁ : ∀ {l₁ l₂ l₁' l₂'},
-  --   l₁'.isYield ∨ l₁'.isSilent →
-  --   l₂'.isYield ∨ l₂'.isSilent →
-  --   Guard₁ l₁ l₁' →
-  --   Guard₁ l₂ l₂' →
-  --   Compat l₁ l₂)
+--   -- (hguard_compat₁ : ∀ {l₁ l₂ l₁' l₂'},
+--   --   l₁'.isYield ∨ l₁'.isSilent →
+--   --   l₂'.isYield ∨ l₂'.isSilent →
+--   --   Guard₁ l₁ l₁' →
+--   --   Guard₁ l₂ l₂' →
+--   --   Compat l₁ l₂)
 
-  -- (hguard_compat₂ : ∀ {l₁ l₂ l₁' l₂'},
-  --   l₁'.isYield ∨ l₁'.isSilent →
-  --   l₂'.isYield ∨ l₂'.isSilent →
-  --   Guard₂ l₁ l₁' →
-  --   Guard₂ l₂ l₂' →
-  --   Compat l₁ l₂)
+--   -- (hguard_compat₂ : ∀ {l₁ l₂ l₁' l₂'},
+--   --   l₁'.isYield ∨ l₁'.isSilent →
+--   --   l₂'.isYield ∨ l₂'.isSilent →
+--   --   Guard₂ l₁ l₁' →
+--   --   Guard₂ l₂ l₂' →
+--   --   Compat l₁ l₂)
 
-  (hconfl_interp : ((sem.guard Guard₁).interpret opInterp).lts.StronglyConfluentAt
-    (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent)
-    s)
+--   (hconfl_interp : ((sem.guard Guard₁).interpret opInterp).lts.StronglyConfluentAt
+--     (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent)
+--     s)
 
-  -- A dominating trace
-  (htrace₁ : ((sem.guard Guard₁).interpret opInterp).lts.TauStar .τ s sₜ)
-  (hterm : sem.IsFinalFor (·.isSilent) sₜ.1)
+--   -- A dominating trace
+--   (htrace₁ : ((sem.guard Guard₁).interpret opInterp).lts.TauStar .τ s sₜ)
+--   (hterm : sem.IsFinalFor (·.isSilent) sₜ.1)
 
-  (heq : EqS s.1 s'.1 ∧ s.2 = s'.2)
-  (hstep₂ : ((sem.guard Guard₂).interpret opInterp).lts.Step s' .τ s₁') :
-    ∃ sₜ',
-      ((sem.guard Guard₂).interpret opInterp).lts.TauStar .τ s₁' sₜ' ∧
-      EqS sₜ.1 sₜ'.1 ∧
-      sₜ.2 = sₜ'.2
-  := sorry
+--   (heq : EqS s.1 s'.1 ∧ s.2 = s'.2)
+--   (hstep₂ : ((sem.guard Guard₂).interpret opInterp).lts.Step s' .τ s₁') :
+--     ∃ sₜ',
+--       ((sem.guard Guard₂).interpret opInterp).lts.TauStar .τ s₁' sₜ' ∧
+--       EqS sₜ.1 sₜ'.1 ∧
+--       sₜ.2 = sₜ'.2
+--   := sorry
 
 /-- Special case restricted to a single label `τ`. -/
 theorem strong_confl_final_confl_tau
@@ -1361,6 +1361,81 @@ theorem strong_confl_final_confl_tau
 --     rename_i s s'
 --     apply ih
 --     sorry
+
+theorem proc_guarded_weak_normalization'
+  [Arity Op] [PCM T] [PCM.Lawful T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {opInterp : OpInterp Op V}
+  {ioSpec : IOSpec V T m n}
+  (proc : ProcWithSpec opSpec χ m n)
+  (s s₁ s₂ : proc.semantics.S × opInterp.S)
+  (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar
+    .τ s s₁)
+  (hterm : proc.semantics.IsFinal s₁.1)
+  (htrace₂ : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.TauStar
+    .τ s s₂) :
+    ∃ s₁',
+      ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.TauStar
+        .τ s₂ s₁' ∧
+      Config.EqMod EqModGhost s₁.1 s₁'.1 ∧
+      s₁.2 = s₁'.2
+  := by
+  -- Naming convension:
+  -- s : proc.semantics.S × opInterp.S
+  -- c : proc.semantics.S
+  -- t : opInterp.S
+  induction htrace₁
+    using Lts.TauStar.reverse_induction with
+  | refl =>
+    induction htrace₂
+      using Lts.TauStar.reverse_induction with
+    | refl =>
+      exists s₂
+      and_intros
+      · exact .refl
+      · rfl
+      · apply IsRefl.refl
+      · rfl
+    | head hstep₂ =>
+      match hstep₂ with
+      | .step_tau hstep₂ =>
+        cases hstep₂ with | step hguard hstep₂ =>
+        cases hguard <;> exact False.elim (hterm hstep₂)
+      | .step_yield hstep₂ _ =>
+        cases hstep₂ with | step hguard hstep₂ =>
+        cases hguard
+        exact False.elim (hterm hstep₂)
+  | head hstep₁ htail₁ ih₁ =>
+    induction htrace₂
+      using Lts.TauStar.reverse_induction with
+    | refl =>
+      have htrace₁ := htail₁.prepend hstep₁
+      replace htrace₁ := htrace₁.map
+        (λ hstep => hstep.map_step (Guard.map_guard OpSpec.spec_guard_implies_triv_guard))
+      exists s₁
+      and_intros
+      · exact htrace₁
+      · rfl
+      · apply IsRefl.refl
+      · rfl
+    | head hstep₂ htail₂ ih₂ =>
+      case head.head =>
+      rename_i _ s₁'' s s₂''
+      have hstep₁' := hstep₁.map_step (Guard.map_guard OpSpec.spec_guard_implies_triv_guard)
+      have haff : s.1.proc.AffineChan := sorry
+      -- have hconfl := proc_guard_triv_strong_confl_at_mod proc s.1 haff hstep₁' hstep₂
+      cases hstep₁' <;> cases hstep₂
+      case step_tau.step_tau c c₁ t hstep₁' c₂ hstep₂ =>
+        have hconfl := proc_guard_triv_strong_confl_at_mod proc _ haff hstep₁' hstep₂
+          (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
+        cases hconfl with
+        | inl heq => sorry
+        | inr h =>
+
+          sorry
+      all_goals sorry
 
 /-- Turns a guarded trace of τ steps into an unguarded one
 one a state `EqModGhost` to the original state. -/

@@ -33,22 +33,21 @@ class OpInterp (Op : Type u) (V : Type v) [Arity Op] where
 /-- Parallel composition of `sem` and `interp`. -/
 inductive InterpStep
   [Arity Op]
-  (sem : Semantics Op V m n)
-  (interp : OpInterp Op V)
-  : Lts (sem.S × interp.S) (Label Empty V m n) where
+  (base : Lts S₁ (Label Op V m n))
+  (interp : Lts S₂ (RespLabel Op V)) : Lts (S₁ × S₂) (Label Empty V m n) where
   | step_tau :
-    sem.lts.Step s .τ s' →
-    InterpStep sem interp (s, t) .τ (s', t)
+    base.Step s .τ s' →
+    InterpStep base interp (s, t) .τ (s', t)
   | step_input :
-    sem.lts.Step s (.input inputVals) s' →
-    InterpStep sem interp (s, t) (.input inputVals) (s', t)
+    base.Step s (.input inputVals) s' →
+    InterpStep base interp (s, t) (.input inputVals) (s', t)
   | step_output :
-    sem.lts.Step s (.output outputVals) s' →
-    InterpStep sem interp (s, t) (.output outputVals) (s', t)
+    base.Step s (.output outputVals) s' →
+    InterpStep base interp (s, t) (.output outputVals) (s', t)
   | step_yield :
-    sem.lts.Step s (.yield op inputs outputs) s' →
-    interp.lts.Step t (.respond op inputs outputs) t' →
-    InterpStep sem interp (s, t) .τ (s', t')
+    base.Step s (.yield op inputs outputs) s' →
+    interp.Step t (.respond op inputs outputs) t' →
+    InterpStep base interp (s, t) .τ (s', t')
 
 /-- Fully interpret all operators using a `OpInterp` to get
 a transition system with only input/output/silent events. -/
@@ -60,7 +59,7 @@ def interpret
   := {
     S := sem.S × interp.S,
     init := (sem.init, interp.init),
-    lts := sem.InterpStep interp,
+    lts := InterpStep sem.lts interp.lts,
   }
 
 /-- Deterministic operator set. -/
@@ -71,5 +70,20 @@ def OpInterp.Deterministic
     interp.lts.Step s (.respond op inputs outputs₁) s₁' →
     interp.lts.Step s (.respond op inputs outputs₂) s₂' →
     s₁' = s₂' ∧ outputs₁ = outputs₂
+
+def InterpStep.map_step
+  [Arity Op] {S S'}
+  {lts₁ lts₂ : Lts S (Label Op V m n)}
+  {lts' : Lts S' (RespLabel Op V)}
+  {s s' : S × S'}
+  (hmap : ∀ {s s' l}, lts₁.Step s l s' → lts₂.Step s l s')
+  (hstep : (InterpStep lts₁ lts').Step s l s') :
+    (InterpStep lts₂ lts').Step s l s'
+  := by
+  cases hstep with
+  | step_tau hstep => exact InterpStep.step_tau (hmap hstep)
+  | step_input hstep => exact InterpStep.step_input (hmap hstep)
+  | step_output hstep => exact InterpStep.step_output (hmap hstep)
+  | step_yield hbase hinterp => exact InterpStep.step_yield (hmap hbase) hinterp
 
 end Wavelet.Semantics

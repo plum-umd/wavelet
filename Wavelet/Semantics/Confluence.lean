@@ -36,7 +36,7 @@ def Lts.StronglyConfluentAtMod
     ∃ c₁' c₂',
       lts.Step c₁ l₂ c₁' ∧
       lts.Step c₂ l₁ c₂' ∧
-      Eq c₁' c₂'
+      EqC c₁' c₂'
 
 /-- Strong confluence of an LTS when restricted to a subset of states. -/
 def Lts.StronglyConfluent

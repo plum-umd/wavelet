@@ -51,6 +51,24 @@ theorem guard_tau_star
     have := Lts.Guard.step hguard tail
     exact .tail ih this
 
+theorem Guard.map_step
+  {S}
+  {lts₁ lts₂ : Lts S E}
+  {P : E → E' → Prop}
+  {s s' : S}
+  (hmap : ∀ {s s' l}, lts₁.Step s l s' → lts₂.Step s l s') :
+    (lts₁.Guard P).Step s l s' → (lts₂.Guard P).Step s l s'
+  | .step hguard hstep => .step hguard (hmap hstep)
+
+theorem Guard.map_guard
+  {S}
+  {lts : Lts S E}
+  {P₁ P₂ : E → E' → Prop}
+  {s s' : S}
+  (hmap : ∀ {l₁ l₂}, P₁ l₁ l₂ → P₂ l₁ l₂) :
+    (lts.Guard P₁).Step s l s' → (lts.Guard P₂).Step s l s'
+  | .step hguard hstep => .step (hmap hguard) hstep
+
 /-- `guard` preserves IO-restricted simulation. -/
 theorem sim_guard
   [Arity Op] [Arity Op']
