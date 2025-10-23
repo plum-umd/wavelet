@@ -46,4 +46,30 @@ def Lts.StronglyConfluent
   (Compat : E → E → Prop) : Prop :=
   ∀ {c : C}, States c → lts.StronglyConfluentAt Compat c
 
+theorem Lts.strong_confl_at_imp_compat
+  {lts : Lts C E}
+  {Compat₁ Compat₂ : E → E → Prop}
+  {c : C}
+  (himp : ∀ {l₁ l₂}, Compat₂ l₁ l₂ → Compat₁ l₁ l₂)
+  (hconfl : lts.StronglyConfluentAt Compat₁ c) :
+    lts.StronglyConfluentAt Compat₂ c
+  := by
+  intros c₁ c₂ l₁ l₂ hstep₁ hstep₂ hcompat
+  have hcompat' := himp hcompat
+  exact hconfl hstep₁ hstep₂ hcompat'
+
+theorem Lts.strong_confl_at_mod_imp_compat
+  {lts : Lts C E}
+  {Compat₁ Compat₂ : E → E → Prop}
+  {EqC : C → C → Prop}
+  {EqE : E → E → Prop}
+  {c : C}
+  (himp : ∀ {l₁ l₂}, Compat₂ l₁ l₂ → Compat₁ l₁ l₂)
+  (hconfl : lts.StronglyConfluentAtMod Compat₁ EqC EqE c) :
+    lts.StronglyConfluentAtMod Compat₂ EqC EqE c
+  := by
+  intros c₁ c₂ l₁ l₂ hstep₁ hstep₂ hcompat
+  have hcompat' := himp hcompat
+  exact hconfl hstep₁ hstep₂ hcompat'
+
 end Wavelet.Semantics

@@ -124,14 +124,14 @@ inductive OpSpec.TrivGuard [Arity Op]
   (opSpec : OpSpec Op V T) :
   Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) →
   Label Op V m n → Prop where
-  | spec_yield :
+  | triv_yield :
     opSpec.TrivGuard
       (.yield (.op op) ((inputs.map .inl).push tok₁) ((outputs.map .inl).push tok₂))
       (.yield op inputs outputs)
-  | spec_join : opSpec.TrivGuard (.yield (.join k l req) toks outputs) .τ
-  | spec_input : opSpec.TrivGuard (.input ((vals.map .inl).push tok)) (.input vals)
-  | spec_output : opSpec.TrivGuard (.output ((vals.map .inl).push tok)) (.output vals)
-  | spec_tau : opSpec.TrivGuard .τ .τ
+  | triv_join : opSpec.TrivGuard (.yield (.join k l req) toks outputs) .τ
+  | triv_input : opSpec.TrivGuard (.input ((vals.map .inl).push tok)) (.input vals)
+  | triv_output : opSpec.TrivGuard (.output ((vals.map .inl).push tok)) (.output vals)
+  | triv_tau : opSpec.TrivGuard .τ .τ
 
 instance
   [Arity Op] [PCM T]
@@ -146,10 +146,22 @@ instance
 instance
   [Arity Op]
   {opSpec : OpSpec Op V T} : LawfulGuard (opSpec.TrivGuard (m := m) (n := n)) where
-  guard_tau := .spec_tau
+  guard_tau := .triv_tau
   guard_tau_only h := by cases h; rfl
   guard_input h := by cases h; simp
   guard_output h := by cases h; simp
   guard_yield h := by cases h <;> simp
+
+theorem OpSpec.spec_guard_implies_triv_guard
+  [Arity Op] [PCM T]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {l₁ l₂} :
+    opSpec.Guard ioSpec l₁ l₂ → opSpec.TrivGuard l₁ l₂
+  | .spec_yield => by exact .triv_yield
+  | .spec_join .. => by exact .triv_join
+  | .spec_input => by exact .triv_input
+  | .spec_output => by exact .triv_output
+  | .spec_tau => by exact .triv_tau
 
 end Wavelet.Semantics

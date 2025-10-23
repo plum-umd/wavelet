@@ -138,4 +138,26 @@ theorem sim_weak_guard
         · exact guard_tau_star htau₂ hguard.guard_tau
     · exact hR₂
 
+theorem sim_guard_imp
+  [Arity Op] [Arity Op']
+  [DecidableEq χ]
+  [DecidableEq χ']
+  [InterpConsts V]
+  [InterpConsts V']
+  {sem : Semantics Op V m n}
+  {P₁ : Label Op V m n → Label Op' V' m' n' → Prop}
+  {P₂ : Label Op V m n → Label Op' V' m' n' → Prop}
+  (himp : ∀ {l₁ l₂}, P₁ l₁ l₂ → P₂ l₁ l₂) :
+  sem.guard P₁ ≲ₛ sem.guard P₂
+  := by
+  apply Lts.Similarity.intro Eq
+  constructor
+  · rfl
+  · intros s₁ s₂ l s₁' hR hstep
+    exists s₁'
+    subst hR
+    simp
+    replace ⟨hp, hstep⟩ := hstep
+    exact ⟨himp hp, hstep⟩
+
 end Wavelet.Semantics

@@ -225,47 +225,6 @@ namespace Wavelet.Compile
 
 open Semantics Seq Dataflow
 
-/-
-Proof sketch (for a single `Fn`):
-
-We show that
-
-```
-untyped functions
-≤ typed functions + disjoint tokens + dynamic race detector
-≤ typed processes + disjoint tokens + dynamic race detector
-```
-
-```
-fn.semantics
-  ≲ᵣ (fn'.semantics.guard ...).interpLabel
-  ≲ᵣ ((compileFn ... fn').semantics.guard ...).interpLabel
-    -- by (fn'.semantics.guard ...) ≲ᵣ ((compileFn ... fn').semantics.guard ...)
-  (... maybe some optimization passes)
-  ≲ᵣ proc.semantics.guard ...
-  ≲ᵣ (eraseGhost proc).semantics
-```
-and also
-```
-(eraseGhost proc).semantics
-  ≲ᵣ proc.semantics.guard ...
-```
-
-`(eraseGhost proc)` would be the final compiled dataflow program.
-
-And we have:
-
-1. Correctness:
-   - For any trace of `fn.semantics`, there exists a
-     corresponding trace `T₁` of `proc.semantics.guard ...`
-   - For any trace of `(eraseGhost proc).semantics`
-     there exists a corresponding trace `T₂` of `proc.semantics.guard ...`
-   By `guarded_confluence` below, they should converge to the same state.
-
-2. Liveness: since `fn.semantics ≲ᵣ (eraseGhost proc).semantics`
-   `eraseGhost proc` should have at least one trace simulating `fn`.
--/
-
 -- /-- Erase ghost tokens. -/
 -- def eraseGhost
 --   [Arity Op] [PCM T]
@@ -315,12 +274,12 @@ operator and inputs match, the outputs should match. -/
 def Label.DeterministicMod
   [Arity Op]
   {V : Type v} {m n}
-  (Eq : V → V → Prop)
+  (EqV : V → V → Prop)
   (l₁ l₂ : Label Op V m n) : Prop :=
     ∀ {op inputVals outputVals₁ outputVals₂},
       l₁ = .yield op inputVals outputVals₁ →
       l₂ = .yield op inputVals outputVals₂ →
-      List.Forall₂ Eq outputVals₁.toList outputVals₂.toList
+      List.Forall₂ EqV outputVals₁.toList outputVals₂.toList
 
 @[simp]
 theorem Label.DeterministicMod.eq_eq
@@ -343,11 +302,11 @@ theorem Label.DeterministicMod.eq_eq
 
 /-- If two labels are either yield or silent and are deterministic (mod `EqV`). -/
 def Label.IsYieldOrSilentAndDetMod
-  [Arity Op] (Eq : V → V → Prop)
+  [Arity Op] (EqV : V → V → Prop)
   (l₁ : Label Op V m n) (l₂ : Label Op V m n) : Prop :=
   (l₁.isYield ∨ l₁.isSilent) ∧
   (l₂.isYield ∨ l₂.isSilent) ∧
-  Label.DeterministicMod Eq l₁ l₂
+  Label.DeterministicMod EqV l₁ l₂
 
 def Label.IsYieldOrSilentAndDet
   [Arity Op]
@@ -390,9 +349,15 @@ def Label.EqMod.eq_eq
     Label.EqMod Eq l₁ l₂ ↔ l₁ = l₂
   := by
   constructor
-  · simp [Label.EqMod]
-    intros h
-    sorry
+  · cases l₁ <;> cases l₂
+    any_goals simp [Label.EqMod]
+    · intros h₁ h₂ h₃
+      subst h₁
+      simp [Vector.toList_inj] at h₂
+      simp [Vector.toList_inj] at h₃
+      simp [h₂, h₃]
+    · simp [Vector.toList_inj]
+    · simp [Vector.toList_inj]
   · intros h
     simp [h, IsRefl.refl]
 
@@ -705,37 +670,6 @@ theorem proc_strong_confl_at
   simp at this
   exact this
 
-theorem guard_strong_confl_at
-  [Arity Op] [Arity Op']
-  (sem : Semantics Op V m n)
-  (s : sem.S)
-  {Guard : Label Op V m n → Label Op' V' m' n' → Prop}
-  {Compat : Label Op V m n → Label Op V m n → Prop}
-  (hguard_congr : ∀ {l₁ l₂ l₁' l₂'}, Guard l₁ l₁' → Guard l₂ l₂' → l₁ = l₂ → l₁' = l₂')
-  (hconfl : sem.lts.StronglyConfluentAt Compat s) :
-    (sem.guard Guard).lts.StronglyConfluentAt
-      (λ l₁' l₂' => ∀ {l₁ l₂},
-        Guard l₁ l₁' →
-        Guard l₂ l₂' →
-        Compat l₁ l₂)
-      s
-  := by
-  intros s₁' s₂' l₁' l₂' hstep₁ hstep₂ hcompat
-  rcases hstep₁ with ⟨hguard₁', hstep₁⟩
-  rcases hstep₂ with ⟨hguard₂', hstep₂⟩
-  have hcompat' := hcompat hguard₁' hguard₂'
-  cases hconfl hstep₁ hstep₂ hcompat' with
-  | inl heq =>
-    left
-    simp [heq.2, hguard_congr hguard₁' hguard₂' heq.1]
-  | inr h =>
-    right
-    have ⟨s', hstep₁', hstep₂'⟩ := h
-    exists s'
-    constructor
-    · exact ⟨hguard₂', hstep₁'⟩
-    · exact ⟨hguard₁', hstep₂'⟩
-
 /-- Similar to `guard_strong_confl_at` but for `StronglyConfluentAtMod`. -/
 theorem guard_strong_confl_at_mod
   [Arity Op] [Arity Op']
@@ -772,47 +706,144 @@ theorem guard_strong_confl_at_mod
     · exact ⟨hguard₁', hstep₂'⟩
     · exact heq
 
-/--
-`Config.DisjointTokens` is a state invariant of a guarded `Proc` semantics.
+theorem guard_strong_confl_at
+  [Arity Op] [Arity Op']
+  (sem : Semantics Op V m n)
+  (s : sem.S)
+  {Guard : Label Op V m n → Label Op' V' m' n' → Prop}
+  {Compat : Label Op V m n → Label Op V m n → Prop}
+  (hguard_congr : ∀ {l₁ l₂ l₁' l₂'}, Guard l₁ l₁' → Guard l₂ l₂' → l₁ = l₂ → l₁' = l₂')
+  (hconfl : sem.lts.StronglyConfluentAt Compat s) :
+    (sem.guard Guard).lts.StronglyConfluentAt
+      (λ l₁' l₂' => ∀ {l₁ l₂},
+        Guard l₁ l₁' →
+        Guard l₂ l₂' →
+        Compat l₁ l₂)
+      s
+  := by
+  intros s₁' s₂' l₁' l₂' hstep₁ hstep₂ hcompat
+  rcases hstep₁ with ⟨hguard₁', hstep₁⟩
+  rcases hstep₂ with ⟨hguard₂', hstep₂⟩
+  have hcompat' := hcompat hguard₁' hguard₂'
+  cases hconfl hstep₁ hstep₂ hcompat' with
+  | inl heq =>
+    left
+    simp [heq.2, hguard_congr hguard₁' hguard₂' heq.1]
+  | inr h =>
+    right
+    have ⟨s', hstep₁', hstep₂'⟩ := h
+    exists s'
+    constructor
+    · exact ⟨hguard₂', hstep₁'⟩
+    · exact ⟨hguard₁', hstep₂'⟩
 
-TODO: this requires the `opSpec` to be frame preserving.
--/
-theorem proc_guard_inv_disj
-  [Arity Op] [PCM T] [DecidableEq χ]
-  [InterpConsts V]
+theorem op_spec_guard_eq_congr
+  [Arity Op] [PCM T]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  (proc : ProcWithSpec opSpec χ m n) :
-    (proc.semantics.guard (opSpec.Guard ioSpec)).IsInvariant
-      Config.DisjointTokens
-  := by
-  apply Lts.IsInvariantAt.by_induction
-  · simp [Dataflow.Config.init, Semantics.guard,
-      Proc.semantics, Config.Pairwise]
-  · intros s s' l hinv hstep
-    sorry
+  {l₁ l₂ : Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1)}
+  {l₁' l₂' : Label Op V m n}
+  (hguard₁ : opSpec.Guard ioSpec l₁ l₁')
+  (hguard₂ : opSpec.Guard ioSpec l₂ l₂')
+  (heq : l₁ = l₂) : l₁' = l₂' := by
+  subst heq
+  cases l₁ with
+  | yield op inputs outputs =>
+    cases op with
+    | op op =>
+      cases hguard₁
+      rename_i inputs₁ outputs₁
+      generalize hinputs₁' :
+        (Vector.map Sum.inl inputs₁).push (Sum.inr (opSpec.pre op inputs₁)) = inputs₁'
+      generalize houtputs₁' :
+        (Vector.map Sum.inl outputs₁).push (Sum.inr (opSpec.post op inputs₁ outputs₁)) = outputs₁'
+      rw [hinputs₁', houtputs₁'] at hguard₂
+      cases hguard₂
+      rename_i inputs₂ outputs₂
+      simp [Vector.push_eq_push] at hinputs₁' houtputs₁'
+      have heq₁ := Vector.inj_map (by simp [Function.Injective]) hinputs₁'.2
+      have heq₂ := Vector.inj_map (by simp [Function.Injective]) houtputs₁'.2
+      simp [heq₁, heq₂]
+    | join k l req =>
+      cases hguard₁ with | spec_join h₁ h₂ =>
+      rename_i rem₁ toks₁ vals₁
+      generalize h :
+        (Vector.map Sum.inr rem₁ : Vector (V ⊕ T) _) ++
+          (Vector.map Sum.inl toks₁ : Vector (V ⊕ T) _) = x
+      rw [h] at hguard₂
+      cases hguard₂
+      rfl
+  | input vals =>
+    cases hguard₁ with | spec_input =>
+    rename_i vals₁
+    generalize h :
+      (Vector.map Sum.inl vals₁).push (Sum.inr (ioSpec.pre vals₁)) = x
+    rw [h] at hguard₂
+    cases hguard₂
+    simp [Vector.push_eq_push] at h
+    have heq := Vector.inj_map (by simp [Function.Injective]) h.2
+    simp [heq]
+  | output vals =>
+    cases hguard₁ with | spec_output =>
+    rename_i vals₁
+    generalize h :
+      (Vector.map Sum.inl vals₁).push (Sum.inr (ioSpec.post vals₁)) = x
+    rw [h] at hguard₂
+    cases hguard₂
+    simp [Vector.push_eq_push] at h
+    have heq := Vector.inj_map (by simp [Function.Injective]) h.2
+    simp [heq]
+  | τ =>
+    cases hguard₁
+    cases hguard₂
+    rfl
 
-/-- `Config.DisjointTokens` is a state invariant of a guarded `Fn` semantics. -/
-theorem fn_guard_inv_disj
-  [Arity Op] [PCM T] [DecidableEq χ]
-  [InterpConsts V]
+theorem forall₂_push_toList
+  {α β}
+  {xs : Vector α n}
+  {ys : Vector β n}
+  {x : α} {y : β}
+  {R : α → β → Prop}
+  (hforall₂ : List.Forall₂ R (xs.push x).toList (ys.push y).toList) :
+    List.Forall₂ R xs.toList ys.toList ∧ R x y := by
+  sorry
+
+/-- Similar to `theorem op_spec_guard_eq_congr` but for `OpSpec.TrivGuard`. -/
+theorem op_spec_triv_guard_eq_congr
+  [Arity Op]
   {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  (fn : FnWithSpec opSpec χ m n) :
-    (fn.semantics.guard (opSpec.Guard ioSpec)).IsInvariant
-      Config.DisjointTokens
-  := by
-  apply Lts.IsInvariantAt.by_induction
-  · simp [Seq.Config.init, Semantics.guard,
-      Fn.semantics, VarMap.DisjointTokens]
-  · intros s s' l hinv hstep
-    sorry
+  {l₁ l₂ : Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1)}
+  {l₁' l₂' : Label Op V m n}
+  (hguard₁ : opSpec.TrivGuard l₁ l₁')
+  (hguard₂ : opSpec.TrivGuard l₂ l₂')
+  (heq : Label.EqMod EqModGhost l₁ l₂) : l₁' = l₂' := by
+  cases l₁ <;> cases l₂
+    <;> cases hguard₁
+    <;> cases hguard₂
+    <;> simp [Label.EqMod] at heq
+  any_goals rfl
+  case yield.yield.triv_yield.triv_yield =>
+    have ⟨h₁, heq₂, heq₃⟩ := heq
+    subst h₁
+    replace ⟨heq₂, _⟩ := forall₂_push_toList heq₂
+    replace ⟨heq₃, _⟩ := forall₂_push_toList heq₃
+    simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₂
+    simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₃
+    simp [heq₂, heq₃]
+  case input.input.triv_input.triv_input =>
+    replace ⟨heq, _⟩ := forall₂_push_toList heq
+    simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq
+    simp [heq]
+  case output.output.triv_output.triv_output =>
+    replace ⟨heq, _⟩ := forall₂_push_toList heq
+    simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq
+    simp [heq]
 
 /-- If the label pair generated by a guarded semantics
 satisfies `Label.IsYieldOrSilentAndDet`, then the original
 unchecked label must satisfy `Label.IsYieldOrSilentAndDet EqModGhost` -/
 theorem guard_label_compat_inversion
-  [Arity Op] [PCM T]
+  [Arity Op] [PCM T] [PCM.Cancellative T]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
   {l₁' l₂' : Label Op V m n}
@@ -827,21 +858,147 @@ theorem guard_label_compat_inversion
   any_goals
     simp [Label.IsYieldOrSilentAndDet] at hcompat
   case spec_join.spec_join =>
-    intros
-    -- TODO: all ghost tokens, should be easy
-    sorry
-  all_goals sorry
+    rename_i
+      k₁ l₁ req₁ rem₁ toks₁ vals₁ outputs₁ houtputs₁₀ houtputs₁₁ hsum₁
+      k₂ l₂ req₂ rem₂ toks₂ vals₂ outputs₂ houtputs₂₀ houtputs₂₁ hsum₂
+    intros op inputs outputs₁' outputs₂' hop₁ hinputs₁' houtputs₁' hop₂ hinputs₂' houtputs₂'
+    cases op <;> simp at hop₁
+    have ⟨h₁, h₂, h₃⟩ := hop₁
+    subst h₁; subst h₂; subst h₃
+    simp at hop₂
+    have ⟨h₁, h₂, h₃⟩ := hop₂
+    subst h₁; subst h₂; subst h₃
+    simp at hinputs₁'
+    simp [← hinputs₁'] at hinputs₂'
+    have ⟨h₁, h₂⟩ := Vector.append_inj hinputs₂'
+    replace h₁ := Vector.inj_map (by simp [Function.Injective]) h₁
+    replace h₂ := Vector.inj_map (by simp [Function.Injective]) h₂
+    subst h₁; subst h₂
+    have heq_rem : rem₁ = rem₂ := by
+      simp [← hsum₂] at hsum₁
+      exact PCM.Cancellative.cancel_left hsum₁
+    subst heq_rem
+    simp at houtputs₁' houtputs₂'
+    simp [← houtputs₁', ← houtputs₂']
+    apply Vector.ext
+    intros i hi
+    match h : i with
+    | 0 => simp [houtputs₁₀, houtputs₂₀]
+    | 1 => simp [houtputs₁₁, houtputs₂₁]
+  case spec_yield.spec_yield =>
+    rename_i
+      op₁ inputs₁ outputs₁
+      op₂ inputs₂ outputs₂
+    intros op inputs outputs₁' outputs₂'
+      hop₁ hinputs₁' houtputs₁'
+      hop₂ hinputs₂' houtputs₂'
+    cases op <;> simp at hop₁
+    subst hop₁
+    simp at hop₂
+    subst hop₂
+    simp only [heq_eq_eq] at *
+    simp [← hinputs₁', Vector.push_eq_push] at hinputs₂'
+    have heq_inputs := Vector.inj_map (by simp [Function.Injective]) hinputs₂'.2
+    subst heq_inputs
+    simp [← houtputs₁', ← houtputs₂', Vector.push_eq_push]
+    simp [Label.Deterministic] at hcompat
+    have heq_outputs : outputs₁ = outputs₂ := by
+      apply hcompat
+      any_goals rfl
+    simp [heq_outputs]
+  all_goals
+    intros op
+    cases op <;> simp
 
-theorem op_spec_guard_eq_congr
-  [Arity Op] [PCM T]
+/-- Similar to `guard_label_compat_inversion` but for `OpSpec.TrivGuard`. -/
+theorem guard_label_triv_compat_inversion
+  [Arity Op]
+  {opSpec : OpSpec Op V T}
+  {l₁' l₂' : Label Op V m n}
+  {l₁ l₂ : Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1)}
+  (hcompat : Label.IsYieldOrSilentAndDet l₁' l₂')
+  (hguard₁ : opSpec.TrivGuard l₁ l₁')
+  (hguard₂ : opSpec.TrivGuard l₂ l₂') :
+    Label.IsYieldOrSilentAndDetMod EqModGhost l₁ l₂
+  := by
+  cases l₁ <;> cases l₂
+    <;> cases hguard₁
+    <;> cases hguard₂
+    <;> simp [Label.IsYieldOrSilentAndDet, Label.Deterministic] at hcompat
+    <;> simp [Label.IsYieldOrSilentAndDetMod, Label.DeterministicMod]
+  any_goals
+    intros op
+    cases op <;> simp
+  case yield.yield.triv_yield.triv_yield.op =>
+
+    sorry
+  case yield.yield.triv_join.triv_join.join =>
+
+    sorry
+
+theorem proc_guard_spec_strong_confl_at
+  [Arity Op] [PCM T] [PCM.Cancellative T]
+  [DecidableEq χ]
+  [InterpConsts V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {l₁ l₂ : Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1)}
-  {l₁' l₂' : Label Op V m n}
-  (hguard₁ : opSpec.Guard ioSpec l₁ l₁')
-  (hguard₂ : opSpec.Guard ioSpec l₂ l₂')
-  (heq : l₁ = l₂) : l₁' = l₂'
-  := sorry
+  (proc : ProcWithSpec opSpec χ m n)
+  (s : proc.semantics.S)
+  (haff : s.proc.AffineChan) :
+    (proc.semantics.guard (opSpec.Guard ioSpec)).lts.StronglyConfluentAt
+      Label.IsYieldOrSilentAndDet
+      s
+  := by
+  have hconfl_base : Lts.StronglyConfluentAt _ _ _ :=
+    proc_strong_confl_at proc s haff
+  have hconfl_guard : Lts.StronglyConfluentAt _ _ _ :=
+    guard_strong_confl_at
+      (Op := WithSpec Op opSpec) (Op' := Op)
+      (Guard := opSpec.Guard ioSpec)
+      proc.semantics s op_spec_guard_eq_congr hconfl_base
+  apply Lts.strong_confl_at_imp_compat
+    (Compat₁ := λ l₁' l₂' => ∀ {l₁ l₂},
+      opSpec.Guard ioSpec l₁ l₁' →
+      opSpec.Guard ioSpec l₂ l₂' →
+      Label.IsYieldOrSilentAndDet l₁ l₂)
+  · intros l₁' l₂' hcompat l₁ l₂
+    apply guard_label_compat_inversion hcompat
+  · exact hconfl_guard
+
+theorem proc_guard_triv_strong_confl_at_mod
+  [Arity Op] [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  (proc : ProcWithSpec opSpec χ m n)
+  (s : proc.semantics.S)
+  (haff : s.proc.AffineChan) :
+    (proc.semantics.guard opSpec.TrivGuard).lts.StronglyConfluentAtMod
+      Label.IsYieldOrSilentAndDet
+      (Config.EqMod EqModGhost)
+      Eq
+      s
+  := by
+  have hconfl_base : Lts.StronglyConfluentAtMod _ _ _ _ _ :=
+    proc_strong_confl_at_mod EqModGhost proc s haff
+  have hconfl_guard : Lts.StronglyConfluentAtMod _ _ _ _ _ :=
+    guard_strong_confl_at_mod
+      (Op := WithSpec Op opSpec) (Op' := Op)
+      (Guard := opSpec.TrivGuard)
+      (EqS := Config.EqMod EqModGhost)
+      (EqL := Label.EqMod EqModGhost)
+      (EqL' := Eq)
+      (Compat := Label.IsYieldOrSilentAndDetMod EqModGhost)
+      proc.semantics s
+      op_spec_triv_guard_eq_congr
+      hconfl_base
+  apply Lts.strong_confl_at_mod_imp_compat
+    (Compat₁ := λ l₁' l₂' => ∀ {l₁ l₂},
+      opSpec.TrivGuard l₁ l₁' →
+      opSpec.TrivGuard l₂ l₂' →
+      Label.IsYieldOrSilentAndDetMod EqModGhost l₁ l₂)
+  · intros l₁' l₂' hcompat l₁ l₂
+    apply guard_label_triv_compat_inversion hcompat
+  · exact hconfl_guard
 
 theorem pop_vals_disj_preserves_pairwise
   [DecidableEq χ]
@@ -856,33 +1013,6 @@ theorem pop_vals_disj_preserves_pairwise
     ∀ v₁ v₂, v₁ ∈ vals₁ → v₂ ∈ vals₂ → P v₁ v₂
   := sorry
 
--- theorem sim_proc_spec_hom
---   [Arity Op] [PCM T₁] [PCM T₂]
---   [PCM.Lawful T₁] [PCM.Lawful T₂]
---   {opSpec : OpSpec Op V T₁}
---   (proc : ProcWithSpec opSpec χ m n)
---   (hom : T₁ → T₂)
---   [PCM.Hom hom] :
---     ProcWithSpec (OpSpec.mapTokens opSpec hom) χ m n
---   := sorry
-
--- inductive ErasedName χ where
---   | base : χ → ErasedName χ
---   | inputAct : ErasedName χ
-
--- def eraseGhost
---   [Arity Op] [PCM T]
---   {opSpec : OpSpec Op V T}
---   (proc : ProcWithSpec opSpec χ m n) :
---     Proc Op χ (V ⊕ PCM.Triv) m n
---   := {
---     inputs := proc.inputs.pop.map .base,
---     outputs := proc.outputs.pop.map .base,
---     atoms := [
---       .fork proc.inputs.back #v[]
---     ],
---   }
-
 /--
 Strong confluence of a `ProcWithSpec` when interpreted with
 a sound and deterministic interpretation.
@@ -890,7 +1020,8 @@ a sound and deterministic interpretation.
 TODO: this is probably generalizable to a general confluent `Semantics`.
 -/
 theorem proc_interp_strong_confl_at
-  [Arity Op] [PCM T] [PCM.Lawful T]
+  [Arity Op]
+  [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
   [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
@@ -912,18 +1043,10 @@ theorem proc_interp_strong_confl_at
   intros s₁' s₂' l₁ l₂ hstep₁ hstep₂ hcompat
   rcases s₁' with ⟨s₁', t₁'⟩
   rcases s₂' with ⟨s₂', t₂'⟩
-  have hconfl_base : Lts.StronglyConfluentAt _ _ _ :=
-    proc_strong_confl_at proc s haff
-  have hconfl_guard : Lts.StronglyConfluentAt _ _ _ :=
-    guard_strong_confl_at
-      (Op := WithSpec Op opSpec) (Op' := Op)
-      (Guard := opSpec.Guard ioSpec)
-      proc.semantics s op_spec_guard_eq_congr hconfl_base
   cases hstep₁ <;> cases hstep₂ <;> simp at hcompat
   case step_tau.step_tau hstep₁ hstep₂ =>
-    have := hconfl_guard hstep₁ hstep₂
-      (guard_label_compat_inversion (by
-        simp [Label.IsYieldOrSilentAndDet, Label.Deterministic]))
+    have := proc_guard_spec_strong_confl_at proc s haff hstep₁ hstep₂
+      (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
     cases this with
     | inl heq => simp [heq]
     | inr h =>
@@ -935,9 +1058,8 @@ theorem proc_interp_strong_confl_at
         InterpStep.step_tau hstep₂'
       ⟩
   case step_tau.step_yield hstep₁ _ _ _ hstep₂ hstep_op₂ =>
-    have := hconfl_guard hstep₁ hstep₂
-      (guard_label_compat_inversion (by
-        simp [Label.IsYieldOrSilentAndDet, Label.Deterministic]))
+    have := proc_guard_spec_strong_confl_at proc s haff hstep₁ hstep₂
+      (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
     cases this with
     | inl heq => simp at heq
     | inr h =>
@@ -949,9 +1071,8 @@ theorem proc_interp_strong_confl_at
         InterpStep.step_tau hstep₂',
       ⟩
   case step_yield.step_tau _ _ _ _ hstep₁ hstep_op₁ hstep₂ =>
-    have := hconfl_guard hstep₁ hstep₂
-      (guard_label_compat_inversion (by
-        simp [Label.IsYieldOrSilentAndDet, Label.Deterministic]))
+    have := proc_guard_spec_strong_confl_at proc s haff hstep₁ hstep₂
+      (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
     cases this with
     | inl heq => simp at heq
     | inr h =>
@@ -965,8 +1086,8 @@ theorem proc_interp_strong_confl_at
   case step_yield.step_yield
     op₁ inputVals₁ _ hstep₁ hstep_op₁
     op₂ inputVals₂ _ hstep₂ hstep_op₂ =>
-    have hconfl_sem := hconfl_guard hstep₁ hstep₂
-      (guard_label_compat_inversion (by
+    have hconfl_sem := proc_guard_spec_strong_confl_at proc s haff hstep₁ hstep₂
+      (by
         -- By `hdet`
         simp only [Label.IsYieldOrSilentAndDet, Label.Deterministic]
         and_intros
@@ -978,7 +1099,7 @@ theorem proc_interp_strong_confl_at
           have ⟨heq_op₂, heq_inputs₂, heq_outputs₂⟩ := heq_yield₂
           subst heq_op₁; subst heq_inputs₁; subst heq_outputs₁
           subst heq_op₂; subst heq_inputs₂; subst heq_outputs₂
-          simp [hdet hstep_op₁ hstep_op₂]))
+          simp [hdet hstep_op₁ hstep_op₂])
     cases hconfl_sem with
     | inl heq =>
       left
@@ -1033,13 +1154,120 @@ theorem proc_interp_strong_confl_at
           InterpStep.step_yield hstep₂' hstep_op₂',
         ⟩
 
+/--
+`Config.DisjointTokens` is a state invariant of a guarded `Proc` semantics.
+
+TODO: this requires the `opSpec` to be frame preserving.
+-/
+theorem proc_guard_inv_disj
+  [Arity Op] [PCM T] [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  (proc : ProcWithSpec opSpec χ m n) :
+    (proc.semantics.guard (opSpec.Guard ioSpec)).IsInvariant
+      Config.DisjointTokens
+  := by
+  apply Lts.IsInvariantAt.by_induction
+  · simp [Dataflow.Config.init, Semantics.guard,
+      Proc.semantics, Config.Pairwise]
+  · intros s s' l hinv hstep
+    sorry
+
+/-- `Config.DisjointTokens` is a state invariant of a guarded `Fn` semantics. -/
+theorem fn_guard_inv_disj
+  [Arity Op] [PCM T] [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  (fn : FnWithSpec opSpec χ m n) :
+    (fn.semantics.guard (opSpec.Guard ioSpec)).IsInvariant
+      Config.DisjointTokens
+  := by
+  apply Lts.IsInvariantAt.by_induction
+  · simp [Seq.Config.init, Semantics.guard,
+      Fn.semantics, VarMap.DisjointTokens]
+  · intros s s' l hinv hstep
+    sorry
+
 /-
 TODO:
 
-If a guarded proc semantics reaches a terminating state
-(terminating in the original semantics)
-Then any trace in the original semantics should terminate in the same state.
+Translating confluence result in the guarded semantics
+to the unguarded semantics:
+
+1. If there is a trace in the guarded semantics from `s`,
+   and `s ≈ s'` modulo ghost tokens, then there is a trace
+   in the unguarded semantics from `s'` to the same state
+   modulo ghost tokens.
+
+2. If there is a trace in the guarded semantics from `s` to `s'`
+   such that `s'` is final in the *unguarded semantics*, then
+   any unguarded step from `s` to other `s''` can be converted
+   to a guarded trace modulo ghost tokens.
+
+We know that for a `proc` and good `s`
+
+- `proc.semantics.StronglyConfluentAt s`
+- `(proc.semantics.guard (opSpec.Guard ioSpec)).StronglyConfluentAt IsYieldOrSilentAndDet s`
+- `(proc.semantics.guard opSpec.TrivGuard).StronglyConfluentAtMod IsYieldOrSilentAndDet EqModGhost s`
+- `((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).StronglyConfluentAt (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent) (s, t)`
+
 -/
+
+theorem hmm?
+  {lts₁ lts₂ : Lts C E}
+  {tr : Trace E}
+  {c₁ c₂ c₁' : C}
+  {Labels : E → Prop}
+  {EqC : C → C → Prop}
+  (htrace₁ : lts₁.Star c₁ tr c₁')
+  (htr : ∀ l ∈ tr, Labels l)
+  (hterm : lts₂.IsFinalFor Labels c₁')
+
+  (heq : EqC c₁ c₂)
+
+  : True := sorry
+
+theorem hmm
+  [Arity Op] [Arity Op']
+  {opInterp : OpInterp Op' V'}
+  {sem : Semantics Op V m n}
+  {s s' s₁' sₜ : sem.S × opInterp.S}
+  {Compat : Label Op V m n → Label Op V m n → Prop}
+  {EqS : sem.S → sem.S → Prop}
+  {Guard₁ Guard₂ : Label Op V m n → Label Op' V' m' n' → Prop}
+  (hconfl_sem : sem.lts.StronglyConfluentAt Compat s.1)
+
+  -- (hguard_compat₁ : ∀ {l₁ l₂ l₁' l₂'},
+  --   l₁'.isYield ∨ l₁'.isSilent →
+  --   l₂'.isYield ∨ l₂'.isSilent →
+  --   Guard₁ l₁ l₁' →
+  --   Guard₁ l₂ l₂' →
+  --   Compat l₁ l₂)
+
+  -- (hguard_compat₂ : ∀ {l₁ l₂ l₁' l₂'},
+  --   l₁'.isYield ∨ l₁'.isSilent →
+  --   l₂'.isYield ∨ l₂'.isSilent →
+  --   Guard₂ l₁ l₁' →
+  --   Guard₂ l₂ l₂' →
+  --   Compat l₁ l₂)
+
+  (hconfl_interp : ((sem.guard Guard₁).interpret opInterp).lts.StronglyConfluentAt
+    (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent)
+    s)
+
+  -- A dominating trace
+  (htrace₁ : ((sem.guard Guard₁).interpret opInterp).lts.TauStar .τ s sₜ)
+  (hterm : sem.IsFinalFor (·.isSilent) sₜ.1)
+
+  (heq : EqS s.1 s'.1 ∧ s.2 = s'.2)
+  (hstep₂ : ((sem.guard Guard₂).interpret opInterp).lts.Step s' .τ s₁') :
+    ∃ sₜ',
+      ((sem.guard Guard₂).interpret opInterp).lts.TauStar .τ s₁' sₜ' ∧
+      EqS sₜ.1 sₜ'.1 ∧
+      sₜ.2 = sₜ'.2
+  := sorry
 
 /-- Special case restricted to a single label `τ`. -/
 theorem strong_confl_final_confl_tau
@@ -1827,3 +2055,23 @@ theorem sim_type_check
       case br => exact sim_type_check_br hsim h₁ hstep
 
 end Wavelet.Seq
+
+/-
+Proof sketch (for a single `Fn`):
+
+We show that
+
+```
+fn.semantics
+  ≲ᵣ fn'.semantics.guard
+  ≲ᵣ (compileFn ... fn').semantics.guard ... (by fn'.semantics ≲ᵣ (compileFn ... fn').semantics)
+  (... maybe some optimization passes)
+```
+
+Also for any `proc`
+1. `proc.semantics.guard ...` is strongly confluent
+2. `proc.semantics.guard P ≲ᵣ proc.semantics.guard P'`
+   if `P → P'` (and in particular for trivial `P'`)
+3. If we have a terminating trace in `proc.semantics.guard P`,
+   then any trace in `proc.semantics` goes to the same final state.
+-/
