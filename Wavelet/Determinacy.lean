@@ -1215,7 +1215,11 @@ theorem proc_guard_inv_disj
   · intros s s' l hinv hstep
     sorry
 
-/-- `Config.DisjointTokens` is a state invariant of a guarded `Fn` semantics. -/
+/--
+`Config.DisjointTokens` is a state invariant of a guarded `Fn` semantics.
+
+TODO: not quite true. should disallow multiple inputs transitions
+-/
 theorem fn_guard_inv_disj
   [Arity Op] [PCM T] [DecidableEq χ]
   [InterpConsts V]
@@ -1426,14 +1430,33 @@ theorem proc_unguarded_to_guarded_single
   {l₁ l₂ : Label Op V m n}
   (hstep₁ : (proc.semantics.guard (opSpec.Guard ioSpec)).lts.Step s l₁ s₁)
   (hstep₂ : (proc.semantics.guard (opSpec.Guard ioSpec)).lts.Step s₁ l₂ s₂)
-  (hl₁ : l₁.isSilent ∨ l₁.isYield)
-  (hl₂ : l₂.isSilent ∨ l₂.isYield)
+  (hl₁ : l₁.isYield ∨ l₁.isSilent)
+  (hl₂ : l₂.isYield ∨ l₂.isSilent)
   (hstep₂' : (proc.semantics.guard opSpec.TrivGuard).lts.Step s l₂ s₁') :
     ∃ s₁'',
       (proc.semantics.guard (opSpec.Guard ioSpec)).lts.Step s l₂ s₁'' ∧
       Config.EqMod EqModGhost s₁'' s₁'
   := by
-  sorry
+  cases l₁ <;> cases l₂ <;> simp at hl₁ hl₂
+  case yield.yield op₁ inputVals₁ outputVals₁ op₂ inputVals₂ outputVals₂ =>
+    cases hstep₁ with | step hguard₁ hstep₁ =>
+    cases hguard₁ with | spec_yield =>
+    cases hstep₂ with | step hguard₂ hstep₂ =>
+    cases hguard₂ with | spec_yield =>
+    cases hstep₂' with | step hguard₂' hstep₂' =>
+    cases hguard₂' with | triv_yield =>
+    rename_i tok₁ tok₂
+    cases hstep₁ with | step_op hmem₁ hpop₁ =>
+    rename_i chans₁ inputs₁ outputs₁
+    cases hstep₂ with | step_op hmem₂ hpop₂ =>
+    rename_i chans₂ inputs₂ outputs₂
+    cases hstep₂' with | step_op hmem₂' hpop₂' =>
+    rename_i chans₂' inputs₂' outputs₂'
+    simp at hmem₁ hmem₂ hmem₂'
+    simp at hpop₁ hpop₂ hpop₂'
+
+    sorry
+  all_goals sorry
 
 /--
 If there is a guarded τ trace from `s` to a final state `s₁`,
@@ -1490,6 +1513,75 @@ theorem proc_unguarded_to_guarded
         apply htr
         simp [hl]) hstep₂₁
       exact proc_unguarded_to_guarded_single proc hstep₁ hstep₂₁' hl' hl hstep₂
+
+-- /--
+-- If there is a guarded τ trace from `s` to a final state `s₁`,
+-- then we can turn any *unguarded* τ step from `s` to `s₂`,
+-- into a guarded τ step, modulo potentially different ghost tokens.
+-- -/
+-- theorem proc_unguarded_to_guarded
+--   [Arity Op] [PCM T] [PCM.Lawful T]
+--   [DecidableEq χ]
+--   [InterpConsts V]
+--   {opSpec : OpSpec Op V T}
+--   {opInterp : OpInterp Op V}
+--   {ioSpec : IOSpec V T m n}
+--   (proc : ProcWithSpec opSpec χ m n)
+--   (hdet : opInterp.Deterministic)
+--   {s s₁ s₂ : proc.semantics.S × opInterp.S}
+--   (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar .τ s s₁)
+--   (hterm : proc.semantics.IsFinalFor (λ l => l.isYield ∨ l.isSilent) s₁.1)
+--   (hstep₂ : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.Step s .τ s₂) :
+--     ∃ s₂',
+--       ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.Step s .τ s₂' ∧
+--       Config.EqMod EqModGhost s₂'.1 s₂.1 ∧
+--       s₂'.2 = s₂.2
+--   := by
+--   induction htrace₁
+--     using Lts.TauStar.reverse_induction
+--     generalizing s₂ with
+--   | refl =>
+--     match hstep₂ with
+--     | .step_tau hstep₂ =>
+--       cases hstep₂ with | step hguard hstep₂ =>
+--       cases hguard <;> exact False.elim (hterm (by simp) hstep₂)
+--     | .step_yield hstep₂ _ =>
+--       cases hstep₂ with | step hguard hstep₂ =>
+--       cases hguard
+--       exact False.elim (hterm (by simp) hstep₂)
+--   | head hstep₁ htail₁ ih =>
+--     rename_i s' s s₂'
+--     have haff : s.1.proc.AffineChan := sorry
+--     -- have hstep₁' := hstep₁.map_step (Guard.map_guard OpSpec.spec_guard_implies_triv_guard)
+--     cases hstep₁ <;> cases hstep₂
+--     -- TODO: These cases are almost the same, refactor
+--     case step_tau.step_tau c c₁ t hstep₁' c₂ hstep₂ =>
+--       have := Guard.map_guard OpSpec.spec_guard_implies_triv_guard hstep₁'
+--       have hconfl := proc_guard_triv_strong_confl_at_mod proc _ haff this hstep₂
+--         (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
+--       cases hconfl with
+--       | inl heq =>
+--         exists (c₁, t)
+--         constructor
+--         · exact .step_tau hstep₁'
+--         · simp [heq.2]
+--       | inr h =>
+--         have ⟨c₁', c₂', hstep₁₂, hstep₂₁, heq⟩ := h
+--         have ⟨s₁', htail₁', heq'⟩ := ih (.step_tau hstep₁₂)
+--         have := proc_unguarded_to_guarded_single proc
+--           hstep₁' htail₁'
+--         -- have ⟨s₂', htail₁', heq''⟩ := proc_unguarded_steps_congr_mod_ghost
+--         --   (s₁ := (_, _)) (s₁' := (_, _)) proc htail₁'
+--         --   ⟨heq, rfl⟩
+--         -- exists s₂'
+--         -- constructor
+--         -- · exact htail₁'.prepend (.step_tau hstep₂₁)
+--         -- · simp [heq', heq'']
+--         --   simp [interpret, Semantics.guard, Proc.semantics] at *
+--         --   exact IsTrans.trans _ _ _ heq'.1 heq''.1
+--         sorry
+
+--     all_goals sorry
 
 theorem proc_guarded_termination
   [Arity Op] [PCM T] [PCM.Lawful T]
