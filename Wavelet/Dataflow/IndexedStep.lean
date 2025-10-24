@@ -173,4 +173,83 @@ theorem Config.IndexedStep.iff_step_yield_or_tau
     intros _ h
     apply Config.IndexedStep.from_step_yield_or_tau h.1 h.2
 
+theorem Config.IndexedStep.unique_index
+  [Arity Op] [DecidableEq χ]
+  [InterpConsts V]
+  {c c₁ c₂ : Config Op χ V m n}
+  {l : IndexedLabel Op V}
+  (hstep₁ : Config.IndexedStep c (i, l) c₁)
+  (hstep₂ : Config.IndexedStep c (i, l) c₂) :
+    c₁ = c₂
+  := by
+  cases hstep₁ <;> rename_i hget₁ <;>
+  cases hstep₂ <;> rename_i hget₂ _
+  all_goals simp [hget₁] at hget₂
+  case step_op.step_op =>
+    rename_i hpop₁ _ _ _ _ _ hpop₂
+    have ⟨h₁, h₂⟩ := hget₂
+    subst h₁; subst h₂
+    simp [hpop₁] at hpop₂
+    subst hpop₂
+    rfl
+  case step_async.step_async =>
+    rename_i aop _ _ _ inputs₁ inputVals₁ outputs₁ outputVals₁ _ hinterp₁ hpop₁ _ _ _ _ _ _
+      inputs₂ inputVals₂ outputs₂ outputVals₂ _ hpop₂ hi hget₂
+    rename_i hinterp₂
+    simp [hget₁] at hget₂
+    have ⟨h₁, h₂⟩ := hget₂
+    subst h₁; subst h₂
+    have := async_op_interp_det_inputs_len hinterp₁ hinterp₂
+    simp at this
+    subst this
+    cases aop with
+    | merge =>
+      generalize hinputs₁' : inputs₁.toList = inputs₁'
+      generalize hinputs₂' : inputs₂.toList = inputs₂'
+      generalize houtputs₁' : outputs₁.toList = outputs₁'
+      generalize houtputs₂' : outputs₂.toList = outputs₂'
+      generalize hinputVals₁' : inputVals₁.toList = inputVals₁'
+      generalize hinputVals₂' : inputVals₂.toList = inputVals₂'
+      generalize houtputVals₁' : outputVals₁.toList = outputVals₁'
+      generalize houtputVals₂' : outputVals₂.toList = outputVals₂'
+      rw [hinputs₁', hinputVals₁', houtputs₁', houtputVals₁'] at hinterp₁
+      rw [hinputs₂', hinputVals₂', houtputs₂', houtputVals₂'] at hinterp₂
+      cases hinterp₁ <;> cases hinterp₂
+      all_goals
+        have := pop_vals_eq_head hinputs₁' hinputs₂' hpop₁ hpop₂
+        simp [hinputVals₁', hinputVals₂'] at this
+        subst this
+      case merge.interp_merge_true.interp_merge_true |
+        merge.interp_merge_false.interp_merge_false =>
+        simp [← houtputs₁'] at houtputs₂'
+        have ⟨h₁, h₂⟩ := Vector.toList_inj_heq houtputs₂'
+        subst h₁; subst h₂
+        simp [← hinputs₁'] at hinputs₂'
+        have := Vector.toList_inj.mp hinputs₂'
+        subst this
+        simp [hpop₁] at hpop₂
+        have ⟨h₁, h₂⟩ := hpop₂
+        subst h₁; subst h₂
+        simp [hinputVals₁'] at hinputVals₂'
+        subst hinputVals₂'
+        simp [← houtputVals₁'] at houtputVals₂'
+        have := Vector.toList_inj.mp houtputVals₂'
+        subst this
+        rfl
+      all_goals grind only
+    | _ =>
+      have heq_inputs := async_op_interp_det_inputs_except_merge hinterp₁ hinterp₂ (by simp)
+      have := Vector.toList_inj.mp heq_inputs
+      subst this
+      simp [hpop₁] at hpop₂
+      have ⟨h₁, h₂⟩ := hpop₂
+      subst h₁; subst h₂
+      have ⟨h₁, h₂, h₃⟩ := async_op_interp_det_outputs hinterp₁ hinterp₂ rfl rfl
+      have ⟨h₁, h₁'⟩ := Vector.toList_inj_heq h₁
+      subst h₁; subst h₁'
+      replace h₂ := Vector.toList_inj.mp h₂
+      subst h₂
+      subst h₃
+      rfl
+
 end Wavelet.Dataflow

@@ -335,6 +335,18 @@ theorem async_op_interp_det_inputs_len
   any_goals grind only [List.length_cons, = List.length_drop,
     = List.length_take, = Nat.min_def, cases Or, List.length]
 
+theorem async_op_interp_det_inputs_except_merge
+  [InterpConsts V]
+  {aop aop₁' aop₂' : AsyncOp V}
+  (hinterp₁ : aop.Interp (.mk allInputs allOutputs₁ inputs₁ inputVals₁ outputs₁ outputVals₁) aop₁')
+  (hinterp₂ : aop.Interp (.mk allInputs allOutputs₂ inputs₂ inputVals₂ outputs₂ outputVals₂) aop₂')
+  (hne_merge : ∀ {k}, aop ≠ .merge k) :
+    inputs₁ = inputs₂
+  := by
+  cases hinterp₁ <;> cases hinterp₂
+  any_goals simp at hne_merge
+  all_goals rfl
+
 /-- Inputs read in each async op is a sublist of the total input list. -/
 theorem async_op_interp_input_sublist
   [InterpConsts V]
