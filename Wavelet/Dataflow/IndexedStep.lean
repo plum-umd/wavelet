@@ -268,4 +268,19 @@ theorem Config.IndexedStep.unique_index_alt
   cases l <;> simp [Label.IsYieldOrSilentAndDet, Label.Deterministic] at hl ⊢
   grind only
 
+theorem Config.IndexedStep.same_label_kind
+  [Arity Op] [DecidableEq χ]
+  [InterpConsts V]
+  {c c₁ c₂ c₃ : Config Op χ V m n}
+  {l₁ l₂ l₃ : Label Op V m n}
+  (hstep₁ : Config.IndexedStep c (i, l₁) c₁)
+  (hstep₂ : Config.IndexedStep c₁ (j, l₂) c₂)
+  (hstep₃ : Config.IndexedStep c (j, l₃) c₃) :
+    l₂.isYield ↔ l₃.isYield
+  := by
+  cases hstep₁ <;> cases hstep₂ <;> cases hstep₃
+  any_goals simp
+  any_goals grind only [= List.length_set, =_ Vector.toList_toArray,
+    = List.getElem_set, cases Or]
+
 end Wavelet.Dataflow

@@ -1534,6 +1534,14 @@ theorem proc_guarded_step_to_indexed_guarded_step
     have ⟨i, hstep'⟩ := Config.IndexedStep.from_step_tau hstep
     exact ⟨i, Lts.Guard.step (.idx_guard .spec_tau) hstep'⟩
 
+-- hpop₁ : ChanMap.popVals inputs✝¹ s.chans =
+--   some ((Vector.map Sum.inl inputs✝³).push (Sum.inr (opSpec.pre o✝¹ inputs✝³)), chans'✝²)
+-- hpop₂' : ChanMap.popVals inputs✝ s.chans = some ((Vector.map Sum.inl inputs✝²).push (Sum.inr tok₁✝), chans'✝)
+-- hpop₂ : ChanMap.popVals inputs✝
+--     (ChanMap.pushVals outputs✝¹ ((Vector.map Sum.inl outputs✝³).push (Sum.inr (opSpec.post o✝¹ inputs✝³ outputs✝³)))
+--       chans'✝²) =
+--   some ((Vector.map Sum.inl inputs✝²).push (Sum.inr (opSpec.pre o✝ inputs✝²)), chans'✝¹)
+
 /-- Base case of `proc_unguarded_to_guarded`. -/
 theorem proc_unguarded_to_guarded_single_alt
   [Arity Op] [PCM T] [PCM.Lawful T]
@@ -1590,21 +1598,84 @@ theorem proc_unguarded_to_guarded_single_alt
       any_goals
         have := Config.IndexedStep.unique_index hstep₁ hstep₂'
         simp [Label.IsYieldOrSilentAndDet, Label.Deterministic] at this
-  · cases l₁ <;> cases l₂
-      <;> cases hstep₁ with | step hguard₁ hstep₁
-      <;> cases hstep₂ with | step hguard₂ hstep₂
-      <;> cases hstep₂' with | step hguard₂' hstep₂'
-      -- <;> cases hguard₁
-      -- <;> cases hguard₂
-      -- <;> cases hguard₂'
-      -- <;> cases hstep₁ with | _ _ hget₁ hpop₁
-      -- <;> cases hstep₂ with | _ _ hget₂ hpop₂
-      -- <;> cases hstep₂' with | _ _ hget₂' hpop
-    · cases hguard₁
-      cases hguard₂
-      cases hguard₂'
-
-      sorry
+  · cases l₁ <;> cases l₂ <;> simp at hl₁ hl₂
+    case neg.yield.yield =>
+      cases hstep₁ with | step hguard₁ hstep₁
+      cases hstep₂ with | step hguard₂ hstep₂
+      cases hstep₂' with | step hguard₂' hstep₂'
+      rcases hguard₁ with ⟨⟨hguard₁⟩⟩
+      rcases hguard₂ with ⟨⟨hguard₂⟩⟩
+      rcases hguard₂' with ⟨⟨hguard₂'⟩⟩
+      cases hstep₁ with | step_op _ hget₁ hpop₁
+      cases hstep₂ with | step_op _ hget₂ hpop₂
+      cases hstep₂' with | step_op _ hget₂' hpop₂'
+      simp [hget₂'] at hget₂
+      have ⟨h₁, h₂⟩ := hget₂
+      subst h₁; subst h₂
+      simp at hpop₂
+      have hdisj_inputs := haff.atom_inputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
+      have hdisj_outputs := haff.atom_outputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
+      simp [hget₂', hget₁, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
+      have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂'
+      rw [pop_vals_push_vals_commute hpop₁₂] at hpop₂
+      simp at hpop₂
+      have ⟨h₁, h₂⟩ := hpop₂
+      simp [Vector.push_eq_push] at h₁ h₂
+      simp [h₁] at hpop₂'
+      exact ⟨_, .step
+        (.idx_guard .spec_yield)
+        (.step_op (by assumption) hget₂' hpop₂')⟩
+    case neg.yield.τ =>
+      cases hstep₁ with | step hguard₁ hstep₁
+      cases hstep₂ with | step hguard₂ hstep₂
+      cases hstep₂' with | step hguard₂' hstep₂'
+      cases hguard₁ with | _ hguard₁
+      cases hguard₂ with | _ hguard₂
+      cases hguard₂' with | _ hguard₂'
+      -- Some cases are not possible since hstep₂ and hstep₂' must be both
+      -- join or both async op.
+      have hl := Config.IndexedStep.same_label_kind hstep₁ hstep₂ hstep₂'
+      (cases hguard₁; cases hguard₂) <;> cases hguard₂' <;> simp at hl
+      case spec_yield.spec_tau.triv_tau =>
+        cases hstep₁ with | step_op _ hget₁ hpop₁
+        cases hstep₂ with | step_async _ hget₂ hinterp₂ hpop₂
+        cases hstep₂' with | step_async _ hget₂' hinterp₂' hpop₂'
+        simp [hget₂'] at hget₂
+        have ⟨h₁, h₂, h₃⟩ := hget₂
+        subst h₁; subst h₂; subst h₃
+        simp at hpop₂
+        have hdisj_inputs := haff.atom_inputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
+        have hdisj_outputs := haff.atom_outputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
+        simp [hget₂', hget₁, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
+        have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
+          (by sorry) hpop₁ hpop₂'
+        -- TODO: need to prove that the input channels of async ops are the same
+        -- rw [pop_vals_push_vals_commute hpop₁₂] at hpop₂
+        sorry
+      case spec_yield.spec_join.triv_join =>
+        cases hstep₁ with | step_op _ hget₁ hpop₁
+        cases hstep₂ with | step_op _ hget₂ hpop₂
+        cases hstep₂' with | step_op _ hget₂' hpop₂'
+        simp [hget₂'] at hget₂
+        have ⟨⟨h₁₁, h₁₂, h₁₃⟩, h₂, h₃⟩ := hget₂
+        subst h₁₁; subst h₁₂; subst h₁₃; subst h₂; subst h₃
+        simp at hpop₂
+        have hdisj_inputs := haff.atom_inputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
+        have hdisj_outputs := haff.atom_outputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
+        simp [hget₂', hget₁, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
+        have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂'
+        rw [pop_vals_push_vals_commute hpop₁₂] at hpop₂
+        simp at hpop₂
+        have ⟨h₁, h₂⟩ := hpop₂
+        have ⟨h₁₁, h₁₂⟩ := Vector.append_inj h₁
+        have := Vector.inj_map (by simp [Function.Injective]) h₁₁
+        subst this
+        have := Vector.inj_map (by simp [Function.Injective]) h₁₂
+        subst this
+        simp [h₁] at hpop₂'
+        exact ⟨_, .step
+          (.idx_guard (.spec_join (by assumption) (by assumption) (by assumption)))
+          (.step_op (by assumption) hget₂' hpop₂')⟩
     all_goals sorry
 
 /--

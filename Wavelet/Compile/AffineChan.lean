@@ -40,4 +40,15 @@ theorem Proc.AffineChan.atom_inputs_disjoint
   have ⟨_, _, hatoms, _, _⟩ := haff
   exact (hatoms.2 i j hne).1
 
+theorem Proc.AffineChan.atom_outputs_disjoint
+  [Arity Op]
+  {proc : Proc Op χ V m n}
+  (haff : proc.AffineChan)
+  (i j : Fin proc.atoms.length)
+  (hne : i ≠ j) :
+    proc.atoms[i].outputs.Disjoint proc.atoms[j].outputs
+  := by
+  have ⟨_, _, hatoms, _, _⟩ := haff
+  exact (hatoms.2 i j hne).2
+
 end Wavelet.Dataflow
