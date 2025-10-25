@@ -4,6 +4,7 @@ import Mathlib.Logic.Basic
 import Wavelet.Semantics
 import Wavelet.Seq
 import Wavelet.Dataflow
+import Wavelet.Dataflow.IndexedStep
 import Wavelet.Compile
 
 namespace Wavelet.Semantics
@@ -226,6 +227,12 @@ def Proc.mapTokens
     atoms := proc.atoms.mapTokens hom,
   }
 
+inductive IndexedGuard
+  [Arity Op] [Arity Op']
+  (P : Label Op (V ⊕ T) (m + 1) (n + 1) → Label Op' V m n → Prop) :
+    Nat × Label Op (V ⊕ T) (m + 1) (n + 1) → Nat × Label Op' V m n → Prop where
+  | idx_guard : P l l' → IndexedGuard P (i, l) (i, l')
+
 end Wavelet.Dataflow
 
 namespace Wavelet.Compile
@@ -264,71 +271,6 @@ open Semantics Seq Dataflow
 --   proc.semantics.guard (opSpec.Guard ioSpec)
 --     ≲ᵣ (eraseGhost proc).semantics
 --   := sorry
-
-/-- A constraint on two yield labels that if their
-operator and inputs match, the outputs should match. -/
-def Label.Deterministic
-  [Arity Op]
-  {V : Type v} {m n}
-  (l₁ l₂ : Label Op V m n) : Prop :=
-    ∀ {op inputVals outputVals₁ outputVals₂},
-      l₁ = .yield op inputVals outputVals₁ →
-      l₂ = .yield op inputVals outputVals₂ →
-      outputVals₁ = outputVals₂
-
-/-- A constraint on two yield labels that if their
-operator and inputs match, the outputs should match. -/
-def Label.DeterministicMod
-  [Arity Op]
-  {V : Type v} {m n}
-  (EqV : V → V → Prop)
-  (l₁ l₂ : Label Op V m n) : Prop :=
-    ∀ {op inputVals outputVals₁ outputVals₂},
-      l₁ = .yield op inputVals outputVals₁ →
-      l₂ = .yield op inputVals outputVals₂ →
-      List.Forall₂ EqV outputVals₁.toList outputVals₂.toList
-
-@[simp]
-theorem Label.DeterministicMod.eq_eq
-  [Arity Op] {l₁ l₂ : Label Op V m n} :
-    Label.DeterministicMod Eq l₁ l₂ ↔ Label.Deterministic l₁ l₂
-  := by
-  constructor
-  · intros h
-    simp [Label.Deterministic]
-    simp [Label.DeterministicMod] at h
-    intros _ _ _ _ h₁ h₂
-    apply Vector.toList_inj.mp
-    apply h h₁ h₂
-  · intros h
-    simp [Label.DeterministicMod]
-    simp [Label.Deterministic] at h
-    intros _ _ _ _ h₁ h₂
-    apply Vector.toList_inj.mpr
-    apply h h₁ h₂
-
-/-- If two labels are either yield or silent and are deterministic (mod `EqV`). -/
-def Label.IsYieldOrSilentAndDetMod
-  [Arity Op] (EqV : V → V → Prop)
-  (l₁ : Label Op V m n) (l₂ : Label Op V m n) : Prop :=
-  (l₁.isYield ∨ l₁.isSilent) ∧
-  (l₂.isYield ∨ l₂.isSilent) ∧
-  Label.DeterministicMod EqV l₁ l₂
-
-def Label.IsYieldOrSilentAndDet
-  [Arity Op]
-  (l₁ : Label Op V m n) (l₂ : Label Op V m n) : Prop :=
-  (l₁.isYield ∨ l₁.isSilent) ∧
-  (l₂.isYield ∨ l₂.isSilent) ∧
-  Label.Deterministic l₁ l₂
-
-@[simp]
-theorem Label.IsYieldOrSilentAndDetMod.eq_eq
-  [Arity Op] {l₁ l₂ : Label Op V m n} :
-    Label.IsYieldOrSilentAndDetMod Eq l₁ l₂ ↔ Label.IsYieldOrSilentAndDet l₁ l₂
-  := by
-  simp only [Label.IsYieldOrSilentAndDetMod, Label.IsYieldOrSilentAndDet]
-  simp
 
 def Label.EqMod
   [Arity Op]
@@ -1457,6 +1399,213 @@ theorem proc_unguarded_to_guarded_single
 
     sorry
   all_goals sorry
+
+theorem proc_indexed_guarded_step_unique_label
+  [Arity Op] [PCM T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  (opSpec : OpSpec Op V T)
+  (ioSpec : IOSpec V T m n)
+  {s s₁ s₂ : Dataflow.Config (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)}
+  {l₁ l₂ : Label Op V m n}
+  (hstep₁ : (Config.IndexedStep.Guard (IndexedGuard (opSpec.Guard ioSpec))).Step s (i, l₁) s₁)
+  (hstep₂ : (Config.IndexedStep.Guard (IndexedGuard (opSpec.Guard ioSpec))).Step s (i, l₂) s₂)
+  (hdet : Label.IsYieldOrSilentAndDet l₁ l₂) :
+    l₁ = l₂
+  := by
+    cases hstep₁ with | step hguard₁ hstep₁
+    cases hstep₂ with | step hguard₂ hstep₂
+    cases hguard₁ with | _ hguard₁
+    cases hguard₂ with | _ hguard₂
+    case step.step.idx_guard.idx_guard =>
+    cases hguard₁ <;> cases hguard₂
+      <;> simp [Label.IsYieldOrSilentAndDet] at hdet
+    case spec_yield.spec_yield =>
+      have := Config.IndexedStep.unique_index hstep₁ hstep₂
+        (by
+          constructor; simp
+          constructor; simp
+          intros op inputVals outputVals₁ outputVals₂ hyield₁ hyield₂
+          simp at hyield₁ hyield₂
+          have ⟨h₁, h₂, h₃⟩ := hyield₁
+          have ⟨h₁', h₂', h₃'⟩ := hyield₂
+          simp [← h₁] at h₁'
+          subst h₁'
+          have := HEq.trans h₂ h₂'.symm
+          simp [Vector.push_eq_push] at this
+          replace this := Vector.inj_map (by simp [Function.Injective]) this.2
+          subst this
+          rename_i outputVals₁' _ outputVals₂'
+          have : outputVals₁' = outputVals₂' := by
+            symm
+            apply hdet
+            all_goals rfl
+          subst this
+          rw [← heq_eq_eq _ _]
+          apply HEq.trans h₃.symm h₃')
+      simp at this
+      have ⟨⟨h₁, h₂, h₃⟩, _⟩ := this
+      subst h₁
+      simp [Vector.push_eq_push] at h₂
+      replace h₂ := Vector.inj_map (by simp [Function.Injective]) h₂.2
+      subst h₂
+      simp [Vector.push_eq_push] at h₃
+      replace h₃ := Vector.inj_map (by simp [Function.Injective]) h₃.2
+      subst h₃
+      rfl
+    any_goals rfl
+    any_goals
+      have := Config.IndexedStep.unique_index hstep₁ hstep₂
+      simp [Label.IsYieldOrSilentAndDet, Label.Deterministic] at this
+
+-- theorem proc_indexed_guarded_step_unique_label_alt
+--   [Arity Op] [PCM T]
+--   [DecidableEq χ]
+--   [InterpConsts V]
+--   (opSpec : OpSpec Op V T)
+--   (ioSpec : IOSpec V T m n)
+--   {s s₁ s₂ : Dataflow.Config (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)}
+--   {l₁ l₂ : IndexedLabel Op V}
+--   (hstep₁ : (Config.IndexedStep.Guard (IndexedGuard (opSpec.Guard ioSpec))).Step s (i, l₁) s₁)
+--   (hstep₂ : (Config.IndexedStep.Guard (IndexedGuard (m := m) (n := n) opSpec.TrivGuard)).Step s (i, l₂) s₂)
+--   (hdet : IndexedLabel.Deterministic l₁ l₂) :
+--     l₁ = l₂
+--   := by
+--     cases hstep₁ with | step hguard₁ hstep₁
+--     cases hstep₂ with | step hguard₂ hstep₂
+--     cases hguard₁ <;> cases hguard₂
+--     case step.step.guard_yield.guard_yield =>
+--       sorry
+--     any_goals rfl
+--     any_goals
+--       rename opSpec.Guard ioSpec _ _ => hguard
+--       cases hguard
+--       have := Config.IndexedStep.unique_index hstep₁ hstep₂
+--       simp [IndexedLabel.Deterministic] at this
+
+/-- Converts an indexed guarded step to a guarded step. -/
+theorem proc_indexed_guarded_step_to_guarded_step
+  [Arity Op] [PCM T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s s' : Dataflow.Config (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)}
+  {l : Label Op V m n}
+  (hl : l.isYield ∨ l.isSilent)
+  (hstep : (Config.IndexedStep.Guard (IndexedGuard (opSpec.Guard ioSpec))).Step s (i, l) s') :
+    Lts.Guard (opSpec.Guard ioSpec) Dataflow.Config.Step s l s'
+  := by
+  cases hstep with | step hguard hstep =>
+  cases hguard with | _ hguard =>
+  cases hguard <;> simp at hl
+  case step.idx_guard.spec_yield =>
+    have := Config.IndexedStep.to_step_yield_or_tau (by simp) hstep
+    exact Lts.Guard.step .spec_yield this
+  case step.idx_guard.spec_join h₁ h₂ h₃ =>
+    have := Config.IndexedStep.to_step_yield_or_tau (by simp) hstep
+    exact Lts.Guard.step (.spec_join h₁ h₂ h₃) this
+  case step.idx_guard.spec_tau =>
+    have := Config.IndexedStep.to_step_yield_or_tau (by simp) hstep
+    exact Lts.Guard.step .spec_tau this
+
+/-- Converts a guarded step to an indexed guarded step. -/
+theorem proc_guarded_step_to_indexed_guarded_step
+  [Arity Op] [PCM T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s s' : Dataflow.Config (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)}
+  {l : Label Op V m n}
+  (hl : l.isYield ∨ l.isSilent)
+  (hstep : Lts.Guard (opSpec.Guard ioSpec) Dataflow.Config.Step s l s') :
+    ∃ i, (Config.IndexedStep.Guard (IndexedGuard (opSpec.Guard ioSpec))).Step s (i, l) s'
+  := by
+  cases hstep with | step hguard hstep
+  cases hguard <;> simp at hl
+  case step.spec_yield =>
+    have ⟨i, hstep'⟩ := Config.IndexedStep.from_step_yield hstep
+    exact ⟨i, Lts.Guard.step (.idx_guard .spec_yield) hstep'⟩
+  case step.spec_join h₁ h₂ h₃ =>
+    have ⟨i, hstep'⟩ := Config.IndexedStep.from_step_yield hstep
+    exact ⟨i, Lts.Guard.step (.idx_guard (.spec_join h₁ h₂ h₃)) hstep'⟩
+  case step.spec_tau =>
+    have ⟨i, hstep'⟩ := Config.IndexedStep.from_step_tau hstep
+    exact ⟨i, Lts.Guard.step (.idx_guard .spec_tau) hstep'⟩
+
+/-- Base case of `proc_unguarded_to_guarded`. -/
+theorem proc_unguarded_to_guarded_single_alt
+  [Arity Op] [PCM T] [PCM.Lawful T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s s₁ s₁' s₂ : Dataflow.Config (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)}
+  {l₁ l₂ : Label Op V m n}
+  (hl₁ : l₁.isYield ∨ l₁.isSilent)
+  (hl₂ : l₂.isYield ∨ l₂.isSilent)
+  (hstep₁ : (Config.IndexedStep.Guard (IndexedGuard (opSpec.Guard ioSpec))).Step s (i, l₁) s₁)
+  (hstep₂ : (Config.IndexedStep.Guard (IndexedGuard (opSpec.Guard ioSpec))).Step s₁ (j, l₂) s₂)
+  (hstep₂' : (Config.IndexedStep.Guard (IndexedGuard (m := m) (n := n) opSpec.TrivGuard)).Step
+    s (j, l₂) s₁')
+  (haff : s.proc.AffineChan) :
+    ∃ s₁'',
+      (Config.IndexedStep.Guard (IndexedGuard (opSpec.Guard ioSpec))).Step s (j, l₂) s₁''
+  := by
+  by_cases hij : i = j
+  · subst hij
+    by_cases heq_label : l₁ = l₂
+    · subst heq_label
+      exact ⟨_, hstep₁⟩
+    · cases hstep₁ with | step hguard₁ hstep₁
+      cases hstep₂' with | step hguard₂ hstep₂'
+      case neg.step.step =>
+      cases hguard₁ with | _ hguard₁ =>
+      cases hguard₂ with | _ hguard₂ =>
+      cases hguard₁ <;> cases hguard₂ <;> simp at heq_label
+      case idx_guard.idx_guard.spec_yield.triv_yield =>
+        -- NOTE: allowing yield to be non-deterministic here
+        rename_i op inputVals₂ outputVals₂ _
+        cases hstep₁ with | step_op _ hget₁ hpop₁ =>
+        rename_i inputs₁ outputs₁
+        cases hstep₂' with | step_op hi hget₂ hpop₂ =>
+        rename_i inputs₂ outputs₂
+        simp [hget₂] at hget₁
+        have ⟨h₁, h₂, h₃⟩ := hget₁
+        subst h₁; subst h₂; subst h₃
+        simp [hpop₁] at hpop₂
+        have ⟨h₁, _⟩ := hpop₂
+        simp [Vector.push_eq_push] at h₁
+        replace h₁ := Vector.inj_map (by simp [Function.Injective]) h₁.2
+        subst h₁
+        exact ⟨_,
+          by
+            apply Lts.Guard.step
+            · apply IndexedGuard.idx_guard
+              apply OpSpec.Guard.spec_yield
+            · exact .step_op hi hget₂ hpop₁
+        ⟩
+      any_goals simp at hl₁ hl₂
+      any_goals
+        have := Config.IndexedStep.unique_index hstep₁ hstep₂'
+        simp [Label.IsYieldOrSilentAndDet, Label.Deterministic] at this
+  · cases l₁ <;> cases l₂
+      <;> cases hstep₁ with | step hguard₁ hstep₁
+      <;> cases hstep₂ with | step hguard₂ hstep₂
+      <;> cases hstep₂' with | step hguard₂' hstep₂'
+      -- <;> cases hguard₁
+      -- <;> cases hguard₂
+      -- <;> cases hguard₂'
+      -- <;> cases hstep₁ with | _ _ hget₁ hpop₁
+      -- <;> cases hstep₂ with | _ _ hget₂ hpop₂
+      -- <;> cases hstep₂' with | _ _ hget₂' hpop
+    · cases hguard₁
+      cases hguard₂
+      cases hguard₂'
+
+      sorry
+    all_goals sorry
 
 /--
 If there is a guarded τ trace from `s` to a final state `s₁`,

@@ -7,17 +7,13 @@ namespace Wavelet.Dataflow
 
 open Semantics
 
-inductive IndexedLabel Op V [Arity Op] where
-  | yield (op : Op) (inputs : Vector V (Arity.ι op)) (outputs : Vector V (Arity.ω op))
-  | internal (aop : AsyncOp V)
-
 /-- Steps a configuration by firing an atomic process at a particular index.
 This is almost same as the main stepping relation `Config.Step`, but adds more
 information to the label. -/
 inductive Config.IndexedStep
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
-  : Lts (Config Op χ V m n) (Nat × IndexedLabel Op V) where
+  : Lts (Config Op χ V m n) (Nat × Label Op V m n) where
   | step_op
     {c : Config Op χ V _ _}
     {op}
@@ -46,7 +42,7 @@ inductive Config.IndexedStep
       inputs.toList inputVals.toList
       outputs.toList outputVals.toList) aop' →
     c.chans.popVals inputs = some (inputVals, chans') →
-    IndexedStep c (i, .internal aop) { c with
+    IndexedStep c (i, .τ) { c with
       proc := { c.proc with
         atoms := c.proc.atoms.set i (.async aop' allInputs allOutputs),
       },
@@ -101,8 +97,8 @@ theorem Config.IndexedStep.to_step_tau
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
   {c c' : Config Op χ V m n}
-  {i : Nat} {aop : AsyncOp V}
-  (hstep : Config.IndexedStep c (i, .internal aop) c') :
+  {i : Nat}
+  (hstep : Config.IndexedStep c (i, .τ) c') :
     Config.Step c .τ c'
   := by
   cases hstep with | step_async hi hget hinterp hpop =>
@@ -113,21 +109,21 @@ theorem Config.IndexedStep.from_step_tau
   [InterpConsts V]
   {c c' : Config Op χ V m n}
   (hstep : Config.Step c .τ c') :
-    ∃ i aop, Config.IndexedStep c (i, .internal aop) c'
+    ∃ i, Config.IndexedStep c (i, .τ) c'
   := by
   cases hstep with | step_async hi hget hinterp hpop =>
-  exact ⟨_, _, .step_async hi hget hinterp hpop⟩
+  exact ⟨_, .step_async hi hget hinterp hpop⟩
 
 theorem Config.IndexedStep.iff_step_tau
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
   {c c' : Config Op χ V m n} :
-    (∃ i aop, Config.IndexedStep c (i, .internal aop) c') ↔
+    (∃ i, Config.IndexedStep c (i, .τ) c') ↔
     Config.Step c .τ c'
   := by
   constructor
   · simp only [forall_exists_index]
-    intros i aop
+    intros i
     apply Config.IndexedStep.to_step_tau
   · exact Config.IndexedStep.from_step_tau
 
@@ -138,67 +134,73 @@ theorem Config.IndexedStep.from_step_yield_or_tau
   {l : Label Op V m n}
   (hl : l.isYield ∨ l.isSilent)
   (hstep : Config.Step c l c') :
-    ∃ i l', Config.IndexedStep c (i, l') c'
+    ∃ i, Config.IndexedStep c (i, l) c'
   := by
   cases l <;> simp at hl
   · have ⟨i, hstep'⟩ := Config.IndexedStep.from_step_yield hstep
-    exact ⟨i, _, hstep'⟩
-  · have ⟨i, _, hstep'⟩ := Config.IndexedStep.from_step_tau hstep
-    exact ⟨i, _, hstep'⟩
+    exact ⟨i, hstep'⟩
+  · have ⟨i, hstep'⟩ := Config.IndexedStep.from_step_tau hstep
+    exact ⟨i, hstep'⟩
 
 theorem Config.IndexedStep.to_step_yield_or_tau
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
   {c c' : Config Op χ V m n}
-  {l : IndexedLabel Op V}
+  {l : Label Op V m n}
+  (hl : l.isYield ∨ l.isSilent)
   (hstep : Config.IndexedStep c (i, l) c') :
-    ∃ l', (l'.isYield ∨ l'.isSilent) ∧ Config.Step c l' c'
+    Config.Step c l c'
   := by
-  cases l
-  · exact ⟨_, by simp, Config.IndexedStep.to_step_yield hstep⟩
-  · exact ⟨_, by simp, Config.IndexedStep.to_step_tau hstep⟩
+  cases l <;> simp at hl
+  · exact Config.IndexedStep.to_step_yield hstep
+  · exact Config.IndexedStep.to_step_tau hstep
 
 theorem Config.IndexedStep.iff_step_yield_or_tau
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
-  {c c' : Config Op χ V m n} :
-    (∃ i l', Config.IndexedStep c (i, l') c') ↔
-    (∃ l', (l'.isYield ∨ l'.isSilent) ∧ Config.Step c l' c')
+  {c c' : Config Op χ V m n}
+  {l : Label Op V m n}
+  (hl : l.isYield ∨ l.isSilent) :
+    (∃ i, Config.IndexedStep c (i, l) c') ↔ Config.Step c l c'
   := by
   constructor
-  · simp only [forall_exists_index]
-    intros _ _
-    apply Config.IndexedStep.to_step_yield_or_tau
-  · simp only [forall_exists_index]
-    intros _ h
-    apply Config.IndexedStep.from_step_yield_or_tau h.1 h.2
+  · intros h
+    have ⟨i, h⟩ := h
+    exact Config.IndexedStep.to_step_yield_or_tau hl h
+  · intros h
+    apply Config.IndexedStep.from_step_yield_or_tau hl h
 
 theorem Config.IndexedStep.unique_index
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
   {c c₁ c₂ : Config Op χ V m n}
-  {l : IndexedLabel Op V}
-  (hstep₁ : Config.IndexedStep c (i, l) c₁)
-  (hstep₂ : Config.IndexedStep c (i, l) c₂) :
-    c₁ = c₂
+  {l₁ l₂ : Label Op V m n}
+  (hstep₁ : Config.IndexedStep c (i, l₁) c₁)
+  (hstep₂ : Config.IndexedStep c (i, l₂) c₂)
+  (hdet : Label.IsYieldOrSilentAndDet l₁ l₂) :
+    l₁ = l₂ ∧ c₁ = c₂
   := by
   cases hstep₁ <;> rename_i hget₁ <;>
-  cases hstep₂ <;> rename_i hget₂ _
+  cases hstep₂ <;> rename_i hget₂
   all_goals simp [hget₁] at hget₂
   case step_op.step_op =>
-    rename_i hpop₁ _ _ _ _ _ hpop₂
-    have ⟨h₁, h₂⟩ := hget₂
-    subst h₁; subst h₂
+    rename_i hpop₁ _ _ _ _ _ _ _ hpop₂ _
+    have ⟨h₁, h₂, h₃⟩ := hget₂
+    subst h₁; subst h₂; subst h₃
     simp [hpop₁] at hpop₂
-    subst hpop₂
-    rfl
-  case step_async.step_async =>
-    rename_i aop _ _ _ inputs₁ inputVals₁ outputs₁ outputVals₁ _ hinterp₁ hpop₁ _ _ _ _ _ _
-      inputs₂ inputVals₂ outputs₂ outputVals₂ _ hpop₂ hi hget₂
-    rename_i hinterp₂
-    simp [hget₁] at hget₂
-    have ⟨h₁, h₂⟩ := hget₂
+    have ⟨h₁, h₂⟩ := hpop₂
     subst h₁; subst h₂
+    simp [Label.IsYieldOrSilentAndDet] at hdet
+    constructor
+    all_goals
+      congr
+      apply hdet
+      all_goals rfl
+  case step_async.step_async =>
+    rename_i aop _ _ _ inputs₁ inputVals₁ outputs₁ outputVals₁ _ hinterp₁ hpop₁ _ _ _ _ _ _ _
+      inputs₂ inputVals₂ outputs₂ outputVals₂ _ hinterp₂ hpop₂ hget₂
+    have ⟨h₁, h₂, h₃⟩ := hget₂
+    subst h₁; subst h₂; subst h₃
     have := async_op_interp_det_inputs_len hinterp₁ hinterp₂
     simp at this
     subst this
@@ -235,7 +237,7 @@ theorem Config.IndexedStep.unique_index
         simp [← houtputVals₁'] at houtputVals₂'
         have := Vector.toList_inj.mp houtputVals₂'
         subst this
-        rfl
+        exact ⟨rfl, rfl⟩
       all_goals grind only
     | _ =>
       have heq_inputs := async_op_interp_det_inputs_except_merge hinterp₁ hinterp₂ (by simp)
@@ -250,6 +252,20 @@ theorem Config.IndexedStep.unique_index
       replace h₂ := Vector.toList_inj.mp h₂
       subst h₂
       subst h₃
-      rfl
+      exact ⟨rfl, rfl⟩
+
+theorem Config.IndexedStep.unique_index_alt
+  [Arity Op] [DecidableEq χ]
+  [InterpConsts V]
+  {c c₁ c₂ : Config Op χ V m n}
+  {l : Label Op V m n}
+  (hstep₁ : Config.IndexedStep c (i, l) c₁)
+  (hstep₂ : Config.IndexedStep c (i, l) c₂)
+  (hl : l.isYield ∨ l.isSilent) :
+    c₁ = c₂
+  := by
+  apply (Config.IndexedStep.unique_index hstep₁ hstep₂ _).2
+  cases l <;> simp [Label.IsYieldOrSilentAndDet, Label.Deterministic] at hl ⊢
+  grind only
 
 end Wavelet.Dataflow

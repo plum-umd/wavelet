@@ -2,6 +2,7 @@ import Mathlib.Logic.Function.Basic
 import Batteries.Data.List.Basic
 
 import Wavelet.Semantics.Lts
+import Wavelet.Data.Vector
 
 /-! A general framework for defining concurrent semantics parametric
 in a set of uninterpreted `operators`. -/
@@ -55,6 +56,71 @@ def Label.isInput [Arity Op] : Label Op V m n → Bool
 def Label.isYield [Arity Op] : Label Op V m n → Bool
   | .yield _ _ _ => true
   | _ => false
+
+/-- A constraint on two yield labels that if their
+operator and inputs match, the outputs should match. -/
+def Label.Deterministic
+  [Arity Op]
+  {V : Type v} {m n}
+  (l₁ l₂ : Label Op V m n) : Prop :=
+    ∀ {op inputVals outputVals₁ outputVals₂},
+      l₁ = .yield op inputVals outputVals₁ →
+      l₂ = .yield op inputVals outputVals₂ →
+      outputVals₁ = outputVals₂
+
+/-- A constraint on two yield labels that if their
+operator and inputs match, the outputs should match. -/
+def Label.DeterministicMod
+  [Arity Op]
+  {V : Type v} {m n}
+  (EqV : V → V → Prop)
+  (l₁ l₂ : Label Op V m n) : Prop :=
+    ∀ {op inputVals outputVals₁ outputVals₂},
+      l₁ = .yield op inputVals outputVals₁ →
+      l₂ = .yield op inputVals outputVals₂ →
+      List.Forall₂ EqV outputVals₁.toList outputVals₂.toList
+
+@[simp]
+theorem Label.DeterministicMod.eq_eq
+  [Arity Op] {l₁ l₂ : Label Op V m n} :
+    Label.DeterministicMod Eq l₁ l₂ ↔ Label.Deterministic l₁ l₂
+  := by
+  constructor
+  · intros h
+    simp [Label.Deterministic]
+    simp [Label.DeterministicMod] at h
+    intros _ _ _ _ h₁ h₂
+    apply Vector.toList_inj.mp
+    apply h h₁ h₂
+  · intros h
+    simp [Label.DeterministicMod]
+    simp [Label.Deterministic] at h
+    intros _ _ _ _ h₁ h₂
+    apply Vector.toList_inj.mpr
+    apply h h₁ h₂
+
+/-- If two labels are either yield or silent and are deterministic (mod `EqV`). -/
+def Label.IsYieldOrSilentAndDetMod
+  [Arity Op] (EqV : V → V → Prop)
+  (l₁ : Label Op V m n) (l₂ : Label Op V m n) : Prop :=
+  (l₁.isYield ∨ l₁.isSilent) ∧
+  (l₂.isYield ∨ l₂.isSilent) ∧
+  Label.DeterministicMod EqV l₁ l₂
+
+def Label.IsYieldOrSilentAndDet
+  [Arity Op]
+  (l₁ : Label Op V m n) (l₂ : Label Op V m n) : Prop :=
+  (l₁.isYield ∨ l₁.isSilent) ∧
+  (l₂.isYield ∨ l₂.isSilent) ∧
+  Label.Deterministic l₁ l₂
+
+@[simp]
+theorem Label.IsYieldOrSilentAndDetMod.eq_eq
+  [Arity Op] {l₁ l₂ : Label Op V m n} :
+    Label.IsYieldOrSilentAndDetMod Eq l₁ l₂ ↔ Label.IsYieldOrSilentAndDet l₁ l₂
+  := by
+  simp only [Label.IsYieldOrSilentAndDetMod, Label.IsYieldOrSilentAndDet]
+  simp
 
 end Wavelet.Semantics
 
