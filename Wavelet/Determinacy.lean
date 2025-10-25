@@ -182,8 +182,7 @@ def AsyncOp.mapValues
   (f : V₁ → V₂) : AsyncOp V₁ → AsyncOp V₂
   | .switch n => .switch n
   | .steer flavor n => .steer flavor n
-  | .carry state n => .carry state n
-  | .merge n => .merge n
+  | .merge state n => .merge state n
   | .forward n => .forward n
   | .fork n => .fork n
   | .const c n => .const (f c) n
@@ -515,54 +514,24 @@ theorem proc_strong_confl_at_mod
         have ⟨h₁, h₂, h₃⟩ := hget_j
         subst h₁; subst h₂; subst h₃
         simp at hinterp₁ hinterp₂
-        have heq_inputs_len := async_op_interp_det_inputs_len hinterp₁ hinterp₂
-        simp at heq_inputs_len
-        subst heq_inputs_len
-        have heq_inputs : inputs₁ = inputs₂ := by
-          -- Generealize so that we can do case analysis
-          generalize hinputs₁ : inputs₁.toList = inputs₁
-          generalize hinput_vals₁ : inputVals₁.toList = inputVals₁
-          generalize houtputs₁ : outputs₁.toList = outputs₁
-          generalize houtput_vals₁ : outputVals₁.toList = outputVals₁
-          rw [hinputs₁, hinput_vals₁, houtputs₁, houtput_vals₁] at hinterp₁
-          generalize hinputs₂ : inputs₂.toList = inputs₂
-          generalize hinput_vals₂ : inputVals₂.toList = inputVals₂
-          generalize houtputs₂ : outputs₂.toList = outputs₂
-          generalize houtput_vals₂ : outputVals₂.toList = outputVals₂
-          rw [hinputs₂, hinput_vals₂, houtputs₂, houtput_vals₂] at hinterp₂
-          cases hinterp₁ <;> cases hinterp₂
-          any_goals
-            simp [← hinputs₁, Vector.toList_inj] at hinputs₂
-            simp [hinputs₂]
-          -- Merges are slightly complicated,
-          -- since the inputs can depend on input decider value...
-          -- TODO: a better solution would be to add local states
-          -- to merge similar to carry.
-          case
-            interp_merge_true.interp_merge_false |
-            interp_merge_false.interp_merge_true =>
-            have := pop_vals_eq_head hinputs₁ hinputs₂ hpop₁ hpop₂
-            simp [hinput_vals₁, hinput_vals₂] at this
-            subst this
-            grind only
+        have heq_inputs := async_op_interp_det_inputs hinterp₁ hinterp₂
+        have ⟨h₁, h₂⟩ := Vector.toList_inj_heq heq_inputs
+        subst h₁; subst h₂
         have heq_input_vals : inputVals₁ = inputVals₂ := by
-          simp [heq_inputs] at hpop₁
           simp [hpop₁] at hpop₂
           simp [hpop₂]
-        have heq_outputs := async_op_interp_det_outputs hinterp₁ hinterp₂
-          (by simp [heq_inputs])
-          (by simp [heq_input_vals])
+        subst heq_input_vals
+        have ⟨h₁, h₂, h₃, h₄⟩ := async_op_interp_det_outputs hinterp₁ hinterp₂ rfl
+        have ⟨h₂₁, h₂₂⟩ := Vector.toList_inj_heq h₂
+        have ⟨h₃₁, h₃₂⟩ := Vector.toList_inj_heq h₃
+        subst h₂₁; subst h₂₂
+        subst h₃₂
+        subst h₄
         have heq_chans : chans₁' = chans₂' := by
-          simp [heq_inputs] at hpop₁
           simp [hpop₁] at hpop₂
           simp [hpop₂]
-        congr 1
-        · congr
-          simp [heq_outputs]
-        · have ⟨h, _⟩ := Vector.toList_inj_heq heq_outputs.1
-          subst h
-          simp [Vector.toList_inj] at heq_outputs
-          simp [heq_outputs, heq_chans]
+        subst heq_chans
+        rfl
       -- Firing two different async ops
       · have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj
           ⟨i, hi⟩ ⟨j, hj⟩

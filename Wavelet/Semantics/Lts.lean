@@ -146,6 +146,17 @@ theorem Lts.WeakStep.from_tau_star
   | tail htau' hstep ih =>
     exact .tail_tau ih hstep
 
+/-- Append multiple τ steps at the end of `WeakStep`. -/
+theorem Lts.WeakStep.tail_tau_star
+  {lts : Lts C E} {τ : E}
+  (hstep : lts.WeakStep τ c₁ l c₂)
+  (htau : lts.TauStar τ c₂ c₃) :
+  lts.WeakStep τ c₁ l c₃ := by
+  cases hstep with
+  | refl => exact .from_tau_star htau
+  | step htau₁ hstep' htau₂ =>
+    exact .step htau₁ hstep' (.trans htau₂ htau)
+
 theorem Lts.WeakStep.tail_non_tau
   {lts : Lts C E} {τ : E}
   (htau_steps : lts.WeakStep τ c₁ τ c₂)

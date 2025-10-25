@@ -11,8 +11,8 @@ namespace Wavelet.Dataflow
 
 open Semantics
 
-/-! Local state of a carry gate -/
-inductive CarryState where
+/-! Local state of a merge gate -/
+inductive MergeState where
   | popLeft
   | popRight
   | decider
@@ -23,8 +23,7 @@ ports and `n` outputs ports. -/
 inductive AsyncOp V : Type u where
   | switch (n : Nat) : AsyncOp V
   | steer (flavor : Bool) (n : Nat) : AsyncOp V
-  | carry (state : CarryState) (n : Nat) : AsyncOp V
-  | merge (n : Nat) : AsyncOp V
+  | merge (state : MergeState) (n : Nat) : AsyncOp V
   | forward (n : Nat) : AsyncOp V
   | fork (n : Nat) : AsyncOp V
   | const (c : V) (n : Nat) : AsyncOp V
@@ -59,18 +58,21 @@ def steer [Arity Op]
   (outputs : Vector χ n) : AtomicProc Op χ V
   := .async (.steer flavor n) (#v[decider] ++ inputs).toList outputs.toList
 
-def carry [Arity Op]
-  (state : CarryState)
-  (decider : χ)
-  (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
-  (outputs : Vector χ n) : AtomicProc Op χ V
-  := .async (.carry state n) (#v[decider] ++ inputs₁ ++ inputs₂).toList outputs.toList
-
 def merge [Arity Op]
   (decider : χ)
   (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
   (outputs : Vector χ n) : AtomicProc Op χ V
-  := .async (.merge n) (#v[decider] ++ inputs₁ ++ inputs₂).toList outputs.toList
+  :=
+  -- TODO: make the order of inputs₁ and inputs₂ more consistent.
+  .async (.merge .decider n) (#v[decider] ++ inputs₂ ++ inputs₁).toList outputs.toList
+
+/-- Carry is a variant of merge that can have a different initial state. -/
+def carry [Arity Op]
+  (state : MergeState)
+  (decider : χ)
+  (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
+  (outputs : Vector χ n) : AtomicProc Op χ V
+  := .async (.merge state n) (#v[decider] ++ inputs₁ ++ inputs₂).toList outputs.toList
 
 def forward [Arity Op]
   (inputs : Vector χ n) (outputs : Vector χ n) : AtomicProc Op χ V
@@ -160,51 +162,31 @@ inductive AsyncOp.Interp
         (decider :: inputs) (deciderVal :: inputVals)
         [] [])
       (.steer flavor k)
-  | interp_carry_left :
+  | interp_merge_left :
     inputs.length = k + k →
     outputs.length = k →
-    Interp (.carry .popLeft k)
+    Interp (.merge .popLeft k)
       (.mk (decider :: inputs) outputs
         (inputs.take k) inputVals
         outputs inputVals)
-      (.carry .decider k)
-  | interp_carry_right :
+      (.merge .decider k)
+  | interp_merge_right :
     inputs.length = k + k →
     outputs.length = k →
-    Interp (.carry .popRight k)
+    Interp (.merge .popRight k)
       (.mk (decider :: inputs) outputs
         (inputs.drop k) inputVals
         outputs inputVals)
-      (.carry .decider k)
-  | interp_carry_decider :
+      (.merge .decider k)
+  | interp_merge_decider :
     inputs.length = k + k →
     outputs.length = k →
     InterpConsts.toBool deciderVal = some deciderBool →
-    Interp (.carry .decider k)
+    Interp (.merge .decider k)
       (.mk (decider :: inputs) outputs
         [decider] [deciderVal]
         [] [])
-      (.carry (if deciderBool then .popRight else .popLeft) k)
-  | interp_merge_true :
-    inputs.length = k + k →
-    outputs.length = k →
-    InterpConsts.toBool deciderVal = some deciderBool →
-    deciderBool →
-    Interp (.merge k)
-      (.mk (decider :: inputs) outputs
-        (decider :: inputs.take k) (deciderVal :: inputVals)
-        outputs inputVals)
-      (.merge k)
-  | interp_merge_false :
-    inputs.length = k + k →
-    outputs.length = k →
-    InterpConsts.toBool deciderVal = some deciderBool →
-    ¬deciderBool →
-    Interp (.merge k)
-      (.mk (decider :: inputs) outputs
-        (decider :: inputs.drop k) (deciderVal :: inputVals)
-        outputs inputVals)
-      (.merge k)
+      (.merge (if deciderBool then .popRight else .popLeft) k)
   | interp_forward :
     inputs.length = k →
     outputs.length = k →
@@ -307,45 +289,31 @@ theorem AsyncOp.Interp.eq_label
   simp [heq] at hinterp₁
   exact hinterp₁
 
-/-- If two async op invocations reads the same values from the same input channels,
-then the transition is deterministic. Note that this does not rule out the case
-when the async operator can non-deterministically choose different inputs to read. -/
+/-- In every state, an async operator always deterministically chooses the input channels to read. -/
+theorem async_op_interp_det_inputs
+  [InterpConsts V]
+  {aop aop₁' aop₂' : AsyncOp V}
+  (hinterp₁ : aop.Interp (.mk allInputs allOutputs₁ inputs₁ inputVals₁ outputs₁ outputVals₁) aop₁')
+  (hinterp₂ : aop.Interp (.mk allInputs allOutputs₂ inputs₂ inputVals₂ outputs₂ outputVals₂) aop₂') :
+    inputs₁ = inputs₂
+  := by
+  cases hinterp₁ <;> cases hinterp₂
+  all_goals rfl
+
+/-- If the input values are the same, every async operator has deterministic outputs. -/
 theorem async_op_interp_det_outputs
   [InterpConsts V]
   {aop aop₁' aop₂' : AsyncOp V}
   (hinterp₁ : aop.Interp (.mk allInputs allOutputs inputs₁ inputVals₁ outputs₁ outputVals₁) aop₁')
   (hinterp₂ : aop.Interp (.mk allInputs allOutputs inputs₂ inputVals₂ outputs₂ outputVals₂) aop₂')
-  (heq₁ : inputs₁ = inputs₂)
-  (heq₂ : inputVals₁ = inputVals₂) :
+  (heq : inputVals₁ = inputVals₂) :
+    inputs₁ = inputs₂ ∧
     outputs₁ = outputs₂ ∧
     outputVals₁ = outputVals₂ ∧
     aop₁' = aop₂'
   := by
   cases hinterp₁ <;> cases hinterp₂
   any_goals grind only [cases Or]
-
-theorem async_op_interp_det_inputs_len
-  [InterpConsts V]
-  {aop aop₁' aop₂' : AsyncOp V}
-  (hinterp₁ : aop.Interp (.mk allInputs₁ allOutputs₁ inputs₁ inputVals₁ outputs₁ outputVals₁) aop₁')
-  (hinterp₂ : aop.Interp (.mk allInputs₂ allOutputs₂ inputs₂ inputVals₂ outputs₂ outputVals₂) aop₂') :
-    inputs₁.length = inputs₂.length
-  := by
-  cases hinterp₁ <;> cases hinterp₂
-  any_goals grind only [List.length_cons, = List.length_drop,
-    = List.length_take, = Nat.min_def, cases Or, List.length]
-
-theorem async_op_interp_det_inputs_except_merge
-  [InterpConsts V]
-  {aop aop₁' aop₂' : AsyncOp V}
-  (hinterp₁ : aop.Interp (.mk allInputs allOutputs₁ inputs₁ inputVals₁ outputs₁ outputVals₁) aop₁')
-  (hinterp₂ : aop.Interp (.mk allInputs allOutputs₂ inputs₂ inputVals₂ outputs₂ outputVals₂) aop₂')
-  (hne_merge : ∀ {k}, aop ≠ .merge k) :
-    inputs₁ = inputs₂
-  := by
-  cases hinterp₁ <;> cases hinterp₂
-  any_goals simp at hne_merge
-  all_goals rfl
 
 /-- Inputs read in each async op is a sublist of the total input list. -/
 theorem async_op_interp_input_sublist
@@ -519,11 +487,11 @@ theorem Config.Step.step_carry_left
   } := by
   simp at happ
   apply Config.Step.step_async_alt
-    (aop := .carry .popLeft k)
-    (aop' := .carry .decider k)
+    (aop := .merge .popLeft k)
+    (aop' := .merge .decider k)
     happ
     (by
-      apply AsyncOp.Interp.interp_carry_left (k := k)
+      apply AsyncOp.Interp.interp_merge_left (k := k)
         (inputs := (inputs₁ ++ inputs₂).toList)
         (outputs := outputs.toList)
         (by simp)
@@ -554,11 +522,11 @@ theorem Config.Step.step_carry_right
   } := by
   simp at happ
   apply Config.Step.step_async_alt
-    (aop := .carry .popRight k)
-    (aop' := .carry .decider k)
+    (aop := .merge .popRight k)
+    (aop' := .merge .decider k)
     happ
     (by
-      apply AsyncOp.Interp.interp_carry_right (k := k)
+      apply AsyncOp.Interp.interp_merge_right (k := k)
         (inputs := (inputs₁ ++ inputs₂).toList)
         (outputs := outputs.toList)
         (by simp)
@@ -593,11 +561,11 @@ theorem Config.Step.step_carry_decider
   } := by
   simp at happ
   apply Config.Step.step_async_alt
-    (aop := .carry .decider k)
-    (aop' := .carry (if deciderBool then .popRight else .popLeft) k)
+    (aop := .merge .decider k)
+    (aop' := .merge (if deciderBool then .popRight else .popLeft) k)
     happ
     (by
-      apply AsyncOp.Interp.interp_carry_decider (k := k)
+      apply AsyncOp.Interp.interp_merge_decider (k := k)
         (inputs := (inputs₁ ++ inputs₂).toList)
         (outputs := outputs.toList)
         (by simp)
@@ -624,55 +592,43 @@ theorem Config.Step.step_merge
   (hdecider : InterpConsts.toBool deciderVal = some deciderBool)
   (hpop_inputs : chans'.popVals
     (if deciderBool then inputs₁ else inputs₂) = some (inputVals, chans'')) :
-  Step c .τ { c with
-    chans := chans''.pushVals outputs inputVals
-  } := by
+    Step.TauStar .τ c { c with
+      chans := chans''.pushVals outputs inputVals
+    }
+  := by
   have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
   have happ := List.to_append_cons (l := c.proc.atoms) hi
   simp only [hget_i, AtomicProc.merge] at happ
-  by_cases h₁ : deciderBool <;> simp [h₁] at hpop_inputs
-  · apply Config.Step.step_async_alt
-      (aop := .merge k)
-      (aop' := .merge k)
-      happ
-      (by
-        apply AsyncOp.Interp.interp_merge_true (k := k)
-          (inputs := (inputs₁ ++ inputs₂).toList)
-          (outputs := outputs.toList)
-          (by simp)
-          (by simp)
-          hdecider h₁
-          |> AsyncOp.Interp.eq_label
-        simp [Vector.toList]
-        and_intros
-        any_goals try rfl)
-      (pop_vals_append (pop_val_to_pop_vals hpop_decider) hpop_inputs)
-      |> Lts.Step.eq_rhs
-    simp
-    congr 1
-    simp only [Vector.append_assoc] at happ
-    exact happ.symm
-  · apply Config.Step.step_async_alt
-      (aop := .merge k)
-      (aop' := .merge k)
-      happ
-      (by
-        apply AsyncOp.Interp.interp_merge_false (k := k)
-          (inputs := (inputs₁ ++ inputs₂).toList)
-          (outputs := outputs.toList)
-          (by simp)
-          (by simp)
-          hdecider h₁
-          |> AsyncOp.Interp.eq_label
-        simp [Vector.toList]
-        and_intros
-        any_goals try rfl)
-      (pop_vals_append (pop_val_to_pop_vals hpop_decider) hpop_inputs)
-      |> Lts.Step.eq_rhs
-    simp [ChanMap.pushVals]
-    congr 1
-    simp only [Vector.append_assoc] at happ
-    exact happ.symm
+  have hstep₁ : Step c .τ _
+    := .step_carry_decider (by
+      simp [AtomicProc.carry]
+      rw [happ]
+      congr; simp; rfl) hpop_decider hdecider
+  if hdecider_bool : deciderBool then
+    subst hdecider_bool
+    have hsteps : Step.TauStar .τ c _
+      := .tail (.single hstep₁)
+      (.step_carry_right
+        (by rfl)
+        hpop_inputs)
+    exact .eq_rhs hsteps (by
+      simp [AtomicProc.carry]
+      congr
+      rw [happ]
+      simp [le_of_lt hi, List.drop_append])
+  else
+    simp at hdecider_bool
+    subst hdecider_bool
+    have hsteps : Step.TauStar .τ c _
+      := .tail (.single hstep₁)
+      (.step_carry_left
+        (by rfl)
+        hpop_inputs)
+    exact .eq_rhs hsteps (by
+      simp [AtomicProc.carry]
+      congr
+      rw [happ]
+      simp [le_of_lt hi, List.drop_append])
 
 theorem Config.Step.step_forward
   [Arity Op] [DecidableEq χ] [InterpConsts V]

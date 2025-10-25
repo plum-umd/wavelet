@@ -144,7 +144,7 @@ theorem sim_step_merges
     := by split <;> (rename_i h; simp [h])
     simp only [this] at hpop_output_vals
     replace hsteps : Dataflow.Config.Step.WeakStep .τ pc l _
-      := .tail_tau hsteps (Dataflow.Config.Step.step_merge
+      := .tail_tau_star hsteps (Dataflow.Config.Step.step_merge
         hhead_merge
         hpop_cond
         (InterpConsts.unique_fromBool_toBool _)
