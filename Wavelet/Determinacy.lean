@@ -1456,50 +1456,50 @@ theorem strong_confl_final_confl_tau
 --     apply ih
 --     sorry
 
-theorem proc_unguarded_step_congr_mod_ghost
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {opInterp : OpInterp Op V}
-  (proc : ProcWithSpec opSpec χ m n)
-  {s₁ s₁' s₂ : proc.semantics.S × opInterp.S}
-  (hstep : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.Step s₁ .τ s₂)
-  (heq : Config.EqMod EqModGhost s₁.1 s₁'.1 ∧ s₁.2 = s₁'.2) :
-    ∃ s₂',
-      ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.Step s₁' .τ s₂' ∧
-      Config.EqMod EqModGhost s₂.1 s₂'.1 ∧
-      s₂.2 = s₂'.2
-  := sorry
+-- theorem proc_unguarded_step_congr_mod_ghost
+--   [Arity Op]
+--   [DecidableEq χ]
+--   [InterpConsts V]
+--   {opSpec : OpSpec Op V T}
+--   {opInterp : OpInterp Op V}
+--   (proc : ProcWithSpec opSpec χ m n)
+--   {s₁ s₁' s₂ : proc.semantics.S × opInterp.S}
+--   (hstep : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.Step s₁ .τ s₂)
+--   (heq : Config.EqMod EqModGhost s₁.1 s₁'.1 ∧ s₁.2 = s₁'.2) :
+--     ∃ s₂',
+--       ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.Step s₁' .τ s₂' ∧
+--       Config.EqMod EqModGhost s₂.1 s₂'.1 ∧
+--       s₂.2 = s₂'.2
+--   := sorry
 
-theorem proc_unguarded_steps_congr_mod_ghost
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {opInterp : OpInterp Op V}
-  (proc : ProcWithSpec opSpec χ m n)
-  {s₁ s₁' s₂ : proc.semantics.S × opInterp.S}
-  (hstep : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.TauStar .τ s₁ s₂)
-  (heq : Config.EqMod EqModGhost s₁.1 s₁'.1 ∧ s₁.2 = s₁'.2) :
-    ∃ s₂',
-      ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.TauStar .τ s₁' s₂' ∧
-      Config.EqMod EqModGhost s₂.1 s₂'.1 ∧
-      s₂.2 = s₂'.2
-  := by
-  induction hstep with
-  | refl =>
-    exists s₁'
-    constructor
-    · exact .refl
-    · exact heq
-  | tail pref tail ih =>
-    have ⟨s₂'', hpref', heq'⟩ := ih
-    have ⟨s₂', htau, heq⟩ := proc_unguarded_step_congr_mod_ghost proc tail heq'
-    exists s₂'
-    constructor
-    · exact .tail hpref' htau
-    · exact heq
+-- theorem proc_unguarded_steps_congr_mod_ghost
+--   [Arity Op]
+--   [DecidableEq χ]
+--   [InterpConsts V]
+--   {opSpec : OpSpec Op V T}
+--   {opInterp : OpInterp Op V}
+--   (proc : ProcWithSpec opSpec χ m n)
+--   {s₁ s₁' s₂ : proc.semantics.S × opInterp.S}
+--   (hstep : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.TauStar .τ s₁ s₂)
+--   (heq : Config.EqMod EqModGhost s₁.1 s₁'.1 ∧ s₁.2 = s₁'.2) :
+--     ∃ s₂',
+--       ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.TauStar .τ s₁' s₂' ∧
+--       Config.EqMod EqModGhost s₂.1 s₂'.1 ∧
+--       s₂.2 = s₂'.2
+--   := by
+--   induction hstep with
+--   | refl =>
+--     exists s₁'
+--     constructor
+--     · exact .refl
+--     · exact heq
+--   | tail pref tail ih =>
+--     have ⟨s₂'', hpref', heq'⟩ := ih
+--     have ⟨s₂', htau, heq⟩ := proc_unguarded_step_congr_mod_ghost proc tail heq'
+--     exists s₂'
+--     constructor
+--     · exact .tail hpref' htau
+--     · exact heq
 
 theorem proc_indexed_guarded_step_unique_label
   [Arity Op] [PCM T]
@@ -1864,7 +1864,8 @@ theorem proc_indexed_guarded_step_to_unguarded
   {l : Label Op V m n}
   (hstep : (Config.IndexedStep.Guard (IndexedGuard (opSpec.Guard ioSpec))).Step s (i, l) s') :
     (Config.IndexedStep.Guard (IndexedGuard opSpec.TrivGuard)).Step s (i, l) s'
-  := sorry
+  := Guard.map_guard
+    (λ ⟨hguard⟩ => ⟨OpSpec.spec_guard_implies_triv_guard hguard⟩) hstep
 
 theorem proc_indexed_unguarded_step_det_mod
   [Arity Op]
@@ -1876,7 +1877,37 @@ theorem proc_indexed_unguarded_step_det_mod
   (hstep₁ : (Config.IndexedStep.Guard (IndexedGuard opSpec.TrivGuard)).Step s (i, l) s₁)
   (hstep₂ : (Config.IndexedStep.Guard (IndexedGuard opSpec.TrivGuard)).Step s (i, l) s₂) :
     Config.EqMod EqModGhost s₁ s₂
-  := sorry
+  := by
+  rcases hstep₁ with ⟨⟨hguard₁⟩, hstep₁⟩
+  rcases hstep₂ with ⟨⟨hguard₂⟩, hstep₂⟩
+  apply (Config.IndexedStep.unique_index_mod hstep₁ hstep₂ _).2
+  constructor
+  · cases hstep₁ <;> simp
+  · constructor
+    · cases hstep₂ <;> simp
+    · cases hguard₁ <;> cases hguard₂
+      case triv_yield.triv_yield =>
+        intros op inputVals outputVals₁ outputVals₂ hyield₁ hyield₂
+        simp at hyield₁ hyield₂
+        have ⟨h₁, h₂, h₃⟩ := hyield₁
+        have ⟨h₁', h₂', h₃'⟩ := hyield₂
+        subst h₁
+        simp at h₂ h₃ h₂' h₃'
+        simp [← h₃, ← h₃']
+        apply forall₂_to_forall₂_push_toList
+        · simp [EqModGhost]
+        · simp [EqModGhost]
+      case triv_join.triv_join =>
+        intros op inputVals outputVals₁ outputVals₂ hyield₁ hyield₂
+        simp at hyield₁ hyield₂
+        have ⟨h₁, h₂, h₃⟩ := hyield₁
+        have ⟨h₁', h₂', h₃'⟩ := hyield₂
+        subst h₁
+        simp at h₂ h₃ h₂' h₃'
+        simp [← h₃, ← h₃', Vector.toList_map, EqModGhost]
+        apply List.forall₂_of_length_eq_of_get
+        all_goals simp
+      all_goals simp [Label.DeterministicMod]
 
 /--
 If there is a guarded τ trace from `s` to a final state `s₁`,
@@ -2080,145 +2111,145 @@ theorem proc_indexed_unguarded_to_guarded
 
 --     all_goals sorry
 
-theorem proc_guarded_termination
-  [Arity Op] [PCM T] [PCM.Lawful T]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {opInterp : OpInterp Op V}
-  {ioSpec : IOSpec V T m n}
-  (proc : ProcWithSpec opSpec χ m n)
-  (hdet : opInterp.Deterministic)
-  {s s₁ s₂ : proc.semantics.S × opInterp.S}
-  (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar
-    .τ s s₁)
-  (hterm : proc.semantics.IsFinal s₁.1)
-  (hstep₂ : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.Step
-    s .τ s₂) :
-    ∃ s₁',
-      ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.TauStar
-        .τ s₂ s₁' ∧
-      Config.EqMod EqModGhost s₁.1 s₁'.1 ∧
-      s₁.2 = s₁'.2
-  := by
-  induction htrace₁
-    using Lts.TauStar.reverse_induction
-    generalizing s₂ with
-  | refl =>
-    match hstep₂ with
-    | .step_tau hstep₂ =>
-      cases hstep₂ with | step hguard hstep₂ =>
-      cases hguard <;> exact False.elim (hterm hstep₂)
-    | .step_yield hstep₂ _ =>
-      cases hstep₂ with | step hguard hstep₂ =>
-      cases hguard
-      exact False.elim (hterm hstep₂)
-  | head hstep₁ htail₁ ih =>
-    rename_i s s₁'
-    have hstep₁' := hstep₁.map_step (Guard.map_guard OpSpec.spec_guard_implies_triv_guard)
-    have haff : s.1.proc.AffineChan := sorry
-    cases hstep₁' <;> cases hstep₂
-    -- TODO: These cases are almost the same, refactor
-    case step_tau.step_tau c c₁ t hstep₁' c₂ hstep₂ =>
-      have hconfl := proc_guard_triv_strong_confl_at_mod proc _ haff hstep₁' hstep₂
-        (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
-      cases hconfl with
-      | inl heq =>
-        have htail₂ := htail₁.map
-          (λ hstep => hstep.map_step (Guard.map_guard OpSpec.spec_guard_implies_triv_guard))
-        have ⟨s₂', htail₁', heq''⟩ := proc_unguarded_steps_congr_mod_ghost
-          (s₁ := (c₁, t)) (s₁' := (c₂, t)) proc htail₂
-          ⟨heq.2, rfl⟩
-        exists s₂'
-      | inr h =>
-        have ⟨c₁', c₂', hstep₁₂, hstep₂₁, heq⟩ := h
-        have ⟨s₁', htail₁', heq'⟩ := ih (.step_tau hstep₁₂)
-        have ⟨s₂', htail₁', heq''⟩ := proc_unguarded_steps_congr_mod_ghost
-          (s₁ := (c₁', _)) (s₁' := (c₂', _)) proc htail₁'
-          ⟨heq, rfl⟩
-        exists s₂'
-        constructor
-        · exact htail₁'.prepend (.step_tau hstep₂₁)
-        · simp [heq', heq'']
-          simp [interpret, Semantics.guard, Proc.semantics] at *
-          exact IsTrans.trans _ _ _ heq'.1 heq''.1
-    case step_tau.step_yield hstep₁' _ _ _ _ _ hstep₂ hinterp =>
-      have hconfl := proc_guard_triv_strong_confl_at_mod proc _ haff hstep₁' hstep₂
-        (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
-      cases hconfl with
-      | inl heq => simp at heq
-      | inr h =>
-        have ⟨c₁', c₂', hstep₁₂, hstep₂₁, heq⟩ := h
-        have ⟨s₁', htail₁', heq'⟩ := ih (.step_yield hstep₁₂ hinterp)
-        have ⟨s₂', htail₁', heq''⟩ := proc_unguarded_steps_congr_mod_ghost
-          (s₁ := (c₁', _)) (s₁' := (c₂', _)) proc htail₁'
-          ⟨heq, rfl⟩
-        exists s₂'
-        constructor
-        · exact htail₁'.prepend (.step_tau hstep₂₁)
-        · simp [heq', heq'']
-          simp [interpret, Semantics.guard, Proc.semantics] at *
-          exact IsTrans.trans _ _ _ heq'.1 heq''.1
-    case step_yield.step_tau hstep₁' hinterp _ hstep₂ =>
-      have hconfl := proc_guard_triv_strong_confl_at_mod proc _ haff hstep₁' hstep₂
-        (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
-      cases hconfl with
-      | inl heq => simp at heq
-      | inr h =>
-        have ⟨c₁', c₂', hstep₁₂, hstep₂₁, heq⟩ := h
-        have ⟨s₁', htail₁', heq'⟩ := ih (.step_tau hstep₁₂)
-        have ⟨s₂', htail₁', heq''⟩ := proc_unguarded_steps_congr_mod_ghost
-          (s₁ := (c₁', _)) (s₁' := (c₂', _)) proc htail₁'
-          ⟨heq, rfl⟩
-        exists s₂'
-        constructor
-        · exact htail₁'.prepend (.step_yield hstep₂₁ hinterp)
-        · simp [heq', heq'']
-          simp [interpret, Semantics.guard, Proc.semantics] at *
-          exact IsTrans.trans _ _ _ heq'.1 heq''.1
-    case step_yield.step_yield hstep₁' hinterp₁ _ _ _ _ _ hstep₂ hinterp₂ =>
-      have hconfl := proc_guard_triv_strong_confl_at_mod proc _ haff hstep₁' hstep₂
-        (by
-          simp [Label.IsYieldOrSilentAndDet]
-          intros op inputs outputs₁ outputs₂ hop₁ hop₂
-          simp at hop₁ hop₂
-          have ⟨h₁, h₂, h₃⟩ := hop₁
-          subst h₁; subst h₂; subst h₃
-          have ⟨h₁, h₂, h₃⟩ := hop₂
-          subst h₁; subst h₂; subst h₃
-          have ⟨_, h⟩ := hdet hinterp₁ hinterp₂
-          exact h)
-      cases hconfl with
-      | inl heq =>
-        have htail₂ := htail₁.map
-          (λ hstep => hstep.map_step (Guard.map_guard OpSpec.spec_guard_implies_triv_guard))
-        have ⟨s₂', htail₁', heq''⟩ := proc_unguarded_steps_congr_mod_ghost
-          (s₁ := (_, _)) (s₁' := (_, _)) proc htail₂
-          ⟨heq.2, rfl⟩
-        exists s₂'
-        constructor
-        · simp at heq
-          have ⟨⟨h₁, h₂, h₃⟩, h₄⟩ := heq
-          subst h₁; subst h₂; subst h₃
-          have ⟨h, _⟩ := hdet hinterp₁ hinterp₂
-          simp only [← h]
-          exact htail₁'
-        · exact heq''
-      | inr h =>
-        have ⟨c₁', c₂', hstep₁₂, hstep₂₁, heq⟩ := h
-        -- TODO: can't commute hinterp₁ and hinterp₂!
-        sorry
-        -- have h := ih (.step_yield hstep₁₂ hinterp₁)
-        -- -- ⟨s₁', htail₁', heq'⟩
-        -- have ⟨s₂', htail₁', heq''⟩ := proc_unguarded_steps_congr_mod_ghost
-        --   (s₁ := (c₁', _)) (s₁' := (c₂', _)) proc htail₁'
-        --   ⟨heq, rfl⟩
-        -- exists s₂'
-        -- constructor
-        -- · exact htail₁'.prepend (.step_yield hstep₂₁ hinterp)
-        -- · simp [heq', heq'']
-        --   simp [interpret, Semantics.guard, Proc.semantics] at *
-        --   exact IsTrans.trans _ _ _ heq'.1 heq''.1
+-- theorem proc_guarded_termination
+--   [Arity Op] [PCM T] [PCM.Lawful T]
+--   [DecidableEq χ]
+--   [InterpConsts V]
+--   {opSpec : OpSpec Op V T}
+--   {opInterp : OpInterp Op V}
+--   {ioSpec : IOSpec V T m n}
+--   (proc : ProcWithSpec opSpec χ m n)
+--   (hdet : opInterp.Deterministic)
+--   {s s₁ s₂ : proc.semantics.S × opInterp.S}
+--   (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar
+--     .τ s s₁)
+--   (hterm : proc.semantics.IsFinal s₁.1)
+--   (hstep₂ : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.Step
+--     s .τ s₂) :
+--     ∃ s₁',
+--       ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.TauStar
+--         .τ s₂ s₁' ∧
+--       Config.EqMod EqModGhost s₁.1 s₁'.1 ∧
+--       s₁.2 = s₁'.2
+--   := by
+--   induction htrace₁
+--     using Lts.TauStar.reverse_induction
+--     generalizing s₂ with
+--   | refl =>
+--     match hstep₂ with
+--     | .step_tau hstep₂ =>
+--       cases hstep₂ with | step hguard hstep₂ =>
+--       cases hguard <;> exact False.elim (hterm hstep₂)
+--     | .step_yield hstep₂ _ =>
+--       cases hstep₂ with | step hguard hstep₂ =>
+--       cases hguard
+--       exact False.elim (hterm hstep₂)
+--   | head hstep₁ htail₁ ih =>
+--     rename_i s s₁'
+--     have hstep₁' := hstep₁.map_step (Guard.map_guard OpSpec.spec_guard_implies_triv_guard)
+--     have haff : s.1.proc.AffineChan := sorry
+--     cases hstep₁' <;> cases hstep₂
+--     -- TODO: These cases are almost the same, refactor
+--     case step_tau.step_tau c c₁ t hstep₁' c₂ hstep₂ =>
+--       have hconfl := proc_guard_triv_strong_confl_at_mod proc _ haff hstep₁' hstep₂
+--         (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
+--       cases hconfl with
+--       | inl heq =>
+--         have htail₂ := htail₁.map
+--           (λ hstep => hstep.map_step (Guard.map_guard OpSpec.spec_guard_implies_triv_guard))
+--         have ⟨s₂', htail₁', heq''⟩ := proc_unguarded_steps_congr_mod_ghost
+--           (s₁ := (c₁, t)) (s₁' := (c₂, t)) proc htail₂
+--           ⟨heq.2, rfl⟩
+--         exists s₂'
+--       | inr h =>
+--         have ⟨c₁', c₂', hstep₁₂, hstep₂₁, heq⟩ := h
+--         have ⟨s₁', htail₁', heq'⟩ := ih (.step_tau hstep₁₂)
+--         have ⟨s₂', htail₁', heq''⟩ := proc_unguarded_steps_congr_mod_ghost
+--           (s₁ := (c₁', _)) (s₁' := (c₂', _)) proc htail₁'
+--           ⟨heq, rfl⟩
+--         exists s₂'
+--         constructor
+--         · exact htail₁'.prepend (.step_tau hstep₂₁)
+--         · simp [heq', heq'']
+--           simp [interpret, Semantics.guard, Proc.semantics] at *
+--           exact IsTrans.trans _ _ _ heq'.1 heq''.1
+--     case step_tau.step_yield hstep₁' _ _ _ _ _ hstep₂ hinterp =>
+--       have hconfl := proc_guard_triv_strong_confl_at_mod proc _ haff hstep₁' hstep₂
+--         (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
+--       cases hconfl with
+--       | inl heq => simp at heq
+--       | inr h =>
+--         have ⟨c₁', c₂', hstep₁₂, hstep₂₁, heq⟩ := h
+--         have ⟨s₁', htail₁', heq'⟩ := ih (.step_yield hstep₁₂ hinterp)
+--         have ⟨s₂', htail₁', heq''⟩ := proc_unguarded_steps_congr_mod_ghost
+--           (s₁ := (c₁', _)) (s₁' := (c₂', _)) proc htail₁'
+--           ⟨heq, rfl⟩
+--         exists s₂'
+--         constructor
+--         · exact htail₁'.prepend (.step_tau hstep₂₁)
+--         · simp [heq', heq'']
+--           simp [interpret, Semantics.guard, Proc.semantics] at *
+--           exact IsTrans.trans _ _ _ heq'.1 heq''.1
+--     case step_yield.step_tau hstep₁' hinterp _ hstep₂ =>
+--       have hconfl := proc_guard_triv_strong_confl_at_mod proc _ haff hstep₁' hstep₂
+--         (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
+--       cases hconfl with
+--       | inl heq => simp at heq
+--       | inr h =>
+--         have ⟨c₁', c₂', hstep₁₂, hstep₂₁, heq⟩ := h
+--         have ⟨s₁', htail₁', heq'⟩ := ih (.step_tau hstep₁₂)
+--         have ⟨s₂', htail₁', heq''⟩ := proc_unguarded_steps_congr_mod_ghost
+--           (s₁ := (c₁', _)) (s₁' := (c₂', _)) proc htail₁'
+--           ⟨heq, rfl⟩
+--         exists s₂'
+--         constructor
+--         · exact htail₁'.prepend (.step_yield hstep₂₁ hinterp)
+--         · simp [heq', heq'']
+--           simp [interpret, Semantics.guard, Proc.semantics] at *
+--           exact IsTrans.trans _ _ _ heq'.1 heq''.1
+--     case step_yield.step_yield hstep₁' hinterp₁ _ _ _ _ _ hstep₂ hinterp₂ =>
+--       have hconfl := proc_guard_triv_strong_confl_at_mod proc _ haff hstep₁' hstep₂
+--         (by
+--           simp [Label.IsYieldOrSilentAndDet]
+--           intros op inputs outputs₁ outputs₂ hop₁ hop₂
+--           simp at hop₁ hop₂
+--           have ⟨h₁, h₂, h₃⟩ := hop₁
+--           subst h₁; subst h₂; subst h₃
+--           have ⟨h₁, h₂, h₃⟩ := hop₂
+--           subst h₁; subst h₂; subst h₃
+--           have ⟨_, h⟩ := hdet hinterp₁ hinterp₂
+--           exact h)
+--       cases hconfl with
+--       | inl heq =>
+--         have htail₂ := htail₁.map
+--           (λ hstep => hstep.map_step (Guard.map_guard OpSpec.spec_guard_implies_triv_guard))
+--         have ⟨s₂', htail₁', heq''⟩ := proc_unguarded_steps_congr_mod_ghost
+--           (s₁ := (_, _)) (s₁' := (_, _)) proc htail₂
+--           ⟨heq.2, rfl⟩
+--         exists s₂'
+--         constructor
+--         · simp at heq
+--           have ⟨⟨h₁, h₂, h₃⟩, h₄⟩ := heq
+--           subst h₁; subst h₂; subst h₃
+--           have ⟨h, _⟩ := hdet hinterp₁ hinterp₂
+--           simp only [← h]
+--           exact htail₁'
+--         · exact heq''
+--       | inr h =>
+--         have ⟨c₁', c₂', hstep₁₂, hstep₂₁, heq⟩ := h
+--         -- TODO: can't commute hinterp₁ and hinterp₂!
+--         sorry
+--         -- have h := ih (.step_yield hstep₁₂ hinterp₁)
+--         -- -- ⟨s₁', htail₁', heq'⟩
+--         -- have ⟨s₂', htail₁', heq''⟩ := proc_unguarded_steps_congr_mod_ghost
+--         --   (s₁ := (c₁', _)) (s₁' := (c₂', _)) proc htail₁'
+--         --   ⟨heq, rfl⟩
+--         -- exists s₂'
+--         -- constructor
+--         -- · exact htail₁'.prepend (.step_yield hstep₂₁ hinterp)
+--         -- · simp [heq', heq'']
+--         --   simp [interpret, Semantics.guard, Proc.semantics] at *
+--         --   exact IsTrans.trans _ _ _ heq'.1 heq''.1
 
 -- theorem proc_guarded_weak_normalization'
 --   [Arity Op] [PCM T] [PCM.Lawful T]
