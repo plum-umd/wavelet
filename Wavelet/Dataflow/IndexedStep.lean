@@ -1,4 +1,5 @@
 import Wavelet.Dataflow.Proc
+import Wavelet.Dataflow.EqMod
 
 /-! An alternative transition system for dataflow that includes
 the index of the operator being fired. -/
@@ -170,15 +171,16 @@ theorem Config.IndexedStep.iff_step_yield_or_tau
   · intros h
     apply Config.IndexedStep.from_step_yield_or_tau hl h
 
-theorem Config.IndexedStep.unique_index
+theorem Config.IndexedStep.unique_index_mod
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
+  {EqV : V → V → Prop} [IsRefl V EqV]
   {c c₁ c₂ : Config Op χ V m n}
   {l₁ l₂ : Label Op V m n}
   (hstep₁ : Config.IndexedStep c (i, l₁) c₁)
   (hstep₂ : Config.IndexedStep c (i, l₂) c₂)
-  (hdet : Label.IsYieldOrSilentAndDet l₁ l₂) :
-    l₁ = l₂ ∧ c₁ = c₂
+  (hdet : Label.IsYieldOrSilentAndDetMod EqV l₁ l₂) :
+    Label.EqMod EqV l₁ l₂ ∧ Config.EqMod EqV c₁ c₂
   := by
   cases hstep₁ <;> rename_i hget₁ <;>
   cases hstep₂ <;> rename_i hget₂
@@ -190,12 +192,15 @@ theorem Config.IndexedStep.unique_index
     simp [hpop₁] at hpop₂
     have ⟨h₁, h₂⟩ := hpop₂
     subst h₁; subst h₂
-    simp [Label.IsYieldOrSilentAndDet] at hdet
+    simp [Label.IsYieldOrSilentAndDetMod] at hdet
     constructor
-    all_goals
-      congr
+    · simp [Label.EqMod, IsRefl.refl]
       apply hdet
       all_goals rfl
+    · simp [Config.EqMod]
+      have := hdet rfl rfl
+      apply chan_map_push_vals_equiv
+      exact this
   case step_async.step_async =>
     rename_i aop _ _ _ inputs₁ inputVals₁ outputs₁ outputVals₁ _ hinterp₁ hpop₁ _ _ _ _ _ _ _
       inputs₂ inputVals₂ outputs₂ outputVals₂ _ hinterp₂ hpop₂ hget₂
@@ -213,7 +218,24 @@ theorem Config.IndexedStep.unique_index
     replace h₃ := Vector.toList_inj.mp h₃
     subst h₃
     subst h₄
-    exact ⟨rfl, rfl⟩
+    exact ⟨
+      by apply IsRefl.refl,
+      by apply IsRefl.refl,
+    ⟩
+
+theorem Config.IndexedStep.unique_index
+  [Arity Op] [DecidableEq χ]
+  [InterpConsts V]
+  {c c₁ c₂ : Config Op χ V m n}
+  {l₁ l₂ : Label Op V m n}
+  (hstep₁ : Config.IndexedStep c (i, l₁) c₁)
+  (hstep₂ : Config.IndexedStep c (i, l₂) c₂)
+  (hdet : Label.IsYieldOrSilentAndDet l₁ l₂) :
+    l₁ = l₂ ∧ c₁ = c₂
+  := by
+  have := Config.IndexedStep.unique_index_mod (EqV := Eq) hstep₁ hstep₂
+  simp at this
+  apply this hdet
 
 theorem Config.IndexedStep.unique_index_alt
   [Arity Op] [DecidableEq χ]

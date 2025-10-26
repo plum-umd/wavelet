@@ -122,6 +122,44 @@ theorem Label.IsYieldOrSilentAndDetMod.eq_eq
   simp only [Label.IsYieldOrSilentAndDetMod, Label.IsYieldOrSilentAndDet]
   simp
 
+def Label.EqMod
+  [Arity Op]
+  (Eq : V → V → Prop)
+  (l₁ l₂ : Label Op V m n) : Prop :=
+  match l₁, l₂ with
+  | .input vals₁, .input vals₂ =>
+      List.Forall₂ Eq vals₁.toList vals₂.toList
+  | .output vals₁, .output vals₂ =>
+      List.Forall₂ Eq vals₁.toList vals₂.toList
+  | .yield op₁ inputs₁ outputs₁, .yield op₂ inputs₂ outputs₂ =>
+      op₁ = op₂ ∧
+      List.Forall₂ Eq inputs₁.toList inputs₂.toList ∧
+      List.Forall₂ Eq outputs₁.toList outputs₂.toList
+  | .τ, .τ => True
+  | _, _ => False
+
+instance {Eq : V → V → Prop} [Arity Op] [IsRefl V Eq] :
+  IsRefl (Label Op V m n) (Label.EqMod Eq) where
+  refl l := by cases l <;> simp [Label.EqMod, IsRefl.refl]
+
+@[simp]
+def Label.EqMod.eq_eq
+  [Arity Op] {l₁ l₂ : Label Op V m n} :
+    Label.EqMod Eq l₁ l₂ ↔ l₁ = l₂
+  := by
+  constructor
+  · cases l₁ <;> cases l₂
+    any_goals simp [Label.EqMod]
+    · intros h₁ h₂ h₃
+      subst h₁
+      simp [Vector.toList_inj] at h₂
+      simp [Vector.toList_inj] at h₃
+      simp [h₂, h₃]
+    · simp [Vector.toList_inj]
+    · simp [Vector.toList_inj]
+  · intros h
+    simp [h, IsRefl.refl]
+
 end Wavelet.Semantics
 
 namespace Wavelet
@@ -443,7 +481,7 @@ theorem Lts.IsInvariantAt.base
   {P : C → Prop} {c : C}
   (hinv : lts.IsInvariantAt P c) : P c := hinv .refl
 
-theorem Lts.IsInvariantAt.step
+theorem Lts.IsInvariantAt.unfold
   {lts : Lts C E}
   {P : C → Prop} {c c' : C} {l : E}
   (hinv : lts.IsInvariantAt P c)
