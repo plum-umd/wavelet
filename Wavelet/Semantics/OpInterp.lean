@@ -97,6 +97,17 @@ def OpInterp.Deterministic
     interp.lts.Step s (.respond op inputs outputs₂) s₂' →
     s₁' = s₂' ∧ outputs₁ = outputs₂
 
+/-- No operator can execute and block another operator's execution
+(although the result might change). -/
+def OpInterp.NonBlocking
+  [Arity Op]
+  (interp : OpInterp Op V) : Prop :=
+  ∀ {s s₁ s₂ l op inputs outputs},
+    interp.lts.Step s l s₁ →
+    interp.lts.Step s (.respond op inputs outputs) s₂ →
+    ∃ outputs' s₂',
+      interp.lts.Step s₁ (.respond op inputs outputs') s₂'
+
 def Lts.InterpStep.map_step
   [Arity Op] {S S'}
   {lts₁ lts₂ : Lts S (Label Op V m n)}
