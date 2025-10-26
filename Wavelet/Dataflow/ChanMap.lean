@@ -319,6 +319,19 @@ theorem ChanMap.pairwise_empty
   simp [hget₁] at i
   exact Fin.elim0 i
 
+theorem pop_vals_disj_preserves_pairwise
+  [DecidableEq χ]
+  {map : ChanMap χ V}
+  {P : V → V → Prop}
+  {names₁ : Vector χ m} {vals₁ : Vector V m}
+  {names₂ : Vector χ n} {vals₂ : Vector V n}
+  (hpw : map.Pairwise P)
+  (hdisj : List.Disjoint names₁.toList names₂.toList)
+  (hpop₁ : map.popVals names₁ = some (vals₁, map'))
+  (hpop₂ : map.popVals names₂ = some (vals₂, map'')) :
+    ∀ v₁ v₂, v₁ ∈ vals₁ → v₂ ∈ vals₂ → P v₁ v₂
+  := sorry
+
 end Lemmas
 
 end Wavelet.Dataflow

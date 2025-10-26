@@ -160,6 +160,12 @@ def Label.EqMod.eq_eq
   · intros h
     simp [h, IsRefl.refl]
 
+def Label.EqModYieldOutputs
+  [Arity Op] : Label Op V m n → Label Op V m n → Prop
+  | .yield op₁ inputs₁ _, .yield op₂ inputs₂ _ =>
+      op₁ = op₂ ∧ inputs₁ ≍ inputs₂
+  | l₁, l₂ => l₁ = l₂
+
 end Wavelet.Semantics
 
 namespace Wavelet

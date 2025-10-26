@@ -5,8 +5,8 @@ import Wavelet.Semantics.Defs
 namespace Wavelet.Semantics
 
 /-- Modifies labels with a relation. -/
-inductive Lts.Guard {S} (P : E → E' → Prop) (lts : Lts S E) : Lts S E' where
-  | step : P e e' → lts.Step s e s' → Guard P lts s e' s'
+inductive Lts.GuardStep {S} (P : E → E' → Prop) (lts : Lts S E) : Lts S E' where
+  | step : P e e' → lts.Step s e s' → GuardStep P lts s e' s'
 
 /-- Guards and interprets the labels as another set of operators. -/
 def guard
@@ -16,7 +16,7 @@ def guard
   Semantics Op' V' m' n' := {
     S := sem.S,
     init := sem.init,
-    lts := sem.lts.Guard P,
+    lts := sem.lts.GuardStep P,
   }
 
 /-- Some well-formedness constraints on label guards. -/
@@ -36,19 +36,19 @@ theorem guard_single
   {s s' : S}
   (hguard : P e e')
   (hstep : lts.Step s e s') :
-  (lts.Guard P).Step s e' s'
-:= Lts.Guard.step hguard hstep
+  (lts.GuardStep P).Step s e' s'
+:= Lts.GuardStep.step hguard hstep
 
 theorem guard_tau_star
   {lts : Lts C E}
   {P : E → E' → Prop}
   (hsteps : lts.TauStar τ s₁ s₁')
-  (hguard : P τ τ') : (lts.Guard P).TauStar τ' s₁ s₁'
+  (hguard : P τ τ') : (lts.GuardStep P).TauStar τ' s₁ s₁'
   := by
   induction hsteps with
   | refl => exact .refl
   | tail pref tail ih =>
-    have := Lts.Guard.step hguard tail
+    have := Lts.GuardStep.step hguard tail
     exact .tail ih this
 
 theorem Guard.map_step
@@ -57,7 +57,7 @@ theorem Guard.map_step
   {P : E → E' → Prop}
   {s s' : S}
   (hmap : ∀ {s s' l}, lts₁.Step s l s' → lts₂.Step s l s') :
-    (lts₁.Guard P).Step s l s' → (lts₂.Guard P).Step s l s'
+    (lts₁.GuardStep P).Step s l s' → (lts₂.GuardStep P).Step s l s'
   | .step hguard hstep => .step hguard (hmap hstep)
 
 theorem Guard.map_guard
@@ -66,7 +66,7 @@ theorem Guard.map_guard
   {P₁ P₂ : E → E' → Prop}
   {s s' : S}
   (hmap : ∀ {l₁ l₂}, P₁ l₁ l₂ → P₂ l₁ l₂) :
-    (lts.Guard P₁).Step s l s' → (lts.Guard P₂).Step s l s'
+    (lts.GuardStep P₁).Step s l s' → (lts.GuardStep P₂).Step s l s'
   | .step hguard hstep => .step (hmap hguard) hstep
 
 /-- `guard` preserves IO-restricted simulation. -/
@@ -94,27 +94,27 @@ theorem sim_guard
     constructor
     · cases hstep_s₂ with
       | step_yield hstep_yield_s₂ =>
-        replace hstep_yield_s₂ := Lts.Guard.step hlabel hstep_yield_s₂
+        replace hstep_yield_s₂ := Lts.GuardStep.step hlabel hstep_yield_s₂
         cases hguard.guard_yield hlabel <;>
           rename_i h₁ <;> cases l <;> simp at h₁
         · exact .step_tau (.single hstep_yield_s₂)
         · exact .step_yield hstep_yield_s₂
       | step_input hstep_input_s₂ hstep_tau =>
-        replace hstep_input_s₂ := Lts.Guard.step hlabel hstep_input_s₂
-        replace hstep_tau := hstep_tau.map (Lts.Guard.step hguard.guard_tau)
+        replace hstep_input_s₂ := Lts.GuardStep.step hlabel hstep_input_s₂
+        replace hstep_tau := hstep_tau.map (Lts.GuardStep.step hguard.guard_tau)
         cases hguard.guard_input hlabel <;>
           rename_i h₁ <;> cases l <;> simp at h₁
         · exact .step_tau (hstep_tau.prepend hstep_input_s₂)
         · exact .step_input hstep_input_s₂ hstep_tau
       | step_output hstep_tau hstep_output_s₂ =>
-        replace hstep_output_s₂ := Lts.Guard.step hlabel hstep_output_s₂
-        replace hstep_tau := hstep_tau.map (Lts.Guard.step hguard.guard_tau)
+        replace hstep_output_s₂ := Lts.GuardStep.step hlabel hstep_output_s₂
+        replace hstep_tau := hstep_tau.map (Lts.GuardStep.step hguard.guard_tau)
         cases hguard.guard_output hlabel <;>
           rename_i h₁ <;> cases l <;> simp at h₁
         · exact .step_tau (hstep_tau.tail hstep_output_s₂)
         · exact .step_output hstep_tau hstep_output_s₂
       | step_tau hstep_tau_s₂ =>
-        replace hstep_tau_s₂ := hstep_tau_s₂.map (Lts.Guard.step hguard.guard_tau)
+        replace hstep_tau_s₂ := hstep_tau_s₂.map (Lts.GuardStep.step hguard.guard_tau)
         have := hguard.guard_tau_only hlabel
         cases l <;> simp at this
         exact .step_tau hstep_tau_s₂
@@ -152,7 +152,7 @@ theorem sim_weak_guard
         rename_i s₂₁ s₂₂
         apply Lts.WeakStep.step
         · exact guard_tau_star htau₁ hguard.guard_tau
-        · exact Lts.Guard.step hlabel hstep₂
+        · exact Lts.GuardStep.step hlabel hstep₂
         · exact guard_tau_star htau₂ hguard.guard_tau
     · exact hR₂
 

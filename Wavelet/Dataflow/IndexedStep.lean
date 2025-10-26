@@ -148,13 +148,13 @@ theorem Config.IndexedStep.to_step_yield_or_tau
   [InterpConsts V]
   {c c' : Config Op χ V m n}
   {l : Label Op V m n}
-  (hl : l.isYield ∨ l.isSilent)
   (hstep : Config.IndexedStep c (i, l) c') :
     Config.Step c l c'
   := by
-  cases l <;> simp at hl
-  · exact Config.IndexedStep.to_step_yield hstep
-  · exact Config.IndexedStep.to_step_tau hstep
+  cases l with
+  | yield => exact Config.IndexedStep.to_step_yield hstep
+  | τ => exact Config.IndexedStep.to_step_tau hstep
+  | _ => cases hstep
 
 theorem Config.IndexedStep.iff_step_yield_or_tau
   [Arity Op] [DecidableEq χ]
@@ -167,9 +167,31 @@ theorem Config.IndexedStep.iff_step_yield_or_tau
   constructor
   · intros h
     have ⟨i, h⟩ := h
-    exact Config.IndexedStep.to_step_yield_or_tau hl h
+    exact Config.IndexedStep.to_step_yield_or_tau h
   · intros h
     apply Config.IndexedStep.from_step_yield_or_tau hl h
+
+theorem Config.IndexedStep.unique_label_mod_outputs
+  [Arity Op] [DecidableEq χ]
+  [InterpConsts V]
+  {c c₁ c₂ : Config Op χ V m n}
+  {l₁ l₂ : Label Op V m n}
+  (hstep₁ : Config.IndexedStep c (i, l₁) c₁)
+  (hstep₂ : Config.IndexedStep c (i, l₂) c₂) :
+    Label.EqModYieldOutputs l₁ l₂
+  := by
+  cases hstep₁ <;> rename_i hget₁ <;>
+  cases hstep₂ <;> rename_i hget₂
+  all_goals simp [hget₁] at hget₂
+  case step_op.step_op =>
+    rename_i hpop₁ _ _ _ _ _ _ _ hpop₂ _
+    have ⟨h₁, h₂, h₃⟩ := hget₂
+    subst h₁; subst h₂; subst h₃
+    simp [hpop₁] at hpop₂
+    have ⟨h₁, h₂⟩ := hpop₂
+    subst h₁; subst h₂
+    simp [Label.EqModYieldOutputs]
+  simp [Label.EqModYieldOutputs]
 
 theorem Config.IndexedStep.unique_index_mod
   [Arity Op] [DecidableEq χ]
