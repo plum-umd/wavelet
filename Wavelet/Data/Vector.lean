@@ -161,4 +161,25 @@ theorem inj_map
     xs = ys
 := sorry
 
+theorem forall₂_push_toList_to_forall₂
+  {α β}
+  {xs : Vector α n}
+  {ys : Vector β n}
+  {x : α} {y : β}
+  {R : α → β → Prop}
+  (hforall₂ : List.Forall₂ R (xs.push x).toList (ys.push y).toList) :
+    List.Forall₂ R xs.toList ys.toList ∧ R x y := by
+  sorry
+
+theorem forall₂_to_forall₂_push_toList
+  {α β}
+  {xs : Vector α n}
+  {ys : Vector β n}
+  {x : α} {y : β}
+  {R : α → β → Prop}
+  (hforall₂ : List.Forall₂ R xs.toList ys.toList)
+  (hxy : R x y) :
+    List.Forall₂ R (xs.push x).toList (ys.push y).toList := by
+  sorry
+
 end Vector

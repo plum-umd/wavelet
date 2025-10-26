@@ -47,13 +47,22 @@ def ChanMap.IsEmpty (name : χ) (map : ChanMap χ V) : Prop := map name = []
 
 def ChanMap.getBuf (name : χ) (map : ChanMap χ V) : List V := map name
 
+def ChanMap.Pairwise
+  (P : V → V → Prop)
+  (map : ChanMap χ V) : Prop :=
+  ∀ {x₁ x₂}
+    {buf₁ buf₂ : List V}
+    {i : Fin buf₁.length}
+    {j : Fin buf₂.length},
+    x₁ ≠ x₂ ∨ i.val ≠ j.val →
+    map x₁ = some buf₁ →
+    map x₂ = some buf₂ →
+    P buf₁[i] buf₂[j]
+
 /-! Lemmas about `ChanMap`. -/
 section Lemmas
 
-variable {χ V}
-variable [DecidableEq χ]
-
-theorem push_vals_disjoint
+theorem push_vals_disjoint [DecidableEq χ]
   {map : ChanMap χ V}
   {names : Vector χ n}
   (hdisj : name ∉ names) :
@@ -74,7 +83,7 @@ theorem push_vals_disjoint
       have := Vector.mem_pop_iff.mpr (.inl h)
       exact False.elim (hdisj this)
 
-theorem push_vals_map
+theorem push_vals_map [DecidableEq χ]
   {map₁ map₂ : ChanMap χ V}
   {names : Vector χ n}
   {f : χ → χ}
@@ -107,7 +116,7 @@ theorem push_vals_map
       apply ih
       exact heq
 
-theorem push_val_empty
+theorem push_val_empty [DecidableEq χ]
   {map : ChanMap χ V}
   (hempty : map name = []) :
   map.pushVal name val = λ n => if n = name then [val] else map n := by
@@ -118,7 +127,7 @@ theorem push_val_empty
     simp [h, hempty]
   · rfl
 
-theorem push_vals_empty
+theorem push_vals_empty [DecidableEq χ]
   {map : ChanMap χ V}
   {names : Vector χ n}
   {vals : Vector V n}
@@ -186,7 +195,7 @@ theorem push_vals_empty
             simp [Vector.mem_pop_iff, h₁, this]
           simp [Vector.finIdxOf?_eq_none_iff.mpr this]
 
-theorem pop_vals_unfold
+theorem pop_vals_unfold [DecidableEq χ]
   {map : ChanMap χ V}
   {names : Vector χ (n + 1)} :
   map.popVals names = do
@@ -195,7 +204,7 @@ theorem pop_vals_unfold
     return (vals'.push val, map'')
 := by rfl
 
-theorem pop_val_singleton
+theorem pop_val_singleton [DecidableEq χ]
   {map : ChanMap χ V}
   (hsingleton : map name = [val]) :
   ∃ map',
@@ -203,7 +212,7 @@ theorem pop_val_singleton
     map' = λ n => if n = name then [] else map n := by
   simp [ChanMap.popVal, hsingleton]
 
-theorem pop_vals_singleton
+theorem pop_vals_singleton [DecidableEq χ]
   {map : ChanMap χ V}
   {names : Vector χ n}
   (prop : χ → V → Prop)
@@ -249,12 +258,12 @@ theorem pop_vals_singleton
             exact this
           · exact h₅
 
-theorem pop_val_to_pop_vals
+theorem pop_val_to_pop_vals [DecidableEq χ]
   {map : ChanMap χ V}
   (hpop_val : map.popVal name = some (val, map')) :
   map.popVals #v[name] = some (#v[val], map') := sorry
 
-theorem pop_vals_append
+theorem pop_vals_append [DecidableEq χ]
   {map : ChanMap χ V}
   {names₁ : Vector χ n₁}
   {names₂ : Vector χ n₂}
@@ -292,7 +301,7 @@ theorem push_vals_push_vals_disj_commute
     = (chans.pushVals vars₂ vals₂).pushVals vars₁ vals₁
   := sorry
 
-theorem pop_vals_eq_head
+theorem pop_vals_eq_head [DecidableEq χ]
   {map : ChanMap χ V}
   (hhead₁ : names₁.toList = name :: names₁')
   (hhead₂ : names₂.toList = name :: names₂')
@@ -300,6 +309,15 @@ theorem pop_vals_eq_head
   (hpop₂ : map.popVals names₂ = some (vals₂, map'')) :
   vals₁.toList.head? = vals₂.toList.head?
   := sorry
+
+@[simp]
+theorem ChanMap.pairwise_empty
+  (P : V → V → Prop) :
+  (ChanMap.empty (χ := χ)).Pairwise P := by
+  intros x₁ x₂ buf₁ buf₂ i j hne hget₁ hget₂
+  simp [ChanMap.empty] at hget₁
+  simp [hget₁] at i
+  exact Fin.elim0 i
 
 end Lemmas
 

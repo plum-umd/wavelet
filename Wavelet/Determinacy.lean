@@ -89,27 +89,6 @@ namespace Wavelet.Dataflow
 
 open Semantics
 
-def ChanMap.Pairwise
-  (P : V → V → Prop)
-  (map : ChanMap χ V) : Prop :=
-  ∀ {x₁ x₂}
-    {buf₁ buf₂ : List V}
-    {i : Fin buf₁.length}
-    {j : Fin buf₂.length},
-    x₁ ≠ x₂ ∨ i.val ≠ j.val →
-    map x₁ = some buf₁ →
-    map x₂ = some buf₂ →
-    P buf₁[i] buf₂[j]
-
-@[simp]
-theorem ChanMap.pairwise_empty
-  (P : V → V → Prop) :
-  (ChanMap.empty (χ := χ)).Pairwise P := by
-  intros x₁ x₂ buf₁ buf₂ i j hne hget₁ hget₂
-  simp [ChanMap.empty] at hget₁
-  simp [hget₁] at i
-  exact Fin.elim0 i
-
 /-- Defines a config property that imposes a
 constraint on every pair of values in the config. -/
 def Config.Pairwise
@@ -842,27 +821,6 @@ theorem op_spec_guard_eq_congr
     cases hguard₂
     rfl
 
-theorem forall₂_push_toList_to_forall₂
-  {α β}
-  {xs : Vector α n}
-  {ys : Vector β n}
-  {x : α} {y : β}
-  {R : α → β → Prop}
-  (hforall₂ : List.Forall₂ R (xs.push x).toList (ys.push y).toList) :
-    List.Forall₂ R xs.toList ys.toList ∧ R x y := by
-  sorry
-
-theorem forall₂_to_forall₂_push_toList
-  {α β}
-  {xs : Vector α n}
-  {ys : Vector β n}
-  {x : α} {y : β}
-  {R : α → β → Prop}
-  (hforall₂ : List.Forall₂ R xs.toList ys.toList)
-  (hxy : R x y) :
-    List.Forall₂ R (xs.push x).toList (ys.push y).toList := by
-  sorry
-
 /-- Similar to `theorem op_spec_guard_eq_congr` but for `OpSpec.TrivGuard`. -/
 theorem op_spec_triv_guard_eq_congr
   [Arity Op]
@@ -880,17 +838,17 @@ theorem op_spec_triv_guard_eq_congr
   case yield.yield.triv_yield.triv_yield =>
     have ⟨h₁, heq₂, heq₃⟩ := heq
     subst h₁
-    replace ⟨heq₂, _⟩ := forall₂_push_toList_to_forall₂ heq₂
-    replace ⟨heq₃, _⟩ := forall₂_push_toList_to_forall₂ heq₃
+    replace ⟨heq₂, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq₂
+    replace ⟨heq₃, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq₃
     simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₂
     simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₃
     simp [heq₂, heq₃]
   case input.input.triv_input.triv_input =>
-    replace ⟨heq, _⟩ := forall₂_push_toList_to_forall₂ heq
+    replace ⟨heq, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq
     simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq
     simp [heq]
   case output.output.triv_output.triv_output =>
-    replace ⟨heq, _⟩ := forall₂_push_toList_to_forall₂ heq
+    replace ⟨heq, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq
     simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq
     simp [heq]
 
@@ -1004,7 +962,7 @@ theorem guard_label_triv_compat_inversion
     subst heq_outputs
     simp at houtputs₁' houtputs₂'
     simp [← houtputs₁', ← houtputs₂']
-    apply forall₂_to_forall₂_push_toList
+    apply Vector.forall₂_to_forall₂_push_toList
     · simp [EqModGhost]
     · simp [EqModGhost]
   case yield.yield.triv_join.triv_join.join =>
@@ -1894,7 +1852,7 @@ theorem proc_indexed_unguarded_step_det_mod
         subst h₁
         simp at h₂ h₃ h₂' h₃'
         simp [← h₃, ← h₃']
-        apply forall₂_to_forall₂_push_toList
+        apply Vector.forall₂_to_forall₂_push_toList
         · simp [EqModGhost]
         · simp [EqModGhost]
       case triv_join.triv_join =>
