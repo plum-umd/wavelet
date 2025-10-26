@@ -22,7 +22,7 @@ def OpSpec.CompatLabels
   | .respond op₁ inputs₁ _, .respond op₂ inputs₂ _ =>
     (opSpec.pre op₁ inputs₁) ⊥ (opSpec.pre op₂ inputs₂)
 
-def OpSpec.Sound
+def OpSpec.Confluent
   [Arity Op] [PCM T]
   (opSpec : OpSpec Op V T)
   (interp : OpInterp Op V) : Prop :=
