@@ -97,7 +97,7 @@ def OpInterp.Deterministic
     interp.lts.Step s (.respond op inputs outputs₂) s₂' →
     s₁' = s₂' ∧ outputs₁ = outputs₂
 
-def Lts.Interp.map_step
+def Lts.InterpStep.map_step
   [Arity Op] {S S'}
   {lts₁ lts₂ : Lts S (Label Op V m n)}
   {lts' : Lts S' (RespLabel Op V)}
@@ -105,6 +105,21 @@ def Lts.Interp.map_step
   (hmap : ∀ {s s' l}, lts₁.Step s l s' → lts₂.Step s l s')
   (hstep : (Lts.InterpStep lts₁ lts').Step s l s') :
     (Lts.InterpStep lts₂ lts').Step s l s'
+  := by
+  cases hstep with
+  | step_tau hstep => exact .step_tau (hmap hstep)
+  | step_input hstep => exact .step_input (hmap hstep)
+  | step_output hstep => exact .step_output (hmap hstep)
+  | step_yield hbase hinterp => exact .step_yield (hmap hbase) hinterp
+
+def Lts.IndexedInterpStep.map_step
+  [Arity Op] {S S'}
+  {lts₁ lts₂ : Lts S (Nat × Label Op V m n)}
+  {lts' : Lts S' (RespLabel Op V)}
+  {s s' : S × S'}
+  (hmap : ∀ {s s' l}, lts₁.Step s l s' → lts₂.Step s l s')
+  (hstep : (Lts.IndexedInterpStep lts₁ lts').Step s l s') :
+    (Lts.IndexedInterpStep lts₂ lts').Step s l s'
   := by
   cases hstep with
   | step_tau hstep => exact .step_tau (hmap hstep)
