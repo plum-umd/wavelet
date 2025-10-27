@@ -219,6 +219,14 @@ theorem Lts.Star.reverse_induction
     intros _ _ _ _ hstep htail
     apply head hstep
 
+theorem Lts.Star.map_step
+  {lts : Lts C E} {lts' : Lts C E}
+  (hmap : ∀ {c₁ c₂ l}, lts.Step c₁ l c₂ → lts'.Step c₁ l c₂)
+  (hsteps : lts.Star c₁ tr c₂) : lts'.Star c₁ tr c₂ := by
+  induction hsteps with
+  | refl => exact .refl
+  | tail hstar' hstep ih => exact .tail ih (hmap hstep)
+
 structure Lts.Simulation
   (lts₁ : Lts C₁ E)
   (lts₂ : Lts C₂ E)

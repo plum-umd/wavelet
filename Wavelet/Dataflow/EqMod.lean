@@ -41,6 +41,10 @@ instance {Eq : V → V → Prop} [Arity Op] [IsRefl V Eq] :
     · rfl
     · apply IsRefl.refl
 
+instance {Eq : V → V → Prop} [Arity Op] [IsSymm V Eq] :
+  IsSymm (Config Op χ V m n) (Config.EqMod Eq) where
+  symm := sorry
+
 instance {Eq : V → V → Prop} [Arity Op] [IsTrans V Eq] :
   IsTrans (Config Op χ V m n) (Config.EqMod Eq) where
   trans := sorry
