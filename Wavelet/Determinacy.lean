@@ -2715,7 +2715,9 @@ theorem proc_indexed_interp_guarded_term_confl
   (htrace : (Config.IdxInterpGuardStep opSpec ioSpec).Star s tr s₁)
   (hterm : Config.IndexedStep.IsFinalFor (λ (_, l) => l.isYield ∨ l.isSilent) s₁.1)
   (hstep₂ : (Config.IdxInterpGuardStep opSpec ioSpec).Step s l s₂) :
-    ∃ tr', (Config.IdxInterpGuardStep opSpec ioSpec).Star s₂ tr' s₁
+    ∃ tr',
+      (Config.IdxInterpGuardStep opSpec ioSpec).Star s₂ tr' s₁ ∧
+      tr.length = tr'.length + 1
   := by
   have hl := proc_indexed_interp_guarded_step_label hstep₂
   induction htrace
@@ -2737,14 +2739,17 @@ theorem proc_indexed_interp_guarded_term_confl
       have ⟨h₁, h₂⟩ := h
       subst h₁
       subst h₂
-      exact ⟨_, htail⟩
+      exact ⟨_, htail, by simp⟩
     | inr h =>
       have ⟨_, hstep₁₂, hstep₂₁⟩ := h
-      have ⟨_, htail'⟩ := ih (haff.unfold hstep).2
+      have ⟨_, htail', hlen⟩ := ih (haff.unfold hstep).2
         (hdisj.unfold hstep).2 hstep₁₂
-      exact ⟨_, htail'.prepend hstep₂₁⟩
+      exact ⟨_, htail'.prepend hstep₂₁, by simp [hlen]⟩
 
-theorem proc_indexed_interp_unguarded_weak_norm
+/-- If there exists a guarded, terminating trace, then any unguarded trace is
+  1. Bounded by the length of the guarded trace, and
+  2. Converge to the same final state as the guarded trace. -/
+theorem proc_indexed_interp_unguarded_strong_norm
   [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
   [DecidableEq χ]
   [InterpConsts V]
@@ -2763,6 +2768,7 @@ theorem proc_indexed_interp_unguarded_weak_norm
   (htrace₂ : (Config.IdxInterpTrivStep opSpec).Star s tr₂ s₂) :
     ∃ s₁' tr₃,
       (Config.IdxInterpTrivStep opSpec).Star s₂ tr₃ s₁' ∧
+      tr₁.length = tr₃.length + tr₂.length ∧
       Config.EqMod EqModGhost s₁.1 s₁'.1 ∧
       s₁.2 = s₁'.2
   := by
@@ -2778,10 +2784,10 @@ theorem proc_indexed_interp_unguarded_weak_norm
     have ⟨s'', hstep₂', heq⟩ := proc_indexed_interp_unguarded_to_guarded
       hdet hnb haff htrace₁ this hstep₂
     have ⟨_, htail₂', heq'⟩ := proc_indexed_interp_unguarded_steps_congr htail₂ heq
-    have ⟨_, htrace₁'⟩ := proc_indexed_interp_guarded_term_confl
+    have ⟨_, htrace₁', hlen⟩ := proc_indexed_interp_guarded_term_confl
       hconfl hdet haff hdisj
       htrace₁ hterm hstep₂'
-    have ⟨_, _, htrace₂', heq₂'⟩ := proc_indexed_interp_unguarded_weak_norm
+    have ⟨_, _, htrace₂', hlen₂', heq₂'⟩ := proc_indexed_interp_unguarded_strong_norm
       hconfl hdet hnb
       (haff.unfold hstep₂').2
       (hdisj.unfold hstep₂').2
@@ -2796,30 +2802,12 @@ theorem proc_indexed_interp_unguarded_weak_norm
       _, _, htrace₂'',
       by
         constructor
-        · exact IsTrans.trans _ _ _ heq₂'.1 heq₂''.1
-        · simp [← heq₂''.2, heq₂'.2]
+        · simp [hlen, hlen₂']
+          omega
+        · constructor
+          · exact IsTrans.trans _ _ _ heq₂'.1 heq₂''.1
+          · simp [← heq₂''.2, heq₂'.2]
     ⟩
-
-theorem proc_indexed_interp_unguarded_bound
-  [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
-  [DecidableEq χ]
-  [InterpConsts V]
-  [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
-  {tr tr' : Trace (Nat × Label Semantics.Empty V m n)}
-  {l : Label Semantics.Empty V m n}
-  (hdet : opInterp.Deterministic)
-  (hnb : opInterp.NonBlocking)
-  -- (hconfl : opSpec.Confluent opInterp)
-  (haff : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.proc.AffineChan) s)
-  (hdisj : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.DisjointTokens) s)
-  (htrace₁ : (Config.IdxInterpGuardStep opSpec ioSpec).Star s tr s₁)
-  (hterm : Config.IndexedStep.IsFinalFor (λ (i, l) => l.isYield ∨ l.isSilent) s₁.1)
-  (htrace₂ : (Config.IdxInterpTrivStep opSpec).Star s tr' s₂) :
-    tr'.length ≤ tr.length
-  := by sorry
 
 end Wavelet.Compile
 
