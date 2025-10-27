@@ -1,8 +1,9 @@
 import Wavelet.Determinacy
+import Wavelet.Compile.AffineVar
 
 namespace Wavelet.Seq
 
-open Semantics
+open Semantics Determinacy
 
 /-- Simple non-dependent resource specs. -/
 structure SimpleOpSpec Op T where
@@ -12,7 +13,7 @@ structure SimpleOpSpec Op T where
 
 def SimpleOpSpec.toOpSpec
   V [Arity Op] (spec : SimpleOpSpec Op T) :
-  Semantics.OpSpec Op V T := {
+  OpSpec Op V T := {
     pre op _ := spec.pre op,
     post op _ _ := spec.post op,
     -- frame_preserving := by intros; apply spec.frame_preserving
@@ -213,7 +214,7 @@ theorem sim_type_check_input_vars
 theorem sim_type_check_input
   [Arity Op]
   [InterpConsts V]
-  [PCM T] [pcm : PCM.Lawful T]
+  [PCM T] [PCM.Lawful T]
   [DecidableEq χ]
   [DecidableLE T]
   {opSpec : SimpleOpSpec Op T}

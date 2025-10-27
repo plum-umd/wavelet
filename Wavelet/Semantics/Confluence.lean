@@ -72,4 +72,33 @@ theorem Lts.strong_confl_at_mod_imp_compat
   have hcompat' := himp hcompat
   exact hconfl hstep₁ hstep₂ hcompat'
 
+/--
+Having a terminating trace in a confluent LTS means that
+all other traces can go to the same final state.
+-/
+theorem strong_confl_final_confl_tau
+  {lts : Lts C E} {c : C} {τ : E}
+  {Compat : E → E → Prop}
+  (hinv : lts.IsInvariantAt (lts.StronglyConfluentAt Compat) c)
+  (htau : ∀ {l l'}, Compat l l' ↔ l = τ ∧ l' = τ)
+  (hsteps₁ : lts.TauStar τ c c₁)
+  (hterm : lts.IsFinalFor (· = τ) c₁)
+  (hstep₂ : lts.Step c τ c₂) : lts.TauStar τ c₂ c₁
+  := by
+  induction hsteps₁
+    using Lts.TauStar.reverse_induction
+    generalizing c₂ with
+  | refl =>
+    exact False.elim (hterm (by rfl) hstep₂)
+  | head hstep₁ htail₁ ih =>
+    rename_i c c'
+    have ⟨hconfl', hinv'⟩ := hinv.unfold hstep₁
+    have := hinv.base hstep₁ hstep₂ (by simp [htau])
+    cases this with
+    | inl heq => simp [← heq, htail₁]
+    | inr h =>
+      have ⟨c'', hstep₁', hstep₂'⟩ := h
+      have := ih hinv' hstep₁'
+      exact this.prepend hstep₂'
+
 end Wavelet.Semantics

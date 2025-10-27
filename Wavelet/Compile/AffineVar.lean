@@ -1,4 +1,4 @@
-import Wavelet.Seq
+import Wavelet.Seq.Fn
 
 namespace Wavelet.Seq
 

@@ -1,11 +1,17 @@
 import Wavelet.Semantics.Defs
 import Wavelet.Semantics.OpInterp
 import Wavelet.Semantics.Guard
-import Wavelet.Semantics.PCM
+
+import Wavelet.Seq.Fn
+import Wavelet.Dataflow.Proc
+
+import Wavelet.Determinacy.PCM
 
 /-! Putting a resource specification on an operator set. -/
 
-namespace Wavelet.Semantics
+namespace Wavelet.Determinacy
+
+open Semantics
 
 /-- PCM specification of an operator set -/
 structure OpSpec Op V T [Arity Op] where
@@ -180,4 +186,48 @@ theorem OpSpec.spec_guard_implies_triv_guard
   | .spec_output => by exact .triv_output
   | .spec_tau => by exact .triv_tau
 
-end Wavelet.Semantics
+def EqModGhost : V ⊕ T → V ⊕ T → Prop
+  | .inl v₁, .inl v₂ => v₁ = v₂
+  | .inr _, .inr _ => True
+  | _, _ => False
+
+instance : IsRefl (V ⊕ T) EqModGhost where
+  refl v := by cases v <;> simp [EqModGhost]
+
+instance : IsSymm (V ⊕ T) EqModGhost where
+  symm v₁ v₂ := by cases v₁ <;> cases v₂ <;> grind only [EqModGhost]
+
+instance : IsTrans (V ⊕ T) EqModGhost where
+  trans v₁ v₂ v₃ := by cases v₁ <;> cases v₂ <;> cases v₃ <;> grind only [EqModGhost]
+
+end Wavelet.Determinacy
+
+/-! Some abbreviations for `Seq`. -/
+namespace Wavelet.Seq
+
+open Semantics Determinacy
+
+abbrev ExprWithSpec
+  [Arity Op] (opSpec : OpSpec Op V T) χ m n
+  := Expr (WithSpec Op opSpec) χ (m + 1) (n + 1)
+
+abbrev FnWithSpec
+  [Arity Op] (opSpec : OpSpec Op V T) χ m n
+  := Fn (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
+
+end Wavelet.Seq
+
+/-! Some abbreviations for `Proc`. -/
+namespace Wavelet.Dataflow
+
+open Semantics Determinacy
+
+abbrev ProcWithSpec
+  [Arity Op] (opSpec : OpSpec Op V T) χ m n
+  := Proc (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
+
+abbrev ConfigWithSpec
+  [Arity Op] (opSpec : OpSpec Op V T) χ m n
+  := Config (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
+
+end Wavelet.Dataflow

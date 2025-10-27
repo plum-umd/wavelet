@@ -1,6 +1,6 @@
 /-! Definitions for PCM. -/
 
-namespace Wavelet.Semantics
+namespace Wavelet.Determinacy
 
 class PCM (C : Type u) where
   add : C → C → C
@@ -66,4 +66,4 @@ instance [PCM R] : Hom (Triv.homFrom R) := by
 
 end PCM
 
-end Wavelet.Semantics
+end Wavelet.Determinacy
