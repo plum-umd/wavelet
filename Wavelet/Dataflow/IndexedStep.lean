@@ -219,7 +219,7 @@ theorem Config.IndexedStep.unique_index_mod
     · simp [Label.EqMod, IsRefl.refl]
       apply hdet
       all_goals rfl
-    · simp [Config.EqMod]
+    · simp [Config.EqMod, IsRefl.refl]
       have := hdet rfl rfl
       apply chan_map_push_vals_equiv
       exact this

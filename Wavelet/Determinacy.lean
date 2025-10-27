@@ -2594,6 +2594,53 @@ theorem proc_indexed_interp_guarded_trace_to_unguarded
     (Config.IdxInterpTrivStep opSpec).Star s tr s'
   := htrace.map_step proc_indexed_interp_guarded_step_to_unguarded
 
+theorem async_op_interp_congr
+  [InterpConsts V]
+  {aop aop' aop₁ aop₁' : AsyncOp (V ⊕ T)}
+  (hinterp : AsyncOp.Interp aop
+    (.mk allInputs allOutputs inputs inputVals outputs outputVals) aop₁)
+  (heq_aop : AsyncOp.EqMod EqModGhost aop aop')
+  (heq_inputs : List.Forall₂ EqModGhost inputVals inputVals') :
+    ∃ outputVals',
+      AsyncOp.Interp aop'
+        (.mk allInputs allOutputs inputs inputVals' outputs outputVals') aop₁' ∧
+      AsyncOp.EqMod EqModGhost aop₁ aop₁' ∧
+      List.Forall₂ EqModGhost outputVals outputVals'
+  := sorry
+
+theorem proc_indexed_unguarded_congr
+  [Arity Op]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n}
+  {l : Nat × Label Op V m n}
+  (hstep : (Config.IdxTrivStep opSpec).Step s₁ l s₂)
+  (heq : Config.EqMod EqModGhost s₁ s₁') :
+    ∃ s₂',
+      (Config.IdxTrivStep opSpec).Step s₁' l s₂' ∧
+      Config.EqMod EqModGhost s₂ s₂'
+  := by
+  have hl := proc_indexed_unguarded_step_label hstep
+  have ⟨heq_aps, heq_chans⟩ := heq
+  rcases hstep with ⟨⟨hguard⟩, hstep⟩
+  cases hstep with
+  | step_op => sorry
+  | step_async hi hget hinterp hpop => sorry
+    -- replace ⟨_, _, hpop, heq_outputs, heq_chans'⟩ := chan_map_pop_vals_equiv heq_chans hpop
+    -- -- simp at hpop
+    -- exact ⟨
+    --   _,
+    --   .step
+    --     (.idx_guard hguard)
+    --     (.step_async
+    --       hi
+    --       hget
+    --       hinterp
+    --       hpop),
+    --   sorry
+    -- ⟩
+
 theorem proc_indexed_interp_unguarded_congr
   [Arity Op]
   [DecidableEq χ]
@@ -2608,8 +2655,27 @@ theorem proc_indexed_interp_unguarded_congr
       Config.EqMod EqModGhost s₂.1 s₂'.1 ∧
       s₂.2 = s₂'.2
   := by
-
-  sorry
+  have hl := proc_indexed_interp_unguarded_step_label hstep
+  cases hstep with
+  | step_yield hstep hinterp =>
+    have ⟨_, hstep', heq'⟩ := proc_indexed_unguarded_congr hstep heq.1
+    simp at heq
+    simp [heq.2] at hinterp
+    exact ⟨
+      _, .step_yield hstep' hinterp,
+      by
+        simp at heq ⊢
+        simp [heq']
+    ⟩
+  | step_tau hstep =>
+    have ⟨_, hstep', heq'⟩ := proc_indexed_unguarded_congr hstep heq.1
+    exact ⟨
+      _, .step_tau hstep',
+      by
+        simp at heq ⊢
+        simp [heq, heq']
+    ⟩
+  | _ hstep => simp at hl
 
 theorem proc_indexed_interp_unguarded_steps_congr
   [Arity Op]
@@ -2635,18 +2701,48 @@ theorem proc_indexed_interp_unguarded_steps_congr
     exact ⟨_, htail'.prepend hstep', heq₂⟩
 
 theorem proc_indexed_interp_guarded_term_confl
-  [Arity Op] [PCM T] [PCM.Lawful T]
+  [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
   {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  (hconfl : opSpec.Confluent opInterp)
+  (hdet : opInterp.Deterministic)
+  (haff : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.proc.AffineChan) s)
+  (hdisj : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.DisjointTokens) s)
   (htrace : (Config.IdxInterpGuardStep opSpec ioSpec).Star s tr s₁)
-  (hterm : Config.IndexedStep.IsFinalFor (λ (i, l) => l.isYield ∨ l.isSilent) s₁.1)
-  (hstep : (Config.IdxInterpGuardStep opSpec ioSpec).Step s l s₂) :
+  (hterm : Config.IndexedStep.IsFinalFor (λ (_, l) => l.isYield ∨ l.isSilent) s₁.1)
+  (hstep₂ : (Config.IdxInterpGuardStep opSpec ioSpec).Step s l s₂) :
     ∃ tr', (Config.IdxInterpGuardStep opSpec ioSpec).Star s₂ tr' s₁
-  := sorry
+  := by
+  have hl := proc_indexed_interp_guarded_step_label hstep₂
+  induction htrace
+    using Lts.Star.reverse_induction
+    generalizing s₂ with
+  | refl =>
+    match hstep₂ with
+    | .step_tau hstep₂
+    | .step_yield hstep₂ _ =>
+      rcases hstep₂ with ⟨⟨hguard₂⟩, hstep₂⟩
+      cases hguard₂ <;> exact False.elim (hterm (by simp) hstep₂)
+  | head hstep htail ih =>
+    rename_i s s' l' tr'
+    have hl' := proc_indexed_interp_guarded_step_label hstep
+    have := proc_indexed_interp_strong_confl_at hconfl hdet
+      haff.base hdisj.base hstep hstep₂ (by simp [hl, hl'])
+    cases this with
+    | inl h =>
+      have ⟨h₁, h₂⟩ := h
+      subst h₁
+      subst h₂
+      exact ⟨_, htail⟩
+    | inr h =>
+      have ⟨_, hstep₁₂, hstep₂₁⟩ := h
+      have ⟨_, htail'⟩ := ih (haff.unfold hstep).2
+        (hdisj.unfold hstep).2 hstep₁₂
+      exact ⟨_, htail'.prepend hstep₂₁⟩
 
 theorem proc_indexed_interp_unguarded_weak_norm
   [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
@@ -2657,9 +2753,9 @@ theorem proc_indexed_interp_unguarded_weak_norm
   {ioSpec : IOSpec V T m n}
   {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
   {tr₁ tr₂ : Trace (Nat × Label Semantics.Empty V m n)}
+  (hconfl : opSpec.Confluent opInterp)
   (hdet : opInterp.Deterministic)
   (hnb : opInterp.NonBlocking)
-  -- (hconfl : opSpec.Confluent opInterp)
   (haff : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.proc.AffineChan) s)
   (hdisj : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.DisjointTokens) s)
   (htrace₁ : (Config.IdxInterpGuardStep opSpec ioSpec).Star s tr₁ s₁)
@@ -2682,9 +2778,11 @@ theorem proc_indexed_interp_unguarded_weak_norm
     have ⟨s'', hstep₂', heq⟩ := proc_indexed_interp_unguarded_to_guarded
       hdet hnb haff htrace₁ this hstep₂
     have ⟨_, htail₂', heq'⟩ := proc_indexed_interp_unguarded_steps_congr htail₂ heq
-    have ⟨_, htrace₁'⟩ := proc_indexed_interp_guarded_term_confl htrace₁ hterm hstep₂'
+    have ⟨_, htrace₁'⟩ := proc_indexed_interp_guarded_term_confl
+      hconfl hdet haff hdisj
+      htrace₁ hterm hstep₂'
     have ⟨_, _, htrace₂', heq₂'⟩ := proc_indexed_interp_unguarded_weak_norm
-      hdet hnb
+      hconfl hdet hnb
       (haff.unfold hstep₂').2
       (hdisj.unfold hstep₂').2
       htrace₁' hterm htail₂'
@@ -2722,65 +2820,6 @@ theorem proc_indexed_interp_unguarded_bound
   (htrace₂ : (Config.IdxInterpTrivStep opSpec).Star s tr' s₂) :
     tr'.length ≤ tr.length
   := by sorry
-
-theorem proc_interp_tau_step_to_step
-  [Arity Op] [Arity Op']
-  [InterpConsts V]
-  {Guard : Label Op' V' m' n' → Label Op V m n → Prop}
-  {opInterp : OpInterp Op V}
-  {sem : Semantics Op' V' m' n'}
-  {s s' : sem.S × opInterp.S}
-  (hstep : ((sem.guard Guard).interpret opInterp).lts.Step s .τ s') :
-    ∃ l,
-      (sem.guard Guard).lts.Step s.1 l s'.1 ∧
-      (
-        (l.isYield ∧ ∃ l', l'.MatchLabel l ∧ opInterp.lts.Step s.2 l' s'.2) ∨
-        (l.isSilent ∧ s.2 = s'.2)
-      )
-  := by
-  cases hstep with
-  | step_yield hstep hinterp =>
-    exact ⟨_, hstep,
-      by simp; exact ⟨_, by simp [RespLabel.MatchLabel], hinterp⟩⟩
-  | step_tau hstep => exact ⟨_, hstep, by simp⟩
-
-theorem proc_guarded_termination
-  [Arity Op] [PCM T] [PCM.Lawful T]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {opInterp : OpInterp Op V}
-  {ioSpec : IOSpec V T m n}
-  (proc : ProcWithSpec opSpec χ m n)
-  (hdet : opInterp.Deterministic)
-  (hnb : opInterp.NonBlocking)
-  {s s₁ s₂ : proc.semantics.S × opInterp.S}
-  (htrace₁ : ((proc.semantics.guard (opSpec.Guard ioSpec)).interpret opInterp).lts.TauStar .τ s s₁)
-  (hterm : proc.semantics.IsFinal s₁.1)
-  (hstep₂ : ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.Step s .τ s₂) :
-    ∃ s₁',
-      ((proc.semantics.guard opSpec.TrivGuard).interpret opInterp).lts.TauStar .τ s₂ s₁' ∧
-      Config.EqMod EqModGhost s₁.1 s₁'.1 ∧
-      s₁.2 = s₁'.2
-  := by
-  induction htrace₁
-    using Lts.TauStar.reverse_induction
-    generalizing s₂ with
-  | refl =>
-    match hstep₂ with
-    | .step_tau hstep₂ =>
-      cases hstep₂ with | step hguard hstep₂ =>
-      cases hguard <;> exact False.elim (hterm hstep₂)
-    | .step_yield hstep₂ _ =>
-      cases hstep₂ with | step hguard hstep₂ =>
-      cases hguard
-      exact False.elim (hterm hstep₂)
-  | head hstep₁ htail₁ ih =>
-    rename_i s s₁'
-    replace ⟨l₁, hstep₁, hl₁⟩ := proc_interp_tau_step_to_step hstep₁
-    replace ⟨l₂, hstep₂, hl₂⟩ := proc_interp_tau_step_to_step hstep₂
-
-    sorry
 
 end Wavelet.Compile
 
