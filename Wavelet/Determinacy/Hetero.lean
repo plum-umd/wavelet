@@ -12,11 +12,9 @@ open Semantics Dataflow
 If we can make two guarded steps, where the second operator can be already
 run in the first step (even in a unguarded way), then we can turn that
 unguarded step to a guarded step.
-
-Base case of `proc_unguarded_to_guarded`.
 -/
-theorem proc_indexed_unguarded_to_guarded_single
-  [Arity Op] [PCM T] [PCM.Lawful T]
+theorem proc_indexed_guarded_hetero_confl_single
+  [Arity Op] [PCM T]
   [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
@@ -233,9 +231,9 @@ theorem proc_indexed_unguarded_to_guarded_single
             (.idx_guard .spec_tau)
             (.step_async (by assumption) hget₂' hinterp₂' hpop₂')⟩
 
-/-- Similar to `proc_indexed_unguarded_to_guarded_single`, but for interpreted steps. -/
-theorem proc_indexed_interp_unguarded_to_guarded_single
-  [Arity Op] [PCM T] [PCM.Lawful T]
+/-- Similar to `proc_indexed_guarded_hetero_confl_single`, but for interpreted steps. -/
+theorem proc_indexed_interp_guarded_hetero_confl_single
+  [Arity Op] [PCM T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]
@@ -256,7 +254,7 @@ theorem proc_indexed_interp_unguarded_to_guarded_single
     (s₂ := s₂) hdet hstep₂' hstep
   by_cases hij : i = j
   · subst hij
-    have := hdet_mod (proc_indexed_interp_guarded_step_to_unguarded hstep₁)
+    have := hdet_mod (Config.IdxInterpGuardStep.to_indexed_interp_unguarded hstep₁)
     exact ⟨_, hstep₁, this⟩
   · cases hstep₁ with | _ hstep₁
       <;> cases hstep₂ with | _ hstep₂
@@ -268,11 +266,11 @@ theorem proc_indexed_interp_unguarded_to_guarded_single
     -- Some τ cases can be delegated
     case neg.step_tau.step_tau.step_tau
       | neg.step_yield.step_tau.step_tau =>
-      have ⟨s', hstep'⟩ := proc_indexed_unguarded_to_guarded_single haff hstep₁ hstep₂ hstep₂'
+      have ⟨s', hstep'⟩ := proc_indexed_guarded_hetero_confl_single haff hstep₁ hstep₂ hstep₂'
       simp at hstep'
       exact ⟨_, Lts.IndexedInterpStep.step_tau hstep',
         by
-          have := hdet_mod (proc_indexed_interp_guarded_step_to_unguarded (.step_tau hstep'))
+          have := hdet_mod (Config.IdxInterpGuardStep.to_indexed_interp_unguarded (.step_tau hstep'))
           simp at this
           simp [this]⟩
     -- Other cases need a bit more work as they involve
@@ -311,7 +309,7 @@ theorem proc_indexed_interp_unguarded_to_guarded_single
             (.step_op (by assumption) hget₂' hpop₂')) hinterp₂'
         exact ⟨_, this,
           by
-            have := hdet_mod (proc_indexed_interp_guarded_step_to_unguarded this)
+            have := hdet_mod (Config.IdxInterpGuardStep.to_indexed_interp_unguarded this)
             simp at this
             simp [this],
         ⟩
@@ -342,7 +340,7 @@ theorem proc_indexed_interp_unguarded_to_guarded_single
             (.step_op (by assumption) hget₂' hpop₂')) hinterp₂'
         exact ⟨_, this,
           by
-            have := hdet_mod (proc_indexed_interp_guarded_step_to_unguarded this)
+            have := hdet_mod (Config.IdxInterpGuardStep.to_indexed_interp_unguarded this)
             simp at this
             simp [this],
         ⟩
@@ -379,7 +377,7 @@ theorem proc_indexed_interp_unguarded_to_guarded_single
             (.step_op (by assumption) hget₂' hpop₂')) hinterp₂'
         exact ⟨_, this,
           by
-            have := hdet_mod (proc_indexed_interp_guarded_step_to_unguarded this)
+            have := hdet_mod (Config.IdxInterpGuardStep.to_indexed_interp_unguarded this)
             simp at this
             simp [this],
         ⟩
@@ -389,8 +387,8 @@ If there is a guarded τ trace from `s` to a final state `s₁`,
 then we can turn any *unguarded* τ step from `s` to `s₂`,
 into a guarded τ step, modulo potentially different ghost tokens.
 -/
-theorem proc_indexed_unguarded_to_guarded
-  [Arity Op] [PCM T] [PCM.Lawful T]
+theorem proc_indexed_guarded_hetero_confl
+  [Arity Op] [PCM T]
   [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
@@ -422,14 +420,14 @@ theorem proc_indexed_unguarded_to_guarded
       exists s₂'
       simp [hstep₁]
       exact proc_indexed_unguarded_step_det_mod
-        (proc_indexed_guarded_step_to_unguarded hstep₁) hstep₂
+        (Config.IdxGuardStep.to_indexed_unguarded hstep₁) hstep₂
     · simp at hdom hk
       cases hdom
       · rename_i h
         simp [h] at hk
       rename_i hdom
-      have hstep₁' := proc_indexed_guarded_step_to_unguarded hstep₁
-      have := proc_indexed_guard_triv_strong_confl_at_mod
+      have hstep₁' := Config.IdxGuardStep.to_indexed_unguarded hstep₁
+      have := proc_indexed_unguarded_strong_confl_at_mod
         s haff.base hstep₁' hstep₂
         (by
           intros h
@@ -444,21 +442,19 @@ theorem proc_indexed_unguarded_to_guarded
           (haff.unfold hstep₁).2
           hdom.2
           hstep₃'
-        have ⟨s₂', hstep₂'⟩ := proc_indexed_unguarded_to_guarded_single
+        have ⟨s₂', hstep₂'⟩ := proc_indexed_guarded_hetero_confl_single
           haff.base
           hstep₁ hstep₃' hstep₂
         exact ⟨
           _, hstep₂',
           proc_indexed_unguarded_step_det_mod
-            (proc_indexed_guarded_step_to_unguarded hstep₂') hstep₂,
+            (Config.IdxGuardStep.to_indexed_unguarded hstep₂') hstep₂,
         ⟩
 
 /-- If two operators can fire at the same state, then one can fire after another.
-(although no guarantee about the final state).
-
-TODO: Simplify this proof. -/
-theorem proc_commute_unguarded_steps
-  [Arity Op] [PCM T] [PCM.Lawful T]
+(although no guarantee about the final state). -/
+theorem proc_commute_indexed_unguarded
+  [Arity Op] [PCM T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]
@@ -665,63 +661,10 @@ theorem proc_commute_unguarded_steps
                 (pop_vals_push_vals_commute hpop₁₂)))
           ⟩
 
-
-/-- If the "good-behaving" semantics of `Config.IdxInterpGuardStep`
-has a terminating trace, then any unguarded step can be turned
-into a guarded step. -/
-theorem proc_indexed_interp_unguarded_to_guarded
-  [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
-  [DecidableEq χ]
-  [InterpConsts V]
-  [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
-  {tr : Trace (Nat × Label Semantics.Empty V m n)}
-  {l : Label Semantics.Empty V m n}
-  (hdet : opInterp.Deterministic)
-  (hnb : opInterp.NonBlocking)
-  (haff : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.proc.AffineChan) s)
-  (htrace₁ : (Config.IdxInterpGuardStep opSpec ioSpec).Star s tr s₁)
-  (hdom : ∃ l', (i, l') ∈ tr)
-  (hstep₂ : (Config.IdxInterpTrivStep opSpec).Step s (i, l) s₂) :
-    ∃ s₂',
-      (Config.IdxInterpGuardStep opSpec ioSpec).Step s (i, l) s₂' ∧
-      Config.EqMod EqModGhost s₂.1 s₂'.1 ∧
-      s₂.2 = s₂'.2
-  := by
-  have hl := proc_indexed_interp_unguarded_step_label hstep₂
-  subst hl
-  induction htrace₁
-    using Lts.Star.reverse_induction
-    generalizing s₂ with
-  | refl => simp at hdom
-  | head hstep₁ htail₁ ih =>
-    rename_i s s' l' tr'
-    rcases l' with ⟨i', l'⟩
-    have this := proc_indexed_interp_guarded_step_label hstep₁
-    subst this
-    by_cases hii' : i = i'
-    · subst hii'
-      have := proc_indexed_interp_unguarded_step_det_mod hdet
-        hstep₂ (proc_indexed_interp_guarded_step_to_unguarded hstep₁)
-      exists s'
-    · have hstep₁' := proc_indexed_interp_guarded_step_to_unguarded hstep₁
-      have ⟨s₂'', hstep₂''⟩ := proc_commute_unguarded_steps hnb haff.base hstep₁' hstep₂ (Ne.symm hii')
-      have ⟨s₁'', hstep₁'', heq⟩ := ih (haff.unfold hstep₁).2
-        (by
-          have ⟨l', hl'⟩ := hdom
-          exists l'
-          simp [hii'] at hl'
-          simp [hl'])
-        hstep₂''
-      exact proc_indexed_interp_unguarded_to_guarded_single
-        hdet haff.base hstep₁ hstep₁'' hstep₂
-
 /-- If a guarded trace terminates, then any unguarded step from the same state
 must fire one of the operators fired in the guarded trace. -/
-theorem proc_indexed_interp_unguarded_term_dom
-  [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
+theorem proc_indexed_interp_unguarded_term_to_dom
+  [Arity Op] [PCM T] [PCM.Cancellative T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]
@@ -756,17 +699,73 @@ theorem proc_indexed_interp_unguarded_term_dom
     by_cases hii' : i = i'
     · simp [hii']
     · simp [hii']
-      have hstep₁' := proc_indexed_interp_guarded_step_to_unguarded hstep₁
-      have ⟨s₂'', hstep₂''⟩ := proc_commute_unguarded_steps hnb haff.base hstep₁' hstep₂ (Ne.symm hii')
+      have hstep₁' := Config.IdxInterpGuardStep.to_indexed_interp_unguarded hstep₁
+      have ⟨s₂'', hstep₂''⟩ := proc_commute_indexed_unguarded hnb haff.base hstep₁' hstep₂ (Ne.symm hii')
       exact ih (haff.unfold hstep₁).2 hstep₂''
+
+/-- If the "good-behaving" semantics of `Config.IdxInterpGuardStep`
+has a terminating trace, then any unguarded step can be turned
+into a guarded step. -/
+theorem proc_indexed_interp_guarded_hetero_confl
+  [Arity Op] [PCM T] [PCM.Cancellative T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  [opInterp : OpInterp Op V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {tr : Trace (Nat × Label Semantics.Empty V m n)}
+  {l : Label Semantics.Empty V m n}
+  (hdet : opInterp.Deterministic)
+  (hnb : opInterp.NonBlocking)
+  (haff : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.proc.AffineChan) s)
+  (htrace₁ : (Config.IdxInterpGuardStep opSpec ioSpec).Star s tr s₁)
+  (hdom : ∃ l', (i, l') ∈ tr)
+  (hstep₂ : (Config.IdxInterpTrivStep opSpec).Step s (i, l) s₂) :
+    ∃ s₂',
+      (Config.IdxInterpGuardStep opSpec ioSpec).Step s (i, l) s₂' ∧
+      Config.EqMod EqModGhost s₂.1 s₂'.1 ∧
+      s₂.2 = s₂'.2
+  := by
+  have hl := proc_indexed_interp_unguarded_step_label hstep₂
+  subst hl
+  induction htrace₁
+    using Lts.Star.reverse_induction
+    generalizing s₂ with
+  | refl => simp at hdom
+  | head hstep₁ htail₁ ih =>
+    rename_i s s' l' tr'
+    rcases l' with ⟨i', l'⟩
+    have this := proc_indexed_interp_guarded_step_label hstep₁
+    subst this
+    by_cases hii' : i = i'
+    · subst hii'
+      have := proc_indexed_interp_unguarded_step_det_mod hdet
+        hstep₂ (Config.IdxInterpGuardStep.to_indexed_interp_unguarded hstep₁)
+      exists s'
+    · have hstep₁' := Config.IdxInterpGuardStep.to_indexed_interp_unguarded hstep₁
+      have ⟨s₂'', hstep₂''⟩ := proc_commute_indexed_unguarded hnb haff.base hstep₁' hstep₂ (Ne.symm hii')
+      have ⟨s₁'', hstep₁'', heq⟩ := ih (haff.unfold hstep₁).2
+        (by
+          have ⟨l', hl'⟩ := hdom
+          exists l'
+          simp [hii'] at hl'
+          simp [hl'])
+        hstep₂''
+      exact proc_indexed_interp_guarded_hetero_confl_single
+        hdet haff.base hstep₁ hstep₁'' hstep₂
 
 /--
 If there exists a terminating and guarded trace, then any unguarded trace
   1. Is bounded by the length of the guarded trace, and
   2. Converges to the same final state as the guarded trace.
+
+This can also be thought of as converting the weak normalization
+of `s` in the guarded semantics into its strong normalization
+in the unguarded semantics.
 -/
-theorem proc_indexed_interp_unguarded_strong_norm
-  [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
+theorem proc_indexed_interp_guarded_hetero_terminal_confl
+  [Arity Op] [PCM T] [PCM.Cancellative T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]
@@ -791,24 +790,24 @@ theorem proc_indexed_interp_unguarded_strong_norm
   cases htrace₂
     using Lts.Star.reverse_induction with
   | refl =>
-    exact ⟨_, _, proc_indexed_interp_guarded_trace_to_unguarded htrace₁,
+    exact ⟨_, _, Config.IdxInterpGuardStep.to_indexed_interp_unguarded_star htrace₁,
       by simp [IsRefl.refl]⟩
   | head hstep₂ htail₂ ih =>
     rename_i s s' l' tr₂'
-    have := proc_indexed_interp_unguarded_term_dom
+    have := proc_indexed_interp_unguarded_term_to_dom
       hnb haff htrace₁ hterm hstep₂
-    have ⟨s'', hstep₂', heq⟩ := proc_indexed_interp_unguarded_to_guarded
+    have ⟨s'', hstep₂', heq⟩ := proc_indexed_interp_guarded_hetero_confl
       hdet hnb haff htrace₁ this hstep₂
-    have ⟨_, htail₂', heq'⟩ := proc_indexed_interp_unguarded_steps_congr htail₂ heq
-    have ⟨_, htrace₁', hlen⟩ := proc_indexed_interp_guarded_term_confl
+    have ⟨_, htail₂', heq'⟩ := congr_eq_mod_ghost_proc_indexed_interp_unguarded_star htail₂ heq
+    have ⟨_, htrace₁', hlen⟩ := proc_indexed_interp_guarded_terminal_confl
       hconfl hdet haff hdisj
       htrace₁ hterm hstep₂'
-    have ⟨_, _, htrace₂', hlen₂', heq₂'⟩ := proc_indexed_interp_unguarded_strong_norm
+    have ⟨_, _, htrace₂', hlen₂', heq₂'⟩ := proc_indexed_interp_guarded_hetero_terminal_confl
       hconfl hdet hnb
       (haff.unfold hstep₂').2
       (hdisj.unfold hstep₂').2
       htrace₁' hterm htail₂'
-    have := proc_indexed_interp_unguarded_steps_congr htrace₂'
+    have := congr_eq_mod_ghost_proc_indexed_interp_unguarded_star htrace₂'
       (by
         constructor
         · exact IsSymm.symm _ _ heq'.1

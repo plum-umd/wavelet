@@ -1,4 +1,5 @@
 import Wavelet.Semantics.Defs
+import Wavelet.Semantics.Guard
 
 /-! Some definitions for confluence. -/
 
@@ -76,7 +77,7 @@ theorem Lts.strong_confl_at_mod_imp_compat
 Having a terminating trace in a confluent LTS means that
 all other traces can go to the same final state.
 -/
-theorem strong_confl_final_confl_tau
+theorem Lts.strong_confl_final_confl_tau
   {lts : Lts C E} {c : C} {τ : E}
   {Compat : E → E → Prop}
   (hinv : lts.IsInvariantAt (lts.StronglyConfluentAt Compat) c)
@@ -100,5 +101,76 @@ theorem strong_confl_final_confl_tau
       have ⟨c'', hstep₁', hstep₂'⟩ := h
       have := ih hinv' hstep₁'
       exact this.prepend hstep₂'
+
+/--
+Converts `StronglyConfluentAtMod` of the base LTS to the guarded LTS.
+-/
+theorem Lts.guarded_strong_confl_at_mod
+  {Guard : E → E' → Prop}
+  {EqS : C → C → Prop}
+  {EqL : E → E → Prop}
+  {EqL' : E' → E' → Prop}
+  {Compat : E → E → Prop}
+  (lts : Lts C E)
+  (c : C)
+  (hguard_congr : ∀ {l₁ l₂ l₁' l₂'}, Guard l₁ l₁' → Guard l₂ l₂' → EqL l₁ l₂ → EqL' l₁' l₂')
+  (hconfl : lts.StronglyConfluentAtMod Compat EqS EqL c) :
+    (lts.GuardStep Guard).StronglyConfluentAtMod
+      (λ l₁' l₂' => ∀ {l₁ l₂},
+        Guard l₁ l₁' →
+        Guard l₂ l₂' →
+        Compat l₁ l₂)
+      EqS EqL' c
+  := by
+  intros s₁' s₂' l₁' l₂' hstep₁ hstep₂ hcompat
+  rcases hstep₁ with ⟨hguard₁', hstep₁⟩
+  rcases hstep₂ with ⟨hguard₂', hstep₂⟩
+  have hcompat' := hcompat hguard₁' hguard₂'
+  cases hconfl hstep₁ hstep₂ hcompat' with
+  | inl heq =>
+    left
+    simp [heq.2, hguard_congr hguard₁' hguard₂' heq.1]
+  | inr h =>
+    right
+    have ⟨s₁'', s₂'', hstep₁', hstep₂', heq⟩ := h
+    exists s₁'', s₂''
+    and_intros
+    · exact ⟨hguard₂', hstep₁'⟩
+    · exact ⟨hguard₁', hstep₂'⟩
+    · exact heq
+
+/--
+Converts `StronglyConfluentAt` of the base LTS to the guarded LTS.
+-/
+theorem Lts.guarded_strong_confl_at
+  {Guard : E → E' → Prop}
+  {Compat : E → E → Prop}
+  (lts : Lts C E)
+  (c : C)
+  (hguard_congr : ∀ {l₁ l₂ l₁' l₂'},
+    Guard l₁ l₁' → Guard l₂ l₂' → l₁ = l₂ → l₁' = l₂')
+  (hconfl : lts.StronglyConfluentAt Compat c) :
+    (lts.GuardStep Guard).StronglyConfluentAt
+      (λ l₁' l₂' => ∀ {l₁ l₂},
+        Guard l₁ l₁' →
+        Guard l₂ l₂' →
+        Compat l₁ l₂)
+      c
+  := by
+  intros s₁' s₂' l₁' l₂' hstep₁ hstep₂ hcompat
+  rcases hstep₁ with ⟨hguard₁', hstep₁⟩
+  rcases hstep₂ with ⟨hguard₂', hstep₂⟩
+  have hcompat' := hcompat hguard₁' hguard₂'
+  cases hconfl hstep₁ hstep₂ hcompat' with
+  | inl heq =>
+    left
+    simp [heq.2, hguard_congr hguard₁' hguard₂' heq.1]
+  | inr h =>
+    right
+    have ⟨s', hstep₁', hstep₂'⟩ := h
+    exists s'
+    constructor
+    · exact ⟨hguard₂', hstep₁'⟩
+    · exact ⟨hguard₁', hstep₂'⟩
 
 end Wavelet.Semantics

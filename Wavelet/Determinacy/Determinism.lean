@@ -92,7 +92,7 @@ theorem proc_indexed_unguarded_step_label
   cases hguard <;> cases hstep <;> simp
 
 theorem proc_indexed_unguarded_step_same_label_kind
-  [Arity Op] [PCM T] [PCM.Lawful T]
+  [Arity Op] [PCM T]
   [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}

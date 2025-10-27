@@ -3,6 +3,7 @@ import Mathlib.Data.List.Lattice
 import Wavelet.Compile.AffineChan
 
 import Wavelet.Determinacy.Defs
+import Wavelet.Determinacy.Congr
 import Wavelet.Determinacy.DisjointTokens
 import Wavelet.Determinacy.Determinism
 
@@ -252,175 +253,10 @@ theorem proc_strong_confl_at
   simp at this
   exact this
 
-/--
-Converts `StronglyConfluentAtMod` of the base LTS to the guarded LTS.
--/
-theorem Lts.guard_strong_confl_at_mod
-  {Guard : E → E' → Prop}
-  {EqS : C → C → Prop}
-  {EqL : E → E → Prop}
-  {EqL' : E' → E' → Prop}
-  {Compat : E → E → Prop}
-  (lts : Lts C E)
-  (c : C)
-  (hguard_congr : ∀ {l₁ l₂ l₁' l₂'}, Guard l₁ l₁' → Guard l₂ l₂' → EqL l₁ l₂ → EqL' l₁' l₂')
-  (hconfl : lts.StronglyConfluentAtMod Compat EqS EqL c) :
-    (lts.GuardStep Guard).StronglyConfluentAtMod
-      (λ l₁' l₂' => ∀ {l₁ l₂},
-        Guard l₁ l₁' →
-        Guard l₂ l₂' →
-        Compat l₁ l₂)
-      EqS EqL' c
-  := by
-  intros s₁' s₂' l₁' l₂' hstep₁ hstep₂ hcompat
-  rcases hstep₁ with ⟨hguard₁', hstep₁⟩
-  rcases hstep₂ with ⟨hguard₂', hstep₂⟩
-  have hcompat' := hcompat hguard₁' hguard₂'
-  cases hconfl hstep₁ hstep₂ hcompat' with
-  | inl heq =>
-    left
-    simp [heq.2, hguard_congr hguard₁' hguard₂' heq.1]
-  | inr h =>
-    right
-    have ⟨s₁'', s₂'', hstep₁', hstep₂', heq⟩ := h
-    exists s₁'', s₂''
-    and_intros
-    · exact ⟨hguard₂', hstep₁'⟩
-    · exact ⟨hguard₁', hstep₂'⟩
-    · exact heq
-
-/--
-Converts `StronglyConfluentAt` of the base LTS to the guarded LTS.
--/
-theorem Lts.guard_strong_confl_at
-  {Guard : E → E' → Prop}
-  {Compat : E → E → Prop}
-  (lts : Lts C E)
-  (c : C)
-  (hguard_congr : ∀ {l₁ l₂ l₁' l₂'},
-    Guard l₁ l₁' → Guard l₂ l₂' → l₁ = l₂ → l₁' = l₂')
-  (hconfl : lts.StronglyConfluentAt Compat c) :
-    (lts.GuardStep Guard).StronglyConfluentAt
-      (λ l₁' l₂' => ∀ {l₁ l₂},
-        Guard l₁ l₁' →
-        Guard l₂ l₂' →
-        Compat l₁ l₂)
-      c
-  := by
-  intros s₁' s₂' l₁' l₂' hstep₁ hstep₂ hcompat
-  rcases hstep₁ with ⟨hguard₁', hstep₁⟩
-  rcases hstep₂ with ⟨hguard₂', hstep₂⟩
-  have hcompat' := hcompat hguard₁' hguard₂'
-  cases hconfl hstep₁ hstep₂ hcompat' with
-  | inl heq =>
-    left
-    simp [heq.2, hguard_congr hguard₁' hguard₂' heq.1]
-  | inr h =>
-    right
-    have ⟨s', hstep₁', hstep₂'⟩ := h
-    exists s'
-    constructor
-    · exact ⟨hguard₂', hstep₁'⟩
-    · exact ⟨hguard₁', hstep₂'⟩
-
-
-/-- Equal labels translate to equal labels through `OpSpec.Guard`. -/
-theorem congr_spec_guard
-  [Arity Op] [PCM T]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {l₁ l₂ : Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1)}
-  {l₁' l₂' : Label Op V m n}
-  (hguard₁ : opSpec.Guard ioSpec l₁ l₁')
-  (hguard₂ : opSpec.Guard ioSpec l₂ l₂')
-  (heq : l₁ = l₂) : l₁' = l₂' := by
-  subst heq
-  cases l₁ with
-  | yield op inputs outputs =>
-    cases op with
-    | op op =>
-      cases hguard₁
-      rename_i inputs₁ outputs₁
-      generalize hinputs₁' :
-        (Vector.map Sum.inl inputs₁).push (Sum.inr (opSpec.pre op inputs₁)) = inputs₁'
-      generalize houtputs₁' :
-        (Vector.map Sum.inl outputs₁).push (Sum.inr (opSpec.post op inputs₁ outputs₁)) = outputs₁'
-      rw [hinputs₁', houtputs₁'] at hguard₂
-      cases hguard₂
-      rename_i inputs₂ outputs₂
-      simp [Vector.push_eq_push] at hinputs₁' houtputs₁'
-      have heq₁ := Vector.inj_map (by simp [Function.Injective]) hinputs₁'.2
-      have heq₂ := Vector.inj_map (by simp [Function.Injective]) houtputs₁'.2
-      simp [heq₁, heq₂]
-    | join k l req =>
-      cases hguard₁ with | spec_join h₁ h₂ =>
-      rename_i rem₁ toks₁ vals₁
-      generalize h :
-        (Vector.map Sum.inr rem₁ : Vector (V ⊕ T) _) ++
-          (Vector.map Sum.inl toks₁ : Vector (V ⊕ T) _) = x
-      rw [h] at hguard₂
-      cases hguard₂
-      rfl
-  | input vals =>
-    cases hguard₁ with | spec_input =>
-    rename_i vals₁
-    generalize h :
-      (Vector.map Sum.inl vals₁).push (Sum.inr (ioSpec.pre vals₁)) = x
-    rw [h] at hguard₂
-    cases hguard₂
-    simp [Vector.push_eq_push] at h
-    have heq := Vector.inj_map (by simp [Function.Injective]) h.2
-    simp [heq]
-  | output vals =>
-    cases hguard₁ with | spec_output =>
-    rename_i vals₁
-    generalize h :
-      (Vector.map Sum.inl vals₁).push (Sum.inr (ioSpec.post vals₁)) = x
-    rw [h] at hguard₂
-    cases hguard₂
-    simp [Vector.push_eq_push] at h
-    have heq := Vector.inj_map (by simp [Function.Injective]) h.2
-    simp [heq]
-  | τ =>
-    cases hguard₁
-    cases hguard₂
-    rfl
-
-/-- Similar to `congr_spec_guard` but for `OpSpec.TrivGuard`. -/
-theorem congr_triv_guard
-  [Arity Op]
-  {opSpec : OpSpec Op V T}
-  {l₁ l₂ : Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1)}
-  {l₁' l₂' : Label Op V m n}
-  (hguard₁ : opSpec.TrivGuard l₁ l₁')
-  (hguard₂ : opSpec.TrivGuard l₂ l₂')
-  (heq : Label.EqMod EqModGhost l₁ l₂) : l₁' = l₂' := by
-  cases l₁ <;> cases l₂
-    <;> cases hguard₁
-    <;> cases hguard₂
-    <;> simp [Label.EqMod] at heq
-  any_goals rfl
-  case yield.yield.triv_yield.triv_yield =>
-    have ⟨h₁, heq₂, heq₃⟩ := heq
-    subst h₁
-    replace ⟨heq₂, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq₂
-    replace ⟨heq₃, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq₃
-    simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₂
-    simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₃
-    simp [heq₂, heq₃]
-  case input.input.triv_input.triv_input =>
-    replace ⟨heq, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq
-    simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq
-    simp [heq]
-  case output.output.triv_output.triv_output =>
-    replace ⟨heq, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq
-    simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq
-    simp [heq]
-
 /-- If the label pair generated by a guarded semantics
 satisfies `Label.IsYieldOrSilentAndDet`, then the original
 unchecked label must satisfy `Label.IsYieldOrSilentAndDet EqModGhost` -/
-theorem invert_compat_spec_guard
+private theorem invert_compat_spec_guard
   [Arity Op] [PCM T] [PCM.Cancellative T]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
@@ -489,7 +325,7 @@ theorem invert_compat_spec_guard
     cases op <;> simp
 
 /-- Similar to `invert_compat_triv_guard` but for `OpSpec.TrivGuard`. -/
-theorem invert_compat_triv_guard
+private theorem invert_compat_triv_guard
   [Arity Op]
   {opSpec : OpSpec Op V T}
   {l₁' l₂' : Label Op V m n}
@@ -537,7 +373,7 @@ theorem invert_compat_triv_guard
     apply List.forall₂_iff_get.mpr
     simp
 
-theorem proc_indexed_guard_spec_strong_confl_at
+theorem proc_indexed_guarded_spec_strong_confl_at
   [Arity Op] [PCM T] [PCM.Cancellative T]
   [DecidableEq χ]
   [InterpConsts V]
@@ -552,12 +388,12 @@ theorem proc_indexed_guard_spec_strong_confl_at
   have hconfl_base : Lts.StronglyConfluentAt _ _ _ :=
     proc_indexed_strong_confl_at haff
   have hconfl_guard : Lts.StronglyConfluentAt _ _ _ :=
-    Lts.guard_strong_confl_at
+    Lts.guarded_strong_confl_at
       (Guard := IndexedGuard (opSpec.Guard ioSpec))
       _ _ (λ hguard₁ hguard₂ heq => by
         have ⟨hguard₁⟩ := hguard₁
         have ⟨hguard₂⟩ := hguard₂
-        have := congr_spec_guard hguard₁ hguard₂
+        have := congr_eq_spec_guard hguard₁ hguard₂
         simp [heq] at this
         simp [heq, this]) hconfl_base
   apply Lts.strong_confl_at_imp_compat
@@ -575,7 +411,7 @@ theorem proc_indexed_guard_spec_strong_confl_at
     exact hcompat heq
   · exact hconfl_guard
 
-theorem proc_guard_spec_strong_confl_at
+theorem proc_guarded_spec_strong_confl_at
   [Arity Op] [PCM T] [PCM.Cancellative T]
   [DecidableEq χ]
   [InterpConsts V]
@@ -590,9 +426,9 @@ theorem proc_guard_spec_strong_confl_at
   have hconfl_base : Lts.StronglyConfluentAt _ _ _ :=
     proc_strong_confl_at haff
   have hconfl_guard : Lts.StronglyConfluentAt _ _ _ :=
-    Lts.guard_strong_confl_at
+    Lts.guarded_strong_confl_at
       (Guard := opSpec.Guard ioSpec)
-      _ _ congr_spec_guard hconfl_base
+      _ _ congr_eq_spec_guard hconfl_base
   apply Lts.strong_confl_at_imp_compat
     (Compat₁ := λ l₁' l₂' => ∀ {l₁ l₂},
       opSpec.Guard ioSpec l₁ l₁' →
@@ -603,7 +439,7 @@ theorem proc_guard_spec_strong_confl_at
     all_goals assumption
   · exact hconfl_guard
 
-theorem proc_indexed_guard_triv_strong_confl_at_mod
+theorem proc_indexed_unguarded_strong_confl_at_mod
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
@@ -619,7 +455,7 @@ theorem proc_indexed_guard_triv_strong_confl_at_mod
     proc_indexed_strong_confl_at_mod EqModGhost haff
   simp at hconfl_base
   have hconfl_guard : Lts.StronglyConfluentAtMod _ _ _ _ _ :=
-    Lts.guard_strong_confl_at_mod
+    Lts.guarded_strong_confl_at_mod
       (Guard := IndexedGuard opSpec.TrivGuard)
       (EqS := Config.EqMod EqModGhost)
       (EqL := λ (i, l) (i', l') => i = i' ∧ Label.EqMod EqModGhost l l')
@@ -634,7 +470,7 @@ theorem proc_indexed_guard_triv_strong_confl_at_mod
         rcases hguard₂ with ⟨hguard₂⟩
         simp at heq
         simp [heq]
-        apply congr_triv_guard hguard₁ hguard₂ heq.2)
+        apply congr_eq_mod_ghost_triv_guard hguard₁ hguard₂ heq.2)
       hconfl_base
   apply Lts.strong_confl_at_mod_imp_compat
     (Compat₁ := λ l₁' l₂' => ∀ {l₁ l₂},
@@ -651,7 +487,7 @@ theorem proc_indexed_guard_triv_strong_confl_at_mod
     apply invert_compat_triv_guard hguard₁ hguard₂ (hcompat heq)
   · exact hconfl_guard
 
-theorem proc_guard_triv_strong_confl_at_mod
+theorem proc_unguarded_strong_confl_at_mod
   [Arity Op] [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
@@ -666,14 +502,14 @@ theorem proc_guard_triv_strong_confl_at_mod
   have hconfl_base : Lts.StronglyConfluentAtMod _ _ _ _ _ :=
     proc_strong_confl_at_mod EqModGhost haff
   have hconfl_guard : Lts.StronglyConfluentAtMod _ _ _ _ _ :=
-    Lts.guard_strong_confl_at_mod
+    Lts.guarded_strong_confl_at_mod
       (Guard := opSpec.TrivGuard)
       (EqS := Config.EqMod EqModGhost)
       (EqL := Label.EqMod EqModGhost)
       (EqL' := Eq)
       (Compat := Label.IsYieldOrSilentAndDetMod EqModGhost)
       Config.Step s
-      congr_triv_guard
+      congr_eq_mod_ghost_triv_guard
       hconfl_base
   apply Lts.strong_confl_at_mod_imp_compat
     (Compat₁ := λ l₁' l₂' => ∀ {l₁ l₂},
@@ -685,9 +521,8 @@ theorem proc_guard_triv_strong_confl_at_mod
     all_goals assumption
   · exact hconfl_guard
 
-theorem proc_indexed_interp_strong_confl_at
-  [Arity Op]
-  [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
+theorem proc_indexed_interp_guarded_strong_confl_at
+  [Arity Op] [PCM T] [PCM.Cancellative T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]
@@ -712,7 +547,7 @@ theorem proc_indexed_interp_strong_confl_at
   rcases l₂ with ⟨i₂, l₂⟩
   cases hstep₁ <;> cases hstep₂ <;> simp at hcompat
   case step_tau.step_tau hstep₁ hstep₂ =>
-    have := proc_indexed_guard_spec_strong_confl_at haff hstep₁ hstep₂
+    have := proc_indexed_guarded_spec_strong_confl_at haff hstep₁ hstep₂
       (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
     cases this with
     | inl heq =>
@@ -728,7 +563,7 @@ theorem proc_indexed_interp_strong_confl_at
         .step_tau hstep₂'
       ⟩
   case step_tau.step_yield hstep₁ _ _ _ hstep₂ hstep_op₂ =>
-    have := proc_indexed_guard_spec_strong_confl_at haff hstep₁ hstep₂
+    have := proc_indexed_guarded_spec_strong_confl_at haff hstep₁ hstep₂
       (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
     cases this with
     | inl heq => simp at heq
@@ -741,7 +576,7 @@ theorem proc_indexed_interp_strong_confl_at
         .step_tau hstep₂',
       ⟩
   case step_yield.step_tau _ _ _ _ hstep₁ hstep_op₁ hstep₂ =>
-    have := proc_indexed_guard_spec_strong_confl_at haff hstep₁ hstep₂
+    have := proc_indexed_guarded_spec_strong_confl_at haff hstep₁ hstep₂
       (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
     cases this with
     | inl heq => simp at heq
@@ -756,7 +591,7 @@ theorem proc_indexed_interp_strong_confl_at
   case step_yield.step_yield
     op₁ inputVals₁ _ hstep₁ hstep_op₁
     op₂ inputVals₂ _ hstep₂ hstep_op₂ =>
-    have hconfl_sem := proc_indexed_guard_spec_strong_confl_at haff hstep₁ hstep₂
+    have hconfl_sem := proc_indexed_guarded_spec_strong_confl_at haff hstep₁ hstep₂
       (by
         -- By `hdet`
         intros heq
@@ -827,9 +662,8 @@ a sound and deterministic interpretation.
 TODO: this is probably generalizable to a general confluent `Semantics`.
 TODO: use `proc_indexed_interp_strong_confl_at` to prove this.
 -/
-theorem proc_interp_strong_confl_at
-  [Arity Op]
-  [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
+theorem proc_interp_guarded_strong_confl_at
+  [Arity Op] [PCM T] [PCM.Cancellative T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]
@@ -852,7 +686,7 @@ theorem proc_interp_strong_confl_at
   rcases s₂' with ⟨s₂', t₂'⟩
   cases hstep₁ <;> cases hstep₂ <;> simp at hcompat
   case step_tau.step_tau hstep₁ hstep₂ =>
-    have := proc_guard_spec_strong_confl_at haff hstep₁ hstep₂
+    have := proc_guarded_spec_strong_confl_at haff hstep₁ hstep₂
       (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
     cases this with
     | inl heq => simp [heq]
@@ -865,7 +699,7 @@ theorem proc_interp_strong_confl_at
         .step_tau hstep₂'
       ⟩
   case step_tau.step_yield hstep₁ _ _ _ hstep₂ hstep_op₂ =>
-    have := proc_guard_spec_strong_confl_at haff hstep₁ hstep₂
+    have := proc_guarded_spec_strong_confl_at haff hstep₁ hstep₂
       (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
     cases this with
     | inl heq => simp at heq
@@ -878,7 +712,7 @@ theorem proc_interp_strong_confl_at
         .step_tau hstep₂',
       ⟩
   case step_yield.step_tau _ _ _ _ hstep₁ hstep_op₁ hstep₂ =>
-    have := proc_guard_spec_strong_confl_at haff hstep₁ hstep₂
+    have := proc_guarded_spec_strong_confl_at haff hstep₁ hstep₂
       (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
     cases this with
     | inl heq => simp at heq
@@ -893,7 +727,7 @@ theorem proc_interp_strong_confl_at
   case step_yield.step_yield
     op₁ inputVals₁ _ hstep₁ hstep_op₁
     op₂ inputVals₂ _ hstep₂ hstep_op₂ =>
-    have hconfl_sem := proc_guard_spec_strong_confl_at haff hstep₁ hstep₂
+    have hconfl_sem := proc_guarded_spec_strong_confl_at haff hstep₁ hstep₂
       (by
         -- By `hdet`
         simp only [Label.IsYieldOrSilentAndDet, Label.Deterministic]
@@ -961,8 +795,10 @@ theorem proc_interp_strong_confl_at
           .step_yield hstep₂' hstep_op₂',
         ⟩
 
-theorem proc_indexed_interp_guarded_term_confl
-  [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
+/-- If a terminating trace can be demonstrated in the indexed and guarded semantics,
+then any step from the same initial state will converge to the same final state. -/
+theorem proc_indexed_interp_guarded_terminal_confl
+  [Arity Op] [PCM T] [PCM.Cancellative T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]
@@ -993,7 +829,7 @@ theorem proc_indexed_interp_guarded_term_confl
   | head hstep htail ih =>
     rename_i s s' l' tr'
     have hl' := proc_indexed_interp_guarded_step_label hstep
-    have := proc_indexed_interp_strong_confl_at hconfl hdet
+    have := proc_indexed_interp_guarded_strong_confl_at hconfl hdet
       haff.base hdisj.base hstep hstep₂ (by simp [hl, hl'])
     cases this with
     | inl h =>
