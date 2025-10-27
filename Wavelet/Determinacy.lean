@@ -2276,7 +2276,9 @@ theorem proc_indexed_interp_tau_step_to_step
   | step_tau hstep => exact ⟨_, hstep, by simp⟩
 
 /-- If two operators can fire at the same state, then one can fire after another.
-(although no guarantee about the final state). -/
+(although no guarantee about the final state).
+
+TODO: Simplify this proof. -/
 theorem proc_commute_unguarded_steps
   [Arity Op] [PCM T] [PCM.Lawful T]
   [DecidableEq χ]
@@ -2287,10 +2289,203 @@ theorem proc_commute_unguarded_steps
   (hnb : opInterp.NonBlocking)
   (haff : s.1.proc.AffineChan)
   (hstep₁ : (Config.IdxInterpTrivStep opSpec).Step s (i, .τ) s₁)
-  (hstep₂' : (Config.IdxInterpTrivStep opSpec).Step s (j, .τ) s₂)
+  (hstep₂ : (Config.IdxInterpTrivStep opSpec).Step s (j, .τ) s₂)
   (hne : i ≠ j) :
     ∃ s₂', (Config.IdxInterpTrivStep opSpec).Step s₁ (j, .τ) s₂'
-  := by sorry
+  := by
+  cases hstep₁ with
+  | step_yield hstep₁ hinterp₁ =>
+    rcases hstep₁ with ⟨⟨⟨hguard₁⟩⟩, hstep₁⟩
+    cases hstep₁ with | step_op _ hget₁ hpop₁ =>
+    cases hstep₂ with
+    | step_yield hstep₂ hinterp₂ =>
+      rcases hstep₂ with ⟨⟨⟨hguard₂⟩⟩, hstep₂⟩
+      cases hstep₂ with | step_op _ hget₂ hpop₂ =>
+      have ⟨_, _, hinterp₂'⟩ := hnb hinterp₁ hinterp₂
+      have hdisj_inputs := haff.atom_inputs_disjoint
+        ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+      have hdisj_outputs := haff.atom_outputs_disjoint
+        ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+      simp [hget₁, hget₂, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
+      have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂
+      exact ⟨_,
+        .step_yield (.step
+          (.idx_guard (.triv_yield (tok₂ := PCM.zero)))
+          (.step_op
+            (by assumption)
+            hget₂
+            (pop_vals_push_vals_commute hpop₁₂)))
+            hinterp₂'
+      ⟩
+    | step_tau hstep₂ =>
+      rcases hstep₂ with ⟨⟨hguard₂⟩, hstep₂⟩
+      cases hguard₂ with
+      | triv_join =>
+        cases hstep₂ with | step_op _ hget₂ hpop₂ =>
+        have hdisj_inputs := haff.atom_inputs_disjoint
+          ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+        have hdisj_outputs := haff.atom_outputs_disjoint
+          ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+        simp [hget₁, hget₂, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
+        have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂
+        exact ⟨_,
+          .step_tau (.step
+            (.idx_guard (.triv_join (outputs := #v[PCM.zero, PCM.zero])))
+            (.step_op
+              (by assumption)
+              hget₂
+              (pop_vals_push_vals_commute hpop₁₂)))
+        ⟩
+      | triv_tau =>
+        cases hstep₂ with | step_async _ hget₂ hinterp₂ hpop₂ =>
+        have hdisj_inputs := haff.atom_inputs_disjoint
+          ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+        have hdisj_outputs := haff.atom_outputs_disjoint
+          ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+        simp [hget₁, hget₂, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
+        have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
+          (List.disjoint_of_subset_right
+            (async_op_interp_input_sublist hinterp₂).subset hdisj_inputs) hpop₁ hpop₂
+        exact ⟨_,
+          .step_tau (.step
+            (.idx_guard .triv_tau)
+            (.step_async
+              (by assumption)
+              hget₂
+              hinterp₂
+              (pop_vals_push_vals_commute hpop₁₂)))
+        ⟩
+  | step_tau hstep₁ =>
+    rcases hstep₁ with ⟨⟨hguard₁⟩, hstep₁⟩
+    cases hguard₁ with
+    | triv_join =>
+      cases hstep₁ with | step_op _ hget₁ hpop₁ =>
+      cases hstep₂ with
+      | step_yield hstep₂ hinterp₂ =>
+        rcases hstep₂ with ⟨⟨⟨hguard₂⟩⟩, hstep₂⟩
+        cases hstep₂ with | step_op _ hget₂ hpop₂ =>
+        -- have ⟨_, _, hinterp₂'⟩ := hnb hinterp₁ hinterp₂
+        have hdisj_inputs := haff.atom_inputs_disjoint
+          ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+        have hdisj_outputs := haff.atom_outputs_disjoint
+          ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+        simp [hget₁, hget₂, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
+        have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂
+        exact ⟨_,
+          .step_yield (.step
+            (.idx_guard (.triv_yield (tok₂ := PCM.zero)))
+            (.step_op
+              (by assumption)
+              hget₂
+              (pop_vals_push_vals_commute hpop₁₂)))
+              hinterp₂
+        ⟩
+      | step_tau hstep₂ =>
+        rcases hstep₂ with ⟨⟨hguard₂⟩, hstep₂⟩
+        cases hguard₂ with
+        | triv_join =>
+          cases hstep₂ with | step_op _ hget₂ hpop₂ =>
+          have hdisj_inputs := haff.atom_inputs_disjoint
+            ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+          have hdisj_outputs := haff.atom_outputs_disjoint
+            ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+          simp [hget₁, hget₂, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
+          have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂
+          exact ⟨_,
+            .step_tau (.step
+              (.idx_guard (.triv_join (outputs := #v[PCM.zero, PCM.zero])))
+              (.step_op
+                (by assumption)
+                hget₂
+                (pop_vals_push_vals_commute hpop₁₂)))
+          ⟩
+        | triv_tau =>
+          cases hstep₂ with | step_async _ hget₂ hinterp₂ hpop₂ =>
+          have hdisj_inputs := haff.atom_inputs_disjoint
+            ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+          have hdisj_outputs := haff.atom_outputs_disjoint
+            ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+          simp [hget₁, hget₂, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
+          have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
+            (List.disjoint_of_subset_right
+              (async_op_interp_input_sublist hinterp₂).subset hdisj_inputs) hpop₁ hpop₂
+          exact ⟨_,
+            .step_tau (.step
+              (.idx_guard .triv_tau)
+              (.step_async
+                (by assumption)
+                hget₂
+                hinterp₂
+                (pop_vals_push_vals_commute hpop₁₂)))
+          ⟩
+    | triv_tau =>
+      cases hstep₁ with | step_async _ hget₁ hinterp₁ hpop₁ =>
+      cases hstep₂ with
+      | step_yield hstep₂ hinterp₂ =>
+        rcases hstep₂ with ⟨⟨⟨hguard₂⟩⟩, hstep₂⟩
+        cases hstep₂ with | step_op _ hget₂ hpop₂ =>
+        -- have ⟨_, _, hinterp₂'⟩ := hnb hinterp₁ hinterp₂
+        have hdisj_inputs := haff.atom_inputs_disjoint
+          ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+        have hdisj_outputs := haff.atom_outputs_disjoint
+          ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+        simp [hget₁, hget₂, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
+        have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
+          (List.disjoint_of_subset_right
+            (async_op_interp_input_sublist hinterp₁).subset hdisj_inputs.symm).symm hpop₁ hpop₂
+        exact ⟨_,
+          .step_yield (.step
+            (.idx_guard (.triv_yield (tok₂ := PCM.zero)))
+            (.step_op
+              (by simp; assumption)
+              (by simp [hne]; exact hget₂)
+              (pop_vals_push_vals_commute hpop₁₂)))
+              hinterp₂
+        ⟩
+      | step_tau hstep₂ =>
+        rcases hstep₂ with ⟨⟨hguard₂⟩, hstep₂⟩
+        cases hguard₂ with
+        | triv_join =>
+          cases hstep₂ with | step_op _ hget₂ hpop₂ =>
+          have hdisj_inputs := haff.atom_inputs_disjoint
+            ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+          have hdisj_outputs := haff.atom_outputs_disjoint
+            ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+          simp [hget₁, hget₂, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
+          have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
+            (List.disjoint_of_subset_right
+              (async_op_interp_input_sublist hinterp₁).subset hdisj_inputs.symm).symm hpop₁ hpop₂
+          exact ⟨_,
+            .step_tau (.step
+              (.idx_guard (.triv_join (outputs := #v[PCM.zero, PCM.zero])))
+              (.step_op
+                (by simp; assumption)
+                (by simp [hne]; exact hget₂)
+                (pop_vals_push_vals_commute hpop₁₂)))
+          ⟩
+        | triv_tau =>
+          cases hstep₂ with | step_async _ hget₂ hinterp₂ hpop₂ =>
+          have hdisj_inputs := haff.atom_inputs_disjoint
+            ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+          have hdisj_outputs := haff.atom_outputs_disjoint
+            ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hne])
+          simp [hget₁, hget₂, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
+          have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
+            (by
+              have := (List.disjoint_of_subset_right
+                (async_op_interp_input_sublist hinterp₁).subset hdisj_inputs.symm).symm
+              have := (List.disjoint_of_subset_right
+                (async_op_interp_input_sublist hinterp₂).subset this)
+              exact this) hpop₁ hpop₂
+          exact ⟨_,
+            .step_tau (.step
+              (.idx_guard .triv_tau)
+              (.step_async
+                (by simp; assumption)
+                (by simp [hne]; exact hget₂)
+                hinterp₂
+                (pop_vals_push_vals_commute hpop₁₂)))
+          ⟩
 
 /-- If the "good-behaving" semantics of `Config.IdxInterpGuardStep`
 has a terminating trace, then any unguarded step can be turned
@@ -2307,9 +2502,7 @@ theorem proc_indexed_interp_unguarded_to_guarded
   {l : Label Semantics.Empty V m n}
   (hdet : opInterp.Deterministic)
   (hnb : opInterp.NonBlocking)
-  -- (hconfl : opSpec.Confluent opInterp)
   (haff : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.proc.AffineChan) s)
-  (hdisj : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.DisjointTokens) s)
   (htrace₁ : (Config.IdxInterpGuardStep opSpec ioSpec).Star s tr s₁)
   (hdom : ∃ l', (i, l') ∈ tr)
   (hstep₂ : (Config.IdxInterpTrivStep opSpec).Step s (i, l) s₂) :
@@ -2336,7 +2529,7 @@ theorem proc_indexed_interp_unguarded_to_guarded
       exists s'
     · have hstep₁' := proc_indexed_interp_guarded_step_to_unguarded hstep₁
       have ⟨s₂'', hstep₂''⟩ := proc_commute_unguarded_steps hnb haff.base hstep₁' hstep₂ (Ne.symm hii')
-      have ⟨s₁'', hstep₁'', heq⟩ := ih (haff.unfold hstep₁).2 (hdisj.unfold hstep₁).2
+      have ⟨s₁'', hstep₁'', heq⟩ := ih (haff.unfold hstep₁).2
         (by
           have ⟨l', hl'⟩ := hdom
           exists l'
@@ -2345,6 +2538,72 @@ theorem proc_indexed_interp_unguarded_to_guarded
         hstep₂''
       exact proc_indexed_interp_unguarded_to_guarded_single
         hdet haff.base hstep₁ hstep₁'' hstep₂
+
+/-- If a guarded trace terminates, then any unguarded step from the same state
+must fire one of the operators fired in the guarded trace. -/
+theorem proc_indexed_interp_unguarded_term_dom
+  [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  [opInterp : OpInterp Op V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {tr : Trace (Nat × Label Semantics.Empty V m n)}
+  {l : Label Semantics.Empty V m n}
+  (hnb : opInterp.NonBlocking)
+  (haff : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.proc.AffineChan) s)
+  (htrace₁ : (Config.IdxInterpGuardStep opSpec ioSpec).Star s tr s₁)
+  (hterm : Config.IndexedStep.IsFinalFor (λ (_, l) => l.isYield ∨ l.isSilent) s₁.1)
+  (hstep₂ : (Config.IdxInterpTrivStep opSpec).Step s (i, l) s₂) :
+    ∃ l', (i, l') ∈ tr
+  := by
+  have hl := proc_indexed_interp_unguarded_step_label hstep₂
+  subst hl
+  induction htrace₁
+    using Lts.Star.reverse_induction
+    generalizing s₂ with
+  | refl =>
+    match hstep₂ with
+    | .step_tau hstep₂
+    | .step_yield hstep₂ _ =>
+      rcases hstep₂ with ⟨⟨hguard₂⟩, hstep₂⟩
+      cases hguard₂ <;> exact False.elim (hterm (by simp) hstep₂)
+  | head hstep₁ htail₁ ih =>
+    rename_i s s' l' tr'
+    rcases l' with ⟨i', l'⟩
+    have this := proc_indexed_interp_guarded_step_label hstep₁
+    subst this
+    by_cases hii' : i = i'
+    · simp [hii']
+    · simp [hii']
+      have hstep₁' := proc_indexed_interp_guarded_step_to_unguarded hstep₁
+      have ⟨s₂'', hstep₂''⟩ := proc_commute_unguarded_steps hnb haff.base hstep₁' hstep₂ (Ne.symm hii')
+      exact ih (haff.unfold hstep₁).2 hstep₂''
+
+theorem proc_indexed_interp_unguarded_weak_norm
+  [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  [opInterp : OpInterp Op V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {tr tr' : Trace (Nat × Label Semantics.Empty V m n)}
+  {l : Label Semantics.Empty V m n}
+  (hdet : opInterp.Deterministic)
+  (hnb : opInterp.NonBlocking)
+  -- (hconfl : opSpec.Confluent opInterp)d
+  (haff : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.proc.AffineChan) s)
+  (hdisj : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.DisjointTokens) s)
+  (htrace₁ : (Config.IdxInterpGuardStep opSpec ioSpec).Star s tr s₁)
+  (hterm : Config.IndexedStep.IsFinalFor (λ (i, l) => l.isYield ∨ l.isSilent) s₁.1)
+  (hstep₂ : (Config.IdxInterpTrivStep opSpec).Star s tr' s₂) :
+    ∃ s₂',
+      (Config.IdxInterpGuardStep opSpec ioSpec).Step s (i, l) s₂' ∧
+      Config.EqMod EqModGhost s₂.1 s₂'.1 ∧
+      s₂.2 = s₂'.2
+  := sorry
 
 theorem proc_interp_tau_step_to_step
   [Arity Op] [Arity Op']
