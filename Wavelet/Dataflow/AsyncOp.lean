@@ -1,6 +1,17 @@
 import Wavelet.Semantics.Defs
 
-/-! Syntax and semantics of built-in asynchronous operators. -/
+/-!
+Syntax and semantics of built-in asynchronous operators.
+
+Async operators (in dataflow literature) are operators that can
+  1. Choose the input channels to read from depending on their internal state, and
+  2. Choose the output channels to write to depending on input values.
+
+They are contrasted with synchronous operators, which always read a fixed
+number of values (fixed to 1 in our case) from each input channel, and
+push a fixed number of values to each output channel (also fixed to 1 in
+our formulation).
+-/
 
 namespace Wavelet.Dataflow
 
