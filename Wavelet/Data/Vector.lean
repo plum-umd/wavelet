@@ -159,7 +159,13 @@ theorem inj_map
   {xs ys : Vector α n}
   (h : xs.map f = ys.map f) :
     xs = ys
-:= sorry
+:= by
+  apply Vector.ext
+  intros i hi
+  have : (map f xs)[i] = (map f ys)[i] := by
+    simp only [h]
+  simp at this
+  exact hf this
 
 theorem forall₂_push_toList_to_forall₂
   {α β}
@@ -168,8 +174,20 @@ theorem forall₂_push_toList_to_forall₂
   {x : α} {y : β}
   {R : α → β → Prop}
   (hforall₂ : List.Forall₂ R (xs.push x).toList (ys.push y).toList) :
-    List.Forall₂ R xs.toList ys.toList ∧ R x y := by
-  sorry
+    List.Forall₂ R xs.toList ys.toList ∧ R x y
+:= by
+  have ⟨_, hR⟩ := List.forall₂_iff_get.mp hforall₂
+  simp [Vector.getElem_push] at hR
+  constructor
+  · apply List.forall₂_iff_get.mpr
+    simp
+    intros i hi _
+    have := hR i (by omega)
+    simp [hi] at this
+    exact this
+  · have := hR n (by omega)
+    simp at this
+    exact this
 
 theorem forall₂_to_forall₂_push_toList
   {α β}
@@ -179,7 +197,20 @@ theorem forall₂_to_forall₂_push_toList
   {R : α → β → Prop}
   (hforall₂ : List.Forall₂ R xs.toList ys.toList)
   (hxy : R x y) :
-    List.Forall₂ R (xs.push x).toList (ys.push y).toList := by
-  sorry
+    List.Forall₂ R (xs.push x).toList (ys.push y).toList
+:= by
+  apply List.forall₂_iff_get.mpr
+  simp [Vector.getElem_push]
+  intros i hi
+  by_cases h₁ : i = n
+  · subst h₁
+    simp
+    exact hxy
+  · have : i < n := by omega
+    simp [this]
+    have ⟨_, h₂⟩ := List.forall₂_iff_get.mp hforall₂
+    specialize h₂ i (by simp [this]) (by simp [this])
+    simp at h₂
+    exact h₂
 
 end Vector

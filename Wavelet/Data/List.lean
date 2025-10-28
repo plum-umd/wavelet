@@ -233,4 +233,26 @@ theorem mem_flatten_map
   simp
   exists x
 
+instance Forall₂.instRefl {R : α → α → Prop} [IsRefl α R] :
+  IsRefl (List α) (List.Forall₂ R) where
+  refl xs := by
+    induction xs with
+    | nil => simp only [List.Forall₂.nil]
+    | cons hd tl ih =>
+      simp only [List.Forall₂.cons, IsRefl.refl, ih]
+
+instance Forall₂.instSymm {R : α → α → Prop} [symm : IsSymm α R] :
+  IsSymm (List α) (List.Forall₂ R) where
+  symm xs ys h := by
+    apply List.Forall₂.flip
+    apply List.Forall₂.imp _ h
+    exact symm.symm
+
+instance Forall₂.instTrans {R : α → α → Prop} [trans : IsTrans α R] :
+  IsTrans (List α) (List.Forall₂ R) where
+  trans xs ys zs h₁ h₂ := by
+    have := trans.trans
+    simp [List.forall₂_iff_get] at h₁ h₂ ⊢
+    grind only
+
 end List

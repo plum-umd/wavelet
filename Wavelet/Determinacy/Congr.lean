@@ -42,11 +42,12 @@ theorem congr_eq_mod_ghost_proc_indexed_unguarded
   | step_async hi hget hinterp hpop =>
     have := heq_aps.get hi (by simp [heq_aps.length_eq] at hi; exact hi)
     simp [hget, AtomicProc.EqMod] at this
-    split at this
-    · rename_i hget'
-      replace ⟨_, _, hpop, heq_outputs, heq_chans'⟩ := chan_map_pop_vals_equiv heq_chans hpop
-      sorry
-    · sorry
+    sorry
+    -- split at this
+    -- · rename_i hget'
+    --   replace ⟨_, _, hpop, heq_outputs, heq_chans'⟩ := chan_map_pop_vals_equiv heq_chans hpop
+    --   sorry
+    -- · sorry
     -- -- simp at hpop
     -- exact ⟨
     --   _,

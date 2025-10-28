@@ -1,3 +1,5 @@
+import Wavelet.Data.List
+
 import Wavelet.Dataflow.Proc
 
 namespace Wavelet.Dataflow
@@ -30,10 +32,16 @@ theorem ChanMap.EqMod.eq_eq {map₁ map₂ : ChanMap χ V} :
 def AsyncOp.EqMod
   (EqV : V → V → Prop) :
     AsyncOp V → AsyncOp V → Prop
+  | .switch n₁, .switch n₂ => n₁ = n₂
+  | .steer f₁ n₁, .steer f₂ n₂ => f₁ = f₂ ∧ n₁ = n₂
+  | .merge s₁ n₁, .merge s₂ n₂ => s₁ = s₂ ∧ n₁ = n₂
+  | .forward n₁, .forward n₂ => n₁ = n₂
+  | .fork n₁, .fork n₂ => n₁ = n₂
   | .const c₁ n₁, .const c₂ n₂ => EqV c₁ c₂ ∧ n₁ = n₂
   | .forwardc n₁ m₁ consts₁, .forwardc n₂ m₂ consts₂ =>
       n₁ = n₂ ∧ m₁ = m₂ ∧ List.Forall₂ EqV consts₁.toList consts₂.toList
-  | aop₁, aop₂ => aop₁ = aop₂
+  | .sink n₁, .sink n₂ => n₁ = n₂
+  | _, _ => False
 
 def AtomicProc.EqMod
   [Arity Op]
@@ -42,7 +50,9 @@ def AtomicProc.EqMod
     AsyncOp.EqMod EqV aop₁ aop₂ ∧
     inputs₁ = inputs₂ ∧
     outputs₁ = outputs₂
-  | ap₁, ap₂ => ap₁ = ap₂
+  | .op op₁ inputs₁ outputs₁, .op op₂ inputs₂ outputs₂ =>
+    op₁ = op₂ ∧ inputs₁ ≍ inputs₂ ∧ outputs₁ ≍ outputs₂
+  | _, _ => False
 
 def Proc.EqMod
   [Arity Op]
@@ -59,80 +69,131 @@ def Config.EqMod
   Proc.EqMod EqV c₁.proc c₂.proc ∧
   ChanMap.EqMod EqV c₁.chans c₂.chans
 
-instance {EqV : V → V → Prop} [IsRefl V EqV] :
+instance ChanMap.EqMod.instRefl {EqV : V → V → Prop} [IsRefl V EqV] :
+  IsRefl (ChanMap χ V) (ChanMap.EqMod EqV) where
+  refl map := by
+    intros name
+    apply List.forall₂_refl
+
+instance ChanMap.EqMod.instSymm {EqV : V → V → Prop} [IsSymm V EqV] :
+  IsSymm (ChanMap χ V) (ChanMap.EqMod EqV) where
+  symm map₁ map₂ := by
+    intros h name
+    apply IsSymm.symm _ _ h
+
+instance ChanMap.EqMod.instTrans {EqV : V → V → Prop} [IsTrans V EqV] :
+  IsTrans (ChanMap χ V) (ChanMap.EqMod EqV) where
+  trans map₁ map₂ map₃ := by
+    intros h₁ h₂ name
+    apply IsTrans.trans _ _ _ h₁ h₂
+
+instance AsyncOp.EqMod.instRefl {EqV : V → V → Prop} [IsRefl V EqV] :
   IsRefl (AsyncOp V) (AsyncOp.EqMod EqV) where
-  refl := sorry
+  refl aop := by cases aop <;> simp [AsyncOp.EqMod, IsRefl.refl]
 
-instance {EqV : V → V → Prop} [IsSymm V EqV] :
+instance AsyncOp.EqMod.instSymm {EqV : V → V → Prop} [instSymm : IsSymm V EqV] :
   IsSymm (AsyncOp V) (AsyncOp.EqMod EqV) where
-  symm := sorry
+  symm aop₁ aop₂ := by
+    have := instSymm.symm
+    cases aop₁ <;> cases aop₂ <;> simp [AsyncOp.EqMod]
+    any_goals grind only [cases Or]
+    case forwardc.forwardc =>
+      intros h₁ h₂ h₃
+      simp [h₁, h₂, IsSymm.symm _ _ h₃]
 
-instance {EqV : V → V → Prop} [IsTrans V EqV] :
+instance AsyncOp.EqMod.instTrans {EqV : V → V → Prop} [instTrans : IsTrans V EqV] :
   IsTrans (AsyncOp V) (AsyncOp.EqMod EqV) where
-  trans := sorry
+  trans aop₁ aop₂ aop₃ := by
+    have := instTrans.trans
+    cases aop₁ <;> cases aop₂ <;> cases aop₃ <;> simp [AsyncOp.EqMod]
+    any_goals grind only [cases Or]
+    case forwardc.forwardc =>
+      intros h₁ h₂ h₃ h₄ h₅ h₆
+      simp [h₁, h₂, h₄, h₅, IsTrans.trans _ _ _ h₃ h₆]
 
-instance {EqV : V → V → Prop} [Arity Op] [IsRefl V EqV] :
+instance AtomicProc.EqMod.instRefl {EqV : V → V → Prop} [Arity Op] [IsRefl V EqV] :
   IsRefl (AtomicProc Op χ V) (AtomicProc.EqMod EqV) where
-  refl := sorry
+  refl ap := by cases ap <;> simp [AtomicProc.EqMod, IsRefl.refl]
 
-instance {EqV : V → V → Prop} [Arity Op] [IsSymm V EqV] :
+instance AtomicProc.EqMod.instSymm {EqV : V → V → Prop} [Arity Op] [IsSymm V EqV] :
   IsSymm (AtomicProc Op χ V) (AtomicProc.EqMod EqV) where
-  symm := sorry
+  symm ap₁ ap₂ := by
+    cases ap₁ <;> cases ap₂ <;> simp [AtomicProc.EqMod]
+    any_goals grind only [cases Or]
+    case async.async =>
+      intros h₁ h₂ h₃
+      simp [h₂, h₃, IsSymm.symm _ _ h₁]
 
-instance {EqV : V → V → Prop} [Arity Op] [IsTrans V EqV] :
+instance AtomicProc.EqMod.instTrans {EqV : V → V → Prop} [Arity Op] [IsTrans V EqV] :
   IsTrans (AtomicProc Op χ V) (AtomicProc.EqMod EqV) where
-  trans := sorry
+  trans ap₁ ap₂ ap₃ := by
+    cases ap₁ <;> cases ap₂ <;> cases ap₃ <;> simp [AtomicProc.EqMod]
+    any_goals grind only [cases Or]
+    case async.async =>
+      intros h₁ h₂ h₃ h₄ h₅ h₆
+      simp [h₂, h₃, h₅, h₆, IsTrans.trans _ _ _ h₁ h₄]
 
-instance {EqV : V → V → Prop} [Arity Op] [IsRefl V EqV] :
+instance Proc.EqMod.instRefl {EqV : V → V → Prop} [Arity Op] [IsRefl V EqV] :
   IsRefl (Proc Op χ V m n) (Proc.EqMod EqV) where
-  refl := sorry
+  refl p := by cases p; simp [Proc.EqMod, IsRefl.refl]
 
-instance {EqV : V → V → Prop} [Arity Op] [IsSymm V EqV] :
+instance Proc.EqMod.instSymm {EqV : V → V → Prop} [Arity Op] [IsSymm V EqV] :
   IsSymm (Proc Op χ V m n) (Proc.EqMod EqV) where
-  symm := sorry
+  symm p₁ p₂ := by
+    cases p₁; cases p₂
+    simp [Proc.EqMod]
+    intros h₁ h₂ h₃
+    simp [h₁, h₂, IsSymm.symm _ _ h₃]
 
 instance {EqV : V → V → Prop} [Arity Op] [IsTrans V EqV] :
   IsTrans (Proc Op χ V m n) (Proc.EqMod EqV) where
-  trans := sorry
+  trans p₁ p₂ p₃ := by
+    cases p₁; cases p₂; cases p₃
+    simp [Proc.EqMod]
+    intros h₁ h₂ h₃ h₄ h₅ h₆
+    simp [h₁, h₂, h₄, h₅, IsTrans.trans _ _ _ h₃ h₆]
 
-instance {EqV : V → V → Prop} [Arity Op] [IsRefl V EqV] :
+instance Config.EqMod.instRefl {EqV : V → V → Prop} [Arity Op] [IsRefl V EqV] :
   IsRefl (Config Op χ V m n) (Config.EqMod EqV) where
-  refl := sorry
+  refl c := by cases c; simp [Config.EqMod, IsRefl.refl]
 
-instance {EqV : V → V → Prop} [Arity Op] [IsSymm V EqV] :
+instance Config.EqMod.instSymm {EqV : V → V → Prop} [Arity Op] [IsSymm V EqV] :
   IsSymm (Config Op χ V m n) (Config.EqMod EqV) where
-  symm := sorry
+  symm c₁ c₂ := by
+    cases c₁
+    cases c₂
+    simp [Config.EqMod]
+    intros h₁ h₂
+    simp [IsSymm.symm _ _ h₁]
+    exact IsSymm.symm _ _ h₂
 
-instance {EqV : V → V → Prop} [Arity Op] [IsTrans V EqV] :
+instance Config.EqMod.instTrans {EqV : V → V → Prop} [Arity Op] [IsTrans V EqV] :
   IsTrans (Config Op χ V m n) (Config.EqMod EqV) where
-  trans := sorry
+  trans c₁ c₂ c₃ := by
+    cases c₁
+    cases c₂
+    cases c₃
+    simp [Config.EqMod]
+    intros h₁ h₂ h₃ h₄
+    simp [IsTrans.trans _ _ _ h₁ h₃]
+    exact IsTrans.trans _ _ _ h₂ h₄
 
 @[simp]
 theorem AsyncOp.EqMod.eq_eq : AsyncOp.EqMod Eq = Eq (α := AsyncOp V) := by
-  funext
-  simp [EqMod]
-  split
-  · simp
-  · constructor
-    · intros h
-      have ⟨h₁, h₂, h₃⟩ := h
-      subst h₁; subst h₂
-      simp [Vector.toList_inj] at h₃
-      simp [h₃]
-    · intros h
-      simp at h
-      have ⟨h₁, h₂, h₃⟩ := h
-      subst h₁; subst h₂; subst h₃
-      simp
-  · simp
+  funext aop₁ aop₂
+  cases aop₁ <;> cases aop₂ <;> simp [EqMod]
+  case forwardc.forwardc =>
+    intros h₁ h₂
+    subst h₁; subst h₂
+    simp [Vector.toList_inj]
 
 @[simp]
 theorem AtomicProc.EqMod.eq_eq
   [Arity Op] : AtomicProc.EqMod Eq = Eq (α := AtomicProc Op χ V)
   := by
-  funext
+  funext ap₁ ap₂
   simp [EqMod]
-  split <;> simp
+  cases ap₁ <;> grind only [EqMod]
 
 @[simp]
 theorem Proc.EqMod.eq_eq
