@@ -4,6 +4,7 @@ import Wavelet.Semantics.Guard
 
 import Wavelet.Seq.Fn
 import Wavelet.Dataflow.Proc
+import Wavelet.Dataflow.EqMod
 
 import Wavelet.Determinacy.PCM
 
@@ -229,5 +230,10 @@ abbrev ProcWithSpec
 abbrev ConfigWithSpec
   [Arity Op] (opSpec : OpSpec Op V T) χ m n
   := Config (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
+
+infix:50 " ≈ " => AsyncOp.EqMod EqModGhost
+infix:50 " ≈ " => AtomicProc.EqMod EqModGhost
+infix:50 " ≈ " => Proc.EqMod EqModGhost
+infix:50 " ≈ " => Config.EqMod EqModGhost
 
 end Wavelet.Dataflow

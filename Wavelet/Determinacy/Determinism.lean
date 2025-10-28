@@ -171,7 +171,7 @@ theorem proc_indexed_unguarded_step_det_mod
   {l : Label Op V m n}
   (hstep₁ : (Config.IdxTrivStep opSpec).Step s (i, l) s₁)
   (hstep₂ : (Config.IdxTrivStep opSpec).Step s (i, l) s₂) :
-    Config.EqMod EqModGhost s₁ s₂
+    s₁ ≈ s₂
   := by
   rcases hstep₁ with ⟨⟨hguard₁⟩, hstep₁⟩
   rcases hstep₂ with ⟨⟨hguard₂⟩, hstep₂⟩
@@ -212,8 +212,7 @@ theorem proc_indexed_interp_unguarded_step_det_mod
   (hdet : opInterp.Deterministic)
   (hstep₁ : (Config.IdxInterpTrivStep opSpec).Step s (i, .τ) s₁)
   (hstep₂ : (Config.IdxInterpTrivStep opSpec).Step s (i, .τ) s₂) :
-    Config.EqMod EqModGhost s₁.1 s₂.1 ∧
-    s₁.2 = s₂.2
+    s₁.1 ≈ s₂.1 ∧ s₁.2 = s₂.2
   := by
   cases hstep₁ <;> cases hstep₂
   case step_yield.step_yield =>

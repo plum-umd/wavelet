@@ -12,12 +12,12 @@ theorem congr_eq_mod_ghost_async_op_interp
   {aop aop' aop₁ aop₁' : AsyncOp (V ⊕ T)}
   (hinterp : AsyncOp.Interp aop
     (.mk allInputs allOutputs inputs inputVals outputs outputVals) aop₁)
-  (heq_aop : AsyncOp.EqMod EqModGhost aop aop')
+  (heq_aop : aop ≈ aop')
   (heq_inputs : List.Forall₂ EqModGhost inputVals inputVals') :
     ∃ outputVals',
       AsyncOp.Interp aop'
         (.mk allInputs allOutputs inputs inputVals' outputs outputVals') aop₁' ∧
-      AsyncOp.EqMod EqModGhost aop₁ aop₁' ∧
+      aop₁ ≈ aop₁' ∧
       List.Forall₂ EqModGhost outputVals outputVals'
   := sorry
 
@@ -29,18 +29,24 @@ theorem congr_eq_mod_ghost_proc_indexed_unguarded
   {s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n}
   {l : Nat × Label Op V m n}
   (hstep : (Config.IdxTrivStep opSpec).Step s₁ l s₂)
-  (heq : Config.EqMod EqModGhost s₁ s₁') :
+  (heq : s₁ ≈ s₁') :
     ∃ s₂',
       (Config.IdxTrivStep opSpec).Step s₁' l s₂' ∧
-      Config.EqMod EqModGhost s₂ s₂'
+      s₂ ≈ s₂'
   := by
   have hl := proc_indexed_unguarded_step_label hstep
-  have ⟨heq_aps, heq_chans⟩ := heq
+  have ⟨⟨_, _, heq_aps⟩, heq_chans⟩ := heq
   rcases hstep with ⟨⟨hguard⟩, hstep⟩
   cases hstep with
   | step_op => sorry
-  | step_async hi hget hinterp hpop => sorry
-    -- replace ⟨_, _, hpop, heq_outputs, heq_chans'⟩ := chan_map_pop_vals_equiv heq_chans hpop
+  | step_async hi hget hinterp hpop =>
+    have := heq_aps.get hi (by simp [heq_aps.length_eq] at hi; exact hi)
+    simp [hget, AtomicProc.EqMod] at this
+    split at this
+    · rename_i hget'
+      replace ⟨_, _, hpop, heq_outputs, heq_chans'⟩ := chan_map_pop_vals_equiv heq_chans hpop
+      sorry
+    · sorry
     -- -- simp at hpop
     -- exact ⟨
     --   _,
@@ -62,11 +68,10 @@ theorem congr_eq_mod_ghost_proc_indexed_interp_unguarded
   {opSpec : OpSpec Op V T}
   {s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
   (hstep : (Config.IdxInterpTrivStep opSpec).Step s₁ l s₂)
-  (heq : Config.EqMod EqModGhost s₁.1 s₁'.1 ∧ s₁.2 = s₁'.2) :
+  (heq : s₁.1 ≈ s₁'.1 ∧ s₁.2 = s₁'.2) :
     ∃ s₂',
       (Config.IdxInterpTrivStep opSpec).Step s₁' l s₂' ∧
-      Config.EqMod EqModGhost s₂.1 s₂'.1 ∧
-      s₂.2 = s₂'.2
+      s₂.1 ≈ s₂'.1 ∧ s₂.2 = s₂'.2
   := by
   have hl := proc_indexed_interp_unguarded_step_label hstep
   cases hstep with
@@ -98,11 +103,10 @@ theorem congr_eq_mod_ghost_proc_indexed_interp_unguarded_star
   {opSpec : OpSpec Op V T}
   {s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
   (htrace : (Config.IdxInterpTrivStep opSpec).Star s₁ tr s₂)
-  (heq : Config.EqMod EqModGhost s₁.1 s₁'.1 ∧ s₁.2 = s₁'.2) :
+  (heq : s₁.1 ≈ s₁'.1 ∧ s₁.2 = s₁'.2) :
     ∃ s₂',
       (Config.IdxInterpTrivStep opSpec).Star s₁' tr s₂' ∧
-      Config.EqMod EqModGhost s₂.1 s₂'.1 ∧
-      s₂.2 = s₂'.2
+      s₂.1 ≈ s₂'.1 ∧ s₂.2 = s₂'.2
   := by
   induction htrace
     using Lts.Star.reverse_induction

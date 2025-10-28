@@ -247,7 +247,7 @@ theorem proc_indexed_interp_guarded_hetero_confl_single
   (hstep₂' : (Config.IdxInterpTrivStep opSpec).Step s (j, .τ) s₁') :
     ∃ s₁'',
       (Config.IdxInterpGuardStep opSpec ioSpec).Step s (j, .τ) s₁'' ∧
-      Config.EqMod EqModGhost s₁'.1 s₁''.1 ∧
+      s₁'.1 ≈ s₁''.1 ∧
       s₁'.2 = s₁''.2
   := by
   have hdet_mod {s₂} hstep := proc_indexed_interp_unguarded_step_det_mod
@@ -404,7 +404,7 @@ theorem proc_indexed_guarded_hetero_confl
   (hstep₂ : (Config.IdxTrivStep opSpec).Step s (i, l) s₂) :
     ∃ s₂',
       (Config.IdxGuardStep opSpec ioSpec).Step s (i, l) s₂' ∧
-      Config.EqMod EqModGhost s₂' s₂
+      s₂' ≈ s₂
   := by
   induction htrace₁
     using Lts.Star.reverse_induction
@@ -724,7 +724,7 @@ theorem proc_indexed_interp_guarded_hetero_confl
   (hstep₂ : (Config.IdxInterpTrivStep opSpec).Step s (i, l) s₂) :
     ∃ s₂',
       (Config.IdxInterpGuardStep opSpec ioSpec).Step s (i, l) s₂' ∧
-      Config.EqMod EqModGhost s₂.1 s₂'.1 ∧
+      s₂.1 ≈ s₂'.1 ∧
       s₂.2 = s₂'.2
   := by
   have hl := proc_indexed_interp_unguarded_step_label hstep₂
@@ -784,7 +784,7 @@ theorem proc_indexed_interp_guarded_hetero_terminal_confl
     ∃ s₁' tr₃,
       (Config.IdxInterpTrivStep opSpec).Star s₂ tr₃ s₁' ∧
       tr₁.length = tr₂.length + tr₃.length ∧
-      Config.EqMod EqModGhost s₁.1 s₁'.1 ∧
+      s₁.1 ≈ s₁'.1 ∧
       s₁.2 = s₁'.2
   := by
   cases htrace₂
@@ -853,7 +853,7 @@ theorem proc_interp_guarded_hetero_terminal_confl
     ∃ s₁' k₃,
       (Config.InterpTrivStep opSpec).TauStarN .τ k₃ s₂ s₁' ∧
       k₁ = k₂ + k₃ ∧
-      Config.EqMod EqModGhost s₁.1 s₁'.1 ∧
+      s₁.1 ≈ s₁'.1 ∧
       s₁.2 = s₁'.2
   := by
   have ⟨_, hlen₁, htrace₁'⟩ := Config.InterpGuardStep.to_indexed_interp_guarded_tau_star htrace₁
@@ -875,9 +875,7 @@ theorem proc_interp_guarded_hetero_terminal_confl
         rename_i l
         simp [Lts.Step] at hstep
         have := hstep.to_step_yield_or_tau
-        exact ⟨_, by
-          rcases l with ⟨_, ⟨_⟩⟩
-            <;> simp at hl ⊢, this⟩))
+        exact ⟨_, by rcases l with ⟨_, ⟨_⟩⟩ <;> simp at hl ⊢, this⟩))
     htrace₂'
   have htrace₃ := Config.IdxInterpTrivStep.to_interp_unguarded_tau_star htrace₃'
   exact ⟨_, _, htrace₃,
