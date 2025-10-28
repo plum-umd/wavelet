@@ -228,13 +228,13 @@ theorem Config.IndexedStep.unique_index_mod
       inputs₂ inputVals₂ outputs₂ outputVals₂ _ hinterp₂ hpop₂ hget₂
     have ⟨h₁, h₂, h₃⟩ := hget₂
     subst h₁; subst h₂; subst h₃
-    have heq_inputs := async_op_interp_det_inputs hinterp₁ hinterp₂
+    have heq_inputs := AsyncOp.Interp.det_inputs hinterp₁ hinterp₂
     have ⟨h₁, h₂⟩ := Vector.toList_inj_heq heq_inputs
     subst h₁; subst h₂
     simp [hpop₁] at hpop₂
     have ⟨h₁, h₂⟩ := hpop₂
     subst h₁; subst h₂
-    have ⟨h₁, h₂, h₃, h₄⟩ := async_op_interp_det_outputs hinterp₁ hinterp₂ rfl
+    have ⟨h₁, h₂, h₃, h₄⟩ := AsyncOp.Interp.det_outputs hinterp₁ hinterp₂ rfl
     replace ⟨h₂, h₂'⟩ := Vector.toList_inj_heq h₂
     subst h₂; subst h₂'
     replace h₃ := Vector.toList_inj.mp h₃

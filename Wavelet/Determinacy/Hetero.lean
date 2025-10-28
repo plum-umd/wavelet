@@ -136,7 +136,7 @@ theorem proc_indexed_guarded_hetero_confl_single
           have ⟨h₁, h₂, h₃⟩ := hget₂
           subst h₁; subst h₂; subst h₃
           simp at hpop₂
-          have := async_op_interp_det_inputs hinterp₂' hinterp₂
+          have := hinterp₂'.det_inputs hinterp₂
           have ⟨h₁, h₂⟩ := Vector.toList_inj_heq this
           subst h₁; subst h₂
           have hdisj_inputs := haff.atom_inputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
@@ -144,7 +144,7 @@ theorem proc_indexed_guarded_hetero_confl_single
           simp [hget₂', hget₁, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
           have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
             (List.disjoint_of_subset_right
-              (async_op_interp_input_sublist hinterp₂).subset hdisj_inputs) hpop₁ hpop₂'
+              hinterp₂.input_sublist.subset hdisj_inputs) hpop₁ hpop₂'
           rw [pop_vals_push_vals_commute hpop₁₂] at hpop₂
           simp at hpop₂
           have ⟨h₁, h₂⟩ := hpop₂
@@ -171,7 +171,7 @@ theorem proc_indexed_guarded_hetero_confl_single
             simp [hget₂', hget₁, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
             have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
               (List.disjoint_of_subset_right
-                (async_op_interp_input_sublist hinterp₁).subset hdisj_inputs.symm).symm
+                hinterp₁.input_sublist.subset hdisj_inputs.symm).symm
               hpop₁ hpop₂'
             rw [pop_vals_push_vals_commute hpop₁₂] at hpop₂
             simp at hpop₂
@@ -190,7 +190,7 @@ theorem proc_indexed_guarded_hetero_confl_single
             simp [hget₂', hget₁, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
             have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
               (List.disjoint_of_subset_right
-                (async_op_interp_input_sublist hinterp₁).subset hdisj_inputs.symm).symm
+                hinterp₁.input_sublist.subset hdisj_inputs.symm).symm
               hpop₁ hpop₂'
             rw [pop_vals_push_vals_commute hpop₁₂] at hpop₂
             simp at hpop₂
@@ -210,7 +210,7 @@ theorem proc_indexed_guarded_hetero_confl_single
           have ⟨h₁, h₂, h₃⟩ := hget₂
           subst h₁; subst h₂; subst h₃
           simp at hpop₂
-          have := async_op_interp_det_inputs hinterp₂' hinterp₂
+          have := hinterp₂'.det_inputs hinterp₂
           have ⟨h₁, h₂⟩ := Vector.toList_inj_heq this
           subst h₁; subst h₂
           have hdisj_inputs := haff.atom_inputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
@@ -219,9 +219,9 @@ theorem proc_indexed_guarded_hetero_confl_single
           have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
             (by
               have := (List.disjoint_of_subset_right
-                (async_op_interp_input_sublist hinterp₁).subset hdisj_inputs.symm).symm
+                hinterp₁.input_sublist.subset hdisj_inputs.symm).symm
               have := (List.disjoint_of_subset_right
-                (async_op_interp_input_sublist hinterp₂').subset this)
+                hinterp₂'.input_sublist.subset this)
               exact this) hpop₁ hpop₂'
           rw [pop_vals_push_vals_commute hpop₁₂] at hpop₂
           simp at hpop₂
@@ -323,7 +323,7 @@ theorem proc_indexed_interp_guarded_hetero_confl_single
         simp [hget₂', hget₁, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
         have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
           (List.disjoint_of_subset_right
-            (async_op_interp_input_sublist hinterp₁).subset hdisj_inputs.symm).symm
+            hinterp₁.input_sublist.subset hdisj_inputs.symm).symm
           hpop₁ hpop₂'
         rw [pop_vals_push_vals_commute hpop₁₂] at hpop₂
         simp at hpop₂
@@ -519,7 +519,7 @@ theorem proc_commute_indexed_unguarded
         simp [hget₁, hget₂, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
         have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
           (List.disjoint_of_subset_right
-            (async_op_interp_input_sublist hinterp₂).subset hdisj_inputs) hpop₁ hpop₂
+            hinterp₂.input_sublist.subset hdisj_inputs) hpop₁ hpop₂
         exact ⟨_,
           .step_tau (.step
             (.idx_guard .triv_tau)
@@ -582,7 +582,7 @@ theorem proc_commute_indexed_unguarded
           simp [hget₁, hget₂, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
           have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
             (List.disjoint_of_subset_right
-              (async_op_interp_input_sublist hinterp₂).subset hdisj_inputs) hpop₁ hpop₂
+              hinterp₂.input_sublist.subset hdisj_inputs) hpop₁ hpop₂
           exact ⟨_,
             .step_tau (.step
               (.idx_guard .triv_tau)
@@ -606,7 +606,7 @@ theorem proc_commute_indexed_unguarded
         simp [hget₁, hget₂, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
         have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
           (List.disjoint_of_subset_right
-            (async_op_interp_input_sublist hinterp₁).subset hdisj_inputs.symm).symm hpop₁ hpop₂
+            hinterp₁.input_sublist.subset hdisj_inputs.symm).symm hpop₁ hpop₂
         exact ⟨_,
           .step_yield (.step
             (.idx_guard (.triv_yield (tok₂ := PCM.zero)))
@@ -628,7 +628,7 @@ theorem proc_commute_indexed_unguarded
           simp [hget₁, hget₂, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
           have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
             (List.disjoint_of_subset_right
-              (async_op_interp_input_sublist hinterp₁).subset hdisj_inputs.symm).symm hpop₁ hpop₂
+              hinterp₁.input_sublist.subset hdisj_inputs.symm).symm hpop₁ hpop₂
           exact ⟨_,
             .step_tau (.step
               (.idx_guard (.triv_join (outputs := #v[PCM.zero, PCM.zero])))
@@ -647,9 +647,9 @@ theorem proc_commute_indexed_unguarded
           have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
             (by
               have := (List.disjoint_of_subset_right
-                (async_op_interp_input_sublist hinterp₁).subset hdisj_inputs.symm).symm
+                hinterp₁.input_sublist.subset hdisj_inputs.symm).symm
               have := (List.disjoint_of_subset_right
-                (async_op_interp_input_sublist hinterp₂).subset this)
+                hinterp₂.input_sublist.subset this)
               exact this) hpop₁ hpop₂
           exact ⟨_,
             .step_tau (.step

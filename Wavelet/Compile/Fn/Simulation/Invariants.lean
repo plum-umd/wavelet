@@ -84,7 +84,7 @@ def HasCompiledProcs
   (pc : Dataflow.Config Op (ChanName χ) V m n)
   (gs : GhostState χ) : Prop :=
   ∃ (rest : AtomicProcs Op (ChanName χ) V)
-    (mergeState : MergeState)
+    (mergeState : AsyncOp.MergeState)
     (ctxLeft ctxCurrent ctxRight : AtomicProcs Op (ChanName χ) V),
     pc.proc.atoms = compileFn.initCarry ec.fn mergeState :: rest ∧
     (compileFn ec.fn).atoms = compileFn.initCarry ec.fn .popLeft :: rest ∧

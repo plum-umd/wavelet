@@ -1,3 +1,5 @@
+import Wavelet.Seq.Prog
+
 import Wavelet.Compile.Fn.Defs
 import Wavelet.Compile.MapChans
 

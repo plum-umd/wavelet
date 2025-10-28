@@ -1,5 +1,5 @@
-import Wavelet.Seq
-import Wavelet.Dataflow
+import Wavelet.Seq.Fn
+import Wavelet.Dataflow.Abbrev
 
 /-! A compiler from `Seq.Fn` to `Dataflow.Proc`. -/
 

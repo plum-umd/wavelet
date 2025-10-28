@@ -84,9 +84,9 @@ theorem proc_indexed_strong_confl_at_mod
         (by simp [hij])
       simp [hget_i, hget_j, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
       replace hdisj_inputs := List.disjoint_of_subset_right
-        (async_op_interp_input_sublist hinterp₂).subset hdisj_inputs
+        hinterp₂.input_sublist.subset hdisj_inputs
       replace hdisj_outputs := List.disjoint_of_subset_right
-        (async_op_interp_output_sublist hinterp₂).subset hdisj_outputs
+        hinterp₂.output_sublist.subset hdisj_outputs
       have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂
       have hstep₁' : Config.IndexedStep s₁'' _ _ :=
         .step_async (i := j)
@@ -115,9 +115,9 @@ theorem proc_indexed_strong_confl_at_mod
         (by simp [hij])
       simp [hget_i, hget_j, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
       replace hdisj_inputs := List.disjoint_of_subset_right
-        (async_op_interp_input_sublist hinterp₂).subset hdisj_inputs.symm
+        hinterp₂.input_sublist.subset hdisj_inputs.symm
       replace hdisj_outputs := List.disjoint_of_subset_right
-        (async_op_interp_output_sublist hinterp₂).subset hdisj_outputs.symm
+        hinterp₂.output_sublist.subset hdisj_outputs.symm
       have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂
       have hstep₂' : Config.IndexedStep s₂'' _ _ :=
         .step_async (i := i)
@@ -148,13 +148,13 @@ theorem proc_indexed_strong_confl_at_mod
         (by simp [hij])
       simp [hget_i, hget_j, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
       replace hdisj_inputs := List.disjoint_of_subset_left
-        (async_op_interp_input_sublist hinterp₁).subset hdisj_inputs
+        hinterp₁.input_sublist.subset hdisj_inputs
       replace hdisj_inputs := List.disjoint_of_subset_right
-        (async_op_interp_input_sublist hinterp₂).subset hdisj_inputs
+        hinterp₂.input_sublist.subset hdisj_inputs
       replace hdisj_outputs := List.disjoint_of_subset_left
-        (async_op_interp_output_sublist hinterp₁).subset hdisj_outputs
+        hinterp₁.output_sublist.subset hdisj_outputs
       replace hdisj_outputs := List.disjoint_of_subset_right
-        (async_op_interp_output_sublist hinterp₂).subset hdisj_outputs
+        hinterp₂.output_sublist.subset hdisj_outputs
       have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂
       have hstep₁' : Config.IndexedStep s₁'' _ _ :=
         .step_async (i := j)
