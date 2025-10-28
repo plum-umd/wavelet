@@ -139,6 +139,17 @@ theorem back_zip
 := by
   grind only [= getElem_zip, back_eq_getElem]
 
+theorem push_zip
+  {xs : Vector α n} {ys : Vector β n} :
+    (xs.push x).zip (ys.push y) = (xs.zip ys).push (x, y)
+  := by
+    apply Vector.ext
+    intros i hi
+    by_cases h₁ : i = n
+    · simp [h₁]
+    · have : i < n := by omega
+      simp [this]
+
 theorem toList_inj_heq
   {xs : Vector α n} {ys : Vector α m}
   (h : xs.toList = ys.toList) :
@@ -212,5 +223,18 @@ theorem forall₂_to_forall₂_push_toList
     specialize h₂ i (by simp [this]) (by simp [this])
     simp at h₂
     exact h₂
+
+theorem back_induction
+  {motive : ∀ {n}, Vector α n → Prop}
+  (empty : motive #v[])
+  (push : ∀ {n} (xs : Vector α n) (x : α), motive xs → motive (xs.push x))
+  (xs : Vector α n) : motive xs
+  := by
+  induction n with
+  | zero => simp [empty, Vector.eq_empty]
+  | succ _ ih =>
+    rw [← Vector.push_pop_back xs]
+    apply push
+    apply ih
 
 end Vector

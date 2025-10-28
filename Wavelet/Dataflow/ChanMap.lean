@@ -198,11 +198,22 @@ theorem push_vals_empty [DecidableEq χ]
 theorem pop_vals_unfold [DecidableEq χ]
   {map : ChanMap χ V}
   {names : Vector χ (n + 1)} :
-  map.popVals names = do
-    let (vals', map') ← map.popVals names.pop
-    let (val, map'') ← map'.popVal names.back
-    return (vals'.push val, map'')
-:= by rfl
+    map.popVals names = do
+      let (vals', map') ← map.popVals names.pop
+      let (val, map'') ← map'.popVal names.back
+      return (vals'.push val, map'')
+  := by rfl
+
+theorem push_vals_unfold [DecidableEq χ]
+  {map : ChanMap χ V}
+  {names : Vector χ (n + 1)}
+  {vals : Vector V (n + 1)} :
+    map.pushVals names vals =
+      (map.pushVals names.pop vals.pop).pushVal names.back vals.back
+  := by
+  cases names using Vector.back_induction with | push =>
+  cases vals using Vector.back_induction with | push =>
+  simp [ChanMap.pushVals, Vector.push_zip]
 
 theorem pop_val_singleton [DecidableEq χ]
   {map : ChanMap χ V}
@@ -272,35 +283,201 @@ theorem pop_vals_append [DecidableEq χ]
   (hpop₂ : map'.popVals names₂ = some (vals₂, map'')) :
     map.popVals (names₁ ++ names₂) = some (vals₁ ++ vals₂, map'')
   := by
-  sorry
+  induction names₂ using Vector.back_induction
+    generalizing map'' with
+  | empty =>
+    simp [ChanMap.popVals] at hpop₂
+    simp [Vector.eq_empty, hpop₁, hpop₂]
+  | push _ _ ih =>
+    simp [pop_vals_unfold, Option.bind] at hpop₂
+    split at hpop₂; contradiction
+    rename_i res₁ heq₁
+    cases res₁
+    simp at hpop₂
+    split at hpop₂; contradiction
+    rename_i res₂ heq₂
+    cases res₂
+    simp at hpop₂
+    have := ih heq₁
+    simp [pop_vals_unfold, this, heq₂, hpop₂]
+
+@[simp]
+theorem pop_vals_zero
+  [DecidableEq χ]
+  {chans : ChanMap χ V} : chans.popVals #v[] = some (#v[], chans)
+  := by simp [ChanMap.popVals, Vector.eq_empty]
+
+@[simp]
+theorem push_vals_zero
+  [DecidableEq χ]
+  {chans : ChanMap χ V} : chans.pushVals #v[] vals₁ = chans
+  := by rfl
+
+theorem pop_val_push_val_commute
+  [DecidableEq χ]
+  {chans : ChanMap χ V}
+  (hpop : chans.popVal name₂ = some (val₂, chans')) :
+    (chans.pushVal name₁ val₁).popVal name₂ =
+      some (val₂, chans'.pushVal name₁ val₁)
+  := by
+  simp [ChanMap.popVal, ChanMap.pushVal] at hpop ⊢
+  split at hpop; contradiction
+  rename_i hpop'
+  by_cases h₁ : name₁ = name₂
+  · subst h₁
+    simp at hpop ⊢
+    simp [hpop', ← hpop]
+    funext
+    simp [ChanMap.pushVal]
+    grind only [cases Or]
+  · simp [Ne.symm h₁] at hpop ⊢
+    simp [hpop', ← hpop]
+    funext
+    simp [ChanMap.pushVal]
+    grind only [cases Or]
+
+theorem pop_vals_push_val_commute
+  [DecidableEq χ]
+  {chans : ChanMap χ V}
+  (hpop : chans.popVals names₂ = some (vals₂, chans')) :
+    (chans.pushVal name₁ val₁).popVals names₂ =
+      some (vals₂, chans'.pushVal name₁ val₁)
+  := by
+  induction names₂ using Vector.back_induction
+    generalizing chans' with
+  | empty =>
+    simp [Vector.eq_empty, ChanMap.popVals] at hpop ⊢
+    simp [hpop]
+  | push names₂' name₂ ih =>
+    simp [pop_vals_unfold, Option.bind] at hpop
+    split at hpop; contradiction
+    rename_i res₁ heq₁
+    simp at hpop
+    split at hpop; contradiction
+    rename_i res₂ heq₂
+    cases res₂
+    simp at hpop
+    specialize ih heq₁
+    simp [pop_vals_unfold, ih,
+      pop_val_push_val_commute heq₂, hpop]
 
 /-- If a list of channels already have values ready to pop,
 then it can commute with any `pushVals` operation. -/
 theorem pop_vals_push_vals_commute
   [DecidableEq χ]
   {chans : ChanMap χ V}
-  (hpop : chans.popVals vars₂ = some (vals₂, chans')) :
-    (chans.pushVals vars₁ outputVals₁).popVals vars₂ =
-      some (vals₂, chans'.pushVals vars₁ outputVals₁)
-  := sorry
+  (hpop : chans.popVals names₂ = some (vals₂, chans')) :
+    (chans.pushVals names₁ vals₁).popVals names₂ =
+      some (vals₂, chans'.pushVals names₁ vals₁)
+  := by
+  induction names₁ using Vector.back_induction
+    generalizing chans' with
+  | empty => simp [push_vals_zero, hpop]
+  | push names₂' name₂ ih =>
+    simp [push_vals_unfold]
+    specialize ih hpop (vals₁ := vals₁.pop)
+    exact pop_vals_push_val_commute ih
+
+theorem pop_val_pop_val_disj_commute
+  [DecidableEq χ]
+  {chans : ChanMap χ V}
+  (hdisj : name₁ ≠ name₂)
+  (hpop₁ : chans.popVal name₁ = some (val₁, chans₁))
+  (hpop₂ : chans.popVal name₂ = some (val₂, chans₂)) :
+    ∃ chans',
+      chans₁.popVal name₂ = some (val₂, chans') ∧
+      chans₂.popVal name₁ = some (val₁, chans')
+  := by
+  simp [ChanMap.popVal] at hpop₁ hpop₂ ⊢
+  split at hpop₁; contradiction
+  rename_i rest₁ heq₁
+  simp at hpop₁
+  split at hpop₂; contradiction
+  rename_i rest₂ heq₂
+  simp at hpop₂
+  exists λ n =>
+    if n = name₁ then rest₁
+    else if n = name₂ then rest₂
+    else chans n
+  simp [← hpop₁, ← hpop₂, hdisj, Ne.symm hdisj, heq₁, heq₂]
+  funext
+  grind only
+
+theorem pop_val_pop_vals_disj_commute
+  [DecidableEq χ]
+  {chans : ChanMap χ V}
+  (hdisj : name₁ ∉ names₂)
+  (hpop₁ : chans.popVal name₁ = some (val₁, chans₁))
+  (hpop₂ : chans.popVals names₂ = some (vals₂, chans₂)) :
+    ∃ chans',
+      chans₁.popVals names₂ = some (vals₂, chans') ∧
+      chans₂.popVal name₁ = some (val₁, chans')
+  := by
+  induction names₂ using Vector.back_induction
+    generalizing chans₁ chans₂ with
+  | empty =>
+    simp [Vector.eq_empty] at hpop₂ ⊢
+    subst hpop₂
+    exact hpop₁
+  | push names₂' name₂ ih =>
+    simp [pop_vals_unfold, Option.bind] at hpop₂
+    split at hpop₂; contradiction
+    rename_i res₁ heq₁
+    rcases res₁ with ⟨vals₂', chans₂'⟩
+    simp at hpop₂
+    split at hpop₂; contradiction
+    rename_i res₂ heq₂
+    rcases res₂ with ⟨val₂, chans₂''⟩
+    simp at hpop₂
+    simp at hdisj
+    have ⟨chans', hpop₁₂, hpop₂₁⟩ := ih hdisj.1 hpop₁ heq₁
+    have ⟨chans'', hpop₁₂', hpop₂₁'⟩ := pop_val_pop_val_disj_commute hdisj.2 hpop₂₁ heq₂
+    exists chans''
+    constructor
+    · simp [pop_vals_unfold, hpop₁₂, hpop₁₂', hpop₂]
+    · simp [← hpop₂, hpop₂₁']
 
 theorem pop_vals_pop_vals_disj_commute
   [DecidableEq χ]
   {chans : ChanMap χ V}
-  (hdisj : vars₁.toList.Disjoint vars₂.toList)
-  (hpop₁ : chans.popVals vars₁ = some (vals₁, chans₁))
-  (hpop₂ : chans.popVals vars₂ = some (vals₂, chans₂)) :
+  (hdisj : names₁.toList.Disjoint names₂.toList)
+  (hpop₁ : chans.popVals names₁ = some (vals₁, chans₁))
+  (hpop₂ : chans.popVals names₂ = some (vals₂, chans₂)) :
     ∃ chans',
-      chans₁.popVals vars₂ = some (vals₂, chans') ∧
-      chans₂.popVals vars₁ = some (vals₁, chans')
-  := sorry
+      chans₁.popVals names₂ = some (vals₂, chans') ∧
+      chans₂.popVals names₁ = some (vals₁, chans')
+  := by
+  induction names₁ using Vector.back_induction
+    generalizing chans₁ chans₂ with
+  | empty =>
+    simp [Vector.eq_empty] at hpop₁ ⊢
+    subst hpop₁
+    exact hpop₂
+  | push names₁' name₁ ih =>
+    simp [pop_vals_unfold, Option.bind] at hpop₁
+    split at hpop₁; contradiction
+    rename_i res₁ heq₁
+    rcases res₁ with ⟨vals₁', chans₁'⟩
+    simp at hpop₁
+    split at hpop₁; contradiction
+    rename_i res₂ heq₂
+    rcases res₂ with ⟨val₁, chans₁''⟩
+    simp at hpop₁
+    simp [Vector.toList_push] at hdisj
+    have ⟨chans', hpop₁₂, hpop₂₁⟩ := ih hdisj.1 heq₁ hpop₂
+    have ⟨chans'', hpop₁₂', hpop₂₁'⟩ := pop_val_pop_vals_disj_commute hdisj.2 heq₂ hpop₁₂
+    exists chans''
+    constructor
+    · simp [← hpop₁]
+      exact hpop₁₂'
+    · simp [pop_vals_unfold, hpop₂₁, hpop₂₁', hpop₁]
 
 theorem push_vals_push_vals_disj_commute
   [DecidableEq χ]
   {chans : ChanMap χ V}
-  (hdisj : vars₁.toList.Disjoint vars₂.toList) :
-    (chans.pushVals vars₁ vals₁).pushVals vars₂ vals₂
-      = (chans.pushVals vars₂ vals₂).pushVals vars₁ vals₁
+  (hdisj : names₁.toList.Disjoint names₂.toList) :
+    (chans.pushVals names₁ vals₁).pushVals names₂ vals₂
+      = (chans.pushVals names₂ vals₂).pushVals names₁ vals₁
   := sorry
 
 theorem pop_vals_eq_head [DecidableEq χ]
