@@ -28,6 +28,29 @@ inductive Lts.TauStar (lts : Lts C E) (τ : E) : C → C → Prop
   | tail {c₁ c₂ c₃ : C} :
       lts.TauStar τ c₁ c₂ → lts c₂ τ c₃ → lts.TauStar τ c₁ c₃
 
+/-- Similar but with a specific length. -/
+inductive Lts.TauStarN (lts : Lts C E) (τ : E) : Nat → C → C → Prop
+  | refl : lts.TauStarN τ 0 c c
+  | tail {n : Nat} {c₁ c₂ c₃ : C} :
+      lts.TauStarN τ n c₁ c₂ → lts c₂ τ c₃ → lts.TauStarN τ (n + 1) c₁ c₃
+
+theorem Lts.TauStar.with_length
+  {lts : Lts C E} {τ : E}
+  (htau : lts.TauStar τ c₁ c₂) : ∃ n, lts.TauStarN τ n c₁ c₂ := by
+  induction htau with
+  | refl => exact ⟨0, .refl⟩
+  | tail htau' hstep ih =>
+    rcases ih with ⟨n, htauN⟩
+    exact ⟨n + 1, .tail htauN hstep⟩
+
+theorem Lts.TauStarN.without_length
+  {lts : Lts C E} {τ : E}
+  {n : Nat}
+  (htauN : lts.TauStarN τ n c₁ c₂) : lts.TauStar τ c₁ c₂ := by
+  induction htauN with
+  | refl => exact .refl
+  | tail htauN' hstep ih => exact .tail ih hstep
+
 /-- Map each transition to a different `lts` while keeping the same states. -/
 theorem Lts.TauStar.map
   {lts : Lts C E} {τ : E}
@@ -225,7 +248,18 @@ theorem Lts.Star.map_step
   (hsteps : lts.Star c₁ tr c₂) : lts'.Star c₁ tr c₂ := by
   induction hsteps with
   | refl => exact .refl
-  | tail hstar' hstep ih => exact .tail ih (hmap hstep)
+  | tail hpref hstep ih => exact .tail ih (hmap hstep)
+
+theorem Lts.Star.map_hetero_step
+  {lts : Lts C E} {lts' : Lts C E'}
+  (hmap : ∀ {c₁ c₂ l}, lts.Step c₁ l c₂ → ∃ l', lts'.Step c₁ l' c₂)
+  (hsteps : lts.Star c₁ tr c₂) : ∃ tr', lts'.Star c₁ tr' c₂ := by
+  induction hsteps with
+  | refl => exact ⟨_, .refl⟩
+  | tail hpref hstep ih =>
+    have ⟨_, hpref'⟩ := ih
+    have ⟨_, hstep'⟩ := hmap hstep
+    exact ⟨_, .tail hpref' hstep'⟩
 
 structure Lts.Simulation
   (lts₁ : Lts C₁ E)

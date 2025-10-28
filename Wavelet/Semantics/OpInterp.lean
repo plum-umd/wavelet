@@ -129,13 +129,49 @@ def Lts.IndexedInterpStep.map_step
   {lts' : Lts S' (RespLabel Op V)}
   {s s' : S × S'}
   (hmap : ∀ {s s' l}, lts₁.Step s l s' → lts₂.Step s l s')
-  (hstep : (Lts.IndexedInterpStep lts₁ lts').Step s l s') :
-    (Lts.IndexedInterpStep lts₂ lts').Step s l s'
+  (hstep : (lts₁.IndexedInterpStep lts').Step s l s') :
+    (lts₂.IndexedInterpStep lts').Step s l s'
   := by
   cases hstep with
   | step_tau hstep => exact .step_tau (hmap hstep)
   | step_input hstep => exact .step_input (hmap hstep)
   | step_output hstep => exact .step_output (hmap hstep)
   | step_yield hbase hinterp => exact .step_yield (hmap hbase) hinterp
+
+def Lts.IndexedInterpStep.to_interp
+  [Arity Op] {S S'}
+  {lts₁ : Lts S (Nat × Label Op V m n)}
+  {lts₂ : Lts S (Label Op V m n)}
+  {lts' : Lts S' (RespLabel Op V)}
+  {s s' : S × S'}
+  (hmap : ∀ {s s' i l}, lts₁.Step s (i, l) s' → lts₂.Step s l s')
+  (hstep : (lts₁.IndexedInterpStep lts').Step s (i, l) s') :
+    (lts₂.InterpStep lts').Step s l s'
+  := by
+  cases hstep with
+  | step_tau hstep => exact .step_tau (hmap hstep)
+  | step_input hstep => exact .step_input (hmap hstep)
+  | step_output hstep => exact .step_output (hmap hstep)
+  | step_yield hbase hinterp => exact .step_yield (hmap hbase) hinterp
+
+def Lts.InterpStep.to_indexed_interp_tau
+  [Arity Op] {S S'}
+  {lts₁ : Lts S (Label Op V m n)}
+  {lts₂ : Lts S (Nat × Label Op V m n)}
+  {lts' : Lts S' (RespLabel Op V)}
+  {s s' : S × S'}
+  (hmap : ∀ {s s' l},
+    l.isYield ∨ l.isSilent →
+    lts₁.Step s l s' → ∃ i, lts₂.Step s (i, l) s')
+  (hstep : (lts₁.InterpStep lts').Step s .τ s') :
+    ∃ i, (lts₂.IndexedInterpStep lts').Step s (i, .τ) s'
+  := by
+  cases hstep with
+  | step_tau hstep =>
+    have ⟨i, hstep'⟩ := hmap (by simp) hstep
+    exact ⟨i, .step_tau hstep'⟩
+  | step_yield hbase hinterp =>
+    have ⟨i, hbase'⟩ := hmap (by simp) hbase
+    exact ⟨i, .step_yield hbase' hinterp⟩
 
 end Wavelet.Semantics

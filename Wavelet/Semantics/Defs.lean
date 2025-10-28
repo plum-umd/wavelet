@@ -500,8 +500,21 @@ theorem Lts.IsInvariantAt.unfold
       exact hinv (hstar.prepend hstep)
   ⟩
 
+theorem Lts.IsInvariantAt.map_step
+  {lts₁ : Lts C E₁}
+  {lts₂ : Lts C E₂}
+  {P : C → Prop}
+  (hmap : ∀ {c c' l}, lts₂.Step c l c' → ∃ l', lts₁.Step c l' c')
+  (hinv : lts₁.IsInvariantAt P c) : lts₂.IsInvariantAt P c := by
+  intros c tr hsteps
+  have ⟨_, hsteps'⟩ := hsteps.map_hetero_step hmap
+  exact hinv hsteps'
+
 def Lts.IsFinal (lts : Lts C E) (c : C) : Prop :=
   ∀ {c' l}, ¬ lts.Step c l c'
+
+def Lts.IsFinalFor (lts : Lts C E) (Labels : E → Prop) (c : C) : Prop :=
+  ∀ {c' l}, Labels l → ¬ lts.Step c l c'
 
 @[simp]
 def IsFinal
@@ -509,14 +522,24 @@ def IsFinal
   (sem : Semantics Op V m n)
   (s : sem.S) : Prop := sem.lts.IsFinal s
 
-def Lts.IsFinalFor (lts : Lts C E) (Labels : E → Prop) (c : C) : Prop :=
-  ∀ {c' l}, Labels l → ¬ lts.Step c l c'
-
 @[simp]
 def IsFinalFor
   [Arity Op]
   (sem : Semantics Op V m n)
   (Labels : Label Op V m n → Prop)
   (s : sem.S) : Prop := sem.lts.IsFinalFor Labels s
+
+theorem Lts.IsFinalFor.map_step
+  {lts₁ : Lts C E₁}
+  {lts₂ : Lts C E₂}
+  {Labels₁ : E₁ → Prop}
+  {Labels₂ : E₂ → Prop}
+  (hmap : ∀ {c c' l₂},
+    Labels₂ l₂ → lts₂.Step c l₂ c' →
+    ∃ l₁, Labels₁ l₁ ∧ lts₁.Step c l₁ c')
+  (hfinal : lts₁.IsFinalFor Labels₁ c) : lts₂.IsFinalFor Labels₂ c := by
+  intros c' l₂ hlabel hstep
+  have ⟨l₁, hlabel₁, hstep₁⟩ := hmap hlabel hstep
+  exact hfinal hlabel₁ hstep₁
 
 end Wavelet.Semantics

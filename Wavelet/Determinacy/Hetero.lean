@@ -783,7 +783,7 @@ theorem proc_indexed_interp_guarded_hetero_terminal_confl
   (htrace₂ : (Config.IdxInterpTrivStep opSpec).Star s tr₂ s₂) :
     ∃ s₁' tr₃,
       (Config.IdxInterpTrivStep opSpec).Star s₂ tr₃ s₁' ∧
-      tr₁.length = tr₃.length + tr₂.length ∧
+      tr₁.length = tr₂.length + tr₃.length ∧
       Config.EqMod EqModGhost s₁.1 s₁'.1 ∧
       s₁.2 = s₁'.2
   := by
@@ -823,5 +823,66 @@ theorem proc_indexed_interp_guarded_hetero_terminal_confl
           · exact IsTrans.trans _ _ _ heq₂'.1 heq₂''.1
           · simp [← heq₂''.2, heq₂'.2]
     ⟩
+
+/--
+Same as `proc_indexed_interp_guarded_hetero_terminal_confl`,
+but for the unindexed normal semantics:
+
+If s →* s₁ in the guarded semantics, with s₁ final (wrt. yields and τ's)
+and s →* s₂ in the unguarded semantics, then s₂ →* s₁' in the unguarded semantics,
+for some s₁' ≈ s₁ (modulo ghost tokens).
+
+In particular, the length of s →* s₂ is also bounded by the length of s →* s₁.
+-/
+theorem proc_interp_guarded_hetero_terminal_confl
+  [Arity Op] [PCM T] [PCM.Cancellative T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  [opInterp : OpInterp Op V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  (hconfl : opSpec.Confluent opInterp)
+  (hdet : opInterp.Deterministic)
+  (hnb : opInterp.NonBlocking)
+  (haff : (Config.InterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.proc.AffineChan) s)
+  (hdisj : (Config.InterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.DisjointTokens) s)
+  (htrace₁ : (Config.InterpGuardStep opSpec ioSpec).TauStarN .τ k₁ s s₁)
+  (hterm : Config.Step.IsFinalFor (λ l => l.isYield ∨ l.isSilent) s₁.1)
+  (htrace₂ : (Config.InterpTrivStep opSpec).TauStarN .τ k₂ s s₂) :
+    ∃ s₁' k₃,
+      (Config.InterpTrivStep opSpec).TauStarN .τ k₃ s₂ s₁' ∧
+      k₁ = k₂ + k₃ ∧
+      Config.EqMod EqModGhost s₁.1 s₁'.1 ∧
+      s₁.2 = s₁'.2
+  := by
+  have ⟨_, hlen₁, htrace₁'⟩ := Config.InterpGuardStep.to_indexed_interp_guarded_tau_star htrace₁
+  have ⟨_, hlen₂, htrace₂'⟩ := Config.InterpTrivStep.to_indexed_interp_unuarded_tau_star htrace₂
+  have ⟨_, _, htrace₃', hlen₃, heq⟩ := proc_indexed_interp_guarded_hetero_terminal_confl
+    hconfl hdet hnb
+    (haff.map_step (λ hstep => by
+      simp [Lts.Step] at hstep
+      exact ⟨_, hstep.to_interp_guarded⟩))
+    (hdisj.map_step (λ hstep => by
+      simp [Lts.Step] at hstep
+      exact ⟨_, hstep.to_interp_guarded⟩))
+    htrace₁'
+    (hterm.map_step
+      (lts₁ := Config.Step)
+      (lts₂ := Config.IndexedStep)
+      (Labels₂ := (λ (_, l) => l.isYield ∨ l.isSilent))
+      (λ hl hstep => by
+        rename_i l
+        simp [Lts.Step] at hstep
+        have := hstep.to_step_yield_or_tau
+        exact ⟨_, by
+          rcases l with ⟨_, ⟨_⟩⟩
+            <;> simp at hl ⊢, this⟩))
+    htrace₂'
+  have htrace₃ := Config.IdxInterpTrivStep.to_interp_unguarded_tau_star htrace₃'
+  exact ⟨_, _, htrace₃,
+    by
+      simp [hlen₁, hlen₂] at hlen₃
+      simp [hlen₃], heq⟩
 
 end Wavelet.Determinacy
