@@ -446,7 +446,7 @@ private theorem sim_link_procs_step_dep_ret
   rename_i chans₁' inputs outputs
   -- Prove that `hyield` must be the same as the previous
   -- `HasYield` call by affine usage of dependencies
-  have ⟨h₁, h₂⟩ := hsim_aff hmem_op (List.mem_of_getElem hget_op)
+  have ⟨h₁, h₂⟩ := hsim_aff.of_mem hmem_op (List.mem_of_getElem hget_op)
   subst h₁ h₂
   simp [hpop_inputs] at hpop_inputs'
   have ⟨h₁, h₂⟩ := hpop_inputs'
@@ -587,6 +587,17 @@ private theorem aop_interp_map_inj
     simp [Vector.toList_map, hinputs', houtputs']
     exact .interp_sink (by simp [h₁])
 
+theorem List.flatten_update_index
+  {xs : List (List α)} {x : α}
+  {i : Nat} {j : Nat}
+  (hi : i < xs.length)
+  (hj : j < xs[i].length)
+  (hget : xs[i][j] = x) :
+    ∃ k : Fin xs.flatten.length,
+      xs.flatten[k] = x ∧
+      ∀ x', xs.flatten.set k x' = (xs.set i (xs[i].set j x')).flatten
+  := sorry
+
 private theorem sim_link_procs_step_main
   [Arity Op]
   [DecidableEq χ]
@@ -677,14 +688,19 @@ private theorem sim_link_procs_step_main
   | step_async hi hget hinterp hpops =>
     rename_i aop aop' allInputs allOutputs inputs inputVals outputs outputVals chans' i
     cases hlabel
-    have hmem' :
-      .async aop (allInputs.map .main) (allOutputs.map .main) ∈ s₂.proc.atoms
-    := by
-      simp only [hsim_proc, linkProcs]
-      have := List.mem_of_getElem hget
-      apply List.mem_flatten_map this
-      simp [linkAtomicProc]
-    have ⟨i', hi', hget'⟩ := List.getElem_of_mem hmem'
+    have := List.flatten_update_index
+      (i := i) (j := 0)
+      (xs := List.map
+        (linkAtomicProc sigs k' fun i => (s₁.depStates (SigOps.call i)).proc)
+        s₁.mainState.proc.atoms)
+      (by simp [hi]) (by simp [hget, linkAtomicProc])
+      (by
+        simp [hget, linkAtomicProc]
+        rfl)
+    have ⟨i', hget', hupdate⟩ := this
+    rcases i' with ⟨i', hi'⟩
+    simp at hget'
+    simp [hget] at hupdate
     have hstep_s₂ : Dataflow.Config.Step s₂ _ _
       := .step_async
         (aop := aop)
@@ -693,7 +709,8 @@ private theorem sim_link_procs_step_main
         (allOutputs := allOutputs.map .main)
         (inputs := inputs.map .main)
         (outputs := outputs.map .main)
-        hi' hget'
+        (by simp only [hsim_proc, linkProcs]; exact hi')
+        (by simp [hsim_proc, linkProcs]; exact hget')
         (aop_interp_map_inj .main hinterp)
         (by
           simp [hsim_chans]
@@ -705,14 +722,14 @@ private theorem sim_link_procs_step_main
         · exact hsim_proc_outputs
         · simp [Proc.AffineInrOp]
           intros
-          rename_i hmem₁ hmem₂
-          replace hmem₁ := List.mem_or_eq_of_mem_set hmem₁
-          replace hmem₂ := List.mem_or_eq_of_mem_set hmem₂
-          simp at hmem₁ hmem₂
-          apply hsim_aff hmem₁ hmem₂
+          rename_i hne hi hj hget₁ hget₂
+          simp [List.getElem_set] at hget₁ hget₂
+          split at hget₁ <;> split at hget₂
+          any_goals contradiction
+          exact hsim_aff hne hi hj hget₁ hget₂
         · simp [hsim_proc, linkProcs]
-          -- TODO: Needs some fact about setting indices in List.flatten
-          sorry
+          rw [hupdate]
+          congr
         · simp
           intros
           rw [sim_link_procs_push_vals_main]
@@ -812,17 +829,24 @@ private theorem sim_link_procs_step_dep
   | step_async hi hget hinterp hpops =>
     rename_i aop aop' allInputs allOutputs inputs inputVals outputs outputVals chans' i
     cases hlabel
-    have hmem' :
-      .async aop (allInputs.map (.dep depOp.toFin)) (allOutputs.map (.dep depOp.toFin)) ∈ s₂.proc.atoms
-    := by
-      simp only [hsim_proc, linkProcs]
-      have := List.mem_of_getElem hget
-      apply List.mem_flatten_map (List.mem_of_getElem frame.get_op)
-      apply List.mem_append_left
-      apply List.mem_append_right
-      simp [AtomicProcs.mapChans]
-      exact ⟨_, this, by simp [AtomicProc.mapChans]⟩
-    have ⟨i', hi', hget'⟩ := List.getElem_of_mem hmem'
+    have hget_dep := frame.get_op
+    simp at hget_dep
+    have := List.flatten_update_index
+      (i := frame.depIdx) (j := i + 1)
+      (xs := List.map
+        (linkAtomicProc sigs k' fun i => (s₁.depStates (SigOps.call i)).proc)
+        s₁.mainState.proc.atoms)
+      (by simp) (by
+        simp [hget_dep, linkAtomicProc, AtomicProcs.mapChans]
+        trans
+        · exact hi
+        · simp)
+      (by
+        simp [linkAtomicProc]
+        rfl)
+    have ⟨i', hget', hupdate⟩ := this
+    rcases i' with ⟨i', hi'⟩
+    simp [hget_dep] at hget' hupdate
     have hstep_s₂ : Dataflow.Config.Step s₂ _ _
       := .step_async
         (aop := aop)
@@ -831,7 +855,11 @@ private theorem sim_link_procs_step_dep
         (allOutputs := allOutputs.map (.dep depOp.toFin))
         (inputs := inputs.map (.dep depOp.toFin))
         (outputs := outputs.map (.dep depOp.toFin))
-        hi' hget'
+        (by simp only [hsim_proc, linkProcs]; exact hi')
+        (by
+          simp [hsim_proc, linkProcs]
+          rw [hget']
+          simp [AtomicProcs.mapChans, AtomicProc.mapChans, hi, hget])
         (aop_interp_map_inj (.dep depOp.toFin) hinterp)
         (by
           simp [hsim_chans]
@@ -855,14 +883,28 @@ private theorem sim_link_procs_step_dep
             simp [hsim_proc_outputs]
         · exact hsim_aff
         · simp [hsim_proc, linkProcs]
-          -- congr
-          -- cases depOp with | call i =>
-          -- funext i'
-          -- by_cases h : i' = i
-          -- · subst h
-          --   simp
-          -- · simp [Function.update, h]
-          sorry
+          rw [hupdate]
+          congr
+          apply List.ext_get
+          · simp
+          · simp
+            intros j hj₁ hj₂
+            rw [List.getElem_set]
+            split <;> rename_i hij
+            · subst hij
+              simp [linkAtomicProc, hget_dep, AtomicProcs.mapChans,
+                AtomicProc.mapChans, hi]
+            · simp [linkAtomicProc]
+              cases hget_j : s₁.mainState.proc.atoms[j] with
+              | op op =>
+                cases op with
+                | inl => rfl
+                | inr depOp' =>
+                  have hne_dep : depOp' ≠ depOp := by
+                    symm
+                    exact hsim_aff hij frame.depIdx.2 hj₂ hget_dep hget_j
+                  simp [hne_dep]
+              | async => rfl
         · simp [hcur]
         · simp [hcur]
           exists frame
