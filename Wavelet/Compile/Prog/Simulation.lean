@@ -518,6 +518,75 @@ private theorem sim_link_procs_step_dep_ret
           simp [← h'] at h) _ _]
     · simp [hs₂']
 
+/-- Async op interpretation is preserved by any injective map. -/
+private theorem aop_interp_map_inj
+  [DecidableEq χ] [InterpConsts V]
+  {aop aop' : AsyncOp V}
+  {k₁ k₂ : Nat}
+  {inputs : Vector (LinkName χ) k₁}
+  {inputVals : Vector V k₁}
+  {outputs : Vector (LinkName χ) k₂}
+  {outputVals : Vector V k₂}
+  (f : LinkName χ → LinkName χ)
+  (hinterp : aop.Interp (.mk
+    allInputs allOutputs
+    inputs.toList inputVals.toList
+    outputs.toList outputVals.toList) aop') :
+    aop.Interp
+      (.mk
+        (allInputs.map f)
+        (allOutputs.map f)
+        (inputs.map f).toList
+        inputVals.toList
+        (outputs.map f).toList
+        outputVals.toList)
+      aop'
+  := by
+  generalize hinputs' : inputs.toList = inputs'
+  generalize hinput_vals' : inputVals.toList = inputVals'
+  generalize houtputs' : outputs.toList = outputs'
+  generalize houtput_vals' : outputVals.toList = outputVals'
+  rw [hinputs', hinput_vals', houtputs', houtput_vals'] at hinterp
+  cases hinterp with
+  | interp_switch h₁ h₂ h₃ =>
+    rename Bool => deciderBool
+    simp [Vector.toList_map, hinputs', houtputs']
+    cases deciderBool <;> simp
+    · exact .interp_switch (deciderBool := false)
+        (by simp [h₁]) (by simp [h₂]) (by simp [h₃])
+    · exact .interp_switch (deciderBool := true)
+        (by simp [h₁]) (by simp [h₂]) (by simp [h₃])
+  | interp_steer_true h₁ h₂ h₃ h₄ =>
+    simp [Vector.toList_map, hinputs', houtputs']
+    exact .interp_steer_true (by simp [h₁]) (by simp [h₂]) h₃ h₄
+  | interp_steer_false h₁ h₂ h₃ h₄ =>
+    simp [Vector.toList_map, hinputs', houtputs']
+    exact .interp_steer_false (by simp [h₁]) (by simp [h₂]) h₃ h₄
+  | interp_merge_left h₁ h₂ =>
+    simp [Vector.toList_map, hinputs', houtputs']
+    exact .interp_merge_left (by simp [h₁]) (by simp [h₂])
+  | interp_merge_right h₁ h₂ =>
+    simp [Vector.toList_map, hinputs', houtputs']
+    exact .interp_merge_right (by simp [h₁]) (by simp [h₂])
+  | interp_merge_decider h₁ h₂ h₃ =>
+    simp [Vector.toList_map, hinputs', houtputs']
+    exact .interp_merge_decider (by simp [h₁]) (by simp [h₂]) h₃
+  | interp_forward h₁ h₂ =>
+    simp [Vector.toList_map, hinputs', houtputs']
+    exact .interp_forward (by simp [h₁]) (by simp [h₂])
+  | interp_fork h₁ =>
+    simp [Vector.toList_map, hinputs', houtputs']
+    exact .interp_fork (by simp [h₁])
+  | interp_const h₁ =>
+    simp [Vector.toList_map, hinputs', houtputs']
+    exact .interp_const (by simp [h₁])
+  | interp_forwardc h₁ h₂ =>
+    simp [Vector.toList_map, hinputs', houtputs']
+    exact .interp_forwardc (by simp [h₁]) (by simp [h₂])
+  | interp_sink h₁ =>
+    simp [Vector.toList_map, hinputs', houtputs']
+    exact .interp_sink (by simp [h₁])
+
 private theorem sim_link_procs_step_main
   [Arity Op]
   [DecidableEq χ]
@@ -605,37 +674,50 @@ private theorem sim_link_procs_step_main
         intros
         simp [sim_link_procs_push_vals_main]
       · simp [hs₂', hcur]
-  -- | step_switch hmem hpop hpops hcond =>
-  --   rename_i _ _ _ _ _ _ decider inputs outputs₁ outputs₂
-  --   cases hlabel
-  --   have hstep_s₂ : Dataflow.Config.Step s₂ _ _
-  --     := Dataflow.Config.Step.step_switch
-  --       (decider := .main decider)
-  --       (inputs := inputs.map .main)
-  --       (outputs₁ := outputs₁.map .main)
-  --       (outputs₂ := outputs₂.map .main)
-  --       (by
-  --         simp [hsim_proc]
-  --         apply List.mem_flatten_map hmem
-  --         simp [linkAtomicProc])
-  --       (by
-  --         simp [hsim_chans]
-  --         apply sim_link_procs_pop_val_main hpop)
-  --       (by apply sim_link_procs_pop_vals_main hpops)
-  --       hcond
-  --   exact ⟨_, .single hstep_s₂,
-  --     by
-  --       and_intros
-  --       · exact hsim_proc_inputs
-  --       · exact hsim_proc_outputs
-  --       · exact hsim_aff
-  --       · simp [hsim_proc]
-  --       · simp
-  --         intros
-  --         split <;> rw [sim_link_procs_push_vals_main]
-  --       · simp [hcur]
-  --   ⟩
-  | _ => sorry
+  | step_async hi hget hinterp hpops =>
+    rename_i aop aop' allInputs allOutputs inputs inputVals outputs outputVals chans' i
+    cases hlabel
+    have hmem' :
+      .async aop (allInputs.map .main) (allOutputs.map .main) ∈ s₂.proc.atoms
+    := by
+      simp only [hsim_proc, linkProcs]
+      have := List.mem_of_getElem hget
+      apply List.mem_flatten_map this
+      simp [linkAtomicProc]
+    have ⟨i', hi', hget'⟩ := List.getElem_of_mem hmem'
+    have hstep_s₂ : Dataflow.Config.Step s₂ _ _
+      := .step_async
+        (aop := aop)
+        (aop' := aop')
+        (allInputs := allInputs.map .main)
+        (allOutputs := allOutputs.map .main)
+        (inputs := inputs.map .main)
+        (outputs := outputs.map .main)
+        hi' hget'
+        (aop_interp_map_inj .main hinterp)
+        (by
+          simp [hsim_chans]
+          apply sim_link_procs_pop_vals_main hpops)
+    exact ⟨_, .single hstep_s₂,
+      by
+        and_intros
+        · exact hsim_proc_inputs
+        · exact hsim_proc_outputs
+        · simp [Proc.AffineInrOp]
+          intros
+          rename_i hmem₁ hmem₂
+          replace hmem₁ := List.mem_or_eq_of_mem_set hmem₁
+          replace hmem₂ := List.mem_or_eq_of_mem_set hmem₂
+          simp at hmem₁ hmem₂
+          apply hsim_aff hmem₁ hmem₂
+        · simp [hsim_proc, linkProcs]
+          -- TODO: Needs some fact about setting indices in List.flatten
+          sorry
+        · simp
+          intros
+          rw [sim_link_procs_push_vals_main]
+        · simp [hcur]
+    ⟩
 
 private theorem sim_link_procs_step_dep
   [Arity Op]
@@ -727,72 +809,75 @@ private theorem sim_link_procs_step_dep
           rw [Function.update_of_ne (by
             intros h'
             simp [← h'] at h) _ _]
-  -- | step_switch hmem hpop hpops hcond =>
-  --   rename_i _ _ _ _ _ _ decider inputs outputs₁ outputs₂
-  --   cases hlabel
-  --   have hstep_s₂ : Dataflow.Config.Step s₂ _ _
-  --     := Dataflow.Config.Step.step_switch
-  --       (decider := .dep depOp.toFin decider)
-  --       (inputs := inputs.map (.dep depOp.toFin))
-  --       (outputs₁ := outputs₁.map (.dep depOp.toFin))
-  --       (outputs₂ := outputs₂.map (.dep depOp.toFin))
-  --       (by
-  --         simp [hsim_proc]
-  --         apply List.mem_flatten_map (List.mem_of_getElem frame.get_op)
-  --         simp [linkAtomicProc, AtomicProcs.mapChans]
-  --         exact ⟨_, hmem, by rfl⟩)
-  --       (by
-  --         simp [hsim_chans]
-  --         apply sim_link_procs_pop_val_dep hpop)
-  --       (by
-  --         apply sim_link_procs_pop_vals_dep (by simp; exact hpops))
-  --       hcond
-  --   exact ⟨_, .single hstep_s₂,
-  --     by
-  --       and_intros
-  --       · simp
-  --         intros depOp'
-  --         by_cases hdep : depOp = depOp'
-  --         · subst hdep
-  --           simp [hsim_proc_inputs]
-  --         · simp [Ne.symm hdep]
-  --           simp [hsim_proc_inputs]
-  --       · simp
-  --         intros depOp'
-  --         by_cases hdep : depOp = depOp'
-  --         · subst hdep
-  --           simp [hsim_proc_outputs]
-  --         · simp [Ne.symm hdep]
-  --           simp [hsim_proc_outputs]
-  --       · exact hsim_aff
-  --       · simp [hsim_proc, linkProcs]
-  --         split <;> (
-  --           congr
-  --           cases depOp with | call i =>
-  --           funext i'
-  --           by_cases h : i' = i
-  --           · subst h
-  --             simp
-  --           · simp [Function.update, h]
-  --         )
-  --       · simp [hcur]
-  --       · simp [hcur]
-  --         exists frame
-  --         split <;> (
-  --           rw [sim_link_procs_push_vals_dep_alt]
-  --           congr
-  --           funext i
-  --           simp
-  --           by_cases h : i = depOp.1
-  --           · rw [h]
-  --             simp
-  --           · simp [h]
-  --             rw [Function.update_of_ne (by
-  --               intros h'
-  --               simp [← h'] at h) _ _]
-  --         )
-  --   ⟩
-  | _ => sorry
+  | step_async hi hget hinterp hpops =>
+    rename_i aop aop' allInputs allOutputs inputs inputVals outputs outputVals chans' i
+    cases hlabel
+    have hmem' :
+      .async aop (allInputs.map (.dep depOp.toFin)) (allOutputs.map (.dep depOp.toFin)) ∈ s₂.proc.atoms
+    := by
+      simp only [hsim_proc, linkProcs]
+      have := List.mem_of_getElem hget
+      apply List.mem_flatten_map (List.mem_of_getElem frame.get_op)
+      apply List.mem_append_left
+      apply List.mem_append_right
+      simp [AtomicProcs.mapChans]
+      exact ⟨_, this, by simp [AtomicProc.mapChans]⟩
+    have ⟨i', hi', hget'⟩ := List.getElem_of_mem hmem'
+    have hstep_s₂ : Dataflow.Config.Step s₂ _ _
+      := .step_async
+        (aop := aop)
+        (aop' := aop')
+        (allInputs := allInputs.map (.dep depOp.toFin))
+        (allOutputs := allOutputs.map (.dep depOp.toFin))
+        (inputs := inputs.map (.dep depOp.toFin))
+        (outputs := outputs.map (.dep depOp.toFin))
+        hi' hget'
+        (aop_interp_map_inj (.dep depOp.toFin) hinterp)
+        (by
+          simp [hsim_chans]
+          apply sim_link_procs_pop_vals_dep hpops)
+    exact ⟨_, .single hstep_s₂,
+      by
+        and_intros
+        · simp
+          intros depOp'
+          by_cases hdep : depOp = depOp'
+          · subst hdep
+            simp [hsim_proc_inputs]
+          · simp [Ne.symm hdep]
+            simp [hsim_proc_inputs]
+        · simp
+          intros depOp'
+          by_cases hdep : depOp = depOp'
+          · subst hdep
+            simp [hsim_proc_outputs]
+          · simp [Ne.symm hdep]
+            simp [hsim_proc_outputs]
+        · exact hsim_aff
+        · simp [hsim_proc, linkProcs]
+          -- congr
+          -- cases depOp with | call i =>
+          -- funext i'
+          -- by_cases h : i' = i
+          -- · subst h
+          --   simp
+          -- · simp [Function.update, h]
+          sorry
+        · simp [hcur]
+        · simp [hcur]
+          exists frame
+          rw [sim_link_procs_push_vals_dep_alt]
+          congr
+          funext i
+          simp
+          by_cases h : i = depOp.1
+          · rw [h]
+            simp
+          · simp [h]
+            rw [Function.update_of_ne (by
+              intros h'
+              simp [← h'] at h) _ _]
+    ⟩
 
 /-- Linking syntactically simulates linking semantically. -/
 theorem sim_link_procs
