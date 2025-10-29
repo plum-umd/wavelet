@@ -9,17 +9,23 @@ open Semantics Determinacy
 
 theorem congr_eq_mod_ghost_async_op_interp
   [InterpConsts V]
-  {aop aop' aop₁ aop₁' : AsyncOp (V ⊕ T)}
+  {aop aop' aop₁ : AsyncOp (V ⊕ T)}
   (hinterp : AsyncOp.Interp aop
     (.mk allInputs allOutputs inputs inputVals outputs outputVals) aop₁)
   (heq_aop : aop ≈ aop')
   (heq_inputs : List.Forall₂ EqModGhost inputVals inputVals') :
-    ∃ outputVals',
+    ∃ outputVals' aop₁',
       AsyncOp.Interp aop'
         (.mk allInputs allOutputs inputs inputVals' outputs outputVals') aop₁' ∧
       aop₁ ≈ aop₁' ∧
       List.Forall₂ EqModGhost outputVals outputVals'
-  := sorry
+  := by
+  cases hinterp with
+  | interp_switch h₁ h₂ h₃ =>
+    cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
+    subst heq_aop
+    sorry
+  | _ => sorry
 
 theorem congr_eq_mod_ghost_proc_indexed_unguarded
   [Arity Op]
@@ -35,31 +41,132 @@ theorem congr_eq_mod_ghost_proc_indexed_unguarded
       s₂ ≈ s₂'
   := by
   have hl := proc_indexed_unguarded_step_label hstep
-  have ⟨⟨_, _, heq_aps⟩, heq_chans⟩ := heq
+  have ⟨⟨heq_proc_inputs, heq_proc_outputs, heq_aps⟩, heq_chans⟩ := heq
   rcases hstep with ⟨⟨hguard⟩, hstep⟩
   cases hstep with
-  | step_op => sorry
+  | step_op hi hget hpop =>
+    have := heq_aps.get hi (by simp [heq_aps.length_eq] at hi; exact hi)
+    simp [hget, AtomicProc.EqMod] at this
+    split at this; any_goals contradiction
+    rename_i heq hget'
+    simp at heq
+    have ⟨h₁, h₂, h₃⟩ := heq
+    subst h₁ h₂ h₃
+    have ⟨h₁, h₂, h₃⟩ := this
+    subst h₁ h₂ h₃
+    have ⟨inputVals', _, hpop', heq_inputs, heq_chans'⟩ := chan_map_pop_vals_equiv heq_chans hpop
+    cases hguard with
+    -- Normal operators
+    | triv_yield =>
+      cases inputVals' using Vector.back_induction with
+      | push inputVals' inputValsBack' ih =>
+        replace ⟨heq_inputs, heq_back⟩ := Vector.forall₂_push_toList_to_forall₂ heq_inputs
+        simp [Vector.toList_map] at heq_inputs
+        simp [EqModGhost] at heq_back
+        cases inputValsBack' <;> simp at heq_back
+        rename_i tok₂
+        have ⟨inputVals', h⟩ := Vector.forall₂_exists_map heq_inputs
+          (f := Sum.inl)
+          (by
+            intros x y heq
+            cases y <;> simp [EqModGhost] at heq
+            simp)
+        subst h
+        simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq_inputs
+        simp [← heq_inputs] at hpop'
+        exact ⟨
+          _,
+          .step
+            (.idx_guard (.triv_yield (tok₂ := tok₂)))
+            (.step_op
+              (by simp [← heq_aps.length_eq, hi])
+              hget'
+              hpop'),
+          by
+            constructor
+            · exact ⟨heq_proc_inputs, heq_proc_outputs, heq_aps⟩
+            · simp
+              apply chan_map_push_vals_equiv_alt heq_chans'
+              apply Vector.forall₂_to_forall₂_push_toList
+              · simp [EqModGhost]
+              · simp [EqModGhost]
+        ⟩
+    -- Calling join
+    | triv_join =>
+      rename_i toks vals outputToks _ _
+      simp [Vector.toList_append] at heq_inputs
+      have ⟨toks', vals', heq_inputs', heq_toks', heq_vals'⟩ :=
+        Vector.forall₂_append_to_vector heq_inputs
+      simp [← Vector.toList_append, Vector.toList_inj] at heq_inputs'
+      subst heq_inputs'
+      simp [Vector.toList_map] at heq_toks' heq_vals'
+      have ⟨toks'', h₁⟩ := Vector.forall₂_exists_map heq_toks'
+        (f := Sum.inr)
+        (by
+          intros x y heq
+          cases y <;> simp [EqModGhost] at heq
+          simp)
+      have ⟨vals'', h₂⟩ := Vector.forall₂_exists_map heq_vals'
+        (f := Sum.inl)
+        (by
+          intros x y heq
+          cases y <;> simp [EqModGhost] at heq
+          simp)
+      subst h₁ h₂
+      simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq_vals'
+      subst heq_vals'
+      exact ⟨
+        _,
+        .step
+          (.idx_guard (.triv_join (toks := toks'') (vals := vals)
+            (outputs := outputToks)))
+          (.step_op
+            (by simp [← heq_aps.length_eq, hi])
+            hget'
+            hpop'),
+        by
+          constructor
+          · exact ⟨heq_proc_inputs, heq_proc_outputs, heq_aps⟩
+          · simp
+            apply chan_map_push_vals_equiv_alt heq_chans'
+            apply List.forall₂_iff_get.mpr
+            simp [EqModGhost]
+      ⟩
   | step_async hi hget hinterp hpop =>
     have := heq_aps.get hi (by simp [heq_aps.length_eq] at hi; exact hi)
     simp [hget, AtomicProc.EqMod] at this
-    sorry
-    -- split at this
-    -- · rename_i hget'
-    --   replace ⟨_, _, hpop, heq_outputs, heq_chans'⟩ := chan_map_pop_vals_equiv heq_chans hpop
-    --   sorry
-    -- · sorry
-    -- -- simp at hpop
-    -- exact ⟨
-    --   _,
-    --   .step
-    --     (.idx_guard hguard)
-    --     (.step_async
-    --       hi
-    --       hget
-    --       hinterp
-    --       hpop),
-    --   sorry
-    -- ⟩
+    split at this; any_goals contradiction
+    rename_i heq hget'
+    simp at heq
+    have ⟨h₁, h₂, h₃⟩ := heq
+    subst h₁ h₂ h₃
+    have ⟨heq_aop, h₁, h₂⟩ := this
+    subst h₁ h₂
+    have ⟨_, _, hpop', heq_inputs, heq_chans'⟩ := chan_map_pop_vals_equiv heq_chans hpop
+    have ⟨outputVals', _, hinterp', heq_aop', heq_outputs⟩ := congr_eq_mod_ghost_async_op_interp hinterp heq_aop heq_inputs
+    replace ⟨outputVals', houtput_vals', heq_outputs⟩ := Vector.forall₂_to_vector heq_outputs
+    subst houtput_vals'
+    exact ⟨
+      _,
+      .step
+        (.idx_guard hguard)
+        (.step_async
+          (by simp [← heq_aps.length_eq, hi])
+          hget'
+          hinterp'
+          hpop'),
+      by
+        constructor
+        · and_intros <;> simp
+          · exact heq_proc_inputs
+          · exact heq_proc_outputs
+          · apply List.forall₂_set heq_aps
+            simp [AtomicProc.EqMod]
+            exact heq_aop'
+        · simp
+          apply chan_map_push_vals_equiv_alt heq_chans'
+          exact heq_outputs
+    ⟩
 
 theorem congr_eq_mod_ghost_proc_indexed_interp_unguarded
   [Arity Op]

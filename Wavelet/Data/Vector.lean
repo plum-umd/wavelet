@@ -237,4 +237,39 @@ theorem back_induction
     apply push
     apply ih
 
+theorem forall₂_to_vector
+  {α β}
+  {xs : Vector α n}
+  {ys : List β}
+  {R : α → β → Prop}
+  (h : List.Forall₂ R xs.toList ys) :
+    ∃ ys' : Vector β n,
+      ys'.toList = ys ∧
+      List.Forall₂ R xs.toList ys'.toList
+  := sorry
+
+theorem forall₂_append_to_vector
+  {α β}
+  {xs₁ : Vector α n₁}
+  {xs₂ : Vector α n₂}
+  {ys : List β}
+  {R : α → β → Prop}
+  (h : List.Forall₂ R (xs₁.toList ++ xs₂.toList) ys) :
+    ∃ (ys₁' : Vector β n₁)
+      (ys₂' : Vector β n₂),
+      ys = ys₁'.toList ++ ys₂'.toList ∧
+      List.Forall₂ R xs₁.toList ys₁'.toList ∧
+      List.Forall₂ R xs₂.toList ys₂'.toList
+  := sorry
+
+theorem forall₂_exists_map
+  {α β}
+  {xs : Vector α n} {ys : Vector γ n}
+  {R : α → γ → Prop}
+  {f : β → γ}
+  (h : List.Forall₂ R xs.toList ys.toList)
+  (hexists : ∀ {x y}, R x y → ∃ z, y = f z) :
+    ∃ (ys' : Vector β n), ys = ys'.map f
+  := sorry
+
 end Vector

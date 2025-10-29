@@ -29,9 +29,9 @@ private structure SimRel.GhostFrame
 /-- Corresponds channel states -/
 private def SimRel.linkChans
   (mainChans : ChanMap (LinkName χ) V)
-  (depChans : Fin k' → ChanMap (LinkName χ) V)
-  : ChanMap (LinkName χ) V :=
-  λ name => match name with
+  (depChans : Fin k' → ChanMap (LinkName χ) V) :
+    ChanMap (LinkName χ) V
+  := λ name => match name with
     | .main name' => mainChans name'
     | .dep i name' => if _ : i < k' then depChans ⟨i, by assumption⟩ name' else []
     | _ => []
@@ -68,9 +68,9 @@ private def SimRel
 theorem sim_link_procs_push_vals_main
   [DecidableEq χ]
   {chans : ChanMap (LinkName χ) V} :
-  (SimRel.linkChans chans depChans).pushVals
-    (names.map .main) vals = SimRel.linkChans
-    (chans.pushVals names vals) depChans
+    (SimRel.linkChans chans depChans).pushVals
+      (names.map .main) vals = SimRel.linkChans
+      (chans.pushVals names vals) depChans
   := by
   funext name
   simp [SimRel.linkChans]
@@ -99,11 +99,11 @@ private theorem sim_link_procs_push_vals_dep
   {chans : ChanMap (LinkName χ) V}
   {depChans : Fin k' → ChanMap (LinkName χ) V}
   {i : Fin k'} :
-  (SimRel.linkChans chans depChans).pushVals
-    (names.map (.dep i))
-    vals
-    (.dep i name') =
-    (depChans i).pushVals names vals name'
+    (SimRel.linkChans chans depChans).pushVals
+      (names.map (.dep i))
+      vals
+      (.dep i name') =
+      (depChans i).pushVals names vals name'
   := by
   by_cases h : name' ∈ names
   · apply push_vals_map
@@ -123,9 +123,9 @@ private theorem sim_link_procs_push_vals_dep_alt
   {chans : ChanMap (LinkName χ) V}
   {depChans : Fin k' → ChanMap (LinkName χ) V}
   {i : Fin k'} :
-  (SimRel.linkChans chans depChans).pushVals
-    (names.map (.dep i)) vals =
-    (SimRel.linkChans chans (Function.update depChans i ((depChans i).pushVals names vals)))
+    (SimRel.linkChans chans depChans).pushVals
+      (names.map (.dep i)) vals =
+      (SimRel.linkChans chans (Function.update depChans i ((depChans i).pushVals names vals)))
   := by
   funext name
   cases name with
@@ -166,8 +166,8 @@ private theorem sim_link_procs_pop_val_main
   {chans chans' : ChanMap (LinkName χ) V}
   {name : LinkName χ}
   (hpop : chans.popVal name = some (val, chans')) :
-  (SimRel.linkChans chans depChans).popVal (.main name) =
-    some (val, SimRel.linkChans chans' depChans)
+    (SimRel.linkChans chans depChans).popVal (.main name) =
+      some (val, SimRel.linkChans chans' depChans)
   := by
   simp [ChanMap.popVal] at hpop ⊢
   split at hpop <;> rename_i h₁
@@ -186,8 +186,8 @@ private theorem sim_link_procs_pop_vals_main
   {chans chans' : ChanMap (LinkName χ) V}
   {names : Vector (LinkName χ) n}
   (hpop : chans.popVals names = some (outputVals, chans')) :
-  (SimRel.linkChans chans depChans).popVals (names.map .main) =
-    some (outputVals, SimRel.linkChans chans' depChans)
+    (SimRel.linkChans chans depChans).popVals (names.map .main) =
+      some (outputVals, SimRel.linkChans chans' depChans)
   := by
   induction n generalizing chans chans' with
   | zero =>
@@ -213,8 +213,8 @@ private theorem sim_link_procs_pop_val_dep
   {depChans : Fin k' → ChanMap (LinkName χ) V}
   {i : Fin k'}
   (hpop : (depChans i).popVal name = some (val, chans')) :
-  (SimRel.linkChans mainChans depChans).popVal (.dep i name) =
-    some (val, SimRel.linkChans mainChans (Function.update depChans i chans'))
+    (SimRel.linkChans mainChans depChans).popVal (.dep i name) =
+      some (val, SimRel.linkChans mainChans (Function.update depChans i chans'))
   := by
   simp [ChanMap.popVal] at hpop ⊢
   split at hpop <;> rename_i h₁
@@ -288,12 +288,12 @@ private theorem sim_link_procs_step_dep_spawn
   (hyield : main.semantics.HasYield s₁.mainState (.inr depOp) inputVals)
   (hstep_dep :
     (procs depOp.toFin).semantics.lts.Step
-      (s₁.depStates depOp) (.input inputVals) depState')
-  : ∃ s₂',
-    Dataflow.Config.Step.IORestrictedStep s₂ .τ s₂' ∧
-    SimRel { s₁ with
-      curSem := some depOp,
-      depStates := Function.update s₁.depStates depOp depState' } s₂'
+      (s₁.depStates depOp) (.input inputVals) depState') :
+    ∃ s₂',
+      Dataflow.Config.Step.IORestrictedStep s₂ .τ s₂' ∧
+      SimRel { s₁ with
+        curSem := some depOp,
+        depStates := Function.update s₁.depStates depOp depState' } s₂'
   := by
   have ⟨hsim_proc_inputs, hsim_proc_outputs, hsim_aff, hsim_proc, hsim_main, hsim_dep⟩ := hsim
   have hsim_chans := hsim_main hcur
@@ -422,13 +422,13 @@ private theorem sim_link_procs_step_dep_ret
       (s₁.depStates depOp) (.output outputVals) depState')
   (hyield :
     main.semantics.lts.Step s₁.mainState
-      (Label.yield (.inr depOp) inputVals outputVals) mainState')
-  : ∃ s₂',
-    Dataflow.Config.Step.IORestrictedStep s₂ .τ s₂' ∧
-    SimRel { s₁ with
-      curSem := none,
-      mainState := mainState',
-      depStates := Function.update s₁.depStates depOp depState' } s₂'
+      (Label.yield (.inr depOp) inputVals outputVals) mainState') :
+    ∃ s₂',
+      Dataflow.Config.Step.IORestrictedStep s₂ .τ s₂' ∧
+      SimRel { s₁ with
+        curSem := none,
+        mainState := mainState',
+        depStates := Function.update s₁.depStates depOp depState' } s₂'
   := by
   have ⟨hsim_proc_inputs, hsim_proc_outputs, hsim_aff, hsim_proc, hsim_main, hsim_dep⟩ := hsim
   have ⟨frame, hsim_chans⟩ := hsim_dep hcur
@@ -604,10 +604,10 @@ private theorem sim_link_procs_step_main
   -- Assumptions of `.LinkStep.step_main`
   (hcur : s₁.curSem = none)
   (hlabel : Semantics.MainLabelPassthrough l l')
-  (hstep_main : main.semantics.lts.Step s₁.mainState l mainState')
-  : ∃ s₂',
-    Dataflow.Config.Step.IORestrictedStep s₂ l' s₂' ∧
-    SimRel { s₁ with mainState := mainState' } s₂' := by
+  (hstep_main : main.semantics.lts.Step s₁.mainState l mainState') :
+    ∃ s₂',
+      Dataflow.Config.Step.IORestrictedStep s₂ l' s₂' ∧
+      SimRel { s₁ with mainState := mainState' } s₂' := by
   have ⟨hsim_proc_inputs, hsim_proc_outputs, hsim_aff, hsim_proc, hsim_main, hsim_dep⟩ := hsim
   have hsim_chans := hsim_main hcur
   simp [Proc.semantics, Lts.Step] at hstep_main
@@ -743,11 +743,11 @@ private theorem sim_link_procs_step_dep
   -- Assumptions of `.LinkStep.step_dep`
   (hcur : s₁.curSem = some depOp)
   (hlabel : Semantics.DepLabelPassthrough l l')
-  (hstep_dep : (procs depOp.toFin).semantics.lts.Step (s₁.depStates depOp) l depState')
-  : ∃ s₂',
-    Dataflow.Config.Step.IORestrictedStep s₂ l' s₂' ∧
-    SimRel { s₁ with
-      depStates := Function.update s₁.depStates depOp depState' } s₂'
+  (hstep_dep : (procs depOp.toFin).semantics.lts.Step (s₁.depStates depOp) l depState') :
+    ∃ s₂',
+      Dataflow.Config.Step.IORestrictedStep s₂ l' s₂' ∧
+      SimRel { s₁ with
+        depStates := Function.update s₁.depStates depOp depState' } s₂'
   := by
   have ⟨hsim_proc_inputs, hsim_proc_outputs, hsim_aff, hsim_proc, hsim_main, hsim_dep⟩ := hsim
   have ⟨frame, hsim_chans⟩ := hsim_dep hcur
@@ -922,7 +922,7 @@ theorem sim_link_procs
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
   (hdeps : ∀ op, deps op = (procs (op.toFin)).semantics)
   (haff : main.AffineInrOp) :
-  main.semantics.link deps ≲ᵣ (linkProcs sigs k' procs main).semantics
+    main.semantics.link deps ≲ᵣ (linkProcs sigs k' procs main).semantics
   := by
   replace hdeps :
     deps = λ op : SigOps sigs k' => (procs (op.toFin)).semantics := by
@@ -963,7 +963,7 @@ theorem sim_compile_prog
   (hlt : i < k)
   (hwf : ∀ i, (prog i).AffineVar)
   (haff : prog.AffineInrOp) :
-  prog.semantics ⟨i, hlt⟩ ≲ᵣ (compileProg sigs prog ⟨i, hlt⟩).semantics
+    prog.semantics ⟨i, hlt⟩ ≲ᵣ (compileProg sigs prog ⟨i, hlt⟩).semantics
   := by
   induction i using Nat.strong_induction_on with
   | _ i ih =>

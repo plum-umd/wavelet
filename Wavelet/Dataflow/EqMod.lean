@@ -226,6 +226,18 @@ theorem chan_map_pop_vals_equiv
       ChanMap.EqMod EqV map₁' map₂'
   := sorry
 
+theorem chan_map_push_vals_equiv_alt
+  [DecidableEq χ]
+  {map₁ map₂ : ChanMap χ V}
+  {vals₁ vals₂ : Vector V k}
+  {EqV : V → V → Prop}
+  (heq_map : ChanMap.EqMod EqV map₁ map₂)
+  (heq_vals : List.Forall₂ EqV vals₁.toList vals₂.toList) :
+    ChanMap.EqMod EqV
+      (map₁.pushVals names vals₁)
+      (map₂.pushVals names vals₂)
+  := sorry
+
 theorem chan_map_push_vals_equiv
   [DecidableEq χ]
   {map : ChanMap χ V}

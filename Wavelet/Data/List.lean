@@ -255,8 +255,8 @@ instance Forall₂.instTrans {R : α → α → Prop} [trans : IsTrans α R] :
     simp [List.forall₂_iff_get] at h₁ h₂ ⊢
     grind only
 
-/-- Produces an index in a flattened list so that updating the
-index is the same as updating the corresponding sublist. -/
+/-- Produces an index in a flattened list so that updating the index
+is the same as updating the corresponding sublist and then flatten. -/
 theorem flatten_update_index
   {xs : List (List α)} {x : α}
   {i : Nat} {j : Nat}
@@ -266,6 +266,40 @@ theorem flatten_update_index
     ∃ k : Fin xs.flatten.length,
       xs.flatten[k] = x ∧
       ∀ x', xs.flatten.set k x' = (xs.set i (xs[i].set j x')).flatten
-  := sorry
+  := by
+  induction xs generalizing i with
+  | nil => simp at hi
+  | cons head tail ih =>
+    simp at hi
+    by_cases h₁ : i = 0
+    · subst h₁
+      simp at hget hj
+      exists ⟨j, by simp; omega⟩
+      simp [hj, hget]
+    · cases i; simp at h₁
+      rename_i i'
+      simp at hget hi hj
+      have ⟨⟨k', hk'⟩, hget_k', hupdate'⟩ := ih hi hj hget
+      simp at hk' hget_k' hupdate'
+      exists ⟨head.length + k', by simp [hk']⟩
+      simp [hget_k']
+      exact hupdate'
+
+theorem forall₂_set
+  {xs : List α} {ys : List β}
+  {x : α} {y : β}
+  {R : α → β → Prop}
+  (hforall₂ : List.Forall₂ R xs ys)
+  (hset : R x y) :
+    List.Forall₂ R (xs.set i x) (ys.set i y)
+  := by
+  apply List.forall₂_iff_get.mpr
+  simp [hforall₂.length_eq]
+  intros k hk _
+  by_cases h₁ : k = i
+  · subst h₁
+    simp [hset]
+  · simp [Ne.symm h₁]
+    apply (List.forall₂_iff_get.mp hforall₂).2
 
 end List
