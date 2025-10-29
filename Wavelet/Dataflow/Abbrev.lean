@@ -298,10 +298,7 @@ theorem Config.Step.step_carry_decider
       exact #v[]; exact #v[])
     (pop_val_to_pop_vals hpop_decider)
     |> Lts.Step.eq_rhs
-  simp
-  constructor
-  · simp [AtomicProc.carry]
-  · simp [ChanMap.pushVals]
+  simp [AtomicProc.carry]
 
 theorem Config.Step.step_merge
   [Arity Op] [DecidableEq χ] [InterpConsts V]

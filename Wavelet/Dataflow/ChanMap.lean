@@ -50,14 +50,11 @@ def ChanMap.getBuf (name : χ) (map : ChanMap χ V) : List V := map name
 def ChanMap.Pairwise
   (P : V → V → Prop)
   (map : ChanMap χ V) : Prop :=
-  ∀ {x₁ x₂}
-    {buf₁ buf₂ : List V}
-    {i : Fin buf₁.length}
-    {j : Fin buf₂.length},
-    x₁ ≠ x₂ ∨ i.val ≠ j.val →
-    map x₁ = some buf₁ →
-    map x₂ = some buf₂ →
-    P buf₁[i] buf₂[j]
+  ∀ {x₁ x₂} {i : Nat} {j : Nat},
+    x₁ ≠ x₂ ∨ i ≠ j →
+    (_ : i < (map x₁).length) →
+    (_ : j < (map x₂).length) →
+    P (map x₁)[i] (map x₂)[j]
 
 /-! Lemmas about `ChanMap`. -/
 section Lemmas
@@ -472,13 +469,48 @@ theorem pop_vals_pop_vals_disj_commute
       exact hpop₁₂'
     · simp [pop_vals_unfold, hpop₂₁, hpop₂₁', hpop₁]
 
+theorem push_val_push_val_disj_commute
+  [DecidableEq χ]
+  {chans : ChanMap χ V}
+  (hdisj : name₁ ≠ name₂) :
+    (chans.pushVal name₁ val₁).pushVal name₂ val₂
+      = (chans.pushVal name₂ val₂).pushVal name₁ val₁
+  := by
+  funext name
+  simp [ChanMap.pushVal]
+  grind only
+
+theorem push_val_push_vals_disj_commute
+  [DecidableEq χ]
+  {chans : ChanMap χ V}
+  (hdisj : name₁ ∉ names₂) :
+    (chans.pushVal name₁ val₁).pushVals names₂ vals₂
+      = (chans.pushVals names₂ vals₂).pushVal name₁ val₁
+  := by
+  induction names₂ using Vector.back_induction
+    generalizing chans with
+  | empty => simp
+  | push names₂' name₂ ih =>
+    simp [push_vals_unfold]
+    simp at hdisj
+    rw [ih hdisj.1]
+    rw [push_val_push_val_disj_commute hdisj.2]
+
 theorem push_vals_push_vals_disj_commute
   [DecidableEq χ]
   {chans : ChanMap χ V}
   (hdisj : names₁.toList.Disjoint names₂.toList) :
     (chans.pushVals names₁ vals₁).pushVals names₂ vals₂
       = (chans.pushVals names₂ vals₂).pushVals names₁ vals₁
-  := sorry
+  := by
+  induction names₁ using Vector.back_induction
+    generalizing chans with
+  | empty => simp
+  | push names₁' name₁ ih =>
+    simp [push_vals_unfold]
+    simp [Vector.toList_push] at hdisj
+    rw [push_val_push_vals_disj_commute hdisj.2]
+    rw [ih hdisj.1]
 
 theorem pop_vals_eq_head [DecidableEq χ]
   {map : ChanMap χ V}
@@ -544,12 +576,94 @@ theorem pop_vals_eq_head [DecidableEq χ]
 @[simp]
 theorem ChanMap.pairwise_empty
   (P : V → V → Prop) : (ChanMap.empty (χ := χ)).Pairwise P := by
-  intros x₁ x₂ buf₁ buf₂ i j hne hget₁ hget₂
-  simp [ChanMap.empty] at hget₁
-  simp [hget₁] at i
-  exact Fin.elim0 i
+  intros x₁ x₂ i j hne hi hj
+  simp [ChanMap.empty] at hi
 
-theorem pop_vals_disj_preserves_pairwise
+theorem pop_val_monotone [DecidableEq χ]
+  {map : ChanMap χ V}
+  (hpop : map.popVal name = some (val, map')) :
+    ∀ name', map' name' ⊆ map name'
+  := by
+  intros name'
+  simp [ChanMap.popVal] at hpop
+  split at hpop; contradiction
+  rename_i rest heq
+  simp at hpop
+  by_cases h : name' = name
+  · subst h
+    simp [← hpop, heq]
+  · simp [← hpop, h]
+
+theorem pop_vals_monotone [DecidableEq χ]
+  {map : ChanMap χ V}
+  {names : Vector χ n}
+  (hpop : map.popVals names = some (vals, map')) :
+    ∀ name', map' name' ⊆ map name'
+  := by
+  induction names using Vector.back_induction
+    generalizing map' with
+  | empty =>
+    simp at hpop
+    simp [hpop]
+  | push names' name ih =>
+    intros name'
+    simp [pop_vals_unfold, Option.bind] at hpop
+    split at hpop; contradiction
+    rename_i res₁ heq₁
+    rcases res₁ with ⟨vals', map''⟩
+    simp at hpop
+    split at hpop; contradiction
+    rename_i res₂ heq₂
+    rcases res₂ with ⟨val, map'''⟩
+    simp at hpop
+    specialize ih heq₁ name'
+    have := pop_val_monotone heq₂ name'
+    simp [hpop] at this
+    exact List.Subset.trans this ih
+
+theorem pop_vals_exists_get_index [DecidableEq χ]
+  {map : ChanMap χ V}
+  (hpop : map.popVals names = some (vals, map'))
+  (hmem : v ∈ vals) :
+    ∃ name ∈ names, v ∈ map name
+  := by
+  induction names using Vector.back_induction
+    generalizing map' with
+  | empty => simp [Vector.eq_empty] at hmem
+  | push names' name ih =>
+    simp [pop_vals_unfold, Option.bind] at hpop
+    split at hpop; contradiction
+    rename_i res₁ heq₁
+    rcases res₁ with ⟨vals', map''⟩
+    simp at hpop
+    split at hpop; contradiction
+    rename_i res₂ heq₂
+    rcases res₂ with ⟨val, map'''⟩
+    simp at hpop
+    simp [← hpop] at hmem
+    cases hmem with
+    | inl hmem' =>
+      have ⟨name, hname, hv⟩ := ih heq₁ hmem'
+      exists name
+      simp [hname, hv]
+    | inr h =>
+      subst h
+      exists name
+      simp
+      have h₁ := pop_vals_monotone heq₁ name
+      have h₂ := pop_val_monotone heq₂ name
+      have h₃ := hpop.2
+      subst h₃
+      simp [ChanMap.popVal] at heq₂
+      split at heq₂; contradiction
+      rename_i h₄
+      simp at heq₂
+      have := heq₂.1
+      subst this
+      apply h₁
+      simp [h₄]
+
+theorem pop_vals_pop_vals_disj_preserves_pairwise
   [DecidableEq χ]
   {map : ChanMap χ V}
   {P : V → V → Prop}
@@ -557,10 +671,24 @@ theorem pop_vals_disj_preserves_pairwise
   {names₂ : Vector χ n} {vals₂ : Vector V n}
   (hpw : map.Pairwise P)
   (hdisj : List.Disjoint names₁.toList names₂.toList)
-  (hpop₁ : map.popVals names₁ = some (vals₁, map'))
-  (hpop₂ : map.popVals names₂ = some (vals₂, map'')) :
+  (hpop₁ : map.popVals names₁ = some (vals₁, map₁))
+  (hpop₂ : map.popVals names₂ = some (vals₂, map₂)) :
     ∀ v₁ v₂, v₁ ∈ vals₁ → v₂ ∈ vals₂ → P v₁ v₂
-  := sorry
+  := by
+  intros v₁ v₂ hmem₁ hmem₂
+  have ⟨name₁, hmem_name₁, hmem_v₁⟩ := pop_vals_exists_get_index hpop₁ hmem₁
+  have ⟨name₂, hmem_name₂, hmem_v₂⟩ := pop_vals_exists_get_index hpop₂ hmem₂
+  replace hmem_name₁ := Vector.mem_toList_iff.mpr hmem_name₁
+  replace hmem_name₂ := Vector.mem_toList_iff.mpr hmem_name₂
+  have hne : name₁ ≠ name₂ := by
+    intros h
+    subst h
+    exact hdisj hmem_name₁ hmem_name₂
+  have ⟨_, hi, hget_v₁⟩ := List.getElem_of_mem hmem_v₁
+  have ⟨_, hj, hget_v₂⟩ := List.getElem_of_mem hmem_v₂
+  have hpw := hpw (.inl hne) hi hj
+  simp [hget_v₁, hget_v₂] at hpw
+  exact hpw
 
 end Lemmas
 
