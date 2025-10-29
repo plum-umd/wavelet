@@ -7,6 +7,18 @@ namespace Wavelet.Dataflow
 
 open Semantics Determinacy
 
+theorem congr_eq_interp_bool
+  [InterpConsts V]
+  {v v' : V ⊕ T}
+  (h : InterpConsts.toBool v = some b)
+  (heq : EqModGhost v v') :
+    InterpConsts.toBool v' = some b
+  := by
+  simp [InterpConsts.toBool] at h
+  cases v <;> cases v' <;> simp [EqModGhost] at heq h
+  subst heq
+  exact h
+
 theorem congr_eq_mod_ghost_async_op_interp
   [InterpConsts V]
   {aop aop' aop₁ : AsyncOp (V ⊕ T)}
@@ -24,8 +36,93 @@ theorem congr_eq_mod_ghost_async_op_interp
   | interp_switch h₁ h₂ h₃ =>
     cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
     subst heq_aop
-    sorry
-  | _ => sorry
+    simp [List.forall₂_cons_left_iff] at heq_inputs
+    have ⟨_, heq₁, _, heq₂, heq₃⟩ := heq_inputs
+    subst heq₃
+    exact ⟨_, _,
+      .interp_switch h₁ h₂ (congr_eq_interp_bool h₃ heq₁),
+      by simp [AsyncOp.EqMod, heq₂]⟩
+  | interp_steer_true h₁ h₂ h₃ h₄ =>
+    cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
+    have ⟨heq₁, heq₂⟩ := heq_aop
+    subst heq₁ heq₂
+    simp [List.forall₂_cons_left_iff] at heq_inputs
+    have ⟨_, heq₁, _, heq₂, heq₃⟩ := heq_inputs
+    subst heq₃
+    exact ⟨_, _,
+      .interp_steer_true h₁ h₂ (congr_eq_interp_bool h₃ heq₁) h₄,
+      by simp [AsyncOp.EqMod, heq₂]⟩
+  | interp_steer_false h₁ h₂ h₃ h₄ =>
+    cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
+    have ⟨heq₁, heq₂⟩ := heq_aop
+    subst heq₁ heq₂
+    simp [List.forall₂_cons_left_iff] at heq_inputs
+    have ⟨_, heq₁, _, heq₂, heq₃⟩ := heq_inputs
+    subst heq₃
+    exact ⟨_, _,
+      .interp_steer_false h₁ h₂ (congr_eq_interp_bool h₃ heq₁) h₄,
+      by simp [AsyncOp.EqMod]⟩
+  | interp_merge_left h₁ h₂ =>
+    cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
+    have ⟨heq₁, heq₂⟩ := heq_aop
+    subst heq₁ heq₂
+    exact ⟨_, _,
+      .interp_merge_left h₁ h₂,
+      by simp [AsyncOp.EqMod, heq_inputs]⟩
+  | interp_merge_right h₁ h₂ =>
+    cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
+    have ⟨heq₁, heq₂⟩ := heq_aop
+    subst heq₁ heq₂
+    exact ⟨_, _,
+      .interp_merge_right h₁ h₂,
+      by simp [AsyncOp.EqMod, heq_inputs]⟩
+  | interp_merge_decider h₁ h₂ h₃ =>
+    cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
+    have ⟨heq₁, heq₂⟩ := heq_aop
+    subst heq₁ heq₂
+    simp [List.forall₂_cons_left_iff] at heq_inputs
+    have ⟨_, heq₁, heq₂⟩ := heq_inputs
+    subst heq₂
+    exact ⟨_, _,
+      .interp_merge_decider h₁ h₂ (congr_eq_interp_bool h₃ heq₁),
+      by simp [AsyncOp.EqMod]⟩
+  | interp_forward h₁ h₂ =>
+    cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
+    subst heq_aop
+    exact ⟨_, _,
+      .interp_forward h₁ h₂,
+      by simp [AsyncOp.EqMod, heq_inputs]⟩
+  | interp_fork h₁ =>
+    cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
+    subst heq_aop
+    simp [List.forall₂_cons_left_iff] at heq_inputs
+    have ⟨_, heq₁, heq₂⟩ := heq_inputs
+    subst heq₂
+    exact ⟨_, _,
+      .interp_fork h₁,
+      by simp [AsyncOp.EqMod, List.forall₂_replicate heq₁]⟩
+  | interp_const h₁ =>
+    cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
+    have ⟨heq₁, heq₂⟩ := heq_aop
+    subst heq₂
+    simp [List.forall₂_cons_left_iff] at heq_inputs
+    have ⟨_, heq₂, heq₃⟩ := heq_inputs
+    subst heq₃
+    exact ⟨_, _,
+      .interp_const h₁,
+      by simp [AsyncOp.EqMod, heq₁, List.forall₂_replicate heq₁]⟩
+  | interp_forwardc h₁ h₂ =>
+    cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
+    have ⟨heq₁, heq₂, heq₃⟩ := heq_aop
+    subst heq₁ heq₂
+    exact ⟨_, _,
+      .interp_forwardc h₁ h₂,
+      by simp [AsyncOp.EqMod, heq₃,
+        List.forall₂_append heq_inputs heq₃]⟩
+  | interp_sink h₁ =>
+    cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
+    subst heq_aop
+    exact ⟨_, _, .interp_sink h₁, by simp [AsyncOp.EqMod]⟩
 
 theorem congr_eq_mod_ghost_proc_indexed_unguarded
   [Arity Op]

@@ -302,4 +302,19 @@ theorem forall₂_set
   · simp [Ne.symm h₁]
     apply (List.forall₂_iff_get.mp hforall₂).2
 
+theorem forall₂_replicate
+  (h : R x y) : List.Forall₂ R (List.replicate k x) (List.replicate k y)
+  := by
+  apply List.forall₂_iff_get.mpr
+  simp [h]
+
+theorem forall₂_append
+  {xs₁ xs₂ : List α}
+  {ys₁ ys₂ : List β}
+  {R : α → β → Prop}
+  (h₁ : List.Forall₂ R xs₁ ys₁)
+  (h₂ : List.Forall₂ R xs₂ ys₂) :
+    List.Forall₂ R (xs₁ ++ xs₂) (ys₁ ++ ys₂)
+  := sorry
+
 end List
