@@ -315,6 +315,16 @@ theorem forall₂_append
   (h₁ : List.Forall₂ R xs₁ ys₁)
   (h₂ : List.Forall₂ R xs₂ ys₂) :
     List.Forall₂ R (xs₁ ++ xs₂) (ys₁ ++ ys₂)
-  := sorry
+  := by
+  apply List.forall₂_iff_get.mpr
+  simp [h₁.length_eq, h₂.length_eq]
+  intros i hi hi'
+  simp [List.getElem_append, h₁.length_eq]
+  split <;> rename_i h
+  · exact (List.forall₂_iff_get.mp h₁).2 i
+      (by simp [h₁.length_eq]; exact h) h
+  · exact (List.forall₂_iff_get.mp h₂).2 (i - ys₁.length)
+      (by simp [h₂.length_eq]; omega)
+      (by omega)
 
 end List

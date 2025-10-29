@@ -246,7 +246,7 @@ theorem forall₂_to_vector
     ∃ ys' : Vector β n,
       ys'.toList = ys ∧
       List.Forall₂ R xs.toList ys'.toList
-  := sorry
+  := by exists (ys.toVector.cast (by simp [← h.length_eq]))
 
 theorem forall₂_append_to_vector
   {α β}
@@ -260,7 +260,26 @@ theorem forall₂_append_to_vector
       ys = ys₁'.toList ++ ys₂'.toList ∧
       List.Forall₂ R xs₁.toList ys₁'.toList ∧
       List.Forall₂ R xs₂.toList ys₂'.toList
-  := sorry
+  := by
+  exists (ys.take n₁).toVector.cast (by simp [← h.length_eq])
+  exists (ys.drop n₁).toVector.cast (by simp [← h.length_eq])
+  simp only [Vector.toList_cast, List.toVector]
+  have h₁ := List.forall₂_take n₁ h
+  have h₂ := List.forall₂_drop n₁ h
+  simp at h₁ h₂
+  simp [h₁, h₂]
+
+theorem exists_inverse_to_map
+  {f : α → β}
+  {xs : Vector β n}
+  (h : ∀ x ∈ xs, ∃ y, x = f y) :
+    ∃ ys : Vector α n, xs = ys.map f
+  := by
+  exists xs.attach.map (λ x => (h x.val x.prop).choose)
+  apply Vector.ext
+  intros i hi
+  simp
+  exact (h xs[i] (by simp)).choose_spec
 
 theorem forall₂_exists_map
   {α β}
@@ -270,6 +289,12 @@ theorem forall₂_exists_map
   (h : List.Forall₂ R xs.toList ys.toList)
   (hexists : ∀ {x y}, R x y → ∃ z, y = f z) :
     ∃ (ys' : Vector β n), ys = ys'.map f
-  := sorry
+  := by
+  have := h.imp (S := λ x y => ∃ z, y = f z) (by apply hexists)
+  have := List.forall₂_implies_all_left this.flip
+  simp at this
+  apply exists_inverse_to_map
+  intros x hmem
+  exact (this x hmem).2
 
 end Vector

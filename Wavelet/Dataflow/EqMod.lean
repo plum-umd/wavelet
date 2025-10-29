@@ -217,20 +217,28 @@ theorem chan_map_pop_vals_equiv
   [DecidableEq χ]
   {map₁ map₂ : ChanMap χ V}
   {vals₁ : Vector V k}
-  {EqV : V → V → Prop}
+  {EqV : V → V → Prop} [IsRefl V EqV]
   (heq : ChanMap.EqMod EqV map₁ map₂)
   (hpop : map₁.popVals names = some (vals₁, map₁')) :
     ∃ vals₂ map₂',
       map₂.popVals names = some (vals₂, map₂') ∧
       List.Forall₂ EqV vals₁.toList vals₂.toList ∧
       ChanMap.EqMod EqV map₁' map₂'
-  := sorry
+  := by
+  induction names using Vector.back_induction with
+  | empty =>
+    simp [Vector.eq_empty] at hpop ⊢
+    subst hpop
+    exact heq
+  | push names' name ih =>
+    simp [pop_vals_unfold]
+    sorry
 
 theorem chan_map_push_vals_equiv_alt
   [DecidableEq χ]
   {map₁ map₂ : ChanMap χ V}
   {vals₁ vals₂ : Vector V k}
-  {EqV : V → V → Prop}
+  {EqV : V → V → Prop} [IsRefl V EqV]
   (heq_map : ChanMap.EqMod EqV map₁ map₂)
   (heq_vals : List.Forall₂ EqV vals₁.toList vals₂.toList) :
     ChanMap.EqMod EqV
@@ -242,11 +250,11 @@ theorem chan_map_push_vals_equiv
   [DecidableEq χ]
   {map : ChanMap χ V}
   {vals₁ vals₂ : Vector V k}
-  {EqV : V → V → Prop}
-  (hequiv : List.Forall₂ EqV vals₁.toList vals₂.toList) :
+  {EqV : V → V → Prop} [IsRefl V EqV]
+  (heq : List.Forall₂ EqV vals₁.toList vals₂.toList) :
     ChanMap.EqMod EqV
       (map.pushVals names vals₁)
       (map.pushVals names vals₂)
-  := sorry
+  := chan_map_push_vals_equiv_alt (IsRefl.refl _) heq
 
 end Wavelet.Dataflow
