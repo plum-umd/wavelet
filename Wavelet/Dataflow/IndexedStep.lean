@@ -221,7 +221,7 @@ theorem Config.IndexedStep.unique_index_mod
       all_goals rfl
     · simp [Config.EqMod, IsRefl.refl]
       have := hdet rfl rfl
-      apply chan_map_push_vals_equiv
+      apply congr_eq_mod_push_vals_alt
       exact this
   case step_async.step_async =>
     rename_i aop _ _ _ inputs₁ inputVals₁ outputs₁ outputVals₁ _ hinterp₁ hpop₁ _ _ _ _ _ _ _

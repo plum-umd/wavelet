@@ -151,7 +151,7 @@ theorem congr_eq_mod_ghost_proc_indexed_unguarded
     subst h₁ h₂ h₃
     have ⟨h₁, h₂, h₃⟩ := this
     subst h₁ h₂ h₃
-    have ⟨inputVals', _, hpop', heq_inputs, heq_chans'⟩ := chan_map_pop_vals_equiv heq_chans hpop
+    have ⟨inputVals', _, hpop', heq_inputs, heq_chans'⟩ := congr_eq_mod_pop_vals heq_chans hpop
     cases hguard with
     -- Normal operators
     | triv_yield =>
@@ -183,7 +183,7 @@ theorem congr_eq_mod_ghost_proc_indexed_unguarded
             constructor
             · exact ⟨heq_proc_inputs, heq_proc_outputs, heq_aps⟩
             · simp
-              apply chan_map_push_vals_equiv_alt heq_chans'
+              apply congr_eq_mod_push_vals heq_chans'
               apply Vector.forall₂_to_forall₂_push_toList
               · simp [EqModGhost]
               · simp [EqModGhost]
@@ -225,7 +225,7 @@ theorem congr_eq_mod_ghost_proc_indexed_unguarded
           constructor
           · exact ⟨heq_proc_inputs, heq_proc_outputs, heq_aps⟩
           · simp
-            apply chan_map_push_vals_equiv_alt heq_chans'
+            apply congr_eq_mod_push_vals heq_chans'
             apply List.forall₂_iff_get.mpr
             simp [EqModGhost]
       ⟩
@@ -239,7 +239,7 @@ theorem congr_eq_mod_ghost_proc_indexed_unguarded
     subst h₁ h₂ h₃
     have ⟨heq_aop, h₁, h₂⟩ := this
     subst h₁ h₂
-    have ⟨_, _, hpop', heq_inputs, heq_chans'⟩ := chan_map_pop_vals_equiv heq_chans hpop
+    have ⟨_, _, hpop', heq_inputs, heq_chans'⟩ := congr_eq_mod_pop_vals heq_chans hpop
     have ⟨outputVals', _, hinterp', heq_aop', heq_outputs⟩ := congr_eq_mod_ghost_async_op_interp hinterp heq_aop heq_inputs
     replace ⟨outputVals', houtput_vals', heq_outputs⟩ := Vector.forall₂_to_vector heq_outputs
     subst houtput_vals'
@@ -261,7 +261,7 @@ theorem congr_eq_mod_ghost_proc_indexed_unguarded
             simp [AtomicProc.EqMod]
             exact heq_aop'
         · simp
-          apply chan_map_push_vals_equiv_alt heq_chans'
+          apply congr_eq_mod_push_vals heq_chans'
           exact heq_outputs
     ⟩
 

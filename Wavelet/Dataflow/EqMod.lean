@@ -213,11 +213,41 @@ theorem Config.EqMod.eq_eq
   cases c₂
   simp [EqMod]
 
-theorem chan_map_pop_vals_equiv
+theorem congr_eq_mod_pop_val
+  [DecidableEq χ]
+  {map₁ map₂ : ChanMap χ V}
+  {EqV : V → V → Prop}
+  (heq : ChanMap.EqMod EqV map₁ map₂)
+  (hpop : map₁.popVal name = some (val₁, map₁')) :
+    ∃ val₂ map₂',
+      map₂.popVal name = some (val₂, map₂') ∧
+      EqV val₁ val₂ ∧
+      ChanMap.EqMod EqV map₁' map₂'
+  := by
+  simp [ChanMap.popVal] at hpop
+  split at hpop; contradiction
+  rename_i rest heq'
+  simp at hpop
+  have ⟨h₁, h₂⟩ := hpop
+  subst h₁ h₂
+  have := heq (name := name)
+  simp [heq', List.forall₂_cons_left_iff] at this
+  have ⟨val₂, heq₁, rest₂, heq₂, heq₃⟩ := this
+  exists val₂
+  exists (λ n =>
+    if n = name then rest₂
+    else map₂ n)
+  simp [ChanMap.popVal, heq₃, heq₁, ChanMap.EqMod]
+  intros name'
+  split
+  · exact heq₂
+  · apply heq
+
+theorem congr_eq_mod_pop_vals
   [DecidableEq χ]
   {map₁ map₂ : ChanMap χ V}
   {vals₁ : Vector V k}
-  {EqV : V → V → Prop} [IsRefl V EqV]
+  {EqV : V → V → Prop}
   (heq : ChanMap.EqMod EqV map₁ map₂)
   (hpop : map₁.popVals names = some (vals₁, map₁')) :
     ∃ vals₂ map₂',
@@ -225,28 +255,84 @@ theorem chan_map_pop_vals_equiv
       List.Forall₂ EqV vals₁.toList vals₂.toList ∧
       ChanMap.EqMod EqV map₁' map₂'
   := by
-  induction names using Vector.back_induction with
+  induction names using Vector.back_induction
+    generalizing map₁' with
   | empty =>
     simp [Vector.eq_empty] at hpop ⊢
     subst hpop
     exact heq
   | push names' name ih =>
-    simp [pop_vals_unfold]
-    sorry
+    simp [pop_vals_unfold, Option.bind] at hpop
+    split at hpop; contradiction
+    rename_i res₁ hpop₁
+    rcases res₁ with ⟨vals₁, map'⟩
+    simp at hpop
+    split at hpop; contradiction
+    rename_i res₂ hpop₂
+    rcases res₂ with ⟨val₂, map''⟩
+    simp at hpop
+    have ⟨vals₁', map₁', hpop₁', heq₁', heq₂'⟩ := ih hpop₁
+    have ⟨val₂', _, hpop₂', heq₁'', heq₂''⟩ := congr_eq_mod_pop_val heq₂' hpop₂
+    simp [← hpop, pop_vals_unfold, hpop₁', hpop₂']
+    constructor
+    · exact Vector.forall₂_to_forall₂_push_toList heq₁' heq₁''
+    · exact heq₂''
 
-theorem chan_map_push_vals_equiv_alt
+theorem congr_eq_mod_push_val
+  [DecidableEq χ]
+  {map₁ map₂ : ChanMap χ V}
+  {EqV : V → V → Prop}
+  (heq_map : ChanMap.EqMod EqV map₁ map₂)
+  (heq_vals : EqV val₁ val₂) :
+    ChanMap.EqMod EqV
+      (map₁.pushVal name val₁)
+      (map₂.pushVal name val₂)
+  := by
+  intros name'
+  simp [ChanMap.pushVal]
+  by_cases h : name' = name
+  · simp [h]
+    apply List.forall₂_append
+    · apply heq_map
+    · simp [heq_vals]
+  · simp [h]
+    apply heq_map
+
+theorem congr_eq_mod_push_vals
   [DecidableEq χ]
   {map₁ map₂ : ChanMap χ V}
   {vals₁ vals₂ : Vector V k}
-  {EqV : V → V → Prop} [IsRefl V EqV]
+  {EqV : V → V → Prop}
   (heq_map : ChanMap.EqMod EqV map₁ map₂)
   (heq_vals : List.Forall₂ EqV vals₁.toList vals₂.toList) :
     ChanMap.EqMod EqV
       (map₁.pushVals names vals₁)
       (map₂.pushVals names vals₂)
-  := sorry
+  := by
+  induction names using Vector.back_induction
+    generalizing map₁ map₂ with
+  | empty => simp [Vector.eq_empty, heq_map]
+  | push names' name ih =>
+    rename Nat => n
+    simp [push_vals_unfold]
+    rw [← Vector.push_pop_back vals₁,
+      ← Vector.push_pop_back vals₂] at heq_vals
+    simp only [Vector.toList_push] at heq_vals
+    have heq_back : EqV vals₁.back vals₂.back := by
+      have := List.forall₂_drop_append _ _ _ heq_vals
+      simp at this
+      exact this
+    have heq_pop : List.Forall₂ EqV vals₁.pop.toList vals₂.pop.toList := by
+      have := List.forall₂_take_append _ _ _ heq_vals
+      simp at this
+      exact this
+    apply congr_eq_mod_push_val
+    · apply ih
+      · exact heq_map
+      · exact heq_pop
+    · exact heq_back
 
-theorem chan_map_push_vals_equiv
+theorem congr_eq_mod_push_vals_alt
   [DecidableEq χ]
   {map : ChanMap χ V}
   {vals₁ vals₂ : Vector V k}
@@ -255,6 +341,6 @@ theorem chan_map_push_vals_equiv
     ChanMap.EqMod EqV
       (map.pushVals names vals₁)
       (map.pushVals names vals₂)
-  := chan_map_push_vals_equiv_alt (IsRefl.refl _) heq
+  := congr_eq_mod_push_vals (IsRefl.refl _) heq
 
 end Wavelet.Dataflow
