@@ -255,4 +255,17 @@ instance Forall₂.instTrans {R : α → α → Prop} [trans : IsTrans α R] :
     simp [List.forall₂_iff_get] at h₁ h₂ ⊢
     grind only
 
+/-- Produces an index in a flattened list so that updating the
+index is the same as updating the corresponding sublist. -/
+theorem flatten_update_index
+  {xs : List (List α)} {x : α}
+  {i : Nat} {j : Nat}
+  (hi : i < xs.length)
+  (hj : j < xs[i].length)
+  (hget : xs[i][j] = x) :
+    ∃ k : Fin xs.flatten.length,
+      xs.flatten[k] = x ∧
+      ∀ x', xs.flatten.set k x' = (xs.set i (xs[i].set j x')).flatten
+  := sorry
+
 end List

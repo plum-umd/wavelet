@@ -99,14 +99,18 @@ namespace Wavelet.Compile
 
 open Semantics Seq Dataflow Fn
 
-/-- `compileExpr` preserves `AffineInrOp`. -/
+/--
+`compileExpr` preserves `AffineInrOp`.
+
+TODO: Proof performance
+-/
 theorem compile_expr_preserves_aff_op
   [Arity Op₁] [Arity Op₂]
   [DecidableEq χ]
   [InterpConsts V]
   {expr : Expr (Op₁ ⊕ Op₂) χ m n}
-  (haff : expr.AffineInrOp usedOps)
-  : (compileExpr (V := V) definedVars pathConds expr).AffineInrOp usedOps
+  (haff : expr.AffineInrOp usedOps) :
+    (compileExpr (V := V) definedVars pathConds expr).AffineInrOp usedOps
   := by
   induction expr generalizing definedVars pathConds usedOps with
   | ret =>

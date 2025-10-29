@@ -587,17 +587,6 @@ private theorem aop_interp_map_inj
     simp [Vector.toList_map, hinputs', houtputs']
     exact .interp_sink (by simp [h₁])
 
-theorem List.flatten_update_index
-  {xs : List (List α)} {x : α}
-  {i : Nat} {j : Nat}
-  (hi : i < xs.length)
-  (hj : j < xs[i].length)
-  (hget : xs[i][j] = x) :
-    ∃ k : Fin xs.flatten.length,
-      xs.flatten[k] = x ∧
-      ∀ x', xs.flatten.set k x' = (xs.set i (xs[i].set j x')).flatten
-  := sorry
-
 private theorem sim_link_procs_step_main
   [Arity Op]
   [DecidableEq χ]
