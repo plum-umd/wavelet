@@ -188,7 +188,8 @@ theorem compile_strong_norm
   -- have hfinal_s₁''' :
   -- Use determinacy
   have ⟨_, _, htrace''', hlen₁, heq₃⟩ := proc_interp_guarded_hetero_terminal_confl hconfl hdet hnb
-    sorry sorry hmiddle sorry htrace''
+    sorry sorry hmiddle
+    (by sorry) htrace''
   -- Convert the determinacy result to τ steps after `htrace'`
   have this := congr_eq_mod_ghost_proc_interp_unguarded_tau_star_n htrace'''
     (by
@@ -212,12 +213,11 @@ theorem compile_strong_norm
     sorry,
     houtput''',
     by
-      -- The final output step does not change the shared operator state
+      have := hsim₁.sim_prop _ _ hsim_s₂''
       simp [← houtput'''.output_eq_state,
-        ← houtput.output_eq_state]
-      simp [← heq₄.2, ← heq₃.2, houtput'.output_eq_state]
-      -- TODO: infer from hsim_s₂'' the final equality
-      sorry
+        ← heq₄.2, ← heq₃.2,
+        houtput'.output_eq_state,
+        ← this.2]
   ⟩
 
 end Wavelet

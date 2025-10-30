@@ -186,14 +186,23 @@ def Lts.InterpStep.to_indexed_interp_tau
     have ⟨i, hbase'⟩ := hmap (by simp) hbase
     exact ⟨i, .step_yield hbase' hinterp⟩
 
+def InterpSim
+  [Arity Op]
+  [interp : OpInterp.{_, _, w₂} Op V]
+  {sem₁ sem₂ : Semantics Op V m n}
+  (hsim : sem₁ ≲ᵣ sem₂)
+  (s₁ : sem₁.S × interp.S) (s₂ : sem₂.S × interp.S) : Prop
+  := hsim.Sim s₁.1 s₂.1 ∧ s₁.2 = s₂.2
+
 /-- `interp` preserves IO-restricted simulation. -/
 theorem sim_interp
   [Arity Op]
   [InterpConsts V]
   [interp : OpInterp.{_, _, w₂} Op V]
   {sem₁ sem₂ : Semantics Op V m n}
-  (hsim : sem₁ ≲ᵣ sem₂) :
-  sem₁.interpret interp ≲ᵣ sem₂.interpret interp
+  {R : sem₁.S → sem₂.S → Prop}
+  (hsim : sem₁ ≲ᵣ[R] sem₂) :
+    sem₁.interpret interp ≲ᵣ[λ s₁ s₂ => R s₁.1 s₂.1 ∧ s₁.2 = s₂.2] sem₂.interpret interp
   := by
   sorry
 

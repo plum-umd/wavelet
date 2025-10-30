@@ -353,11 +353,25 @@ theorem Lts.IORestrictedStep.to_tau_star
   cases hstep
   assumption
 
+abbrev IORestrictedSimulation
+  [Arity Op]
+  (sem₁ sem₂ : Semantics Op V m n)
+  (R : sem₁.S → sem₂.S → Prop) : Prop
+  := Lts.Simulation sem₁.lts sem₂.lts.IORestrictedStep R sem₁.init sem₂.init
+
+abbrev IORestrictedSimilaritySt
+  [Arity Op]
+  (sem₁ sem₂ : Semantics Op V m n)
+  (R : sem₁.S → sem₂.S → Prop) : Prop
+  := Lts.SimilaritySt R sem₁.lts sem₂.lts.IORestrictedStep sem₁.init sem₂.init
+
 abbrev IORestrictedSimilarity
   [Arity Op]
   (sem₁ sem₂ : Semantics Op V m n) : Prop
   := Lts.Similarity sem₁.lts sem₂.lts.IORestrictedStep sem₁.init sem₂.init
 
+-- notation sem₁ " ≲ᵣ" "[" R "] " sem₂ => IORestrictedSimulation sem₁ sem₂ R
+notation sem₁ " ≲ᵣ" "[" R "] " sem₂ => IORestrictedSimilaritySt sem₁ sem₂ R
 infix:50 " ≲ᵣ " => IORestrictedSimilarity
 
 @[refl]
@@ -452,6 +466,18 @@ theorem IORestrictedSimilarity.to_weak_sim
       | step_output htau hstep' => exact .step htau hstep' .refl
       | step_tau htau => exact .from_tau_star htau
     · exact hR'
+
+theorem IORestrictedSimilaritySt.map_tau_star
+  [Arity Op]
+  {sem₁ sem₂ : Semantics Op V m n}
+  {R : sem₁.S → sem₂.S → Prop}
+  (hsim : sem₁ ≲ᵣ[R] sem₂)
+  {s₁ s₁' : sem₁.S}
+  {s₂ : sem₂.S}
+  (h : hsim.Sim s₁ s₂)
+  (htau : sem₁.lts.TauStar .τ s₁ s₁') :
+    ∃ s₂', sem₂.lts.TauStar .τ s₂ s₂' ∧ hsim.Sim s₁' s₂'
+  := sorry
 
 theorem IORestrictedSimilarity.map_tau_star
   [Arity Op]
@@ -560,5 +586,12 @@ theorem Lts.IsFinalFor.map_step
   intros c' l₂ hlabel hstep
   have ⟨l₁, hlabel₁, hstep₁⟩ := hmap hlabel hstep
   exact hfinal hlabel₁ hstep₁
+
+/-- Used for restricting some simulation relations. -/
+def PreservesInit
+  [Arity Op]
+  {sem₁ sem₂ : Semantics Op V m n}
+  (s₁ : sem₁.S) (s₂ : sem₂.S) : Prop :=
+  s₁ = sem₁.init → s₂ = sem₂.init
 
 end Wavelet.Semantics
