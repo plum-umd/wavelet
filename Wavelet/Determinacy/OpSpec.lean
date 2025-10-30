@@ -218,53 +218,53 @@ abbrev FnWithSpec
   := Fn (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
 
 /-- A collection of `IOSpec`s for `Fn`s in a `Prog`. -/
-abbrev ProgSpec (Op : Type u) V T [Arity Op] (sigs : Vector Sig k) :=
-  (i : Fin k) → IOSpec V T sigs[i].ι sigs[i].ω
+abbrev ProgSpec (Op : Type u) V T [Arity Op] (sigs : Sigs k) :=
+  (i : Fin k) → IOSpec V T (sigs i).ι (sigs i).ω
 
-/-- Extend the operator signature with the first `k'` function specs
-in the given program spec. -/
-def extendSpec
-  [Arity Op]
-  {sigs : Vector Sig k}
-  (opSpec : OpSpec Op V T)
-  (progSpec : ProgSpec Op V T sigs)
-  (k' : Fin (k + 1)) :
-    OpSpec (Op ⊕ SigOps sigs k') V T
-  := {
-    pre | .inl op, inputs => opSpec.pre op inputs
-        | .inr (.call i), inputs => (progSpec ⟨i, by omega⟩).pre inputs,
-    post | .inl op, inputs, outputs => opSpec.post op inputs outputs
-         | .inr (.call i), inputs, _ => (progSpec ⟨i, by omega⟩).pre inputs,
-  }
+-- /-- Extend the operator signature with the first `k'` function specs
+-- in the given program spec. -/
+-- def extendSpec
+--   [Arity Op]
+--   {sigs : Vector Sig k}
+--   (opSpec : OpSpec Op V T)
+--   (progSpec : ProgSpec Op V T sigs)
+--   (k' : Fin (k + 1)) :
+--     OpSpec (Op ⊕ SigOps sigs k') V T
+--   := {
+--     pre | .inl op, inputs => opSpec.pre op inputs
+--         | .inr (.call i), inputs => (progSpec ⟨i, by omega⟩).pre inputs,
+--     post | .inl op, inputs, outputs => opSpec.post op inputs outputs
+--          | .inr (.call i), inputs, _ => (progSpec ⟨i, by omega⟩).pre inputs,
+--   }
 
-def ProgSpec.toOpSpec
-  [Arity Op]
-  {sigs : Vector Sig k}
-  (progSpec : ProgSpec Op V T sigs)
-  (k' : Fin (k + 1)) :
-    OpSpec (SigOps sigs k') V T
-  := {
-    pre | (.call i), inputs => (progSpec ⟨i, by omega⟩).pre inputs,
-    post | (.call i), inputs, _ => (progSpec ⟨i, by omega⟩).pre inputs,
-  }
+-- def ProgSpec.toOpSpec
+--   [Arity Op]
+--   {sigs : Vector Sig k}
+--   (progSpec : ProgSpec Op V T sigs)
+--   (k' : Fin (k + 1)) :
+--     OpSpec (SigOps sigs k') V T
+--   := {
+--     pre | (.call i), inputs => (progSpec ⟨i, by omega⟩).pre inputs,
+--     post | (.call i), inputs, _ => (progSpec ⟨i, by omega⟩).pre inputs,
+--   }
 
-abbrev extendSigs (sigs : Vector Sig k) : Vector Sig k :=
-  sigs.map λ sig => { ι := sig.ι + 1, ω := sig.ω + 1 }
+abbrev extendSigs (sigs : Sigs k) : Sigs k :=
+  λ i => { ι := (sigs i).ι + 1, ω := (sigs i).ω + 1 }
 
 /-- Extends functions with one extra argument and return value for ghost tokens. -/
 abbrev ProgWithSpec χ [Arity Op]
-  (sigs : Vector Sig k)
+  (sigs : Sigs k)
   (opSpec : OpSpec Op V T) :=
   Prog (WithSpec Op opSpec) χ (V ⊕ T) (extendSigs sigs)
 
-def ProgWithSpecAlt
-  {Op T : Type u} -- Since join uses `T`
-  χ [Arity Op]
-  {sigs : Vector Sig k}
-  (opSpec : OpSpec Op V T)
-  (progSpec : ProgSpec Op V T sigs) :=
-  (i : Fin k) →
-    FnWithSpec (extendSpec opSpec progSpec i.castSucc) χ sigs[i].ι sigs[i].ω
+-- def ProgWithSpecAlt
+--   {Op T : Type u} -- Since join uses `T`
+--   χ [Arity Op]
+--   {sigs : Vector Sig k}
+--   (opSpec : OpSpec Op V T)
+--   (progSpec : ProgSpec Op V T sigs) :=
+--   (i : Fin k) →
+--     FnWithSpec (extendSpec opSpec progSpec i.castSucc) χ sigs[i].ι sigs[i].ω
 
 -- def ProgWithSpec.semantics
 --   [Arity Op] [PCM T] [DecidableEq χ] [InterpConsts V]
@@ -278,53 +278,53 @@ def ProgWithSpecAlt
 --   --   ((prog i).semantics.guard (opSpec.Guard (progSpec i)))
 --   --   (λ op => ProgWithSpec.semantics prog sorry)
 
-def Expr.toLinkable
-  [Arity Op]
-  {sigs : Vector Sig k}
-  {opSpec : OpSpec Op V T}
-  {progSpec : ProgSpec Op V T sigs}
-  {i : Fin k} :
-    Expr (WithSpec (Op ⊕ SigOps sigs i.castSucc) (extendSpec opSpec progSpec i.castSucc))
-      χ (sigs[i].ι + 1) (sigs[i].ω + 1) →
-    Expr (WithSpec Op opSpec ⊕ SigOps (extendSigs sigs) i.castSucc)
-      χ (extendSigs sigs)[i].ι (extendSigs sigs)[i].ω
-  | .op (.op (.inl o)) inputs outputs cont => .op (.inl (.op o)) inputs outputs cont.toLinkable
-  | .op (.op (.inr (.call j))) inputs outputs cont =>
-    .op (.inr (.call j : SigOps (extendSigs sigs) i.castSucc))
-      (inputs.cast (by
-        have : j < k := by omega
-        simp [extendSigs, Arity.ι]
-        grind only [= Fin.getElem_fin, = Vector.getElem_map]))
-      (outputs.cast (by
-        have : j < k := by omega
-        simp [extendSigs, Arity.ω]
-        grind only [= Fin.getElem_fin, = Vector.getElem_map])) cont.toLinkable
-  | .op (.join k l req) inputs outputs cont => .op (.inl (.join k l req)) inputs outputs cont.toLinkable
-  | .ret vars => .ret (vars.cast (by simp))
-  | .tail vars => .tail (vars.cast (by simp))
-  | .br c left right => .br c left.toLinkable right.toLinkable
+-- def Expr.toLinkable
+--   [Arity Op]
+--   {sigs : Vector Sig k}
+--   {opSpec : OpSpec Op V T}
+--   {progSpec : ProgSpec Op V T sigs}
+--   {i : Fin k} :
+--     Expr (WithSpec (Op ⊕ SigOps sigs i.castSucc) (extendSpec opSpec progSpec i.castSucc))
+--       χ (sigs[i].ι + 1) (sigs[i].ω + 1) →
+--     Expr (WithSpec Op opSpec ⊕ SigOps (extendSigs sigs) i.castSucc)
+--       χ (extendSigs sigs)[i].ι (extendSigs sigs)[i].ω
+--   | .op (.op (.inl o)) inputs outputs cont => .op (.inl (.op o)) inputs outputs cont.toLinkable
+--   | .op (.op (.inr (.call j))) inputs outputs cont =>
+--     .op (.inr (.call j : SigOps (extendSigs sigs) i.castSucc))
+--       (inputs.cast (by
+--         have : j < k := by omega
+--         simp [extendSigs, Arity.ι]
+--         grind only [= Fin.getElem_fin, = Vector.getElem_map]))
+--       (outputs.cast (by
+--         have : j < k := by omega
+--         simp [extendSigs, Arity.ω]
+--         grind only [= Fin.getElem_fin, = Vector.getElem_map])) cont.toLinkable
+--   | .op (.join k l req) inputs outputs cont => .op (.inl (.join k l req)) inputs outputs cont.toLinkable
+--   | .ret vars => .ret (vars.cast (by simp))
+--   | .tail vars => .tail (vars.cast (by simp))
+--   | .br c left right => .br c left.toLinkable right.toLinkable
 
-def FnWithSpec.toLinkable
-  [Arity Op]
-  {sigs : Vector Sig k}
-  {opSpec : OpSpec Op V T}
-  {progSpec : ProgSpec Op V T sigs}
-  {i : Fin k}
-  (fn : FnWithSpec (extendSpec opSpec progSpec i.castSucc) χ sigs[i].ι sigs[i].ω) :
-    Fn (WithSpec Op opSpec ⊕ SigOps (extendSigs sigs) i.castSucc) χ (V ⊕ T) (extendSigs sigs)[i].ι (extendSigs sigs)[i].ω
-  := {
-    params := fn.params.cast (by simp [extendSigs]),
-    body := fn.body.toLinkable,
-  }
+-- def FnWithSpec.toLinkable
+--   [Arity Op]
+--   {sigs : Vector Sig k}
+--   {opSpec : OpSpec Op V T}
+--   {progSpec : ProgSpec Op V T sigs}
+--   {i : Fin k}
+--   (fn : FnWithSpec (extendSpec opSpec progSpec i.castSucc) χ sigs[i].ι sigs[i].ω) :
+--     Fn (WithSpec Op opSpec ⊕ SigOps (extendSigs sigs) i.castSucc) χ (V ⊕ T) (extendSigs sigs)[i].ι (extendSigs sigs)[i].ω
+--   := {
+--     params := fn.params.cast (by simp [extendSigs]),
+--     body := fn.body.toLinkable,
+--   }
 
-def ProgWithSpecAlt.toLinkable
-  [Arity Op]
-  {sigs : Vector Sig k}
-  {opSpec : OpSpec Op V T}
-  {progSpec : ProgSpec Op V T sigs}
-  (prog : ProgWithSpecAlt χ opSpec progSpec) :
-    ProgWithSpec χ sigs opSpec :=
-  λ i => (prog i).toLinkable
+-- def ProgWithSpecAlt.toLinkable
+--   [Arity Op]
+--   {sigs : Vector Sig k}
+--   {opSpec : OpSpec Op V T}
+--   {progSpec : ProgSpec Op V T sigs}
+--   (prog : ProgWithSpecAlt χ opSpec progSpec) :
+--     ProgWithSpec χ sigs opSpec :=
+--   λ i => (prog i).toLinkable
 
 end Wavelet.Seq
 

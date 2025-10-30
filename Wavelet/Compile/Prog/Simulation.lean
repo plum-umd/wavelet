@@ -13,14 +13,14 @@ open Semantics Seq Dataflow
 private structure SimRel.GhostFrame
   [Arity Op]
   [DecidableEq χ]
-  {sigs : Vector Sig k}
+  {sigs : Sigs k}
   {k' : Fin (k + 1)}
   (mainState : Dataflow.Config (Op ⊕ SigOps sigs k') (LinkName χ) V m n)
   (depOp : SigOps sigs k') where
   depIdx : Fin mainState.proc.atoms.length
-  inputs : Vector (LinkName χ) sigs[depOp.toFin].ι
-  inputVals : Vector V sigs[depOp.toFin].ι
-  outputs : Vector (LinkName χ) sigs[depOp.toFin].ω
+  inputs : Vector (LinkName χ) (sigs depOp.toFin).ι
+  inputVals : Vector V (sigs depOp.toFin).ι
+  outputs : Vector (LinkName χ) (sigs depOp.toFin).ω
   chans' : ChanMap (LinkName χ) V
   -- Some facts required to run `Dataflow.Config.Step.step_op` after returning
   get_op : mainState.proc.atoms[depIdx] = .op (.inr depOp) inputs outputs
@@ -41,16 +41,16 @@ private def SimRel
   [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
-  {sigs : Vector Sig k}
+  {sigs : Sigs k}
   {k' : Fin (k + 1)}
-  {procs : (i : Fin k') → Proc Op (LinkName χ) V sigs[i].ι sigs[i].ω}
+  {procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω}
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
-  (config₁ : Semantics.LinkState main.semantics (λ op => (procs (op.toFin)).semantics))
+  (config₁ : Semantics.LinkState main.semantics (λ op => (procs op.toFin').semantics))
   (config₂ : Dataflow.Config Op (LinkName χ) V m n) : Prop
   :=
   -- Inputs/outputs of dependencies remain the same
-  (∀ depOp, (config₁.depStates depOp).proc.inputs = (procs depOp.toFin).inputs) ∧
-  (∀ depOp, (config₁.depStates depOp).proc.outputs = (procs depOp.toFin).outputs) ∧
+  (∀ depOp, (config₁.depStates depOp).proc.inputs = (procs depOp.toFin').inputs) ∧
+  (∀ depOp, (config₁.depStates depOp).proc.outputs = (procs depOp.toFin').outputs) ∧
   config₁.mainState.proc.AffineInrOp ∧
   -- Linking
   config₂.proc = linkProcs sigs k'
@@ -273,21 +273,21 @@ private theorem sim_link_procs_step_dep_spawn
   [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
-  {sigs : Vector Sig k}
+  {sigs : Sigs k}
   {k' : Fin (k + 1)}
-  {procs : (i : Fin k') → Proc Op (LinkName χ) V sigs[i].ι sigs[i].ω}
+  {procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω}
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
-  {s₁ : Semantics.LinkState main.semantics (λ op => (procs (op.toFin)).semantics)}
+  {s₁ : Semantics.LinkState main.semantics (λ op => (procs op.toFin').semantics)}
   {s₂ : Dataflow.Config Op (LinkName χ) V m n}
   {depOp : SigOps sigs k'}
-  {depState' : (procs depOp.toFin).semantics.S}
-  {inputVals : Vector V sigs[depOp.toFin].ι}
+  {depState' : (procs depOp.toFin').semantics.S}
+  {inputVals : Vector V (sigs depOp.toFin).ι}
   (hsim : SimRel s₁ s₂)
   -- Assumptions of `.LinkStep.step_dep`
   (hcur : s₁.curSem = none)
   (hyield : main.semantics.HasYield s₁.mainState (.inr depOp) inputVals)
   (hstep_dep :
-    (procs depOp.toFin).semantics.lts.Step
+    (procs depOp.toFin').semantics.lts.Step
       (s₁.depStates depOp) (.input inputVals) depState') :
     ∃ s₂',
       Dataflow.Config.Step.IORestrictedStep s₂ .τ s₂' ∧
@@ -306,7 +306,7 @@ private theorem sim_link_procs_step_dep_spawn
   have hmem_forward :
     .forward
       (inputs.map .main)
-      ((procs depOp.toFin).inputs.map (LinkName.dep depOp.toFin))
+      ((procs depOp.toFin').inputs.map (LinkName.dep depOp.toFin))
     ∈ s₂.proc.atoms
     := by
     simp [hsim_proc, linkProcs]
@@ -403,22 +403,22 @@ private theorem sim_link_procs_step_dep_ret
   [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
-  {sigs : Vector Sig k}
+  {sigs : Sigs k}
   {k' : Fin (k + 1)}
-  {procs : (i : Fin k') → Proc Op (LinkName χ) V sigs[i].ι sigs[i].ω}
+  {procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω}
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
-  {s₁ : Semantics.LinkState main.semantics (λ op => (procs (op.toFin)).semantics)}
+  {s₁ : Semantics.LinkState main.semantics (λ op => (procs op.toFin').semantics)}
   {s₂ : Dataflow.Config Op (LinkName χ) V m n}
   {depOp : SigOps sigs k'}
-  {depState' : (procs depOp.toFin).semantics.S}
+  {depState' : (procs depOp.toFin').semantics.S}
   {mainState' : main.semantics.S}
-  {inputVals : Vector V sigs[depOp.toFin].ι}
-  {outputVals : Vector V sigs[depOp.toFin].ω}
+  {inputVals : Vector V (sigs depOp.toFin).ι}
+  {outputVals : Vector V (sigs depOp.toFin).ω}
   (hsim : SimRel s₁ s₂)
   -- Assumptions of `.LinkStep.step_dep`
   (hcur : s₁.curSem = some depOp)
   (hstep_dep :
-    (procs depOp.toFin).semantics.lts.Step
+    (procs depOp.toFin').semantics.lts.Step
       (s₁.depStates depOp) (.output outputVals) depState')
   (hyield :
     main.semantics.lts.Step s₁.mainState
@@ -458,7 +458,7 @@ private theorem sim_link_procs_step_dep_ret
   have ⟨idx, hidx, hget_op⟩ := List.mem_iff_getElem.mp hmem_op
   have hmem_forward_outputs :
     .forward
-      ((procs depOp.toFin).outputs.map (LinkName.dep depOp.toFin))
+      ((procs depOp.toFin').outputs.map (LinkName.dep depOp.toFin))
       (outputs.map .main)
     ∈ s₂.proc.atoms
     := by
@@ -591,12 +591,12 @@ private theorem sim_link_procs_step_main
   [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
-  {sigs : Vector Sig k}
+  {sigs : Sigs k}
   {k' : Fin (k + 1)}
-  {procs : (i : Fin k') → Proc Op (LinkName χ) V sigs[i].ι sigs[i].ω}
+  {procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω}
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
   {mainState' : main.semantics.S}
-  {s₁ : Semantics.LinkState main.semantics (λ op => (procs (op.toFin)).semantics)}
+  {s₁ : Semantics.LinkState main.semantics (λ op => (procs op.toFin').semantics)}
   {s₂ : Dataflow.Config Op (LinkName χ) V m n}
   {l : Label (Op ⊕ SigOps sigs k') V m n}
   {l' : Label Op V m n}
@@ -729,21 +729,21 @@ private theorem sim_link_procs_step_dep
   [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
-  {sigs : Vector Sig k}
+  {sigs : Sigs k}
   {k' : Fin (k + 1)}
-  {procs : (i : Fin k') → Proc Op (LinkName χ) V sigs[i].ι sigs[i].ω}
+  {procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω}
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
-  {s₁ : Semantics.LinkState main.semantics (λ op => (procs (op.toFin)).semantics)}
+  {s₁ : Semantics.LinkState main.semantics (λ op => (procs op.toFin').semantics)}
   {s₂ : Dataflow.Config Op (LinkName χ) V m n}
   {depOp : SigOps sigs k'}
-  {depState' : (procs depOp.toFin).semantics.S}
-  {l : Label Op V sigs[depOp.toFin].ι sigs[depOp.toFin].ω}
+  {depState' : (procs depOp.toFin').semantics.S}
+  {l : Label Op V (sigs depOp.toFin).ι (sigs depOp.toFin).ω}
   {l' : Label Op V m n}
   (hsim : SimRel s₁ s₂)
   -- Assumptions of `.LinkStep.step_dep`
   (hcur : s₁.curSem = some depOp)
   (hlabel : Semantics.DepLabelPassthrough l l')
-  (hstep_dep : (procs depOp.toFin).semantics.lts.Step (s₁.depStates depOp) l depState') :
+  (hstep_dep : (procs depOp.toFin').semantics.lts.Step (s₁.depStates depOp) l depState') :
     ∃ s₂',
       Dataflow.Config.Step.IORestrictedStep s₂ l' s₂' ∧
       SimRel { s₁ with
@@ -915,17 +915,17 @@ theorem sim_link_procs
   [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
-  {sigs : Vector Sig k}
+  {sigs : Sigs k}
   {k' : Fin (k + 1)}
-  {procs : (i : Fin k') → Proc Op (LinkName χ) V sigs[i].ι sigs[i].ω}
+  {procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω}
   {deps : PartInterp Op (SigOps sigs k') V}
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
-  (hdeps : ∀ op, deps op = (procs (op.toFin)).semantics)
+  (hdeps : ∀ op, deps op = (procs op.toFin').semantics)
   (haff : main.AffineInrOp) :
     main.semantics.link deps ≲ᵣ (linkProcs sigs k' procs main).semantics
   := by
   replace hdeps :
-    deps = λ op : SigOps sigs k' => (procs (op.toFin)).semantics := by
+    deps = λ op : SigOps sigs k' => (procs op.toFin').semantics := by
     funext op
     apply hdeps
   simp only [hdeps]
@@ -953,11 +953,14 @@ theorem sim_link_procs
     | step_dep_ret hcur hstep_dep hyield =>
       exact sim_link_procs_step_dep_ret hsim hcur hstep_dep hyield
 
-theorem sim_compile_prog
+theorem sim_compile_prog.{u₁, u₂, u₃}
+  {Op : Type u₁}
+  {χ : Type u₂}
+  {V : Type u₃}
   [Arity Op]
   [InterpConsts V]
   [DecidableEq χ]
-  (sigs : Vector Sig k)
+  (sigs : Sigs k)
   (prog : Prog Op χ V sigs)
   (i : Nat)
   (hlt : i < k)

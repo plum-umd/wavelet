@@ -360,6 +360,7 @@ abbrev IORestrictedSimilarity
 
 infix:50 " ≲ᵣ " => IORestrictedSimilarity
 
+@[refl]
 theorem IORestrictedSimilarity.refl
   [Arity Op]
   (sem : Semantics Op V m n) :
@@ -426,6 +427,7 @@ theorem IORestrictedSimilarity.alt
       · exact .step_tau hstep_s₂
       · exact hsim'
 
+@[trans]
 theorem IORestrictedSimilarity.trans
   {Op : Type u} {V : Type v}
   [Arity Op]
@@ -450,6 +452,12 @@ theorem IORestrictedSimilarity.to_weak_sim
       | step_output htau hstep' => exact .step htau hstep' .refl
       | step_tau htau => exact .from_tau_star htau
     · exact hR'
+
+instance [Arity Op] : IsRefl (Semantics Op V m n) IORestrictedSimilarity where
+  refl := .refl
+
+instance [Arity Op] : IsTrans (Semantics Op V m n) IORestrictedSimilarity where
+  trans _ _ _ := .trans
 
 def Lts.IsInvariantAt
   (lts : Lts C E) (P : C → Prop) (c : C) : Prop :=

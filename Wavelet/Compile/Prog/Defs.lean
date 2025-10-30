@@ -18,18 +18,18 @@ inductive LinkName (χ : Type u) where
 
 def linkAtomicProc
   [Arity Op]
-  (sigs : Vector Sig k)
+  (sigs : Sigs k)
   (k' : Fin (k + 1))
-  (procs : (i : Fin k') → Proc Op (LinkName χ) V sigs[i].ι sigs[i].ω)
+  (procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω)
   (atom : AtomicProc (Op ⊕ (SigOps sigs k')) (LinkName χ) V)
   : AtomicProcs Op (LinkName χ) V :=
   match atom with
   | .op (.inl o) inputs outputs =>
     [.op o (inputs.map .main) (outputs.map .main)]
   | .op (.inr op) inputs outputs =>
-    [.forward (inputs.map .main) ((procs op.toFin).inputs.map (LinkName.dep op.toFin))] ++
-    (procs op.toFin).atoms.mapChans (LinkName.dep op.toFin) ++
-    [.forward ((procs op.toFin).outputs.map (LinkName.dep op.toFin)) (outputs.map .main)]
+    [.forward (inputs.map .main) ((procs op.toFin').inputs.map (LinkName.dep op.toFin))] ++
+    (procs op.toFin').atoms.mapChans (LinkName.dep op.toFin) ++
+    [.forward ((procs op.toFin').outputs.map (LinkName.dep op.toFin)) (outputs.map .main)]
   | .async aop inputs outputs =>
     [.async aop (inputs.map .main) (outputs.map .main)]
 
@@ -57,9 +57,9 @@ Therefore, in the theorems below, we assume property 1.
 -/
 def linkProcs
   [Arity Op]
-  (sigs : Vector Sig k)
+  (sigs : Sigs k)
   (k' : Fin (k + 1))
-  (procs : (i : Fin k') → Proc Op (LinkName χ) V sigs[i].ι sigs[i].ω)
+  (procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω)
   (main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n)
   : Proc Op (LinkName χ) V m n := {
     inputs := main.inputs.map LinkName.main,
@@ -71,14 +71,17 @@ def linkProcs
 compile the `i`-th function to a process without any dependencies. -/
 def compileProg
   [Arity Op] [DecidableEq χ] [InterpConsts V]
-  (sigs : Vector Sig k)
+  (sigs : Sigs k)
   (prog : Prog Op χ V sigs)
-  (i : Fin k) : Proc Op (LinkName (ChanName χ)) V sigs[i].ι sigs[i].ω :=
+  (i : Fin k) : Proc Op (LinkName (ChanName χ)) V (sigs i).ι (sigs i).ω :=
   -- Compile the current function
   let proc : Proc (Op ⊕ SigOps sigs i.castSucc) (LinkName (ChanName χ)) V _ _ :=
     compileFn (prog i) |>.mapChans LinkName.base
   -- Compile dependencies
-  let deps : (j : Fin i) → Proc Op (LinkName (ChanName χ)) V sigs[j].ι sigs[j].ω :=
+  let deps : (j : Fin i) →
+    Proc Op (LinkName (ChanName χ)) V
+      (sigs (j.castLT (by omega))).ι
+      (sigs (j.castLT (by omega))).ω :=
     λ j => compileProg sigs prog (j.castLT (by omega))
   -- Link everything into one dataflow graph
   linkProcs sigs i.castSucc deps proc

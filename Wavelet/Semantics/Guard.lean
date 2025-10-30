@@ -72,8 +72,6 @@ theorem Guard.map_guard
 /-- `guard` preserves IO-restricted simulation. -/
 theorem sim_guard
   [Arity Op] [Arity Op']
-  [DecidableEq χ]
-  [DecidableEq χ']
   [InterpConsts V]
   [InterpConsts V']
   {sem₁ sem₂ : Semantics Op V m n}
@@ -123,8 +121,6 @@ theorem sim_guard
 /-- `guard` preserves weak simulation. -/
 theorem sim_weak_guard
   [Arity Op] [Arity Op']
-  [DecidableEq χ]
-  [DecidableEq χ']
   [InterpConsts V]
   [InterpConsts V']
   {sem₁ sem₂ : Semantics Op V m n}
