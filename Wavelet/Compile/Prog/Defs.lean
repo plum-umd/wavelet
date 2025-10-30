@@ -27,9 +27,9 @@ def linkAtomicProc
   | .op (.inl o) inputs outputs =>
     [.op o (inputs.map .main) (outputs.map .main)]
   | .op (.inr op) inputs outputs =>
-    [ .forward (inputs.map .main) ((procs op.toFin).inputs.map (LinkName.dep op.toFin)) ] ++
+    [.forward (inputs.map .main) ((procs op.toFin).inputs.map (LinkName.dep op.toFin))] ++
     (procs op.toFin).atoms.mapChans (LinkName.dep op.toFin) ++
-    [ .forward ((procs op.toFin).outputs.map (LinkName.dep op.toFin)) (outputs.map .main) ]
+    [.forward ((procs op.toFin).outputs.map (LinkName.dep op.toFin)) (outputs.map .main)]
   | .async aop inputs outputs =>
     [.async aop (inputs.map .main) (outputs.map .main)]
 

@@ -29,6 +29,16 @@ def SimpleIOSpec.toIOSpec (spec : SimpleIOSpec T) m n :
     post _ := spec.post,
   }
 
+abbrev SimpleProgSpec (Op : Type u) T [Arity Op] (_sigs : Vector Sig k) :=
+  (i : Fin k) → SimpleIOSpec T
+
+def SimpleProgSpec.toProgSpec
+  [Arity Op]
+  {sigs : Vector Sig k}
+  (spec : SimpleProgSpec Op T sigs) :
+    ProgSpec Op V T sigs :=
+  λ i => (spec i).toIOSpec sigs[i].ι sigs[i].ω
+
 /-- `.inl` for base vars, `.inr` for token variables. -/
 abbrev TypedName χ := χ ⊕ Nat
 
@@ -124,6 +134,42 @@ def Fn.WellPermTyped
   Prop :=
   fn'.params = (fn.params.map .inl).push (.inr 0) ∧
   Expr.WellPermTyped ioSpec (.init (ioSpec.pre)) fn.body fn'.body
+
+def Fn.WellPermTypedDep
+  [Arity Op] [PCM T]
+  {opSpec : OpSpec Op V T}
+  (ioSpec : IOSpec V T m n)
+  (fn : Fn Op χ V m n)
+  (fn' : FnWithSpec opSpec (TypedName χ) m n) :
+  Prop := sorry
+
+def Prog.WellPermTyped
+  [Arity Op] [PCM T]
+  {sigs : Vector Sig k}
+  {opSpec : OpSpec Op V T}
+  {progSpec : ProgSpec Op V T sigs}
+  (prog : Prog Op χ V sigs)
+  (prog' : ProgWithSpecAlt (TypedName χ) opSpec progSpec)
+  (i : Fin k) : Prop
+  := Fn.WellPermTypedDep (progSpec i) (prog i) (prog' i)
+
+-- theorem sim_type_check_prog
+--   {Op V T χ : Type 1} -- TODO: relax this constraint
+--   [Arity Op]
+--   [InterpConsts V]
+--   [PCM T] [PCM.Lawful T]
+--   [DecidableEq χ]
+--   [DecidableLE T]
+--   {sigs : Vector Sig k}
+--   {opSpec : OpSpec Op V T}
+--   {progSpec : ProgSpec Op V T sigs}
+--   (prog : Prog Op χ V sigs)
+--   (prog' : ProgWithSpecAlt (TypedName χ) opSpec progSpec)
+--   (hwt : prog.WellPermTyped prog' i) :
+--   prog.semantics i ≲
+--     ((prog'.toLinkable.semantics i) : Semantics _ _ _ _).guard
+--       (opSpec.Guard (progSpec i))
+--   := by sorry
 
 def SimRel
   [Arity Op] [PCM T]
