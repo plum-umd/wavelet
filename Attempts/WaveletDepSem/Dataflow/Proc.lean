@@ -30,7 +30,7 @@ structure Proc Op χ V [Arity Op] (m : Nat) (n : Nat) where
   outputs : Vector χ n
   atoms : AtomicProcs Op χ V
 
-structure Config (Op : Type u) (χ : Type v) (V : Type w) [Arity Op] m n : Type (max u v w) where
+structure Config (Op : Type u) (χ : Type v) (V : Type w) [Arity Op] m n where
   proc : Proc Op χ V m n
   chans : ChanMap χ V
 
@@ -87,10 +87,8 @@ inductive Config.Step
     }
 
 def Proc.semantics
-  {Op : Type u} {χ : Type v} {V : Type w}
   [Arity Op] [DecidableEq χ] [InterpConsts V]
-  (proc : Proc Op χ V m n) : Semantics.{_, _, max u v w} Op V m n := {
-    S := Config Op χ V m n,
+  (proc : Proc Op χ V m n) : Semantics (Config Op χ V m n) Op V m n := {
     init := Config.init proc,
     lts := Config.Step,
   }

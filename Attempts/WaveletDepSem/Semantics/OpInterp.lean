@@ -7,7 +7,7 @@ import Wavelet.Semantics.Defs
 namespace Wavelet.Semantics
 
 /-- The empty operator set -/
-inductive Empty : Type
+inductive Empty
 
 def Empty.elim {α} (e : Empty) : α := by cases e
 
@@ -47,9 +47,7 @@ inductive Lts.InterpStep
 
 /-- Similar to `Interp`, but allowing additional indices in the base LTS. -/
 inductive Lts.IndexedInterpStep
-  {Op : Type u} {V : Type v}
-  {S₁ : Type w₁} {S₂ : Type w₂}
-  [Arity Op] {I : Type}
+  [Arity Op] {I}
   (base : Lts S₁ (I × Label Op V m n))
   (interp : Lts S₂ (RespLabel Op V)) : Lts (S₁ × S₂) (I × Label Empty V m n) where
   | step_tau :
@@ -72,19 +70,18 @@ with potentially shared states.
 TODO: The fact that we need two definitions of semantics (`OpInterp`
 and `Semantics`) is a bit unfortunate. Try unify?
 -/
-class OpInterp.{u, v, w} (Op : Type u) (V : Type v) [Arity Op] : Type (max u v (w + 1)) where
+class OpInterp (Op : Type u) (V : Type v) [Arity Op] where
   S : Type w
   init : S
   lts : Lts S (RespLabel Op V)
 
 /-- Fully interpret all operators using a `OpInterp` to get
 a transition system with only input/output/silent events. -/
-def interpret.{u, v, w₁, w₂}
-  {Op : Type u} {V : Type v}
+abbrev interpret
   [Arity Op]
-  (sem : Semantics.{_, _, w₁} Op V m n)
-  (interp : OpInterp.{_, _, w₂} Op V)
-  : Semantics.{_, _, max w₁ w₂} Empty V m n
+  (sem : Semantics Op V m n)
+  (interp : OpInterp Op V)
+  : Semantics Empty V m n
   := {
     S := sem.S × interp.S,
     init := (sem.init, interp.init),

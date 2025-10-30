@@ -9,15 +9,11 @@ inductive Lts.GuardStep {S} (P : E → E' → Prop) (lts : Lts S E) : Lts S E' w
   | step : P e e' → lts.Step s e s' → GuardStep P lts s e' s'
 
 /-- Guards and interprets the labels as another set of operators. -/
-def guard.{u₁, u₂, v₁, v₂, w}
-  {Op : Type u₁} {V : Type v₁}
-  {Op' : Type u₂} {V' : Type v₂}
+def guard
   [Arity Op] [Arity Op']
   (P : Label Op V m n → Label Op' V' m' n' → Prop)
-  (sem : Semantics.{_, _, w} Op V m n) :
-    Semantics.{_, _, w} Op' V' m' n'
-  := {
-    S := sem.S,
+  (sem : Semantics S Op V m n) :
+  Semantics S Op' V' m' n' := {
     init := sem.init,
     lts := sem.lts.GuardStep P,
   }
@@ -77,7 +73,7 @@ theorem sim_guard
   [Arity Op] [Arity Op']
   [InterpConsts V]
   [InterpConsts V']
-  {sem₁ sem₂ : Semantics Op V m n}
+  {sem₁ sem₂ : Semantics S Op V m n}
   {P : Label Op V m n → Label Op' V' m' n' → Prop}
   [hguard : LawfulGuard P]
   (hsim : sem₁ ≲ᵣ sem₂) :
@@ -126,7 +122,7 @@ theorem sim_weak_guard
   [Arity Op] [Arity Op']
   [InterpConsts V]
   [InterpConsts V']
-  {sem₁ sem₂ : Semantics Op V m n}
+  {sem₁ sem₂ : Semantics S Op V m n}
   {P : Label Op V m n → Label Op' V' m' n' → Prop}
   [hguard : LawfulGuard P]
   (hsim : sem₁ ≲ sem₂) :
@@ -161,7 +157,7 @@ theorem sim_guard_imp
   [DecidableEq χ']
   [InterpConsts V]
   [InterpConsts V']
-  {sem : Semantics Op V m n}
+  {sem : Semantics S Op V m n}
   {P₁ : Label Op V m n → Label Op' V' m' n' → Prop}
   {P₂ : Label Op V m n → Label Op' V' m' n' → Prop}
   (himp : ∀ {l₁ l₂}, P₁ l₁ l₂ → P₂ l₁ l₂) :

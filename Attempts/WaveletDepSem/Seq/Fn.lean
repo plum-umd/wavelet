@@ -34,7 +34,7 @@ inductive Cont Op χ [Arity Op] m n where
   | expr (e : Expr Op χ m n)
 
 /-- State of expression execution. -/
-structure Config (Op : Type u₁) (χ : Type u₂) (V : Type u₃) [Arity Op] m n : Type (max u₁ u₂ u₃) where
+structure Config (Op : Type u₁) (χ : Type u₂) (V : Type u₃) [Arity Op] m n where
   cont : Cont Op χ m n
   fn : Fn Op χ V m n
   vars : VarMap χ V
@@ -93,10 +93,8 @@ inductive Config.Step
 
 /-- `Semantics` implementation of a function. -/
 def Fn.semantics
-  {Op : Type u} {χ : Type v} {V : Type w}
   [Arity Op] [DecidableEq χ] [InterpConsts V]
-  (fn : Fn Op χ V m n) : Semantics.{_, _, max u v w} Op V m n := {
-    S := Config Op χ V m n,
+  (fn : Fn Op χ V m n) : Semantics (Config Op χ V m n) Op V m n := {
     init := Config.init fn,
     lts := Config.Step,
   }

@@ -49,8 +49,8 @@ def Prog.semantics.{u, v, w}
   {sigs : Sigs k}
   (prog : Prog Op χ V sigs)
   (i : Fin k)
-  : Semantics.{u, w, max u v w} Op V (sigs i).ι (sigs i).ω
-  := Semantics.link (prog i).semantics (λ op =>
-    Prog.semantics prog op.toFin)
+  : (S : Type (max u v w)) × Semantics S Op V (sigs i).ι (sigs i).ω
+  := ⟨_, Semantics.link (prog i).semantics (λ op =>
+    Prog.semantics prog op.toFin)⟩
 
 end Wavelet.Seq
