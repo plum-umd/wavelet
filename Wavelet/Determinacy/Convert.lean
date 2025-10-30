@@ -185,6 +185,18 @@ theorem Config.InterpGuardStep.to_indexed_interp_guarded_tau
     ∃ i, Config.IdxInterpGuardStep opSpec ioSpec s (i, .τ) s'
   := hstep.to_indexed_interp_tau Config.GuardStep.to_indexed_guarded
 
+theorem Config.InterpGuardStep.to_indexed_interp_unguarded
+  [Arity Op] [PCM T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  [opInterp : OpInterp Op V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s s' : ConfigWithSpec opSpec χ m n × opInterp.S}
+  (hstep : Config.InterpGuardStep opSpec ioSpec s l s') :
+    Config.InterpTrivStep opSpec s l s'
+  := sorry
+
 theorem Config.InterpGuardStep.to_indexed_interp_guarded_tau_star
   [Arity Op] [PCM T]
   [DecidableEq χ]

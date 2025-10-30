@@ -126,6 +126,15 @@ def Lts.InterpStep.map_step
   | step_output hstep => exact .step_output (hmap hstep)
   | step_yield hbase hinterp => exact .step_yield (hmap hbase) hinterp
 
+def Lts.InterpStep.output_eq_state
+  [Arity Op] {S S'}
+  {lts : Lts S (Label Op V m n)}
+  {lts' : Lts S' (RespLabel Op V)}
+  {s s' : S × S'}
+  (hstep : (Lts.InterpStep lts lts').Step s (.output vals) s') :
+    s.2 = s'.2
+  := by cases hstep; rfl
+
 def Lts.IndexedInterpStep.map_step
   [Arity Op] {S S'}
   {lts₁ lts₂ : Lts S (Nat × Label Op V m n)}
@@ -176,5 +185,16 @@ def Lts.InterpStep.to_indexed_interp_tau
   | step_yield hbase hinterp =>
     have ⟨i, hbase'⟩ := hmap (by simp) hbase
     exact ⟨i, .step_yield hbase' hinterp⟩
+
+/-- `interp` preserves IO-restricted simulation. -/
+theorem sim_interp
+  [Arity Op]
+  [InterpConsts V]
+  [interp : OpInterp.{_, _, w₂} Op V]
+  {sem₁ sem₂ : Semantics Op V m n}
+  (hsim : sem₁ ≲ᵣ sem₂) :
+  sem₁.interpret interp ≲ᵣ sem₂.interpret interp
+  := by
+  sorry
 
 end Wavelet.Semantics

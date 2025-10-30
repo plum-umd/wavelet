@@ -104,6 +104,36 @@ theorem Lts.TauStar.trans
     have := Lts.TauStar.prepend hstep h₂
     exact ih this
 
+theorem Lts.TauStarN.prepend
+  {lts : Lts C E}
+  (hhead : lts c₁ τ c₂)
+  (htail : lts.TauStarN τ k c₂ c₃)
+  : lts.TauStarN τ (1 + k) c₁ c₃ := by
+  induction htail with
+  | refl => exact Lts.TauStarN.tail .refl hhead
+  | tail pref h ih => exact Lts.TauStarN.tail (ih hhead) h
+
+theorem Lts.TauStarN.eq_len
+  {lts : Lts C E} {τ : E}
+  {n m : Nat}
+  (htauN : lts.TauStarN τ n c₁ c₂)
+  (heq : n = m) :
+    lts.TauStarN τ m c₁ c₂ := by
+  simp [heq] at htauN
+  exact htauN
+
+theorem Lts.TauStarN.trans
+  {lts : Lts C E} {τ : E}
+  (h₁ : lts.TauStarN τ k₁ c₁ c₂)
+  (h₂ : lts.TauStarN τ k₂ c₂ c₃) :
+    lts.TauStarN τ (k₁ + k₂) c₁ c₃
+  := by
+  induction h₁ generalizing k₂ with
+  | refl => simp; exact h₂
+  | tail h₁' hstep ih =>
+    have := Lts.TauStarN.prepend hstep h₂
+    exact .eq_len (ih this) (by omega)
+
 /-- Alternative induction principal for `TauStar`. -/
 theorem Lts.TauStar.reverse_induction
   {lts : Lts C E}

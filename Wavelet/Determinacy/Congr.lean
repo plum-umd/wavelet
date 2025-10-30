@@ -322,6 +322,36 @@ theorem congr_eq_mod_ghost_proc_indexed_interp_unguarded_star
     have ⟨_, htail', heq₂⟩ := ih heq₁
     exact ⟨_, htail'.prepend hstep', heq₂⟩
 
+theorem congr_eq_mod_ghost_proc_interp_unguarded_tau_star_n
+  [Arity Op]
+  [DecidableEq χ]
+  [InterpConsts V]
+  [opInterp : OpInterp Op V]
+  {opSpec : OpSpec Op V T}
+  {s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  (htrace : (Config.InterpTrivStep opSpec).TauStarN .τ k s₁ s₂)
+  (heq : s₁.1 ≈ s₁'.1 ∧ s₁.2 = s₁'.2) :
+    ∃ s₂',
+      (Config.InterpTrivStep opSpec).TauStarN .τ k s₁' s₂' ∧
+      s₂.1 ≈ s₂'.1 ∧ s₂.2 = s₂'.2
+  := by
+  sorry
+
+theorem congr_eq_mod_ghost_proc_interp_unguarded_output
+  [Arity Op]
+  [DecidableEq χ]
+  [InterpConsts V]
+  [opInterp : OpInterp Op V]
+  {opSpec : OpSpec Op V T}
+  {s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  (htrace : (Config.InterpTrivStep opSpec).Step s₁ (.output vals) s₂)
+  (heq : s₁.1 ≈ s₁'.1 ∧ s₁.2 = s₁'.2) :
+    ∃ s₂',
+      (Config.InterpTrivStep opSpec).Step s₁' (.output vals) s₂' ∧
+      s₂.1 ≈ s₂'.1 ∧ s₂.2 = s₂'.2
+  := by
+  sorry
+
 /-- Equal labels translate to equal labels through `OpSpec.Guard`. -/
 theorem congr_eq_spec_guard
   [Arity Op] [PCM T]

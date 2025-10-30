@@ -33,28 +33,6 @@ def linkAtomicProc
   | .async aop inputs outputs =>
     [.async aop (inputs.map .main) (outputs.map .main)]
 
-/--
-Inline calls to the given `k` processes while preserving a forward simulation.
-
-This procedure is a bit more subtle than one might expect.
-In order to preserve simulation (e.g., see `sim_link_procs`),
-we have to assume one of the following properties about the dependent processes:
-1. Either that no dependent process is called twice, or
-2. The depdenent processes are "good-behaving" in the sense that
-   if they emit the `.output` label, then they can always continue
-   to a state identical to the initial state.
-
-They are required because if the main process makes two separate calls
-to the same dependent process, we have to make sure there is a schedule
-where one call does not interfere with the other.
-
-Property 1 is harder to prove without determinancy. Because we have
-to prove that for **any trace** that produces the `.output` label at
-the end, something good happens. But determinancy might be dependent
-on, e.g., lack of data races.
-
-Therefore, in the theorems below, we assume property 1.
--/
 def linkProcs
   [Arity Op]
   (sigs : Sigs k)

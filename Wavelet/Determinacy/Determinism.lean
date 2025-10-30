@@ -283,4 +283,30 @@ theorem proc_indexed_interp_guarded_step_label
     have hl := proc_indexed_guarded_step_label hstep
     simp at hl
 
+theorem proc_interp_guarded_det_input
+  [Arity Op] [PCM T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  [opInterp : OpInterp Op V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  (hstep₁ : (Config.InterpGuardStep opSpec ioSpec).Step s (.input vals) s₁)
+  (hstep₂ : (Config.InterpGuardStep opSpec ioSpec).Step s (.input vals) s₂) :
+    s₁ = s₂
+  := sorry
+
+theorem proc_interp_guarded_unguarded_det_input_mod
+  [Arity Op] [PCM T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  [opInterp : OpInterp Op V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  (hstep₁ : (Config.InterpGuardStep opSpec ioSpec).Step s (.input vals) s₁)
+  (hstep₂ : (Config.InterpTrivStep opSpec).Step s (.input vals) s₂) :
+    s₁.1 ≈ s₂.1 ∧ s₁.2 = s₂.2
+  := sorry
+
 end Wavelet.Determinacy

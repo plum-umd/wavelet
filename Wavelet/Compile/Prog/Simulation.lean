@@ -953,6 +953,29 @@ theorem sim_link_procs
     | step_dep_ret hcur hstep_dep hyield =>
       exact sim_link_procs_step_dep_ret hsim hcur hstep_dep hyield
 
+/--
+The program semantics (linked semantically) is simulated by
+the semantics of the compiled dataflow graph (linked syntactically
+through `linkProcs`).
+
+The main tricky component is the proof of `sim_link_procs`, since
+we have to assume one of the following properties about the dependent processes:
+1. Either that no dependent process is called twice, or
+2. The depdenent processes are "good-behaving" in the sense that
+   if they emit the `.output` label, then they can always continue
+   to a state identical to the initial state.
+
+They are required because if the main process makes two separate calls
+to the same dependent process, we have to make sure there is a schedule
+where one call does not interfere with the other.
+
+Property 1 is harder to prove without determinacy. Because we have
+to prove that for **any trace** that produces the `.output` label at
+the end, something good happens. But determiancy might be dependent
+on, e.g., freedom of data races.
+
+Therefore, in the theorems in this file, we assume property 1 (i.e. `AffineInrOp`).
+-/
 theorem sim_compile_prog
   [Arity Op]
   [InterpConsts V]
