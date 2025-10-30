@@ -71,7 +71,7 @@ def linkProcs
 compile the `i`-th function to a process without any dependencies. -/
 def compileProg
   [Arity Op] [DecidableEq χ] [InterpConsts V]
-  (sigs : Sigs k)
+  {sigs : Sigs k}
   (prog : Prog Op χ V sigs)
   (i : Fin k) : Proc Op (LinkName (ChanName χ)) V (sigs i).ι (sigs i).ω :=
   -- Compile the current function
@@ -82,7 +82,7 @@ def compileProg
     Proc Op (LinkName (ChanName χ)) V
       (sigs (j.castLT (by omega))).ι
       (sigs (j.castLT (by omega))).ω :=
-    λ j => compileProg sigs prog (j.castLT (by omega))
+    λ j => compileProg prog (j.castLT (by omega))
   -- Link everything into one dataflow graph
   linkProcs sigs i.castSucc deps proc
 

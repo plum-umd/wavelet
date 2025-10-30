@@ -67,17 +67,17 @@ theorem compile_forward_sim
   {progSpec : ProgSpec Op V T sigs}
   (prog : ProgWithSpec χ sigs opSpec)
   (hwt : ProgWithSpec.WellPermTyped progSpec prog)
-  (haff₁ : ∀ (i : Fin k), (prog i).AffineVar)
+  (haff₁ : ∀ i, (prog i).AffineVar)
   (haff₂ : prog.AffineInrOp)
   (i : Fin k) :
     (prog.semantics i).guard opSpec.TrivGuard
-      ≲ᵣ (compileProg _ prog i).semantics.guard opSpec.TrivGuard
+      ≲ᵣ (compileProg prog i).semantics.guard opSpec.TrivGuard
   := by
   apply IORestrictedSimilarity.trans
   · exact sim_wt_prog prog hwt
   apply IORestrictedSimilarity.trans
   · apply sim_guard
-    apply sim_compile_prog (extendSigs sigs) prog ↑i (by omega) haff₁ haff₂
+    apply sim_compile_prog prog i haff₁ haff₂
   simp
   sorry
 
@@ -99,7 +99,7 @@ theorem compile_strong_norm
   {outputVals : Vector V (sigs i).ω}
 
   {proc : Proc (WithSpec Op opSpec) (LinkName (ChanName χ)) (V ⊕ T) _ _}
-  (hcomp : proc = compileProg (extendSigs sigs) prog i)
+  (hcomp : proc = compileProg prog i)
 
   {s s₁ s₂ : (prog.semanticsᵢ i).S}
   {s' s₁' : proc.semanticsᵢ.S}

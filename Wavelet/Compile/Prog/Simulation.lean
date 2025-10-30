@@ -957,14 +957,14 @@ theorem sim_compile_prog
   [Arity Op]
   [InterpConsts V]
   [DecidableEq χ]
-  (sigs : Sigs k)
+  {sigs : Sigs k}
   (prog : Prog Op χ V sigs)
-  (i : Nat)
-  (hlt : i < k)
+  (i : Fin k)
   (hwf : ∀ i, (prog i).AffineVar)
   (haff : prog.AffineInrOp) :
-    prog.semantics ⟨i, hlt⟩ ≲ᵣ (compileProg sigs prog ⟨i, hlt⟩).semantics
+    prog.semantics i ≲ᵣ (compileProg prog i).semantics
   := by
+  rcases i with ⟨i, hlt⟩
   induction i using Nat.strong_induction_on with
   | _ i ih =>
     unfold Prog.semantics
