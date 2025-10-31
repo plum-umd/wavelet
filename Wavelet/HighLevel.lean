@@ -123,7 +123,7 @@ theorem compile_strong_norm
   {proc : Proc (WithSpec Op opSpec) (LinkName (ChanName χ)) (V ⊕ T) _ _}
   (hcomp : proc = compileProg prog i)
   {s s₁ s₂ : (prog.semanticsᵢ i).S}
-  {s' s₁' : proc.semanticsᵢ.S}
+  {s' : proc.semanticsᵢ.S}
   -- There exists a terminating trace in the sequential semantics
   (hinputs : (prog.semanticsᵢ i).lts.Step (prog.semanticsᵢ i).init (.input args) s)
   (htrace : (prog.semanticsᵢ i).lts.TauStarN .τ k s s₁)
@@ -133,13 +133,14 @@ theorem compile_strong_norm
   (hinputs' : proc.semanticsᵢ.lts.Step proc.semanticsᵢ.init (.input args) s') :
     ∃ (bound : Nat), -- Uniform bound on any dataflow trace length
       -- For any trace in the compiled dataflow graph
-      proc.semanticsᵢ.lts.TauStarN .τ k' s' s₁' →
-      ∃ (s₁'' s₂' : proc.semanticsᵢ.S) (k'' : Nat),
-        bound = k' + k'' ∧
-        proc.semanticsᵢ.lts.TauStarN .τ k'' s₁' s₁'' ∧
-        proc.semanticsᵢ.lts.Step s₁'' (.output outputVals) s₂' ∧
-        s₂'.1 ≈ (proc.semanticsᵢ).init.1 ∧ -- Back to initial dataflow state
-        s₂'.2 = s₂.2 -- Equal operator states
+      ∀ {s₁' : proc.semanticsᵢ.S},
+        proc.semanticsᵢ.lts.TauStarN .τ k' s' s₁' →
+        ∃ (s₁'' s₂' : proc.semanticsᵢ.S) (k'' : Nat),
+          bound = k' + k'' ∧
+          proc.semanticsᵢ.lts.TauStarN .τ k'' s₁' s₁'' ∧
+          proc.semanticsᵢ.lts.Step s₁'' (.output outputVals) s₂' ∧
+          s₂'.1 ≈ (proc.semanticsᵢ).init.1 ∧ -- Back to initial dataflow state
+          s₂'.2 = s₂.2 -- Equal operator states
   := by
   /- Sketch
   Notations:
@@ -180,7 +181,7 @@ theorem compile_strong_norm
   replace ⟨bound, hmiddle⟩ := hmiddle.with_length
   -- Now we have a uniform bound on any dataflow trace
   exists bound
-  intros htrace'
+  intros s₁' htrace'
   -- Carry the silent steps after the first input steps
   have := congr_eq_mod_ghost_proc_interp_unguarded_tau_star_n htrace'
     (by
