@@ -217,6 +217,19 @@ def Lts.InterpStep.to_indexed_interp_tau
     have ⟨i, hbase'⟩ := hmap (by simp) hbase
     exact ⟨i, .step_yield hbase' hinterp⟩
 
+def Lts.InterpStep.map_inv
+  [Arity Op] {S S'}
+  {lts : Lts S (Label Op V m n)}
+  {lts' : Lts S' (RespLabel Op V)}
+  {s : S × S'}
+  {Inv : S → Prop}
+  (hinv : lts.IsInvariantAt Inv s.1) :
+    (Lts.InterpStep lts lts').IsInvariantAt (Inv ·.1) s
+  := by
+  intros s' tr hsteps
+  have ⟨_, hsteps'⟩ := Lts.InterpStep.star_to_base_star hsteps
+  exact hinv hsteps'
+
 def InterpSim
   [Arity Op]
   [interp : OpInterp.{_, _, w₂} Op V]

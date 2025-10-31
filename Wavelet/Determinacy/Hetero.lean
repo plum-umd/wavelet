@@ -845,7 +845,7 @@ theorem proc_interp_guarded_hetero_terminal_confl
   (hconfl : opSpec.Confluent opInterp)
   (hdet : opInterp.Deterministic)
   (hnb : opInterp.NonBlocking)
-  (haff : (Config.InterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.proc.AffineChan) s)
+  (haff : s.1.proc.AffineChan)
   (hdisj : (Config.InterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.DisjointTokens) s)
   (htrace₁ : (Config.InterpGuardStep opSpec ioSpec).TauStarN .τ k₁ s s₁)
   (hterm : Config.Step.IsFinalFor (λ l => l.isYield ∨ l.isSilent) s₁.1)
@@ -856,6 +856,16 @@ theorem proc_interp_guarded_hetero_terminal_confl
       s₁.1 ≈ s₁'.1 ∧
       s₁.2 = s₁'.2
   := by
+  have haff : (Config.InterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.proc.AffineChan) s := by
+    -- TODO: Move this to a separate lemma
+    simp [Config.InterpGuardStep]
+    have : (Config.InterpGuardStep opSpec ioSpec).IsInvariantAt _ _ :=
+      (Lts.InterpStep.map_inv
+        (lts' := opInterp.lts)
+        (Inv := λ (s : ConfigWithSpec opSpec χ m n) => s.proc.AffineChan)
+        (Lts.GuardStep.map_inv (P := opSpec.Guard ioSpec) (Proc.AffineChan.inv haff)))
+    intros s' tr hsteps
+    exact this hsteps
   have ⟨_, hlen₁, htrace₁'⟩ := Config.InterpGuardStep.to_indexed_interp_guarded_tau_star htrace₁
   have ⟨_, hlen₂, htrace₂'⟩ := Config.InterpTrivStep.to_indexed_interp_unuarded_tau_star htrace₂
   have ⟨_, _, htrace₃', hlen₃, heq⟩ := proc_indexed_interp_guarded_hetero_terminal_confl

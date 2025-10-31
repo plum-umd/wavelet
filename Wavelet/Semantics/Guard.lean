@@ -99,6 +99,19 @@ theorem Lts.GuardStep.star_to_base_star
     have ⟨_, ih'⟩ := ih
     exact ⟨_, .tail ih' tail'⟩
 
+theorem Lts.GuardStep.map_inv
+  {S}
+  {lts : Lts S E}
+  {P : E → E' → Prop}
+  {Inv : S → Prop}
+  {s : S}
+  (hinv : lts.IsInvariantAt Inv s) :
+    (lts.GuardStep P).IsInvariantAt Inv s
+  := by
+  intros s' tr hsteps
+  have ⟨_, hsteps'⟩ := Lts.GuardStep.star_to_base_star hsteps
+  exact hinv hsteps'
+
 /-- `guard` preserves IO-restricted simulation. -/
 theorem sim_guard
   [Arity Op] [Arity Op']

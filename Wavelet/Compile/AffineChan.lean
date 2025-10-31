@@ -53,7 +53,6 @@ theorem Proc.AffineChan.atom_outputs_disjoint
 
 theorem Proc.AffineChan.inv
   [Arity Op] [DecidableEq χ] [InterpConsts V]
-  {proc : Proc Op χ V m n}
   {s : Config Op χ V m n}
   (haff : s.proc.AffineChan) :
     Config.Step.IsInvariantAt (·.proc.AffineChan) s
@@ -65,11 +64,10 @@ theorem Proc.AffineChan.inv
     | step_async _ hget hinterp _ =>
       rename Nat => i
       simp [Proc.AffineChan]
-      have ⟨h₁, h₂, h₃, h₄, h₅⟩ := hinv
+      have ⟨h₁, h₂, ⟨h₃₁, h₃₂⟩, h₄, h₅⟩ := hinv
       simp [h₁, h₂]
       and_intros
-      · have ⟨h₃₁, h₃₂⟩ := h₃
-        intros j
+      · intros j
         rcases j with ⟨j, hlt⟩
         simp at hlt
         by_cases h₁ : i = j
@@ -79,9 +77,31 @@ theorem Proc.AffineChan.inv
           exact this
         · simp [h₁]
           apply h₃₁ ⟨j, hlt⟩
-      · sorry
-      · sorry
-      · sorry
+      · intros j k hne
+        rcases j with ⟨j, hj⟩
+        rcases k with ⟨k, hk⟩
+        simp at hj hk hne
+        have := h₃₂ ⟨j, hj⟩ ⟨k, hk⟩ (by simp [hne])
+        simp at this
+        grind [AtomicProc.inputs, AtomicProc.outputs]
+      · intros input hmem_input ap hmem_ap
+        have := List.mem_or_eq_of_mem_set hmem_ap
+        cases this with
+        | inl hmem_ap =>
+          exact h₄ input hmem_input ap hmem_ap
+        | inr heq_ap =>
+          subst heq_ap
+          have := h₄ input hmem_input _ (List.mem_of_getElem hget)
+          exact this
+      · intros input hmem_input ap hmem_ap
+        have := List.mem_or_eq_of_mem_set hmem_ap
+        cases this with
+        | inl hmem_ap =>
+          exact h₅ input hmem_input ap hmem_ap
+        | inr heq_ap =>
+          subst heq_ap
+          have := h₅ input hmem_input _ (List.mem_of_getElem hget)
+          exact this
     | _ => simp [hinv]
 
 end Wavelet.Dataflow
