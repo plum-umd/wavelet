@@ -112,6 +112,72 @@ theorem compile_forward_sim
   · apply (compile_forward_sim_guarded prog hwt haff₁ haff₂ i).weaken (by simp)
   · apply sim_guarded_unguarded
 
+theorem fn_semantics_output_init
+  [Arity Op]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {fn : Fn Op χ V m n}
+  {outputVals : Vector V n}
+  {s s' : fn.semantics.S}
+  (hstep : Config.Step s (.output outputVals) s')
+  (hfn : s.fn = fn) :
+    s' = Seq.Config.init fn
+  := by
+  cases hstep
+  simp [Seq.Config.init, hfn]
+
+theorem prog_semantics_output_init
+  [Arity Op]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {sigs : Sigs k}
+  {prog : Prog Op χ V sigs}
+  {i : Fin k}
+  {outputVals : Vector V (sigs i).ω}
+  {sem : Semantics Op V (sigs i).ι (sigs i).ω}
+  (hsem : sem = prog.semantics i)
+  {s s' : sem.S}
+  (hstep : sem.lts.Step s (.output outputVals) s') :
+    s' = sem.init
+  := by
+  rcases i with ⟨i, hlt⟩
+  induction i using Nat.strong_induction_on with
+  | _ i ih =>
+    unfold Prog.semantics at hsem
+    subst hsem
+    cases hstep with
+    | step_main hcur_sem hpass hstep =>
+      cases hpass
+      have := fn_semantics_output_init hstep
+        (by sorry) -- TODO: need the invariant that `s.fn` is always `prog i`
+      simp [hcur_sem, this, link, LinkState.init, Fn.semantics]
+      funext depOp
+      -- TODO: need the invariant that when curSem = none
+      -- all dependent semantics are in the initial state.
+      sorry
+    | step_dep _ hpass => cases hpass
+
+/-- After an output step, the program configuration becomes the initial configuration -/
+theorem prog_semanticsᵢ_output_init
+  [Arity Op]
+  [DecidableEq χ]
+  [InterpConsts V]
+  [opInterp : OpInterp.{_, _, w} Op V]
+  {opSpec : OpSpec Op V T}
+  {sigs : Sigs k}
+  {prog : Prog (WithSpec Op opSpec) χ (V ⊕ T) (extendSigs sigs)}
+  {i : Fin k}
+  {s s' : (prog.semanticsᵢ i).S}
+  {outputVals : Vector V (sigs i).ω}
+  (hstep : (prog.semanticsᵢ i).lts.Step s (.output outputVals) s') :
+    s'.1 = (prog.semanticsᵢ i).init.1
+  := by
+  simp [Semantics.interpret, Semantics.guard] at hstep ⊢
+  cases hstep with | step_output hstep =>
+  cases hstep with | step hguard hstep =>
+  cases hguard
+  exact prog_semantics_output_init rfl hstep
+
 theorem compile_strong_norm
   {Op V T : Type u}
   [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
@@ -207,9 +273,7 @@ theorem compile_strong_norm
   -- By `PreservesInit`, `s₂''` is an initial state
   -- and as a result, the previous step before output
   -- should be final wrt. τ and yield
-  have hinit_s₂ : s₂.1 = (prog.semanticsᵢ i).init.1 :=
-    -- TODO: by Seq semantics
-    sorry
+  have hinit_s₂ : s₂.1 = (prog.semanticsᵢ i).init.1 := prog_semanticsᵢ_output_init houtput
   have ⟨hfinal_init, hfinal_eq⟩ := hsim₁.sim_prop _ _ hsim_s₂''
   specialize hfinal_init hinit_s₂
   have hfinal_s₁''' : Dataflow.Config.Step.IsFinalFor _ _ := proc_interp_guarded_output_init_invert houtput'

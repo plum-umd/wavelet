@@ -42,15 +42,13 @@ instance : Arity (SigOps sigs k') where
 abbrev Prog (Op : Type u) χ V [Arity Op] (sigs : Sigs k) :=
   (i : Fin k) → Fn (Op ⊕ SigOps sigs i.castSucc) χ V (sigs i).ι (sigs i).ω
 
-/-- Semantics of programs by semantically linking dependent functions. -/
+/-- Semantics of programs by semantically linking dependencies. -/
 def Prog.semantics.{u, v, w}
   {Op : Type u} {χ : Type v} {V : Type w}
   [Arity Op] [DecidableEq χ] [InterpConsts V]
   {sigs : Sigs k}
   (prog : Prog Op χ V sigs)
-  (i : Fin k)
-  : Semantics.{u, w, max u v w} Op V (sigs i).ι (sigs i).ω
-  := Semantics.link (prog i).semantics (λ op =>
-    Prog.semantics prog op.toFin)
+  (i : Fin k) : Semantics.{u, w, max u v w} Op V (sigs i).ι (sigs i).ω
+  := Semantics.link (prog i).semantics (Prog.semantics prog ·.toFin)
 
 end Wavelet.Seq
