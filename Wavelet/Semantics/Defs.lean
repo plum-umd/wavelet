@@ -569,6 +569,14 @@ theorem Lts.IsInvariantAt.map_step
   have ⟨_, hsteps'⟩ := hsteps.map_hetero_step hmap
   exact hinv hsteps'
 
+theorem Lts.IsInvariantAt.imp
+  {lts : Lts C E}
+  {P₁ P₂ : C → Prop}
+  (himp : ∀ c, P₁ c → P₂ c)
+  (hinv : lts.IsInvariantAt P₁ c) : lts.IsInvariantAt P₂ c := by
+  intros c' tr hstar
+  exact himp _ (hinv hstar)
+
 def Lts.IsFinal (lts : Lts C E) (c : C) : Prop :=
   ∀ {c' l}, ¬ lts.Step c l c'
 

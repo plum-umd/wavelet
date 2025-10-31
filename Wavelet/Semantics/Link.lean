@@ -122,6 +122,77 @@ def link
     lts := LinkStep main deps,
   }
 
+/-- Converts individual state predicates to a single predicate on the linked state. -/
+def LinkInv
+  [Arity Op₀] [Arity Op₁]
+  [DecidableEq Op₁]
+  {main : Semantics (Op₀ ⊕ Op₁) V m n}
+  {deps : (op : Op₁) → Semantics Op₀ V (Arity.ι op) (Arity.ω op)}
+  (mainInv : main.S → Prop)
+  (depInvs : (op : Op₁) → (deps op).S → Prop)
+  (s : LinkState main deps) : Prop
+  := main.IsInvariantAt mainInv s.mainState ∧
+    ∀ op, (deps op).IsInvariantAt (depInvs op) (s.depStates op)
+
+/-- `LinkStep` preserves invariants on the main and dependent semantics. -/
+theorem link_inv
+  [Arity Op₀] [Arity Op₁]
+  [DecidableEq Op₁]
+  {main : Semantics (Op₀ ⊕ Op₁) V m n}
+  {deps : (op : Op₁) → Semantics Op₀ V (Arity.ι op) (Arity.ω op)}
+  {mainInv : main.S → Prop}
+  {depInvs : (op : Op₁) → (deps op).S → Prop}
+  (hinv_main : main.IsInvariant mainInv)
+  (hinv_deps : ∀ op, (deps op).IsInvariant (depInvs op)) :
+    (link main deps).IsInvariant (LinkInv mainInv depInvs)
+  := by
+  apply Lts.IsInvariantAt.by_induction
+  · simp [link, LinkState.init]
+    constructor
+    · exact hinv_main
+    · intros depOp
+      exact hinv_deps depOp
+  · intros s₁ s₂ l hinv hstep
+    cases hstep with
+    | step_main hcur_sem hpass hstep =>
+      simp [LinkInv] at hinv ⊢
+      have ⟨hinv_main, hinv_deps⟩ := hinv
+      constructor
+      · have ⟨_, h⟩ := Lts.IsInvariantAt.unfold hinv_main hstep
+        assumption
+      · exact hinv_deps
+    | step_dep hcur_sem hpass hstep
+    | step_dep_spawn hcur_sem hpass hstep =>
+      rename Op₁ => depOp
+      simp [LinkInv] at hinv ⊢
+      constructor
+      · exact hinv.1
+      · intros depOp'
+        by_cases heq : depOp = depOp'
+        · subst heq
+          have ⟨_, h⟩ := Lts.IsInvariantAt.unfold (hinv.2 depOp) hstep
+          intros h₁
+          simp at h₁
+          apply h h₁
+        · simp [Ne.symm heq]
+          exact hinv.2 depOp'
+    | step_dep_ret hcur_sem hstep_dep hstep_main =>
+      rename Op₁ => depOp
+      simp [LinkInv] at hinv ⊢
+      have ⟨hinv_main, hinv_deps⟩ := hinv
+      constructor
+      · have ⟨_, h⟩ := Lts.IsInvariantAt.unfold hinv_main hstep_main
+        assumption
+      · intros depOp'
+        by_cases heq : depOp = depOp'
+        · subst heq
+          have ⟨_, h⟩ := Lts.IsInvariantAt.unfold (hinv.2 depOp) hstep_dep
+          intros h₁
+          simp at h₁
+          apply h h₁
+        · simp [Ne.symm heq]
+          exact hinv.2 depOp'
+
 section Simulation
 
 /-- Similar to `step_main`, but uses `TauStar`. -/
