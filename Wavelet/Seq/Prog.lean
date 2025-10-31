@@ -130,7 +130,7 @@ theorem Prog.state_unfold_fold_eq
     ↑(↑s : (prog.semantics i).S) = s
   := by simp
 
-theorem Prog.semantics_init_heq
+theorem Prog.unfold_init_heq
   [Arity Op] [DecidableEq χ] [InterpConsts V]
   {sigs : Sigs k}
   {prog : Prog Op χ V sigs}
@@ -141,7 +141,7 @@ theorem Prog.semantics_init_heq
   rw [Prog.semantics]
   rfl
 
-theorem Prog.semantics_init
+theorem Prog.unfold_init
   [Arity Op] [DecidableEq χ] [InterpConsts V]
   {sigs : Sigs k}
   {prog : Prog Op χ V sigs}
@@ -150,6 +150,33 @@ theorem Prog.semantics_init
       LinkState.init (prog i).semantics (Prog.semantics prog ·.toFin)
   := by
   apply cast_eq_iff_heq.mpr
-  exact Prog.semantics_init_heq
+  exact Prog.unfold_init_heq
+
+theorem Prog.unfold_lts
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  {sigs : Sigs k}
+  {prog : Prog Op χ V sigs}
+  {i : Fin k} :
+    (prog.semantics i).lts ≍
+      ((prog i).semantics.link (Prog.semantics prog ·.toFin)).lts
+  := by rw [Prog.semantics]
+
+theorem Prog.unfold_step
+  [Arity Op]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {sigs : Sigs k}
+  {prog : Prog Op χ V sigs}
+  {i : Fin k}
+  {s s' : (prog.semantics i).S}
+  {l : Label Op V (sigs i).ι (sigs i).ω}
+  (hsteps : (prog.semantics i).lts.Step s l s') :
+    ((prog i).semantics.link (Prog.semantics prog ·.toFin)).lts.Step
+      (Prog.unfoldState s) l (Prog.unfoldState s')
+  := by
+  apply Lts.Step.heq_lts
+  · rw [Prog.semantics]
+  · exact Prog.unfold_lts
+  · exact hsteps
 
 end Wavelet.Seq

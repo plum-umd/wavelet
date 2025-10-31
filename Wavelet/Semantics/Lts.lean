@@ -24,6 +24,17 @@ theorem Lts.Step.eq_lhs
   simp [heq] at hstep
   exact hstep
 
+theorem Lts.Step.heq_lts
+  {lts : Lts C E} {lts' : Lts C' E}
+  (heq_c : C = C')
+  (heq_lts : lts ≍ lts')
+  (hstep : lts.Step c₁ l c₂) :
+    lts'.Step (cast heq c₁) l (cast heq c₂) := by
+  simp [Lts.Step] at hstep ⊢
+  subst heq_c
+  subst heq_lts
+  exact hstep
+
 /-- Zero or more steps with the given label -/
 inductive Lts.TauStar (lts : Lts C E) (τ : E) : C → C → Prop
   | refl : lts.TauStar τ c c
@@ -278,6 +289,15 @@ theorem Lts.Star.map_step
   {lts : Lts C E} {lts' : Lts C E}
   (hmap : ∀ {c₁ c₂ l}, lts.Step c₁ l c₂ → lts'.Step c₁ l c₂)
   (hsteps : lts.Star c₁ tr c₂) : lts'.Star c₁ tr c₂ := by
+  induction hsteps with
+  | refl => exact .refl
+  | tail hpref hstep ih => exact .tail ih (hmap hstep)
+
+theorem Lts.Star.map_step_state
+  {lts : Lts C E} {lts' : Lts C' E}
+  {f : C → C'}
+  (hmap : ∀ {c₁ c₂ l}, lts.Step c₁ l c₂ → lts'.Step (f c₁) l (f c₂))
+  (hsteps : lts.Star c₁ tr c₂) : lts'.Star (f c₁) tr (f c₂) := by
   induction hsteps with
   | refl => exact .refl
   | tail hpref hstep ih => exact .tail ih (hmap hstep)

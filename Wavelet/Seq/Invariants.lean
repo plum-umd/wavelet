@@ -18,7 +18,7 @@ theorem Fn.inv_const_fn
   · intros s₁ s₂ l hinv hstep
     cases hstep <;> simp [hinv]
 
-theorem Prog.step_star_unfold
+theorem Prog.unfold_star
   [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
@@ -32,10 +32,11 @@ theorem Prog.step_star_unfold
       (LinkState.init (prog i).semantics (Prog.semantics prog ·.toFin))
       tr (Prog.unfoldState s)
   := by
+  rw [← Prog.unfold_init]
+  apply hsteps.map_step_state
+  apply Prog.unfold_step
 
-  sorry
-
-theorem Prog.is_invariant_unfold
+theorem Prog.unfold_is_invariant
   [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
@@ -48,7 +49,7 @@ theorem Prog.is_invariant_unfold
   := by
   intros s tr hsteps
   rw [← Prog.state_fold_unfold_eq s] at hsteps ⊢
-  replace hsteps := Prog.step_star_unfold hsteps
+  replace hsteps := Prog.unfold_star hsteps
   have := h hsteps
   simp at this
   simp [this]
@@ -83,7 +84,7 @@ theorem Prog.inv_const_prog
   (i : Fin k) :
     (prog.semantics i).IsInvariant Prog.InvConstProg
   := by
-  apply Prog.is_invariant_unfold
+  apply Prog.unfold_is_invariant
   exact Lts.IsInvariantAt.imp
     (by
       intros s hinv
@@ -99,64 +100,5 @@ theorem Prog.inv_const_prog
       (by
         intros depOp
         apply Prog.inv_const_prog))
-  -- apply link_inv
-  -- · sorry
-  -- -- simp [IsInvariant, IsInvariantAt, Lts.IsInvariantAt]
-  -- -- simp [Prog.InvConstProg'.heq]
-  -- -- rw [Prog.semantics]
-  -- sorry
-
--- theorem Prog.inv_const_prog
---   [Arity Op]
---   [DecidableEq χ]
---   [InterpConsts V]
---   {sigs : Sigs k}
---   {prog : Prog Op χ V sigs}
---   (i : Fin k) :
---     (Semantics.link (prog i).semantics (Prog.semantics prog ·.toFin)).IsInvariant
---       (LinkInv (λ s => s.fn = prog i) (λ depOp s => (Prog.castState s).mainState.fn = prog (depOp.toFin)))
---   := by
---   -- apply Prog.semantics_induction (motive := λ i sem => sem.IsInvariant Prog.InvConstProg)
---   -- -- have := Prog.semantics_induction (motive := λ i sem => True)
---   -- induction i using Prog.semantics_induction with
---   -- | _ =>
---   --   sorry
---   -- apply link_inv
---   -- · exact Fn.inv_const_fn
---   -- · intros op
---   --   apply Prog.inv_const_prog
---   --   sorry
-
---   rcases i with ⟨i, hlt⟩
---   induction i using Nat.strong_induction_on with
---   | _ i ih =>
---     apply link_inv
---     · exact Fn.inv_const_fn
---     · intros depOp
---       have : IsInvariantAt _ _ _ := ih depOp.toFin (by simp) (by omega)
-
---       have : (Semantics.link (prog depOp.toFin).semantics (Prog.semantics prog ·.toFin)).IsInvariant
---         fun s => s.mainState.fn = prog depOp.toFin
---         := sorry
-
---       sorry
-
---   --   sorry
---     -- apply Lts.IsInvariantAt.by_induction
---     -- · simp [Prog.InvConstProg]
---     --   constructor
---     --   · rw [Prog.semantics_init, LinkState.init]
---     --     simp [Fn.semantics, Config.init]
---     --   · intros depOp
---     --     rw [Prog.semantics_init, LinkState.init]
---     --     simp [Fn.semantics, Config.init]
---     --     have : Semantics.IsInvariant _ _ := ih depOp.toFin (by simp) (by omega)
---     --     have := this.base.1
---     --     exact this
---     -- · intros s₁ s₂ l hinv hstep
---     --   -- generalize hsem : prog.semantics ⟨i, hlt⟩ = sem
---     --   -- rw [← hsem] at hstep
---     --   rw [Prog.semantics]
---     --   sorry
 
 end Wavelet.Seq
