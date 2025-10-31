@@ -18,42 +18,6 @@ theorem Fn.inv_const_fn
   · intros s₁ s₂ l hinv hstep
     cases hstep <;> simp [hinv]
 
-theorem Prog.unfold_star
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {sigs : Sigs k}
-  {prog : Prog Op χ V sigs}
-  {i : Fin k}
-  {tr : Trace (Label Op V (sigs i).ι (sigs i).ω)}
-  {s : (prog.semantics i).S}
-  (hsteps : (prog.semantics i).lts.Star (prog.semantics i).init tr s) :
-    ((prog i).semantics.link (Prog.semantics prog ·.toFin)).lts.Star
-      (LinkState.init (prog i).semantics (Prog.semantics prog ·.toFin))
-      tr (Prog.unfoldState s)
-  := by
-  rw [← Prog.unfold_init]
-  apply hsteps.map_step_state
-  apply Prog.unfold_step
-
-theorem Prog.unfold_is_invariant
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {sigs : Sigs k}
-  {prog : Prog Op χ V sigs}
-  {i : Fin k}
-  {Inv : (prog.semantics i).S → Prop}
-  (h : ((prog i).semantics.link (Prog.semantics prog ·.toFin)).IsInvariant (Inv ∘ Prog.foldState)) :
-    (prog.semantics i).IsInvariant Inv
-  := by
-  intros s tr hsteps
-  rw [← Prog.state_fold_unfold_eq s] at hsteps ⊢
-  replace hsteps := Prog.unfold_star hsteps
-  have := h hsteps
-  simp at this
-  simp [this]
-
 /-- Unfolded version of `Prog.InvConstProg`. -/
 def Prog.InvConstProg'
   [Arity Op]
@@ -80,7 +44,7 @@ theorem Prog.inv_const_prog
   [DecidableEq χ]
   [InterpConsts V]
   {sigs : Sigs k}
-  {prog : Prog Op χ V sigs}
+  (prog : Prog Op χ V sigs)
   (i : Fin k) :
     (prog.semantics i).IsInvariant Prog.InvConstProg
   := by

@@ -265,6 +265,16 @@ theorem Lts.Star.prepend
   | refl => exact .tail (.refl) hhead
   | tail _ h ih => exact .tail (ih hhead) h
 
+theorem Lts.TauStar.to_star
+  {lts : Lts C E} {τ : E}
+  (htau : lts.TauStar τ c₁ c₂) :
+    ∃ tr, lts.Star c₁ tr c₂ := by
+  induction htau with
+  | refl => exact ⟨_, .refl⟩
+  | tail htau' hstep ih =>
+    have ⟨_, htau'⟩ := ih
+    exact ⟨_, .tail htau' hstep⟩
+
 /-- Alternative induction principal for `Star`. -/
 theorem Lts.Star.reverse_induction
   {lts : Lts C E}
