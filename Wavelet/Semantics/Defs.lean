@@ -381,11 +381,12 @@ theorem IORestrictedSimilarity.refl
   sem ≲ᵣ sem :=
   Lts.Similarity.refl_single .single
 
-private theorem IORestrictedSimilarity.alt_helper
+private theorem IORestrictedSimilaritySt.alt_helper
   [Arity Op]
   {sem₁ sem₂ : Semantics Op V m n}
   {s₁ s₁' : sem₁.S} {s₂ : sem₂.S}
-  (hsim : Lts.Similarity sem₁.lts sem₂.lts.IORestrictedStep sem₁.init sem₂.init)
+  {R : sem₁.S → sem₂.S → Prop}
+  (hsim : Lts.SimilaritySt R sem₁.lts sem₂.lts.IORestrictedStep sem₁.init sem₂.init)
   (hR : hsim.Sim s₁ s₂)
   (hstep_tau : sem₁.lts.TauStar .τ s₁ s₁') :
   ∃ s₂', sem₂.lts.TauStar .τ s₂ s₂' ∧ hsim.Sim s₁' s₂' := by
@@ -404,42 +405,44 @@ private theorem IORestrictedSimilarity.alt_helper
     · exact .trans hstep_s₂ hstep_s₂'.to_tau_star
     · exact hR'
 
-theorem IORestrictedSimilarity.alt
+theorem IORestrictedSimilaritySt.alt
   [Arity Op]
   {sem₁ sem₂ : Semantics Op V m n}
-  (hsim : Lts.Similarity sem₁.lts sem₂.lts.IORestrictedStep sem₁.init sem₂.init) :
-  Lts.Similarity sem₁.lts.IORestrictedStep sem₂.lts.IORestrictedStep sem₁.init sem₂.init
+  {R : sem₁.S → sem₂.S → Prop}
+  (hsim : Lts.SimilaritySt R sem₁.lts sem₂.lts.IORestrictedStep sem₁.init sem₂.init) :
+  Lts.SimilaritySt R sem₁.lts.IORestrictedStep sem₂.lts.IORestrictedStep sem₁.init sem₂.init
   := by
-  apply Lts.Similarity.intro hsim.Sim
-  constructor
-  · exact hsim.sim_init
-  · intros s₁ s₂ l s₁' hR hstep
-    cases hstep with
-    | step_yield hstep' =>
-      have ⟨s₂', hsim'⟩ := hsim.sim_step _ _ _ _ hR hstep'
-      exists s₂'
-    | step_input hstep₁ hstep₂ =>
-      have ⟨s₂₁, hstep_s₂₁, hsim₁⟩ := hsim.sim_step _ _ _ _ hR hstep₁
-      have ⟨s₂', hstep_s₂₂, hsim'⟩ := alt_helper hsim hsim₁ hstep₂
-      exists s₂'
-      constructor
-      · cases hstep_s₂₁ with | step_input h₁ h₂ =>
-        exact .step_input h₁ (.trans h₂ hstep_s₂₂)
-      · exact hsim'
-    | step_output hstep₁ hstep₂ =>
-      have ⟨s₂₁, hstep_s₂₁, hsim₁⟩ := alt_helper hsim hR hstep₁
-      have ⟨s₂', hstep_s₂₂, hsim'⟩ := hsim.sim_step _ _ _ _ hsim₁ hstep₂
-      exists s₂'
-      constructor
-      · cases hstep_s₂₂ with | step_output h₁ h₂ =>
-        exact .step_output (.trans hstep_s₂₁ h₁) h₂
-      · exact hsim'
-    | step_tau hstep' =>
-      have ⟨s₂', hstep_s₂, hsim'⟩ := alt_helper hsim hR hstep'
-      exists s₂'
-      constructor
-      · exact .step_tau hstep_s₂
-      · exact hsim'
+  apply Lts.SimilaritySt.intro hsim.Sim
+  · constructor
+    · exact hsim.sim_init
+    · intros s₁ s₂ l s₁' hR hstep
+      cases hstep with
+      | step_yield hstep' =>
+        have ⟨s₂', hsim'⟩ := hsim.sim_step _ _ _ _ hR hstep'
+        exists s₂'
+      | step_input hstep₁ hstep₂ =>
+        have ⟨s₂₁, hstep_s₂₁, hsim₁⟩ := hsim.sim_step _ _ _ _ hR hstep₁
+        have ⟨s₂', hstep_s₂₂, hsim'⟩ := alt_helper hsim hsim₁ hstep₂
+        exists s₂'
+        constructor
+        · cases hstep_s₂₁ with | step_input h₁ h₂ =>
+          exact .step_input h₁ (.trans h₂ hstep_s₂₂)
+        · exact hsim'
+      | step_output hstep₁ hstep₂ =>
+        have ⟨s₂₁, hstep_s₂₁, hsim₁⟩ := alt_helper hsim hR hstep₁
+        have ⟨s₂', hstep_s₂₂, hsim'⟩ := hsim.sim_step _ _ _ _ hsim₁ hstep₂
+        exists s₂'
+        constructor
+        · cases hstep_s₂₂ with | step_output h₁ h₂ =>
+          exact .step_output (.trans hstep_s₂₁ h₁) h₂
+        · exact hsim'
+      | step_tau hstep' =>
+        have ⟨s₂', hstep_s₂, hsim'⟩ := alt_helper hsim hR hstep'
+        exists s₂'
+        constructor
+        · exact .step_tau hstep_s₂
+        · exact hsim'
+  · apply hsim.sim_prop
 
 @[trans]
 theorem IORestrictedSimilarity.trans
@@ -447,7 +450,18 @@ theorem IORestrictedSimilarity.trans
   [Arity Op]
   {sem₁ sem₂ sem₃ : Semantics Op V m n}
   (h₁ : sem₁ ≲ᵣ sem₂) (h₂ : sem₂ ≲ᵣ sem₃) :
-  sem₁ ≲ᵣ sem₃ := Lts.Similarity.trans h₁ (IORestrictedSimilarity.alt h₂)
+  sem₁ ≲ᵣ sem₃ := Lts.Similarity.trans h₁ (IORestrictedSimilaritySt.alt h₂)
+
+@[trans]
+theorem IORestrictedSimilaritySt.trans
+  {Op : Type u} {V : Type v}
+  [Arity Op]
+  {sem₁ sem₂ sem₃ : Semantics Op V m n}
+  {R₁ : sem₁.S → sem₂.S → Prop}
+  {R₂ : sem₂.S → sem₃.S → Prop}
+  (h₁ : sem₁ ≲ᵣ[R₁] sem₂) (h₂ : sem₂ ≲ᵣ[R₂] sem₃) :
+  sem₁ ≲ᵣ[Relation.Comp R₁ R₂] sem₃ :=
+    Lts.SimilaritySt.trans h₁ (IORestrictedSimilaritySt.alt h₂)
 
 theorem IORestrictedSimilarity.to_weak_sim
   [Arity Op]
@@ -593,5 +607,17 @@ def PreservesInit
   {sem₁ sem₂ : Semantics Op V m n}
   (s₁ : sem₁.S) (s₂ : sem₂.S) : Prop :=
   s₁ = sem₁.init → s₂ = sem₂.init
+
+@[trans]
+theorem IORestrictedSimilaritySt.trans_preserves_init
+  {Op : Type u} {V : Type v}
+  [Arity Op]
+  {sem₁ sem₂ sem₃ : Semantics Op V m n}
+  (h₁ : sem₁ ≲ᵣ[PreservesInit] sem₂) (h₂ : sem₂ ≲ᵣ[PreservesInit] sem₃) :
+  sem₁ ≲ᵣ[PreservesInit] sem₃ := by
+  have := Lts.SimilaritySt.trans h₁ (IORestrictedSimilaritySt.alt h₂)
+  apply Lts.SimilaritySt.weaken _ this
+  simp [Relation.Comp, PreservesInit]
+  grind only
 
 end Wavelet.Semantics

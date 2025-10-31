@@ -102,6 +102,6 @@ theorem sim_compile_fn
   (fn : Fn Op χ V m n)
   (hwf : fn.AffineVar) :
     fn.semantics ≲ᵣ (compileFn fn).semantics
-  := (sim_compile_fn_preserves_init fn hwf).to_sim
+  := (sim_compile_fn_preserves_init fn hwf).weaken (by simp)
 
 end Wavelet.Compile

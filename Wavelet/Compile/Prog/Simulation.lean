@@ -910,6 +910,58 @@ private theorem sim_link_procs_step_dep
               simp [← h'] at h) _ _]
     ⟩
 
+theorem sim_link_procs_preserves_init
+  [Arity Op]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {sigs : Sigs k}
+  {k' : Fin (k + 1)}
+  {procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω}
+  {deps : PartInterp Op (SigOps sigs k') V}
+  {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
+  (hdeps : ∀ op, deps op = (procs op.toFin').semantics)
+  (haff : main.AffineInrOp) :
+    main.semantics.link deps ≲ᵣ[PreservesInit] (linkProcs sigs k' procs main).semantics
+  := by
+  replace hdeps :
+    deps = λ op : SigOps sigs k' => (procs op.toFin').semantics := by
+    funext op
+    apply hdeps
+  rw [hdeps]
+  apply Lts.SimilaritySt.intro SimRel
+  · constructor
+    · -- SimRel holds at initial states
+      simp [SimRel, Proc.semantics, Semantics.link,
+        Semantics.LinkState.init, Dataflow.Config.init]
+      constructor
+      · exact haff
+      · funext name
+        simp [SimRel.linkChans, ChanMap.empty]
+        cases name <;> rfl
+    · -- SimRel holds after every step
+      intros s₁ s₂ l s₁' hsim hstep_s₁
+      simp [Semantics.link, Lts.Step] at hstep_s₁
+      simp [Proc.semantics]
+      cases hstep_s₁ with
+      | step_main hcur hlabel hstep_main =>
+        exact sim_link_procs_step_main hsim hcur hlabel hstep_main
+      | step_dep hcur hlabel hstep_dep =>
+        exact sim_link_procs_step_dep hsim hcur hlabel hstep_dep
+      | step_dep_spawn hcur hyield hstep_dep =>
+        exact sim_link_procs_step_dep_spawn hsim hcur hyield hstep_dep
+      | step_dep_ret hcur hstep_dep hyield =>
+        exact sim_link_procs_step_dep_ret hsim hcur hstep_dep hyield
+  · intros s₁ s₂ hsim hinit
+    subst hinit
+    rcases s₂ with ⟨⟨inputs, outputs, atoms⟩, chans⟩
+    have ⟨_, _, _, hlink, hnone, _⟩ := hsim
+    simp [link, LinkState.init, Proc.semantics, Dataflow.Config.init]
+      at hlink hnone
+    simp [hlink, hnone, Proc.semantics, Dataflow.Config.init]
+    funext name
+    simp [SimRel.linkChans]
+    cases name <;> simp [ChanMap.empty]
+
 /-- Linking syntactically simulates linking semantically. -/
 theorem sim_link_procs
   [Arity Op]
@@ -923,35 +975,8 @@ theorem sim_link_procs
   (hdeps : ∀ op, deps op = (procs op.toFin').semantics)
   (haff : main.AffineInrOp) :
     main.semantics.link deps ≲ᵣ (linkProcs sigs k' procs main).semantics
-  := by
-  replace hdeps :
-    deps = λ op : SigOps sigs k' => (procs op.toFin').semantics := by
-    funext op
-    apply hdeps
-  simp only [hdeps]
-  apply Lts.Similarity.intro SimRel
-  constructor
-  · -- SimRel holds at initial states
-    simp [SimRel, Proc.semantics, Semantics.link,
-      Semantics.LinkState.init, Dataflow.Config.init]
-    constructor
-    · exact haff
-    · funext name
-      simp [SimRel.linkChans, ChanMap.empty]
-      cases name <;> rfl
-  · -- SimRel holds after every step
-    intros s₁ s₂ l s₁' hsim hstep_s₁
-    simp [Semantics.link, Lts.Step] at hstep_s₁
-    simp [Proc.semantics]
-    cases hstep_s₁ with
-    | step_main hcur hlabel hstep_main =>
-      exact sim_link_procs_step_main hsim hcur hlabel hstep_main
-    | step_dep hcur hlabel hstep_dep =>
-      exact sim_link_procs_step_dep hsim hcur hlabel hstep_dep
-    | step_dep_spawn hcur hyield hstep_dep =>
-      exact sim_link_procs_step_dep_spawn hsim hcur hyield hstep_dep
-    | step_dep_ret hcur hstep_dep hyield =>
-      exact sim_link_procs_step_dep_ret hsim hcur hstep_dep hyield
+  := (sim_link_procs_preserves_init hdeps haff).weaken
+    (by simp)
 
 /--
 The program semantics (linked semantically) is simulated by
@@ -976,6 +1001,39 @@ on, e.g., freedom of data races.
 
 Therefore, in the theorems in this file, we assume property 1 (i.e. `AffineInrOp`).
 -/
+theorem sim_compile_prog_preserves_init
+  [Arity Op]
+  [InterpConsts V]
+  [DecidableEq χ]
+  {sigs : Sigs k}
+  (prog : Prog Op χ V sigs)
+  (i : Fin k)
+  (hwf : ∀ i, (prog i).AffineVar)
+  (haff : prog.AffineInrOp) :
+    prog.semantics i ≲ᵣ[PreservesInit] (compileProg prog i).semantics
+  := by
+  rcases i with ⟨i, hlt⟩
+  induction i using Nat.strong_induction_on with
+  | _ i ih =>
+    apply IORestrictedSimilaritySt.trans_preserves_init
+    · rw [Prog.semantics]
+      apply sim_congr_link_preserves_init
+      · intros j
+        apply ih
+        cases j
+        simp
+      · apply IORestrictedSimilaritySt.trans_preserves_init
+        · exact sim_compile_fn_preserves_init _ (by apply hwf)
+        · exact (sim_map_chans_inj_preserves_init (f := LinkName.base)
+            (by simp [Function.Injective]))
+    · rw [compileProg]
+      apply sim_link_procs_preserves_init
+      · intros op
+        rfl
+      · apply map_chans_preserves_aff_op
+        apply compile_fn_preserves_aff_op
+        apply haff
+
 theorem sim_compile_prog
   [Arity Op]
   [InterpConsts V]
@@ -986,27 +1044,7 @@ theorem sim_compile_prog
   (hwf : ∀ i, (prog i).AffineVar)
   (haff : prog.AffineInrOp) :
     prog.semantics i ≲ᵣ (compileProg prog i).semantics
-  := by
-  rcases i with ⟨i, hlt⟩
-  induction i using Nat.strong_induction_on with
-  | _ i ih =>
-    unfold Prog.semantics
-    unfold compileProg
-    simp
-    apply IORestrictedSimilarity.trans
-    apply sim_congr_link
-    · intros j
-      apply ih
-      omega
-    · apply IORestrictedSimilarity.trans
-        (sim_compile_fn _
-          (by apply hwf))
-        (sim_map_chans_inj (f := LinkName.base) (by simp [Function.Injective]))
-    apply sim_link_procs
-    · intros op
-      rfl
-    · apply map_chans_preserves_aff_op
-      apply compile_fn_preserves_aff_op
-      apply haff
+  := (sim_compile_prog_preserves_init prog i hwf haff).weaken
+    (by simp)
 
 end Wavelet.Compile

@@ -1,3 +1,5 @@
+import Mathlib.Logic.Relation
+
 /-! Definitions and utilities for labelled transition systems. -/
 
 namespace Wavelet.Semantics
@@ -335,22 +337,20 @@ def Lts.SimilaritySt
     lts₁.Simulation lts₂ Sim c₁ c₂ ∧
     ∀ c₁ c₂, Sim c₁ c₂ → R c₁ c₂
 
+@[simp]
+abbrev TrueR {α β} (_ : α) (_ : β) : Prop := True
+
+@[simp, grind]
+theorem TrueR.comp {α β γ} [inst : Inhabited β] :
+  Relation.Comp (TrueR (α := α) (β := β)) (TrueR (α := β) (β := γ)) = TrueR := by
+  funext
+  simp [Relation.Comp]
+
 def Lts.Similarity
   (lts₁ : Lts C₁ E)
   (lts₂ : Lts C₂ E)
   (c₁ : C₁) (c₂ : C₂) : Prop
-  := Lts.SimilaritySt (λ _ _ => True) lts₁ lts₂ c₁ c₂
-
-theorem Lts.SimilaritySt.to_sim
-  {R : C₁ → C₂ → Prop}
-  {lts₁ : Lts C₁ E}
-  {lts₂ : Lts C₂ E}
-  {c₁ : C₁} {c₂ : C₂}
-  (hsim : Lts.SimilaritySt R lts₁ lts₂ c₁ c₂) :
-    Lts.Similarity lts₁ lts₂ c₁ c₂
-  := by
-  rcases hsim with ⟨Sim, hsim, _⟩
-  exact ⟨Sim, hsim, by simp⟩
+  := Lts.SimilaritySt TrueR lts₁ lts₂ c₁ c₂
 
 theorem Lts.SimilaritySt.intro
   {R : C₁ → C₂ → Prop}
@@ -415,6 +415,19 @@ theorem Lts.SimilaritySt.sim_prop
   (hsim : Lts.SimilaritySt R lts₁ lts₂ c₁ c₂) :
     ∀ c₁ c₂, hsim.Sim c₁ c₂ → R c₁ c₂ := hsim.choose_spec.2
 
+theorem Lts.SimilaritySt.weaken
+  {R₁ R₂ : C₁ → C₂ → Prop}
+  {lts₁ : Lts C₁ E}
+  {lts₂ : Lts C₂ E}
+  {c₁ : C₁} {c₂ : C₂}
+  (hR : ∀ {c₁ c₂}, R₁ c₁ c₂ → R₂ c₁ c₂)
+  (hsim : Lts.SimilaritySt R₁ lts₁ lts₂ c₁ c₂) :
+    Lts.SimilaritySt R₂ lts₁ lts₂ c₁ c₂ := by
+  rcases hsim with ⟨Sim, hsim, hR₁⟩
+  apply Lts.SimilaritySt.intro Sim hsim
+  intros _ _ hsim'
+  exact hR (hR₁ _ _ hsim')
+
 theorem Lts.Similarity.refl_single
   {lts₁ lts₂ : Lts C E} {c : C}
   (single : ∀ {c l c'}, lts₁.Step c l c' → lts₂.Step c l c') :
@@ -435,27 +448,42 @@ theorem Lts.Similarity.refl
   {lts : Lts C E} {c : C} :
   Lts.Similarity lts lts c c := .refl_single (by simp)
 
-theorem Lts.Similarity.trans_single
+theorem Lts.SimilaritySt.trans_single
   {C₁ : Type u₁} {C₂ : Type u₂} {C₃ : Type u₃} {E : Type u₄}
+  {R₁ : C₁ → C₂ → Prop}
+  {R₂ : C₂ → C₃ → Prop}
   {lts₁ : Lts C₁ E} {lts₂ lts₂' : Lts C₂ E} {lts₃ : Lts C₃ E}
   {c₁ : C₁} {c₂ : C₂} {c₃ : C₃}
   (single₂ : ∀ {c l c'}, lts₂.Step c l c' → lts₂'.Step c l c') :
-  Lts.Similarity lts₁ lts₂ c₁ c₂ →
-  Lts.Similarity lts₂' lts₃ c₂ c₃ →
-  Lts.Similarity lts₁ lts₃ c₁ c₃ := by
-  rintro ⟨R₁₂, ⟨hsim₁₂_init, hsim₁₂_coind⟩, _⟩
-  rintro ⟨R₂₃, ⟨hsim₂₃_init, hsim₂₃_coind⟩, _⟩
-  apply Lts.Similarity.intro λ c₁ c₃ => ∃ c₂, R₁₂ c₁ c₂ ∧ R₂₃ c₂ c₃
-  constructor
-  · exists c₂
-  · intros c₁ c₃ l c₁' hR hstep_c₁
-    have ⟨c₂, hR₁₂, hR₂₃⟩ := hR
-    have ⟨c₂', hstep_c₂, hR₁₂'⟩ := hsim₁₂_coind c₁ c₂ l c₁' hR₁₂ hstep_c₁
-    have ⟨c₃', hstep_c₃, hR₂₃'⟩ := hsim₂₃_coind c₂ c₃ l c₂' hR₂₃ (single₂ hstep_c₂)
-    exists c₃'
-    constructor
-    · exact hstep_c₃
-    · exists c₂'
+  Lts.SimilaritySt R₁ lts₁ lts₂ c₁ c₂ →
+  Lts.SimilaritySt R₂ lts₂' lts₃ c₂ c₃ →
+  Lts.SimilaritySt (Relation.Comp R₁ R₂) lts₁ lts₃ c₁ c₃ := by
+  rintro ⟨R₁₂, ⟨hsim₁₂_init, hsim₁₂_coind⟩, hR₁₂⟩
+  rintro ⟨R₂₃, ⟨hsim₂₃_init, hsim₂₃_coind⟩, hR₂₃⟩
+  apply Lts.SimilaritySt.intro λ c₁ c₃ => ∃ c₂, R₁₂ c₁ c₂ ∧ R₂₃ c₂ c₃
+  · constructor
+    · exists c₂
+    · intros c₁ c₃ l c₁' hR hstep_c₁
+      have ⟨c₂, hR₁₂, hR₂₃⟩ := hR
+      have ⟨c₂', hstep_c₂, hR₁₂'⟩ := hsim₁₂_coind c₁ c₂ l c₁' hR₁₂ hstep_c₁
+      have ⟨c₃', hstep_c₃, hR₂₃'⟩ := hsim₂₃_coind c₂ c₃ l c₂' hR₂₃ (single₂ hstep_c₂)
+      exists c₃'
+      constructor
+      · exact hstep_c₃
+      · exists c₂'
+  · simp [Relation.Comp]
+    intros c₁ c₂ c' h₁ h₂
+    exact ⟨_, hR₁₂ _ _ h₁, hR₂₃ _ _ h₂⟩
+
+theorem Lts.SimilaritySt.trans
+  {C₁ : Type u₁} {C₂ : Type u₂} {C₃ : Type u₃} {E : Type u₄}
+  {R₁ : C₁ → C₂ → Prop}
+  {R₂ : C₂ → C₃ → Prop}
+  {lts₁ : Lts C₁ E} {lts₂ : Lts C₂ E} {lts₃ : Lts C₃ E}
+  {c₁ : C₁} {c₂ : C₂} {c₃ : C₃} :
+  Lts.SimilaritySt R₁ lts₁ lts₂ c₁ c₂ →
+  Lts.SimilaritySt R₂ lts₂ lts₃ c₂ c₃ →
+  Lts.SimilaritySt (Relation.Comp R₁ R₂) lts₁ lts₃ c₁ c₃ := .trans_single (by simp)
 
 theorem Lts.Similarity.trans
   {C₁ : Type u₁} {C₂ : Type u₂} {C₃ : Type u₃} {E : Type u₄}
@@ -463,7 +491,12 @@ theorem Lts.Similarity.trans
   {c₁ : C₁} {c₂ : C₂} {c₃ : C₃} :
   Lts.Similarity lts₁ lts₂ c₁ c₂ →
   Lts.Similarity lts₂ lts₃ c₂ c₃ →
-  Lts.Similarity lts₁ lts₃ c₁ c₃ := .trans_single (by simp)
+  Lts.Similarity lts₁ lts₃ c₁ c₃ := by
+  intros h₁ h₂
+  have := Lts.SimilaritySt.trans h₁ h₂
+  have _ : Inhabited C₂ := .mk c₂
+  simp at this
+  exact this
 
 structure Lts.Bisimulation
   (lts₁ : Lts C₁ E)

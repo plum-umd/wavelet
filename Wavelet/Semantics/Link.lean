@@ -377,6 +377,158 @@ theorem sim_congr_link
           · simp [h]
             apply hsim_dep_states
 
+private def SimRelPI
+  [Arity Op₀] [Arity Op₁]
+  [DecidableEq Op₁]
+  {main₁ main₂ : Semantics (Op₀ ⊕ Op₁) V m n}
+  {deps₁ deps₂ : PartInterp Op₀ Op₁ V}
+  (hsim_deps : ∀ i, deps₁ i ≲ᵣ[PreservesInit] deps₂ i)
+  (hsim_main : main₁ ≲ᵣ[PreservesInit] main₂)
+  (s₁ : LinkState main₁ deps₁)
+  (s₂ : LinkState main₂ deps₂) : Prop
+  :=
+    s₁.curSem = s₂.curSem ∧
+    hsim_main.Sim s₁.mainState s₂.mainState ∧
+    (∀ op, (hsim_deps op).Sim (s₁.depStates op) (s₂.depStates op))
+
+/-- TODO: Merge this proof with `sim_congr_link`. -/
+theorem sim_congr_link_preserves_init
+  [Arity Op₀] [Arity Op₁]
+  [DecidableEq Op₁]
+  {main₁ main₂ : Semantics (Op₀ ⊕ Op₁) V m n}
+  {deps₁ deps₂ : PartInterp Op₀ Op₁ V}
+  (hsim_deps : ∀ i, deps₁ i ≲ᵣ[PreservesInit] deps₂ i)
+  (hsim_main : main₁ ≲ᵣ[PreservesInit] main₂) :
+    main₁.link deps₁ ≲ᵣ[PreservesInit] main₂.link deps₂
+  := by
+  apply Lts.SimilaritySt.intro (SimRelPI hsim_deps hsim_main)
+  · constructor
+    and_intros
+    · simp [link, LinkState.init]
+    · exact hsim_main.sim_init
+    · intros op
+      exact (hsim_deps op).sim_init
+    · intros s₁ s₂ l s₁' hsim hstep_s₁
+      have ⟨hcur_sem, hsim_main_states, hsim_dep_states⟩ := hsim
+      cases hstep_s₁ with
+      | step_main hcur₁ hlabel hstep_main₁ =>
+        have ⟨mainState₂', hstep_s₂, hsim'⟩
+          := hsim_main.sim_step _ _ _ _ hsim_main_states hstep_main₁
+        exists { s₂ with mainState := mainState₂' }
+        constructor
+        · simp [link, hcur_sem] at hcur₁ ⊢
+          simp [Lts.Step] at hstep_s₂
+          exact LinkStep.step_main_io_restricted hcur₁ hlabel hstep_s₂
+        · and_intros
+          · simp [hcur_sem]
+          · exact hsim'
+          · exact hsim_dep_states
+      | step_dep hcur₁ hlabel hstep_dep₁ =>
+        rename_i depOp _ _
+        have ⟨depState₂', hstep_s₂, hsim'⟩
+          := (hsim_deps depOp).sim_step _ _ _ _
+            (hsim_dep_states depOp) hstep_dep₁
+        exists { s₂ with depStates := Function.update s₂.depStates depOp depState₂' }
+        constructor
+        · simp [link, hcur_sem] at hcur₁ ⊢
+          simp [Lts.Step] at hstep_s₂
+          exact LinkStep.step_dep_io_restricted hcur₁ hlabel hstep_s₂
+        · and_intros
+          · simp [hcur_sem]
+          · exact hsim_main_states
+          · intros op
+            simp
+            by_cases h : op = depOp
+            · rw [h]
+              simp
+              exact hsim'
+            · simp [h]
+              apply hsim_dep_states
+      | step_dep_spawn hcur₁ hyield₁ hstep_dep₁ =>
+        rename_i depOp inputVals depState₁'
+        have hcur₂ : s₂.curSem = none := by simp [hcur_sem] at hcur₁; exact hcur₁
+        -- Convert `dep₁` input to `dep₂` input
+        have ⟨depState₂', hstep_s₂, hsim₂'⟩
+          := (hsim_deps depOp).sim_step _ _ _ _
+            (hsim_dep_states depOp) hstep_dep₁
+        cases hstep_s₂ with | step_input hstep_input_s₂ hstep_tau_s₂₁ =>
+        rename_i s₂₁
+        -- Convert `main₁` yield to `main₂` yield
+        replace ⟨_, _, hyield₁⟩ := hyield₁
+        have ⟨mainState₁', hstep_yield_s₂, hsim'⟩
+          := hsim_main.sim_step _ _ _ _ hsim_main_states hyield₁
+        cases hstep_yield_s₂ with | step_yield hstep_yield_s₂ =>
+        -- Make the spawning step in the overall semantics
+        have hstep_spawn₂ := LinkStep.step_dep_spawn hcur₂ ⟨_, _, hstep_yield_s₂⟩ hstep_input_s₂
+        -- Finally, there are some leftover τ steps in `dep₂`
+        replace hstep_spawn₂ := Lts.TauStar.trans
+          (.single hstep_spawn₂)
+          (LinkStep.step_dep_tau_star (by rfl) (by
+            simp
+            exact hstep_tau_s₂₁))
+        simp at hstep_spawn₂
+        replace ⟨s₂', hs₂', hstep_spawn₂⟩ := exists_eq_left.mpr hstep_spawn₂
+        exists s₂'
+        constructor
+        · exact .step_tau hstep_spawn₂
+        · simp [hs₂']
+          and_intros
+          · simp
+          · simp [hsim_main_states]
+          · simp
+            intros op
+            by_cases h : op = depOp
+            · rw [h]
+              simp [hsim₂']
+            · simp [h]
+              apply hsim_dep_states
+      | step_dep_ret hcur₁ hstep_dep₁ hyield₁ =>
+        rename_i depOp outputVals depState₁' inputVals mainState₁'
+        have hcur₂ : s₂.curSem = some depOp
+          := by simp [hcur_sem] at hcur₁; exact hcur₁
+        -- Convert `dep₁` output to `dep₂` output
+        have ⟨depState₂', hstep_s₂, hsim₂'⟩
+          := (hsim_deps depOp).sim_step _ _ _ _
+            (hsim_dep_states depOp) hstep_dep₁
+        -- Convert `main₁` yield to `main₂` yield
+        have ⟨mainState₂', hstep_yield_s₂, hsim'⟩
+          := hsim_main.sim_step _ _ _ _ hsim_main_states hyield₁
+        cases hstep_yield_s₂ with | step_yield hstep_yield_s₂ =>
+        -- Make leftover τ steps before `hstep_s₂`
+        cases hstep_s₂ with | step_output hstep_tau_s₂ hstep_output_s₂ =>
+        have := LinkStep.step_dep_tau_star hcur₂ hstep_tau_s₂
+        -- Make the returning step
+        have := Lts.TauStar.trans
+          this
+          (.single
+            (LinkStep.step_dep_ret hcur₂
+              (by simp; exact hstep_output_s₂)
+              hstep_yield_s₂))
+        simp at this
+        replace ⟨s₂', hs₂', hstep_ret₂⟩ := exists_eq_left.mpr this
+        exists s₂'
+        constructor
+        · exact .step_tau hstep_ret₂
+        · simp [hs₂']
+          and_intros
+          · simp
+          · simp [hsim']
+          · simp
+            intros op
+            by_cases h : op = depOp
+            · rw [h]
+              simp [hsim₂']
+            · simp [h]
+              apply hsim_dep_states
+  · intros s₁ s₂ hsim hinit
+    subst hinit
+    rcases s₂ with ⟨curSem, mainState, depStates⟩
+    simp [SimRelPI, link, LinkState.init] at hsim
+    have ⟨h₁, h₂, h₃⟩ := hsim
+    simp [link, LinkState.init, h₁, hsim_main.sim_prop _ _ h₂ (by rfl)]
+    funext depOp
+    exact (hsim_deps depOp).sim_prop _ _ (h₃ depOp) (by rfl)
+
 end Simulation
 
 end Wavelet.Semantics

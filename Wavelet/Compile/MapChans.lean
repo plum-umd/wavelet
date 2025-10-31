@@ -34,6 +34,17 @@ theorem sim_map_chans_inj
   (hf : Function.Injective f) :
   proc.semantics ≲ᵣ (proc.mapChans f).semantics := sorry
 
+theorem sim_map_chans_inj_preserves_init
+  {χ χ' : Type u}
+  [Arity Op]
+  [DecidableEq χ]
+  [DecidableEq χ']
+  [InterpConsts V]
+  {f : χ → χ'}
+  {proc : Proc Op χ V m n}
+  (hf : Function.Injective f) :
+  proc.semantics ≲ᵣ[PreservesInit] (proc.mapChans f).semantics := sorry
+
 end Simulation
 
 end Wavelet.Dataflow
