@@ -135,6 +135,37 @@ def Lts.InterpStep.output_eq_state
     s.2 = s'.2
   := by cases hstep; rfl
 
+def Lts.InterpStep.to_base_step
+  [Arity Op] {S S'}
+  {lts : Lts S (Label Op V m n)}
+  {lts' : Lts S' (RespLabel Op V)}
+  {l : Label Empty V m n}
+  {s s' : S × S'}
+  (hsteps : (Lts.InterpStep lts lts').Step s l s') :
+    ∃ l', lts.Step s.1 l' s'.1
+  := by
+  cases hsteps with
+  | step_tau hstep => exact ⟨_, hstep⟩
+  | step_input hstep => exact ⟨_, hstep⟩
+  | step_output hstep => exact ⟨_, hstep⟩
+  | step_yield hbase hinterp => exact ⟨_, hbase⟩
+
+def Lts.InterpStep.star_to_base_star
+  [Arity Op] {S S'}
+  {lts : Lts S (Label Op V m n)}
+  {lts' : Lts S' (RespLabel Op V)}
+  {tr : Trace (Label Empty V m n)}
+  {s s' : S × S'}
+  (hsteps : (Lts.InterpStep lts lts').Star s tr s') :
+    ∃ tr', lts.Star s.1 tr' s'.1
+  := by
+  induction hsteps with
+  | refl => exact ⟨_, .refl⟩
+  | tail pref tail ih =>
+    have ⟨_, tail'⟩ := tail.to_base_step
+    have ⟨_, ih'⟩ := ih
+    exact ⟨_, .tail ih' tail'⟩
+
 def Lts.IndexedInterpStep.map_step
   [Arity Op] {S S'}
   {lts₁ lts₂ : Lts S (Nat × Label Op V m n)}

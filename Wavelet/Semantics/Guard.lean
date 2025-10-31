@@ -72,6 +72,33 @@ theorem Lts.GuardStep.map_guard
     (lts.GuardStep P₁).Step s l s' → (lts.GuardStep P₂).Step s l s'
   | .step hguard hstep => .step (hmap hguard) hstep
 
+theorem Lts.GuardStep.to_base_step
+  {S}
+  {lts : Lts S E}
+  {P : E → E' → Prop}
+  {l : E'} {s s' : S}
+  (hsteps : (lts.GuardStep P).Step s l s') :
+    ∃ l', lts.Step s l' s'
+  := by
+  cases hsteps with
+  | step hguard hstep => exact ⟨_, hstep⟩
+
+theorem Lts.GuardStep.star_to_base_star
+  {S}
+  {lts : Lts S E}
+  {P : E → E' → Prop}
+  {tr : Trace E'}
+  {s s' : S}
+  (hsteps : (lts.GuardStep P).Star s tr s') :
+    ∃ tr', lts.Star s tr' s'
+  := by
+  induction hsteps with
+  | refl => exact ⟨_, .refl⟩
+  | tail pref tail ih =>
+    have ⟨_, tail'⟩ := tail.to_base_step
+    have ⟨_, ih'⟩ := ih
+    exact ⟨_, .tail ih' tail'⟩
+
 /-- `guard` preserves IO-restricted simulation. -/
 theorem sim_guard
   [Arity Op] [Arity Op']

@@ -193,6 +193,23 @@ theorem link_inv
         · simp [Ne.symm heq]
           exact hinv.2 depOp'
 
+/-- Any trace in the linked semantics can be converted
+into a trace of any specific dependency (i.e., all dependency
+states are only changed via their own transition and not
+suddenly reset). -/
+theorem link_star_to_dep_star
+  [Arity Op₀] [Arity Op₁]
+  [DecidableEq Op₁]
+  {main : Semantics (Op₀ ⊕ Op₁) V m n}
+  {deps : (op : Op₁) → Semantics Op₀ V (Arity.ι op) (Arity.ω op)}
+  {s s' : LinkState main deps}
+  {tr : Trace (Label Op₀ V m n)}
+  (hsteps : (link main deps).lts.Star s tr s')
+  (depOp : Op₁) :
+    ∃ tr',
+      (deps depOp).lts.Star (s.depStates depOp) tr' (s'.depStates depOp)
+  := sorry
+
 section Simulation
 
 /-- Similar to `step_main`, but uses `TauStar`. -/

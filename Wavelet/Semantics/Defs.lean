@@ -541,6 +541,21 @@ theorem Lts.IsInvariantAt.by_induction
   | refl => exact hbase
   | tail pref tail ih => exact hstep (ih hbase) tail
 
+/-- Prove an invariant by strong induction. -/
+theorem Lts.IsInvariantAt.by_strong_induction
+  {lts : Lts C E}
+  {P : C → Prop}
+  {c : C}
+  (hbase : P c)
+  (hstep : ∀ {c₁ c₂ l tr},
+    lts.Star c tr c₁ → P c₁ → lts.Step c₁ l c₂ → P c₂) :
+  lts.IsInvariantAt P c := by
+  intros c' tr hstar
+  induction hstar with
+  | refl => exact hbase
+  | tail pref tail ih =>
+    exact hstep pref (ih hbase hstep) tail
+
 theorem Lts.IsInvariantAt.base
   {lts : Lts C E}
   {P : C → Prop} {c : C}

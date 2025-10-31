@@ -112,20 +112,6 @@ theorem compile_forward_sim
   · apply (compile_forward_sim_guarded prog hwt haff₁ haff₂ i).weaken (by simp)
   · apply sim_guarded_unguarded
 
-theorem fn_semantics_output_init
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {fn : Fn Op χ V m n}
-  {outputVals : Vector V n}
-  {s s' : fn.semantics.S}
-  (hstep : Config.Step s (.output outputVals) s')
-  (hfn : s.fn = fn) :
-    s' = Seq.Config.init fn
-  := by
-  cases hstep
-  simp [Seq.Config.init, hfn]
-
 theorem prog_semantics_output_init
   [Arity Op]
   [DecidableEq χ]
@@ -153,18 +139,29 @@ theorem prog_semantics_output_init
     rw [Prog.InvConstProg', LinkInv] at this
     have ⟨h₁, _⟩ := this
     exact h₁.base
+  have hinit_deps :
+    s.curSem = none →
+    ∀ depOp,
+      s.depStates depOp = (prog.semantics depOp.toFin).init := by
+    have hinv : IsInvariant _ _ := Prog.inv_init_deps prog i
+    rw [← Prog.state_unfold_fold_eq s] at hinit
+    have := Prog.fold_star hinit
+    have := hinv this
+    simp [Prog.InvInitDeps] at this
+    rw [Prog.InvInitDeps'] at this
+    intros hcur_sem
+    simp [hcur_sem] at this
+    exact this
   rcases i with ⟨i, hlt⟩
   induction i using Nat.strong_induction_on with
   | _ i ih =>
     cases hstep with
     | step_main hcur_sem hpass hstep =>
       cases hpass
-      have := fn_semantics_output_init hstep heq_fn
+      have := Fn.semantics_output_init hstep heq_fn
       simp [hcur_sem, this, link, LinkState.init, Fn.semantics]
       funext depOp
-      -- TODO: need the invariant that when curSem = none
-      -- all dependent semantics are in the initial state.
-      sorry
+      simp [hinit_deps hcur_sem]
     | step_dep _ hpass => cases hpass
 
 theorem prog_semanticsᵢ_star_to_semantics_star
@@ -180,7 +177,11 @@ theorem prog_semanticsᵢ_star_to_semantics_star
   {tr : Trace (Label Semantics.Empty V (sigs i).ι (sigs i).ω)}
   (hsteps : (prog.semanticsᵢ i).lts.Star s tr s') :
     ∃ tr', (prog.semantics i).lts.Star s.1 tr' s'.1
-  := sorry
+  := by
+  simp [Prog.semanticsᵢ] at hsteps
+  have ⟨_, hsteps⟩ := Lts.InterpStep.star_to_base_star hsteps
+  have := Lts.GuardStep.star_to_base_star hsteps
+  exact this
 
 /-- After an output step, the program configuration becomes the initial configuration -/
 theorem prog_semanticsᵢ_output_init
