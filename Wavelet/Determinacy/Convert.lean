@@ -115,7 +115,7 @@ theorem Config.IdxGuardStep.to_indexed_unguarded
   {l : Label Op V m n} :
     Config.IdxGuardStep opSpec ioSpec s (i, l) s' →
     Config.IdxTrivStep opSpec s (i, l) s'
-  := Guard.map_guard (λ ⟨hguard⟩ => ⟨OpSpec.spec_guard_implies_triv_guard hguard⟩)
+  := .map_guard (λ ⟨hguard⟩ => ⟨OpSpec.spec_guard_implies_triv_guard hguard⟩)
 
 theorem Config.IdxInterpGuardStep.to_indexed_interp_unguarded
   [Arity Op] [PCM T]
@@ -185,7 +185,7 @@ theorem Config.InterpGuardStep.to_indexed_interp_guarded_tau
     ∃ i, Config.IdxInterpGuardStep opSpec ioSpec s (i, .τ) s'
   := hstep.to_indexed_interp_tau Config.GuardStep.to_indexed_guarded
 
-theorem Config.InterpGuardStep.to_indexed_interp_unguarded
+theorem Config.InterpGuardStep.to_interp_unguarded
   [Arity Op] [PCM T]
   [DecidableEq χ]
   [InterpConsts V]
@@ -195,7 +195,7 @@ theorem Config.InterpGuardStep.to_indexed_interp_unguarded
   {s s' : ConfigWithSpec opSpec χ m n × opInterp.S}
   (hstep : Config.InterpGuardStep opSpec ioSpec s l s') :
     Config.InterpTrivStep opSpec s l s'
-  := sorry
+  := Lts.InterpStep.map_step (.map_guard opSpec.spec_guard_implies_triv_guard) hstep
 
 theorem Config.InterpGuardStep.to_indexed_interp_guarded_tau_star
   [Arity Op] [PCM T]

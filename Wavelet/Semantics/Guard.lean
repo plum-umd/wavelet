@@ -54,7 +54,7 @@ theorem guard_tau_star
     have := Lts.GuardStep.step hguard tail
     exact .tail ih this
 
-theorem Guard.map_step
+theorem Lts.GuardStep.map_step
   {S}
   {lts₁ lts₂ : Lts S E}
   {P : E → E' → Prop}
@@ -63,7 +63,7 @@ theorem Guard.map_step
     (lts₁.GuardStep P).Step s l s' → (lts₂.GuardStep P).Step s l s'
   | .step hguard hstep => .step hguard (hmap hstep)
 
-theorem Guard.map_guard
+theorem Lts.GuardStep.map_guard
   {S}
   {lts : Lts S E}
   {P₁ P₂ : E → E' → Prop}

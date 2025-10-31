@@ -78,6 +78,21 @@ theorem compile_forward_sim_guarded
   · apply sim_guard
     apply sim_compile_prog_preserves_init prog i haff₁ haff₂
 
+theorem sim_guarded_unguarded
+  [Arity Op] [PCM T]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {sem : Semantics (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1)} :
+    sem.guard (opSpec.Guard ioSpec) ≲ᵣ sem.guard opSpec.TrivGuard
+  := by
+  apply Lts.Similarity.refl_single
+  intros s₁ l s₂ hstep
+  apply Lts.IORestrictedStep.single
+  simp [Semantics.guard]
+  apply Lts.GuardStep.map_guard _ hstep
+  exact opSpec.spec_guard_implies_triv_guard
+
 theorem compile_forward_sim
   [Arity Op] [PCM T] [PCM.Lawful T]
   [DecidableEq χ]
@@ -95,7 +110,7 @@ theorem compile_forward_sim
   := by
   apply IORestrictedSimilarity.trans
   · apply (compile_forward_sim_guarded prog hwt haff₁ haff₂ i).weaken (by simp)
-  sorry
+  · apply sim_guarded_unguarded
 
 theorem compile_strong_norm
   {Op V T : Type u}
@@ -211,7 +226,7 @@ theorem compile_strong_norm
       · exact heq₂.2.symm)
   have ⟨s₁'''', htrace'''', heq₄⟩ := this
   -- Carry the final output step over through ≈
-  have houtput'' := Config.InterpGuardStep.to_indexed_interp_unguarded houtput'
+  have houtput'' := Config.InterpGuardStep.to_interp_unguarded houtput'
   have ⟨_, houtput''', heq₅⟩ := congr_eq_mod_ghost_proc_interp_unguarded_output
     (s₁' := s₁'''')
     houtput'' (by
