@@ -51,4 +51,37 @@ theorem Proc.AffineChan.atom_outputs_disjoint
   have ⟨_, _, hatoms, _, _⟩ := haff
   exact (hatoms.2 i j hne).2
 
+theorem Proc.AffineChan.inv
+  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  {proc : Proc Op χ V m n}
+  {s : Config Op χ V m n}
+  (haff : s.proc.AffineChan) :
+    Config.Step.IsInvariantAt (·.proc.AffineChan) s
+  := by
+  apply Lts.IsInvariantAt.by_induction
+  · exact haff
+  · intros s₁ s₂ l hinv hstep
+    cases hstep with
+    | step_async _ hget hinterp _ =>
+      rename Nat => i
+      simp [Proc.AffineChan]
+      have ⟨h₁, h₂, h₃, h₄, h₅⟩ := hinv
+      simp [h₁, h₂]
+      and_intros
+      · have ⟨h₃₁, h₃₂⟩ := h₃
+        intros j
+        rcases j with ⟨j, hlt⟩
+        simp at hlt
+        by_cases h₁ : i = j
+        · subst h₁
+          have := h₃₁ ⟨i, by omega⟩
+          simp [AtomicProc.inputs, AtomicProc.outputs, hget] at this ⊢
+          exact this
+        · simp [h₁]
+          apply h₃₁ ⟨j, hlt⟩
+      · sorry
+      · sorry
+      · sorry
+    | _ => simp [hinv]
+
 end Wavelet.Dataflow

@@ -91,24 +91,4 @@ theorem proc_guard_inv_disj
   · intros s s' l hinv hstep
     sorry
 
-/--
-`Config.DisjointTokens` is a state invariant of a guarded `Fn` semantics.
-
-TODO: not quite true. should disallow multiple inputs transitions
--/
-theorem fn_guard_inv_disj
-  [Arity Op] [PCM T] [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  (fn : FnWithSpec opSpec χ m n) :
-    (fn.semantics.guard (opSpec.Guard ioSpec)).IsInvariant
-      Config.DisjointTokens
-  := by
-  apply Lts.IsInvariantAt.by_induction
-  · simp [Seq.Config.init, Semantics.guard,
-      Fn.semantics, VarMap.DisjointTokens]
-  · intros s s' l hinv hstep
-    sorry
-
 end Wavelet.Determinacy
