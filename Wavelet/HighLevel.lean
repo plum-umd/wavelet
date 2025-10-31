@@ -31,7 +31,7 @@ theorem sim_wt_prog
   (prog : ProgWithSpec χ sigs opSpec)
   (hwt : ProgWithSpec.WellPermTyped progSpec prog) :
     (prog.semantics i).guard opSpec.TrivGuard
-      ≲ᵣ (prog.semantics i).guard (opSpec.Guard (progSpec i))
+      ≲ᵣ[PreservesInit] (prog.semantics i).guard (opSpec.Guard (progSpec i))
   := by sorry
 
 /-- Final semantics of a sequential program when interpreted
@@ -71,12 +71,12 @@ theorem compile_forward_sim_guarded
   (haff₂ : prog.AffineInrOp)
   (i : Fin k) :
     (prog.semantics i).guard opSpec.TrivGuard
-      ≲ᵣ (compileProg prog i).semantics.guard (opSpec.Guard (progSpec i))
+      ≲ᵣ[PreservesInit] (compileProg prog i).semantics.guard (opSpec.Guard (progSpec i))
   := by
-  apply IORestrictedSimilarity.trans
+  apply IORestrictedSimilaritySt.trans_preserves_init
   · exact sim_wt_prog prog hwt
-  apply sim_guard
-  apply sim_compile_prog prog i haff₁ haff₂
+  · apply sim_guard
+    apply sim_compile_prog_preserves_init prog i haff₁ haff₂
 
 theorem compile_forward_sim
   [Arity Op] [PCM T] [PCM.Lawful T]
@@ -94,7 +94,7 @@ theorem compile_forward_sim
       ≲ᵣ (compileProg prog i).semantics.guard opSpec.TrivGuard
   := by
   apply IORestrictedSimilarity.trans
-  · apply compile_forward_sim_guarded prog hwt haff₁ haff₂ i
+  · apply (compile_forward_sim_guarded prog hwt haff₁ haff₂ i).weaken (by simp)
   sorry
 
 theorem compile_strong_norm
@@ -106,40 +106,40 @@ theorem compile_strong_norm
   {sigs : Sigs k}
   {opSpec : OpSpec Op V T}
   {progSpec : ProgSpec Op V T sigs}
-
+  -- Required properties on the operator interpretation
   (hconfl : opSpec.Confluent opInterp)
   (hdet : opInterp.Deterministic)
   (hnb : opInterp.NonBlocking)
-
+  -- Program with well-formedness and typing properties
   (prog : Prog (WithSpec Op opSpec) χ (V ⊕ T) (extendSigs sigs))
   (hwt : ProgWithSpec.WellPermTyped progSpec prog)
   (haff₁ : ∀ (i : Fin k), (prog i).AffineVar)
   (haff₂ : prog.AffineInrOp)
   (i : Fin k)
+  -- Same inputs and outputs
   {args : Vector V (sigs i).ι}
   {outputVals : Vector V (sigs i).ω}
-
+  -- Compiled dataflow graph
   {proc : Proc (WithSpec Op opSpec) (LinkName (ChanName χ)) (V ⊕ T) _ _}
   (hcomp : proc = compileProg prog i)
-
   {s s₁ s₂ : (prog.semanticsᵢ i).S}
   {s' s₁' : proc.semanticsᵢ.S}
-
   -- There exists a terminating trace in the sequential semantics
-  -- that output `outputVals`.
   (hinputs : (prog.semanticsᵢ i).lts.Step (prog.semanticsᵢ i).init (.input args) s)
   (htrace : (prog.semanticsᵢ i).lts.TauStarN .τ k s s₁)
   (hterm : (prog.semanticsᵢ i).lts.IsFinalFor (·.isSilent) s₁)
   (houtput : (prog.semanticsᵢ i).lts.Step s₁ (.output outputVals) s₂)
-
-  (hinputs' : proc.semanticsᵢ.lts.Step proc.semanticsᵢ.init (.input args) s')
-  (htrace' : proc.semanticsᵢ.lts.TauStarN .τ k' s' s₁') :
-    ∃ (s₁'' s₂' : proc.semanticsᵢ.S) (k'' : Nat),
-      -- k = k' + k'' ∧
-      proc.semanticsᵢ.lts.TauStarN .τ k'' s₁' s₁'' ∧
-      proc.semanticsᵢ.lts.IsFinalFor (·.isSilent) s₁'' ∧
-      proc.semanticsᵢ.lts.Step s₁'' (.output outputVals) s₂' ∧
-      s₂'.2 = s₂.2 -- Equal "memory" states
+  -- Initial setup in the dataflow graph
+  (hinputs' : proc.semanticsᵢ.lts.Step proc.semanticsᵢ.init (.input args) s') :
+    ∃ (bound : Nat), -- Uniform bound on any dataflow trace length
+      -- For any trace in the compiled dataflow graph
+      proc.semanticsᵢ.lts.TauStarN .τ k' s' s₁' →
+      ∃ (s₁'' s₂' : proc.semanticsᵢ.S) (k'' : Nat),
+        bound = k' + k'' ∧
+        proc.semanticsᵢ.lts.TauStarN .τ k'' s₁' s₁'' ∧
+        proc.semanticsᵢ.lts.Step s₁'' (.output outputVals) s₂' ∧
+        s₂'.1 ≈ (proc.semanticsᵢ).init.1 ∧ -- Back to initial dataflow state
+        s₂'.2 = s₂.2 -- Equal operator states
   := by
   /- Sketch
   Notations:
@@ -169,13 +169,6 @@ theorem compile_strong_norm
   cases hinputs'' with | step_input hinputs'' htau₁ =>
   rename_i s''
   have heq₁ := proc_interp_guarded_unguarded_det_input_mod hinputs'' hinputs'
-  -- Carry the silent steps after the first input steps
-  have := congr_eq_mod_ghost_proc_interp_unguarded_tau_star_n htrace'
-    (by
-      constructor
-      · exact IsSymm.symm _ _ heq₁.1
-      · exact heq₁.2.symm)
-  have ⟨_, htrace'', heq₂⟩ := this
   -- Carry the middle τ* steps over
   have ⟨s₁'', hstep_s₁'', hsim_s₁''⟩ := hsim₁.map_tau_star hsim_s''' htrace.without_length
   -- Carry the final output step over
@@ -184,12 +177,31 @@ theorem compile_strong_norm
   rename_i s₁'''
   -- Concatenate the middle steps in guarded proc semantics
   have hmiddle := (htau₁.trans hstep_s₁'').trans htau₂
-  replace ⟨k', hmiddle⟩ := hmiddle.with_length
-  -- have hfinal_s₁''' :
+  replace ⟨bound, hmiddle⟩ := hmiddle.with_length
+  -- Now we have a uniform bound on any dataflow trace
+  exists bound
+  intros htrace'
+  -- Carry the silent steps after the first input steps
+  have := congr_eq_mod_ghost_proc_interp_unguarded_tau_star_n htrace'
+    (by
+      constructor
+      · exact IsSymm.symm _ _ heq₁.1
+      · exact heq₁.2.symm)
+  have ⟨_, htrace'', heq₂⟩ := this
+  -- By `PreservesInit`, `s₂''` is an initial state
+  -- and as a result, the previous step before output
+  -- should be final wrt. τ and yield
+  have hinit_s₂ : s₂.1 = (prog.semanticsᵢ i).init.1 :=
+    -- TODO: by Seq semantics
+    sorry
+  have ⟨hfinal_init, hfinal_eq⟩ := hsim₁.sim_prop _ _ hsim_s₂''
+  specialize hfinal_init hinit_s₂
+  have hfinal_s₁''' : Dataflow.Config.Step.IsFinalFor _ _ := proc_interp_guarded_output_init_invert houtput'
+    (by simp [hfinal_init, Proc.semantics, Semantics.guard, Dataflow.Config.init])
   -- Use determinacy
   have ⟨_, _, htrace''', hlen₁, heq₃⟩ := proc_interp_guarded_hetero_terminal_confl hconfl hdet hnb
-    sorry sorry hmiddle
-    (by sorry) htrace''
+    sorry sorry -- Some invariants
+    hmiddle hfinal_s₁''' htrace''
   -- Convert the determinacy result to τ steps after `htrace'`
   have this := congr_eq_mod_ghost_proc_interp_unguarded_tau_star_n htrace'''
     (by
@@ -199,7 +211,7 @@ theorem compile_strong_norm
   have ⟨s₁'''', htrace'''', heq₄⟩ := this
   -- Carry the final output step over through ≈
   have houtput'' := Config.InterpGuardStep.to_indexed_interp_unguarded houtput'
-  have ⟨_, houtput''', _⟩ := congr_eq_mod_ghost_proc_interp_unguarded_output
+  have ⟨_, houtput''', heq₅⟩ := congr_eq_mod_ghost_proc_interp_unguarded_output
     (s₁' := s₁'''')
     houtput'' (by
       constructor
@@ -207,17 +219,19 @@ theorem compile_strong_norm
         · exact heq₃.1
         · exact heq₄.1
       · simp [heq₃.2, heq₄.2])
-  -- have := htrace'.trans htrace''''
-  exact ⟨
-    _, _, _, htrace'''',
-    sorry,
+  exact ⟨_, _, _,
+    hlen₁,
+    htrace'''',
     houtput''',
     by
-      have := hsim₁.sim_prop _ _ hsim_s₂''
       simp [← houtput'''.output_eq_state,
         ← heq₄.2, ← heq₃.2,
         houtput'.output_eq_state,
-        ← this.2]
+        ← hfinal_eq]
+      have := IsSymm.symm _ _ heq₅.1
+      apply IsTrans.trans _ _ _ this
+      simp [hfinal_init, Semantics.guard, Semantics.interpret, Proc.semantics]
+      apply IsRefl.refl
   ⟩
 
 end Wavelet

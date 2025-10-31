@@ -309,4 +309,24 @@ theorem proc_interp_guarded_unguarded_det_input_mod
     s₁.1 ≈ s₂.1 ∧ s₁.2 = s₂.2
   := sorry
 
+/--
+If a state transitions to an initial state after one output step,
+then the previous state should be final wrt yield/τ.
+
+TODO: This needs some additional assumptions that there is no
+empty input operator that can fire indefinitely.
+-/
+theorem proc_interp_guarded_output_init_invert
+  [Arity Op] [PCM T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  [opInterp : OpInterp Op V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s s' : ConfigWithSpec opSpec χ m n × opInterp.S}
+  (hstep : (Config.InterpGuardStep opSpec ioSpec).Step s (.output vals) s')
+  (hinit : s'.1.chans = ChanMap.empty) :
+    Config.Step.IsFinalFor (λ l => l.isYield ∨ l.isSilent) s.1
+  := sorry
+
 end Wavelet.Determinacy

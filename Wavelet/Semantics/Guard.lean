@@ -78,48 +78,51 @@ theorem sim_guard
   [InterpConsts V]
   [InterpConsts V']
   {sem₁ sem₂ : Semantics Op V m n}
+  {R : sem₁.S → sem₂.S → Prop}
   {P : Label Op V m n → Label Op' V' m' n' → Prop}
   [hguard : LawfulGuard P]
-  (hsim : sem₁ ≲ᵣ sem₂) :
-  sem₁.guard P ≲ᵣ sem₂.guard P
+  (hsim : sem₁ ≲ᵣ[R] sem₂) :
+  sem₁.guard P ≲ᵣ[R] sem₂.guard P
   := by
-  apply Lts.Similarity.intro hsim.Sim
-  constructor
-  · exact hsim.sim_init
-  · intros s₁ s₂ l s₁' hR hstep
-    simp [Semantics.guard] at hstep
-    cases hstep with | step hlabel hstep =>
-    rename Label Op V m n => l'
-    have ⟨s₂', hstep_s₂, hR₂⟩ := hsim.sim_step _ _ _ _ hR hstep
-    exists s₂'
-    constructor
-    · cases hstep_s₂ with
-      | step_yield hstep_yield_s₂ =>
-        replace hstep_yield_s₂ := Lts.GuardStep.step hlabel hstep_yield_s₂
-        cases hguard.guard_yield hlabel <;>
-          rename_i h₁ <;> cases l <;> simp at h₁
-        · exact .step_tau (.single hstep_yield_s₂)
-        · exact .step_yield hstep_yield_s₂
-      | step_input hstep_input_s₂ hstep_tau =>
-        replace hstep_input_s₂ := Lts.GuardStep.step hlabel hstep_input_s₂
-        replace hstep_tau := hstep_tau.map (Lts.GuardStep.step hguard.guard_tau)
-        cases hguard.guard_input hlabel <;>
-          rename_i h₁ <;> cases l <;> simp at h₁
-        · exact .step_tau (hstep_tau.prepend hstep_input_s₂)
-        · exact .step_input hstep_input_s₂ hstep_tau
-      | step_output hstep_tau hstep_output_s₂ =>
-        replace hstep_output_s₂ := Lts.GuardStep.step hlabel hstep_output_s₂
-        replace hstep_tau := hstep_tau.map (Lts.GuardStep.step hguard.guard_tau)
-        cases hguard.guard_output hlabel <;>
-          rename_i h₁ <;> cases l <;> simp at h₁
-        · exact .step_tau (hstep_tau.tail hstep_output_s₂)
-        · exact .step_output hstep_tau hstep_output_s₂
-      | step_tau hstep_tau_s₂ =>
-        replace hstep_tau_s₂ := hstep_tau_s₂.map (Lts.GuardStep.step hguard.guard_tau)
-        have := hguard.guard_tau_only hlabel
-        cases l <;> simp at this
-        exact .step_tau hstep_tau_s₂
-    · exact hR₂
+  apply Lts.SimilaritySt.intro hsim.Sim
+  · constructor
+    · exact hsim.sim_init
+    · intros s₁ s₂ l s₁' hR hstep
+      simp [Semantics.guard] at hstep
+      cases hstep with | step hlabel hstep =>
+      rename Label Op V m n => l'
+      have ⟨s₂', hstep_s₂, hR₂⟩ := hsim.sim_step _ _ _ _ hR hstep
+      exists s₂'
+      constructor
+      · cases hstep_s₂ with
+        | step_yield hstep_yield_s₂ =>
+          replace hstep_yield_s₂ := Lts.GuardStep.step hlabel hstep_yield_s₂
+          cases hguard.guard_yield hlabel <;>
+            rename_i h₁ <;> cases l <;> simp at h₁
+          · exact .step_tau (.single hstep_yield_s₂)
+          · exact .step_yield hstep_yield_s₂
+        | step_input hstep_input_s₂ hstep_tau =>
+          replace hstep_input_s₂ := Lts.GuardStep.step hlabel hstep_input_s₂
+          replace hstep_tau := hstep_tau.map (Lts.GuardStep.step hguard.guard_tau)
+          cases hguard.guard_input hlabel <;>
+            rename_i h₁ <;> cases l <;> simp at h₁
+          · exact .step_tau (hstep_tau.prepend hstep_input_s₂)
+          · exact .step_input hstep_input_s₂ hstep_tau
+        | step_output hstep_tau hstep_output_s₂ =>
+          replace hstep_output_s₂ := Lts.GuardStep.step hlabel hstep_output_s₂
+          replace hstep_tau := hstep_tau.map (Lts.GuardStep.step hguard.guard_tau)
+          cases hguard.guard_output hlabel <;>
+            rename_i h₁ <;> cases l <;> simp at h₁
+          · exact .step_tau (hstep_tau.tail hstep_output_s₂)
+          · exact .step_output hstep_tau hstep_output_s₂
+        | step_tau hstep_tau_s₂ =>
+          replace hstep_tau_s₂ := hstep_tau_s₂.map (Lts.GuardStep.step hguard.guard_tau)
+          have := hguard.guard_tau_only hlabel
+          cases l <;> simp at this
+          exact .step_tau hstep_tau_s₂
+      · exact hR₂
+  · intros s₁ s₂ hsim'
+    exact hsim.sim_prop _ _ hsim'
 
 /-- `guard` preserves weak simulation. -/
 theorem sim_weak_guard
