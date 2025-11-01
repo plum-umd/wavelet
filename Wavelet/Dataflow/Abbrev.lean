@@ -378,7 +378,8 @@ theorem Config.Step.step_fork
   {input : χ}
   {outputs : Vector χ k}
   (hmem : .fork input outputs ∈ c.proc.atoms)
-  (hpop_input : c.chans.popVal input = some (inputVal, chans')) :
+  (hpop_input : c.chans.popVal input = some (inputVal, chans'))
+  (hclone : InterpConsts.isClonable inputVal) :
   Step c .τ { c with
     chans := chans'.pushVals outputs (Vector.replicate _ inputVal),
   } := by
@@ -394,11 +395,11 @@ theorem Config.Step.step_fork
       apply AsyncOp.Interp.interp_fork (k := k)
         (outputs := outputs.toList)
         (by simp)
+        hclone
         |> AsyncOp.Interp.eq_label
       simp [Vector.toList]
       and_intros
-      any_goals try rfl
-      simp)
+      any_goals try rfl)
     (pop_val_to_pop_vals hpop_input)
     |> Lts.Step.eq_rhs
   simp

@@ -183,6 +183,15 @@ theorem proc_indexed_interp_guarded_inv_aff
   intros s' tr hsteps
   exact this hsteps
 
+theorem async_op_interp_preserves_no_token_const
+  [InterpConsts V]
+  {aop : AsyncOp (V ⊕ T)}
+  (hntok : aop.HasNoTokenConst)
+  (hinterp : AsyncOp.Interp aop
+    (.mk allInputs allOutputs inputs inputVals outputs outputVals) aop') :
+    aop'.HasNoTokenConst
+  := sorry
+
 /--
 `Config.DisjointTokens` is an invariant of a guarded `Proc` semantics,
 when restricted to non-input labels.
@@ -216,7 +225,15 @@ theorem Config.DisjointTokens.guarded_inv
       simp
       have ⟨hpw', hpw_vals, hpw_chans'_vals⟩ := pop_vals_pairwise hpw hpop
       constructor
-      · sorry
+      · intros ap hmem
+        have := List.mem_or_eq_of_mem_set hmem
+        cases this with
+        | inl hmem => exact hntok _ hmem
+        | inr heq =>
+          subst heq
+          simp [AtomicProc.HasNoTokenConst]
+          exact async_op_interp_preserves_no_token_const
+            (hntok _ (List.mem_of_getElem hget)) hinterp
       · apply push_vals_pairwise hpw'
         · sorry
         · sorry

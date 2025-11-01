@@ -123,6 +123,8 @@ inductive Interp
       (.forward k)
   | interp_fork :
     outputs.length = k →
+    -- This is to dynamically forbid cloning, e.g., permission tokens.
+    InterpConsts.isClonable inputVal →
     Interp (.fork k)
       (.mk [input] outputs
         [input] [inputVal]

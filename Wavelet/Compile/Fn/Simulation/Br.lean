@@ -58,7 +58,10 @@ private theorem sim_step_br_exec_dataflow
       ] ∈ pc.proc.atoms
     := by simp [hatoms, hrest, ← hcurrent]
   have hsteps₁ : Dataflow.Config.Step.WeakStep .τ pc .τ _
-    := .single (Dataflow.Config.Step.step_fork hmem_fork hpop_cond)
+    := .single (Dataflow.Config.Step.step_fork hmem_fork hpop_cond
+      (by
+        rw [InterpConsts.unique_toBool_fromBool _ _ hcondBool]
+        apply InterpConsts.bool_clonable))
   -- Simplify pushes
   rw [push_vals_empty] at hsteps₁
   rotate_left

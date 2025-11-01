@@ -217,7 +217,9 @@ private theorem sim_step_ret_exec_dataflow
   := by grind
   have hsteps₃ : Dataflow.Config.Step.IORestrictedStep pc _ _
     := .tail_tau (by simp) hsteps₂
-      (Dataflow.Config.Step.step_fork hmem_fork hpop_tail_cond)
+      (Dataflow.Config.Step.step_fork
+        hmem_fork hpop_tail_cond
+        (by apply InterpConsts.bool_clonable))
   -- Simplify pushes
   rw [push_vals_empty] at hsteps₃
   rotate_left

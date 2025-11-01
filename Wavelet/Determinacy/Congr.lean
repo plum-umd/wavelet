@@ -19,6 +19,18 @@ theorem congr_eq_interp_bool
   subst heq
   exact h
 
+theorem congr_eq_is_clonable
+  [InterpConsts V]
+  {v v' : V ⊕ T}
+  (h : InterpConsts.isClonable v = true)
+  (heq : EqModGhost v v') :
+    InterpConsts.isClonable v' = true
+  := by
+  simp [InterpConsts.isClonable] at h
+  cases v <;> cases v' <;> simp [EqModGhost] at heq h
+  subst heq
+  exact h
+
 theorem congr_eq_mod_ghost_async_op_interp
   [InterpConsts V]
   {aop aop' aop₁ : AsyncOp (V ⊕ T)}
@@ -92,14 +104,14 @@ theorem congr_eq_mod_ghost_async_op_interp
     exact ⟨_, _,
       .interp_forward h₁ h₂,
       by simp [AsyncOp.EqMod, heq_inputs]⟩
-  | interp_fork h₁ =>
+  | interp_fork h₁ h₂ =>
     cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
     subst heq_aop
     simp [List.forall₂_cons_left_iff] at heq_inputs
     have ⟨_, heq₁, heq₂⟩ := heq_inputs
     subst heq₂
     exact ⟨_, _,
-      .interp_fork h₁,
+      .interp_fork h₁ (congr_eq_is_clonable h₂ heq₁),
       by simp [AsyncOp.EqMod, List.forall₂_replicate heq₁]⟩
   | interp_const h₁ =>
     cases aop' <;> simp [AsyncOp.EqMod] at heq_aop

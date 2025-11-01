@@ -222,7 +222,8 @@ private theorem sim_step_tail_exec_dataflow
   := by simp [hatoms, ← hcomp_fn]
   have hsteps₃ : Dataflow.Config.Step.WeakStep .τ pc _ _
     := .tail_tau hsteps₂
-      (Dataflow.Config.Step.step_fork hmem_fork hpop_tail_cond)
+      (Dataflow.Config.Step.step_fork hmem_fork hpop_tail_cond
+        (by apply InterpConsts.bool_clonable))
   -- Simplify pushes
   rw [push_vals_empty] at hsteps₃
   rotate_left

@@ -21,7 +21,7 @@ instance [Arity Op₁] [Arity Op₂] : Arity (Op₁ ⊕ Op₂) where
   ω | .inl o => Arity.ω o
     | .inr o => Arity.ω o
 
-/-- Some constants used in compilation. -/
+/-- Some required constants in compilation and semantics. -/
 class InterpConsts (V : Type v) where
   -- Placeholder value
   junkVal : V
@@ -30,6 +30,9 @@ class InterpConsts (V : Type v) where
   fromBool : Bool → V
   unique_fromBool_toBool : ∀ b, toBool (fromBool b) = some b
   unique_toBool_fromBool : ∀ b v, toBool v = some b → v = fromBool b
+  -- Clonable values
+  isClonable : V → Bool
+  bool_clonable : ∀ b, isClonable (fromBool b) = true
 
 inductive Label (Op : Type u) V m n [Arity Op] where
   | yield (o : Op) (inputs : Vector V (Arity.ι o)) (outputs : Vector V (Arity.ω o))

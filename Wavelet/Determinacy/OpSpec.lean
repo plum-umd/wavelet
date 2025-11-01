@@ -86,6 +86,10 @@ instance instInterpConstsSum [left : InterpConsts V] : InterpConsts (V ⊕ V') w
       have := left.unique_toBool_fromBool b v' hv
       simp [this]
     · contradiction
+  isClonable
+    | .inl v => left.isClonable v
+    | .inr _ => false
+  bool_clonable b := left.bool_clonable b
 
 instance instArityWithSpec
   [arity : Arity Op]
