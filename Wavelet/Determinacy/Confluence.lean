@@ -1,7 +1,5 @@
 import Mathlib.Data.List.Lattice
 
-import Wavelet.Compile.AffineChan
-
 import Wavelet.Determinacy.Defs
 import Wavelet.Determinacy.Congr
 import Wavelet.Determinacy.DisjointTokens

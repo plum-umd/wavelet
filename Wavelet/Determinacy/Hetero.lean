@@ -824,6 +824,26 @@ theorem proc_indexed_interp_guarded_hetero_terminal_confl
           · simp [← heq₂''.2, heq₂'.2]
     ⟩
 
+theorem proc_interp_guarded_inv_aff
+  [Arity Op] [PCM T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  [opInterp : OpInterp Op V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s : ConfigWithSpec opSpec χ m n × opInterp.S}
+  (haff : s.1.proc.AffineChan) :
+    (Config.InterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.proc.AffineChan) s
+  := by
+  simp [Config.InterpGuardStep]
+  have : (Config.InterpGuardStep opSpec ioSpec).IsInvariantAt _ _ :=
+    (Lts.InterpStep.map_inv
+      (lts' := opInterp.lts)
+      (Inv := λ (s : ConfigWithSpec opSpec χ m n) => s.proc.AffineChan)
+      (Lts.GuardStep.map_inv (P := opSpec.Guard ioSpec) (haff.inv)))
+  intros s' tr hsteps
+  exact this hsteps
+
 /--
 Same as `proc_indexed_interp_guarded_hetero_terminal_confl`,
 but for the unindexed normal semantics:
@@ -856,18 +876,10 @@ theorem proc_interp_guarded_hetero_terminal_confl
       s₁.1 ≈ s₁'.1 ∧
       s₁.2 = s₁'.2
   := by
-  have haff : (Config.InterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.proc.AffineChan) s := by
-    -- TODO: Move this to a separate lemma
-    simp [Config.InterpGuardStep]
-    have : (Config.InterpGuardStep opSpec ioSpec).IsInvariantAt _ _ :=
-      (Lts.InterpStep.map_inv
-        (lts' := opInterp.lts)
-        (Inv := λ (s : ConfigWithSpec opSpec χ m n) => s.proc.AffineChan)
-        (Lts.GuardStep.map_inv (P := opSpec.Guard ioSpec) (Proc.AffineChan.inv haff)))
-    intros s' tr hsteps
-    exact this hsteps
   have ⟨_, hlen₁, htrace₁'⟩ := Config.InterpGuardStep.to_indexed_interp_guarded_tau_star htrace₁
   have ⟨_, hlen₂, htrace₂'⟩ := Config.InterpTrivStep.to_indexed_interp_unuarded_tau_star htrace₂
+  have haff : (Config.InterpGuardStep opSpec ioSpec).IsInvariantAt _ _ :=
+    proc_interp_guarded_inv_aff haff
   have ⟨_, _, htrace₃', hlen₃, heq⟩ := proc_indexed_interp_guarded_hetero_terminal_confl
     hconfl hdet hnb
     (haff.map_step (λ hstep => by

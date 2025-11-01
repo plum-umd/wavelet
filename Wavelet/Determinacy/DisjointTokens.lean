@@ -1,5 +1,6 @@
 import Wavelet.Seq.Fn
 import Wavelet.Dataflow.Proc
+import Wavelet.Dataflow.AffineChan
 import Wavelet.Determinacy.Defs
 
 /-! Definitions and lemmas about configurations having a disjoint set of tokens. -/
@@ -69,26 +70,35 @@ end Wavelet.Dataflow
 
 namespace Wavelet.Determinacy
 
-open Semantics Dataflow Seq
+open Semantics Dataflow
+
+theorem Config.DisjointTokens.inv
+  [Arity Op] [PCM T] [DecidableEq χ]
+  [InterpConsts V]
+  {s : Dataflow.Config Op χ (V ⊕ T) m n}
+  (haff : s.proc.AffineChan)
+  (hdisj : s.DisjointTokens) :
+    Config.Step.IsInvariantAt Config.DisjointTokens s
+  := by
+  sorry
 
 /--
 `Config.DisjointTokens` is a state invariant of a guarded `Proc` semantics.
 
 TODO: this requires the `opSpec` to be frame preserving.
 -/
-theorem proc_guard_inv_disj
+theorem Config.DisjointTokens.guarded_interp_inv
   [Arity Op] [PCM T] [DecidableEq χ]
   [InterpConsts V]
+  [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  (proc : ProcWithSpec opSpec χ m n) :
-    (proc.semantics.guard (opSpec.Guard ioSpec)).IsInvariant
-      Config.DisjointTokens
+  {s : Dataflow.ConfigWithSpec opSpec χ m n × opInterp.S}
+  (haff : s.1.proc.AffineChan)
+  (hdisj : s.1.DisjointTokens) :
+    (Config.InterpGuardStep opSpec ioSpec).IsInvariantAt
+      (Config.DisjointTokens ·.1) s
   := by
-  apply Lts.IsInvariantAt.by_induction
-  · simp [Dataflow.Config.init, Semantics.guard,
-      Proc.semantics, Config.Pairwise]
-  · intros s s' l hinv hstep
-    sorry
+  sorry
 
 end Wavelet.Determinacy

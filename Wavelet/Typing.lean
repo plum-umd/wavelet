@@ -1,5 +1,5 @@
 import Wavelet.Determinacy
-import Wavelet.Compile.AffineVar
+import Wavelet.Seq.AffineVar
 
 namespace Wavelet.Seq
 

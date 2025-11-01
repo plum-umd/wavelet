@@ -1,4 +1,4 @@
-import Wavelet.Dataflow
+import Wavelet.Dataflow.Proc
 
 namespace Wavelet.Dataflow
 

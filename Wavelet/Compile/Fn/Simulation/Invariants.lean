@@ -1,7 +1,7 @@
 import Mathlib.Logic.Relation
 
 import Wavelet.Compile.Fn.Defs
-import Wavelet.Compile.AffineVar
+import Wavelet.Seq.AffineVar
 
 /-! Simulation relation for `compileFn`. -/
 

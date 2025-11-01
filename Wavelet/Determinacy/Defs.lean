@@ -1,4 +1,5 @@
 import Wavelet.Dataflow.IndexedStep
+import Wavelet.Dataflow.AffineChan
 import Wavelet.Semantics.Confluence
 
 import Wavelet.Determinacy.PCM
