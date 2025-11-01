@@ -850,6 +850,7 @@ theorem proc_interp_guarded_hetero_terminal_confl
   {ioSpec : IOSpec V T m n}
   {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
   (hconfl : opSpec.Confluent opInterp)
+  (hfp : opSpec.FramePreserving)
   (hdet : opInterp.Deterministic)
   (hnb : opInterp.NonBlocking)
   (haff : s.1.proc.AffineChan)
@@ -869,7 +870,7 @@ theorem proc_interp_guarded_hetero_terminal_confl
   have hinv_aff : (Config.InterpGuardStep opSpec ioSpec).IsInvariantAt _ _ :=
     proc_interp_guarded_inv_aff haff
   have hinv_disj : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.DisjointTokens) s :=
-    Config.DisjointTokens.indexed_interp_guarded_inv haff hdisj
+    Config.DisjointTokens.indexed_interp_guarded_inv hfp haff hdisj
   have ⟨_, _, htrace₃', hlen₃, heq⟩ := proc_indexed_interp_guarded_hetero_terminal_confl
     hconfl hdet hnb
     haff

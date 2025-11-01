@@ -1,6 +1,6 @@
 import Wavelet.Seq.Prog
 
-/-! Some useful invariants of the sequential semantics. -/
+/-! Some useful properties and invariants of the sequential semantics. -/
 
 namespace Wavelet.Seq
 
@@ -186,5 +186,60 @@ theorem Prog.inv_init_deps
         apply hinv
         right
         simp [hcur_sem, Ne.symm heq]
+
+/-- As a consequence of the invariants above (`inv_const_prog`
+and `inv_init_deps`), if a program semantics makes an output step,
+the resulting state is going to be identical to the initial state. -/
+theorem Prog.output_init
+  [Arity Op]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {sigs : Sigs k}
+  {prog : Prog Op χ V sigs}
+  {i : Fin k}
+  {outputVals : Vector V (sigs i).ω}
+  {sem : Semantics Op V (sigs i).ι (sigs i).ω}
+  (hsem : sem = prog.semantics i)
+  {s s' : sem.S}
+  {tr : Trace (Label Op V (sigs i).ι (sigs i).ω)}
+  (hinit : sem.lts.Star sem.init tr s)
+  (hstep : sem.lts.Step s (.output outputVals) s') :
+    s' = sem.init
+  := by
+  unfold Prog.semantics at hsem
+  subst hsem
+  have heq_fn : s.mainState.fn = prog i := by
+    have hinv : IsInvariant _ _ := Prog.inv_const_prog prog i
+    rw [← Prog.state_unfold_fold_eq s] at hinit
+    have := Prog.fold_star hinit
+    have := hinv this
+    simp [Prog.InvConstProg] at this
+    rw [Prog.InvConstProg', LinkInv] at this
+    have ⟨h₁, _⟩ := this
+    exact h₁.base
+  have hinit_deps :
+    s.curSem = none →
+    ∀ depOp,
+      s.depStates depOp = (prog.semantics depOp.toFin).init := by
+    have hinv : IsInvariant _ _ := Prog.inv_init_deps prog i
+    rw [← Prog.state_unfold_fold_eq s] at hinit
+    have := Prog.fold_star hinit
+    have := hinv this
+    simp [Prog.InvInitDeps] at this
+    rw [Prog.InvInitDeps'] at this
+    intros hcur_sem
+    simp [hcur_sem] at this
+    exact this
+  rcases i with ⟨i, hlt⟩
+  induction i using Nat.strong_induction_on with
+  | _ i ih =>
+    cases hstep with
+    | step_main hcur_sem hpass hstep =>
+      cases hpass
+      have := Fn.semantics_output_init hstep heq_fn
+      simp [hcur_sem, this, link, LinkState.init, Fn.semantics]
+      funext depOp
+      simp [hinit_deps hcur_sem]
+    | step_dep _ hpass => cases hpass
 
 end Wavelet.Seq

@@ -10,30 +10,6 @@ namespace Wavelet
 
 open Semantics Determinacy Seq Dataflow Compile
 
-/-- TODO -/
-def ProgWithSpec.WellPermTyped
-  [Arity Op] [PCM T]
-  {sigs : Sigs k}
-  {opSpec : OpSpec Op V T}
-  (progSpec : ProgSpec Op V T sigs)
-  (prog : ProgWithSpec χ sigs opSpec) : Prop := sorry
-
-/-- Well-typing induces a simulation between unguarded
-and guarded semantics of `Prog`. -/
-theorem sim_wt_prog
-  [Arity Op]
-  [InterpConsts V]
-  [PCM T] [PCM.Lawful T]
-  [DecidableEq χ]
-  {sigs : Sigs k}
-  {opSpec : OpSpec Op V T}
-  {progSpec : ProgSpec Op V T sigs}
-  (prog : ProgWithSpec χ sigs opSpec)
-  (hwt : ProgWithSpec.WellPermTyped progSpec prog) :
-    (prog.semantics i).guard opSpec.TrivGuard
-      ≲ᵣ[PreservesInit] (prog.semantics i).guard (opSpec.Guard (progSpec i))
-  := by sorry
-
 /-- Final semantics of a sequential program when interpreted
 with a specific operator interpretation. -/
 abbrev Seq.Prog.semanticsᵢ
@@ -112,59 +88,7 @@ theorem compile_forward_sim
   · apply (compile_forward_sim_guarded prog hwt haff₁ haff₂ i).weaken (by simp)
   · apply sim_guarded_unguarded
 
-theorem prog_semantics_output_init
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {sigs : Sigs k}
-  {prog : Prog Op χ V sigs}
-  {i : Fin k}
-  {outputVals : Vector V (sigs i).ω}
-  {sem : Semantics Op V (sigs i).ι (sigs i).ω}
-  (hsem : sem = prog.semantics i)
-  {s s' : sem.S}
-  {tr : Trace (Label Op V (sigs i).ι (sigs i).ω)}
-  (hinit : sem.lts.Star sem.init tr s)
-  (hstep : sem.lts.Step s (.output outputVals) s') :
-    s' = sem.init
-  := by
-  unfold Prog.semantics at hsem
-  subst hsem
-  have heq_fn : s.mainState.fn = prog i := by
-    have hinv : IsInvariant _ _ := Prog.inv_const_prog prog i
-    rw [← Prog.state_unfold_fold_eq s] at hinit
-    have := Prog.fold_star hinit
-    have := hinv this
-    simp [Prog.InvConstProg] at this
-    rw [Prog.InvConstProg', LinkInv] at this
-    have ⟨h₁, _⟩ := this
-    exact h₁.base
-  have hinit_deps :
-    s.curSem = none →
-    ∀ depOp,
-      s.depStates depOp = (prog.semantics depOp.toFin).init := by
-    have hinv : IsInvariant _ _ := Prog.inv_init_deps prog i
-    rw [← Prog.state_unfold_fold_eq s] at hinit
-    have := Prog.fold_star hinit
-    have := hinv this
-    simp [Prog.InvInitDeps] at this
-    rw [Prog.InvInitDeps'] at this
-    intros hcur_sem
-    simp [hcur_sem] at this
-    exact this
-  rcases i with ⟨i, hlt⟩
-  induction i using Nat.strong_induction_on with
-  | _ i ih =>
-    cases hstep with
-    | step_main hcur_sem hpass hstep =>
-      cases hpass
-      have := Fn.semantics_output_init hstep heq_fn
-      simp [hcur_sem, this, link, LinkState.init, Fn.semantics]
-      funext depOp
-      simp [hinit_deps hcur_sem]
-    | step_dep _ hpass => cases hpass
-
-theorem prog_semanticsᵢ_star_to_semantics_star
+private theorem prog_semanticsᵢ_star_to_semantics_star
   [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
@@ -183,8 +107,8 @@ theorem prog_semanticsᵢ_star_to_semantics_star
   have := Lts.GuardStep.star_to_base_star hsteps
   exact this
 
-/-- After an output step, the program configuration becomes the initial configuration -/
-theorem prog_semanticsᵢ_output_init
+/-- After an output step, the program configuration becomes the initial configuration. -/
+private theorem prog_semanticsᵢ_output_init
   [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
@@ -205,7 +129,7 @@ theorem prog_semanticsᵢ_output_init
   cases hstep with | step hguard hstep =>
   cases hguard
   have ⟨_, hinit'⟩ := prog_semanticsᵢ_star_to_semantics_star hinit
-  exact prog_semantics_output_init rfl hinit' hstep
+  exact Prog.output_init rfl hinit' hstep
 
 theorem compile_strong_norm
   {Op V T : Type u}
@@ -218,6 +142,7 @@ theorem compile_strong_norm
   {progSpec : ProgSpec Op V T sigs}
   -- Required properties on the operator interpretation
   (hconfl : opSpec.Confluent opInterp)
+  (hfp : opSpec.FramePreserving)
   (hdet : opInterp.Deterministic)
   (hnb : opInterp.NonBlocking)
   -- Program with well-formedness and typing properties
@@ -229,18 +154,19 @@ theorem compile_strong_norm
   -- Same inputs and outputs
   {args : Vector V (sigs i).ι}
   {outputVals : Vector V (sigs i).ω}
-  -- Compiled dataflow graph
   {proc : Proc (WithSpec Op opSpec) (LinkName (ChanName χ)) (V ⊕ T) _ _}
-  (hcomp : proc = compileProg prog i)
   {s s₁ s₂ : (prog.semanticsᵢ i).S}
   {s' : proc.semanticsᵢ.S}
+  -- Compiled dataflow graph
+  (hcomp : proc = compileProg prog i)
   -- There exists a terminating trace in the sequential semantics
   (hinputs : (prog.semanticsᵢ i).lts.Step (prog.semanticsᵢ i).init (.input args) s)
   (htrace : (prog.semanticsᵢ i).lts.TauStarN .τ k s s₁)
-  (hterm : (prog.semanticsᵢ i).lts.IsFinalFor (·.isSilent) s₁)
   (houtput : (prog.semanticsᵢ i).lts.Step s₁ (.output outputVals) s₂)
   -- Initial setup in the dataflow graph
-  (hinputs' : proc.semanticsᵢ.lts.Step proc.semanticsᵢ.init (.input args) s') :
+  (hinputs' : proc.semanticsᵢ.lts.Step proc.semanticsᵢ.init (.input args) s')
+  -- Some invariants at the initial state (TODO: show these from `compileProg`)
+  (haff : proc.semanticsᵢ.init.1.proc.AffineChan) :
     ∃ (bound : Nat), -- Uniform bound on any dataflow trace length
       -- For any trace in the compiled dataflow graph
       ∀ {s₁' : proc.semanticsᵢ.S},
@@ -249,7 +175,7 @@ theorem compile_strong_norm
           bound = k' + k'' ∧
           proc.semanticsᵢ.lts.TauStarN .τ k'' s₁' s₁'' ∧
           proc.semanticsᵢ.lts.Step s₁'' (.output outputVals) s₂' ∧
-          s₂'.1 ≈ (proc.semanticsᵢ).init.1 ∧ -- Back to initial dataflow state
+          s₂'.1 ≈ proc.semanticsᵢ.init.1 ∧ -- Back to initial dataflow state
           s₂'.2 = s₂.2 -- Equal operator states
   := by
   /- Sketch
@@ -263,14 +189,18 @@ theorem compile_strong_norm
     `Seq`: init →ι s →τ* s₁ →ω s₂, (s₁ final wrt to τ)
     `Proc`: init →ι s' →τ* s₁'
 
-  By simulation, we get
+  By forward simulation, we get
     `Proc`: init →ι s'' →τ* s''', with s''' ∼ s₁
     `Proc`: s''' →τ* s₁'', with s₁'' ∼ s₁
     `Proc`: s₁'' →τ* s₁''' →ω s₂'', with s₂'' ∼ s₂
     In other words:
       init →ι s'' →τ* s₁''' →ω s₂'', with s₂'' ∼ s₂
 
-  TODO
+  By the determinacy results, we can continue the dataflow trace
+  [s' →τ* s₁'] to a state that is equal to s₁''' modulo ghost tokens,
+  along with a bound on [s' →τ* s₁'].
+
+  After some more manipulations, we can show the result of this theorem.
   -/
   subst hcomp
   have hsim₁ := compile_forward_sim_guarded prog hwt haff₁ haff₂ i
@@ -309,9 +239,13 @@ theorem compile_strong_norm
   specialize hfinal_init hinit_s₂
   have hfinal_s₁''' : Dataflow.Config.Step.IsFinalFor _ _ := proc_interp_guarded_output_init_invert houtput'
     (by simp [hfinal_init, Proc.semantics, Semantics.guard, Dataflow.Config.init])
-  -- Use determinacy
-  have ⟨_, _, htrace''', hlen₁, heq₃⟩ := proc_interp_guarded_hetero_terminal_confl hconfl hdet hnb
-    sorry sorry -- Some invariants
+  -- Use determinacy to obtain a terminating trace from `s''`
+  have hinv_aff_s'' : (Config.InterpGuardStep opSpec (progSpec i)).IsInvariantAt (·.1.proc.AffineChan) _
+    := proc_interp_guarded_inv_aff haff
+  have ⟨_, _, htrace''', hlen₁, heq₃⟩ := proc_interp_guarded_hetero_terminal_confl
+    hconfl hfp hdet hnb
+    (hinv_aff_s''.unfold hinputs'').1
+    (Config.DisjointTokens.interp_guarded_init_input haff rfl hinputs'')
     hmiddle hfinal_s₁''' htrace''
   -- Convert the determinacy result to τ steps after `htrace'`
   have this := congr_eq_mod_ghost_proc_interp_unguarded_tau_star_n htrace'''

@@ -30,6 +30,8 @@ def OpSpec.CompatLabels
   | .respond op₁ inputs₁ _, .respond op₂ inputs₂ _ =>
     (opSpec.pre op₁ inputs₁) ⊥ (opSpec.pre op₂ inputs₂)
 
+/-- The given operator interpretation is confluent for operator
+firings that are compatible according to the `OpSpec`. -/
 def OpSpec.Confluent
   [Arity Op] [PCM T]
   (opSpec : OpSpec Op V T)
@@ -44,6 +46,14 @@ def OpSpec.Confluent
     ∃ s',
       interp.lts.Step s₁ l₂ s' ∧
       interp.lts.Step s₂ l₁ s'
+
+/-- For any operator and inputs/outputs, the change from
+the pre-condition to the post-condition is valid in any PCM frame. -/
+def OpSpec.FramePreserving
+  [Arity Op] [PCM T]
+  (opSpec : OpSpec Op V T) : Prop :=
+  (∀ op inputs outputs,
+    opSpec.pre op inputs ⟹ opSpec.post op inputs outputs)
 
 /-- Specification on input/output labels. -/
 structure IOSpec V T m n where

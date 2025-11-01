@@ -155,6 +155,7 @@ theorem Config.DisjointTokens.guarded_inv
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
+  (hfp : opSpec.FramePreserving)
   {s : Dataflow.ConfigWithSpec opSpec χ m n}
   (haff : s.proc.AffineChan)
   (hdisj : s.DisjointTokens) :
@@ -162,7 +163,44 @@ theorem Config.DisjointTokens.guarded_inv
       (¬ ·.isInput)
       Config.DisjointTokens s
   := by
-  sorry
+  apply Lts.IsInvariantForAt.by_strong_induction
+  · exact hdisj
+  · intros s₁ s₂ l tr hpref htr hdisj hl hstep
+    have haff' := proc_guarded_inv_aff haff hpref
+    simp at haff'
+    simp [Config.GuardStep] at hstep
+    rcases hstep with ⟨hguard, hstep⟩
+    cases hguard with
+    | spec_tau =>
+      -- Async operators
+      cases hstep with | step_async =>
+      sorry
+    | spec_yield =>
+      -- Normal operator
+      cases hstep with | step_op =>
+      sorry
+    | spec_join =>
+      -- Join
+      cases hstep with | step_op =>
+      sorry
+    | spec_input => simp at hl
+    | spec_output =>
+      -- Output
+      cases hstep with | step_output =>
+      sorry
+
+/-- Stepping from an initial state with an input label results in a `DisjointTokens` state. -/
+theorem Config.DisjointTokens.guarded_init_input
+  [Arity Op] [PCM T] [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s s' : Dataflow.ConfigWithSpec opSpec χ m n}
+  (haff : s.proc.AffineChan)
+  (hinit : s.chans = ChanMap.empty)
+  (hinput : (Config.GuardStep opSpec ioSpec).Step s (.input vals) s') :
+    s'.DisjointTokens
+  := sorry
 
 /--
 `Config.DisjointTokens` is an invariant of an interpreted and guarded `Proc` semantics.
@@ -173,6 +211,7 @@ theorem Config.DisjointTokens.interp_guarded_inv
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
+  (hfp : opSpec.FramePreserving)
   {s : Dataflow.ConfigWithSpec opSpec χ m n × opInterp.S}
   (haff : s.1.proc.AffineChan)
   (hdisj : s.1.DisjointTokens) :
@@ -198,7 +237,7 @@ theorem Config.DisjointTokens.interp_guarded_inv
     have hinv_aff : (Config.GuardStep opSpec ioSpec).IsInvariantAt _ _ :=
       proc_guarded_inv_aff haff'
     have hinv_disj : (Config.GuardStep opSpec ioSpec).IsInvariantForAt _ _ _ :=
-      Config.DisjointTokens.guarded_inv haff' hdisj'
+      Config.DisjointTokens.guarded_inv hfp haff' hdisj'
     simp [Config.InterpGuardStep] at tail
     cases tail with
     | step_tau tail
@@ -221,6 +260,7 @@ theorem Config.DisjointTokens.indexed_interp_guarded_inv
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
+  (hfp : opSpec.FramePreserving)
   {s : Dataflow.ConfigWithSpec opSpec χ m n × opInterp.S}
   (haff : s.1.proc.AffineChan)
   (hdisj : s.1.DisjointTokens) :
@@ -229,7 +269,7 @@ theorem Config.DisjointTokens.indexed_interp_guarded_inv
   := by
   with_reducible
   have : (Config.InterpGuardStep opSpec ioSpec).IsInvariantForAt _ _ _ :=
-    Config.DisjointTokens.interp_guarded_inv haff hdisj
+    Config.DisjointTokens.interp_guarded_inv hfp haff hdisj
   have := this.imp_labels
     (Labels₂ := λ (l : Label _ V m n) => l.isSilent)
     (by intros l; cases l <;> simp)
@@ -243,5 +283,18 @@ theorem Config.DisjointTokens.indexed_interp_guarded_inv
         simp [this] at hstep'
         exact ⟨_, by simp, hstep'⟩)
   exact Lts.IsInvariantForAt.to_inv_at (by simp) this
+
+theorem Config.DisjointTokens.interp_guarded_init_input
+  [Arity Op] [PCM T] [DecidableEq χ]
+  [InterpConsts V]
+  [opInterp : OpInterp Op V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s s' : Dataflow.ConfigWithSpec opSpec χ m n × opInterp.S}
+  (haff : s.1.proc.AffineChan)
+  (hinit : s.1.chans = ChanMap.empty)
+  (hinput : (Config.InterpGuardStep opSpec ioSpec).Step s (.input vals) s') :
+    s'.1.DisjointTokens
+  := sorry
 
 end Wavelet.Determinacy
