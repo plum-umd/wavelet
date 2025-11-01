@@ -154,7 +154,7 @@ theorem compile_strong_norm
   -- Same inputs and outputs
   {args : Vector V (sigs i).ι}
   {outputVals : Vector V (sigs i).ω}
-  {proc : Proc (WithSpec Op opSpec) (LinkName (ChanName χ)) (V ⊕ T) _ _}
+  {proc : ProcWithSpec opSpec (LinkName (ChanName χ)) _ _}
   {s s₁ s₂ : (prog.semanticsᵢ i).S}
   {s' : proc.semanticsᵢ.S}
   -- Compiled dataflow graph
@@ -166,7 +166,8 @@ theorem compile_strong_norm
   -- Initial setup in the dataflow graph
   (hinputs' : proc.semanticsᵢ.lts.Step proc.semanticsᵢ.init (.input args) s')
   -- Some invariants at the initial state (TODO: show these from `compileProg`)
-  (haff : proc.semanticsᵢ.init.1.proc.AffineChan) :
+  (haff : proc.semanticsᵢ.init.1.proc.AffineChan)
+  (hntok : proc.semanticsᵢ.init.1.proc.HasNoTokenConst) :
     ∃ (bound : Nat), -- Uniform bound on any dataflow trace length
       -- For any trace in the compiled dataflow graph
       ∀ {s₁' : proc.semanticsᵢ.S},
@@ -245,7 +246,7 @@ theorem compile_strong_norm
   have ⟨_, _, htrace''', hlen₁, heq₃⟩ := proc_interp_guarded_hetero_terminal_confl
     hconfl hfp hdet hnb
     (hinv_aff_s''.unfold hinputs'').1
-    (Config.DisjointTokens.interp_guarded_init_input haff rfl hinputs'')
+    (Config.DisjointTokens.interp_guarded_init_input hntok rfl hinputs'')
     hmiddle hfinal_s₁''' htrace''
   -- Convert the determinacy result to τ steps after `htrace'`
   have this := congr_eq_mod_ghost_proc_interp_unguarded_tau_star_n htrace'''

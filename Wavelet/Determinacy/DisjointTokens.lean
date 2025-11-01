@@ -55,8 +55,31 @@ namespace Wavelet.Dataflow
 
 open Semantics Determinacy
 
+/-- The async op does not generate ghost token constants. -/
+def AsyncOp.HasNoTokenConst :
+  AsyncOp (V ⊕ T) → Prop
+  | const c _ => c.isLeft
+  | forwardc _ _ consts => ∀ v ∈ consts, v.isLeft
+  | _ => True
+
+def AtomicProc.HasNoTokenConst [Arity Op] :
+  AtomicProc Op χ (V ⊕ T) → Prop
+  | .op _ _ _ => True
+  | .async aop _ _ => aop.HasNoTokenConst
+
+@[simp]
+def AtomicProcs.HasNoTokenConst
+  [Arity Op] (aps : AtomicProcs Op χ (V ⊕ T)) : Prop
+  := ∀ ap ∈ aps, ap.HasNoTokenConst
+
+@[simp]
+def Proc.HasNoTokenConst
+  [Arity Op] (proc : Proc Op χ (V ⊕ T) m n) : Prop
+  := proc.atoms.HasNoTokenConst
+
 /-- Defines a config property that imposes a
 constraint on every pair of values in the config. -/
+@[simp]
 def Config.Pairwise
   [Arity Op]
   (P : V → V → Prop)
@@ -67,6 +90,7 @@ def Config.Pairwise
 def Config.DisjointTokens
   [Arity Op] [PCM T]
   (c : Config Op χ (V ⊕ T) m n) : Prop :=
+  c.proc.HasNoTokenConst ∧
   c.Pairwise InrDisjointTokens
 
 end Wavelet.Dataflow
@@ -74,6 +98,19 @@ end Wavelet.Dataflow
 namespace Wavelet.Determinacy
 
 open Semantics Dataflow
+
+@[simp]
+theorem InrDisjointTokens.pairwise_map_inl
+  [PCM T] {vals : Vector V n} :
+    List.Pairwise (InrDisjointTokens (T := T)) (Vector.map .inl vals).toList
+  := by
+  apply List.pairwise_of_forall_mem_list
+  intros x hx y hy
+  simp at hx hy
+  replace ⟨_, _, hx⟩ := hx
+  replace ⟨_, _, hy⟩ := hy
+  subst hx hy
+  simp [InrDisjointTokens]
 
 theorem proc_guarded_inv_aff
   [Arity Op] [PCM T]
@@ -169,12 +206,20 @@ theorem Config.DisjointTokens.guarded_inv
     have haff' := proc_guarded_inv_aff haff hpref
     simp at haff'
     simp [Config.GuardStep] at hstep
+    simp at hdisj
+    have ⟨hntok, hpw⟩ := hdisj
     rcases hstep with ⟨hguard, hstep⟩
     cases hguard with
     | spec_tau =>
       -- Async operators
-      cases hstep with | step_async =>
-      sorry
+      cases hstep with | step_async _ hget hinterp hpop =>
+      simp
+      have ⟨hpw', hpw_vals, hpw_chans'_vals⟩ := pop_vals_pairwise hpw hpop
+      constructor
+      · sorry
+      · apply push_vals_pairwise hpw'
+        · sorry
+        · sorry
     | spec_yield =>
       -- Normal operator
       cases hstep with | step_op =>
@@ -196,11 +241,23 @@ theorem Config.DisjointTokens.guarded_init_input
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
   {s s' : Dataflow.ConfigWithSpec opSpec χ m n}
-  (haff : s.proc.AffineChan)
+  (hntok : s.proc.HasNoTokenConst)
   (hinit : s.chans = ChanMap.empty)
   (hinput : (Config.GuardStep opSpec ioSpec).Step s (.input vals) s') :
     s'.DisjointTokens
-  := sorry
+  := by
+  cases hinput with | step hguard hstep =>
+  cases hguard
+  cases hstep with | step_init =>
+  simp
+  constructor
+  · exact hntok
+  · apply push_vals_pairwise
+    · simp [hinit]
+    · simp [Vector.toList_push]
+      apply List.pairwise_append.mpr
+      simp [InrDisjointTokens]
+    · simp [hinit, ChanMap.empty]
 
 /--
 `Config.DisjointTokens` is an invariant of an interpreted and guarded `Proc` semantics.
@@ -291,10 +348,12 @@ theorem Config.DisjointTokens.interp_guarded_init_input
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
   {s s' : Dataflow.ConfigWithSpec opSpec χ m n × opInterp.S}
-  (haff : s.1.proc.AffineChan)
+  (hntok : s.1.proc.HasNoTokenConst)
   (hinit : s.1.chans = ChanMap.empty)
   (hinput : (Config.InterpGuardStep opSpec ioSpec).Step s (.input vals) s') :
     s'.1.DisjointTokens
-  := sorry
+  := by
+  cases hinput with | step_input hstep =>
+  exact Config.DisjointTokens.guarded_init_input hntok hinit hstep
 
 end Wavelet.Determinacy

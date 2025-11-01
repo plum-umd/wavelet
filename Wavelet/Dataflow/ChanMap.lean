@@ -56,6 +56,16 @@ def ChanMap.Pairwise
     (_ : j < (map x₂).length) →
     P (map x₁)[i] (map x₂)[j]
 
+@[simp]
+abbrev ChanMap.PairwiseWithVals
+  (P : V → V → Prop)
+  (vals : Vector V n)
+  (map : ChanMap χ V) : Prop :=
+  ∀ {name val₁ val₂},
+    val₁ ∈ map name →
+    val₂ ∈ vals →
+    P val₁ val₂
+
 /-! Lemmas about `ChanMap`. -/
 section Lemmas
 
@@ -689,6 +699,31 @@ theorem pop_vals_pop_vals_disj_preserves_pairwise
   have hpw := hpw (.inl hne) hi hj
   simp [hget_v₁, hget_v₂] at hpw
   exact hpw
+
+theorem pop_vals_pairwise
+  [DecidableEq χ]
+  {map : ChanMap χ V}
+  {P : V → V → Prop}
+  {names : Vector χ n}
+  {vals : Vector V n}
+  (hpw : map.Pairwise P)
+  (hpop : map.popVals names = some (vals, map')) :
+    map'.Pairwise P ∧
+    vals.toList.Pairwise P ∧
+    map'.PairwiseWithVals P vals
+  := sorry
+
+theorem push_vals_pairwise
+  [DecidableEq χ]
+  {map : ChanMap χ V}
+  {P : V → V → Prop}
+  {names : Vector χ n}
+  {vals : Vector V n}
+  (hpw : map.Pairwise P)
+  (hpw_vals : vals.toList.Pairwise P)
+  (hpw_map : map.PairwiseWithVals P vals) :
+    (map.pushVals names vals).Pairwise P
+  := sorry
 
 end Lemmas
 
