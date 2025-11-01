@@ -1,5 +1,6 @@
 import Wavelet.Determinacy.Defs
 import Wavelet.Determinacy.Determinism
+import Wavelet.Determinacy.Convert
 
 /-! Lemmas about converting steps through `EqMod`. -/
 
@@ -312,6 +313,23 @@ theorem congr_eq_mod_ghost_proc_indexed_interp_unguarded
     ⟩
   | _ hstep => simp at hl
 
+theorem congr_eq_mod_ghost_proc_interp_unguarded_tau
+  [Arity Op]
+  [DecidableEq χ]
+  [InterpConsts V]
+  [opInterp : OpInterp Op V]
+  {opSpec : OpSpec Op V T}
+  {s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  (hstep : (Config.InterpTrivStep opSpec).Step s₁ .τ s₂)
+  (heq : s₁.1 ≈ s₁'.1 ∧ s₁.2 = s₁'.2) :
+    ∃ s₂',
+      (Config.InterpTrivStep opSpec).Step s₁' .τ s₂' ∧
+      s₂.1 ≈ s₂'.1 ∧ s₂.2 = s₂'.2
+  := by
+  have ⟨_, hstep'⟩ := Config.InterpTrivStep.to_indexed_interp_unguarded_tau hstep
+  have ⟨_, hstep'', heq'⟩ := congr_eq_mod_ghost_proc_indexed_interp_unguarded hstep' heq
+  exact ⟨_, Config.IdxInterpTrivStep.to_interp_unguarded hstep'', heq'⟩
+
 theorem congr_eq_mod_ghost_proc_indexed_interp_unguarded_star
   [Arity Op]
   [DecidableEq χ]
@@ -347,7 +365,13 @@ theorem congr_eq_mod_ghost_proc_interp_unguarded_tau_star_n
       (Config.InterpTrivStep opSpec).TauStarN .τ k s₁' s₂' ∧
       s₂.1 ≈ s₂'.1 ∧ s₂.2 = s₂'.2
   := by
-  sorry
+  induction htrace
+    generalizing s₁' with
+  | refl => exact ⟨s₁', .refl, heq⟩
+  | tail hpref htail ih =>
+    have ⟨_, hpref', heq'⟩ := ih heq
+    have ⟨_, htail', heq''⟩ := congr_eq_mod_ghost_proc_interp_unguarded_tau htail heq'
+    exact ⟨_, .tail hpref' htail', heq''⟩
 
 theorem congr_eq_mod_ghost_proc_interp_unguarded_output
   [Arity Op]
@@ -356,13 +380,45 @@ theorem congr_eq_mod_ghost_proc_interp_unguarded_output
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
-  (htrace : (Config.InterpTrivStep opSpec).Step s₁ (.output vals) s₂)
+  (hstep : (Config.InterpTrivStep opSpec).Step s₁ (.output vals) s₂)
   (heq : s₁.1 ≈ s₁'.1 ∧ s₁.2 = s₁'.2) :
     ∃ s₂',
       (Config.InterpTrivStep opSpec).Step s₁' (.output vals) s₂' ∧
       s₂.1 ≈ s₂'.1 ∧ s₂.2 = s₂'.2
   := by
-  sorry
+  cases hstep with | step_output hstep =>
+  rcases hstep with ⟨hguard, hstep⟩
+  cases hguard
+  cases hstep with | step_output hpop =>
+  simp [Config.EqMod] at heq
+  have ⟨⟨heq_proc, heq_chans⟩, heq_state⟩ := heq
+  have ⟨_, heq_output_names, _⟩ := heq_proc
+  have ⟨_, _, hpop', heq_outputs, heq_chans'⟩ := congr_eq_mod_pop_vals heq_chans hpop
+  have ⟨_, _, heq_outputs', heq_outputs₁, heq_outputs₂⟩ := Vector.forall₂_push_to_vector heq_outputs
+  rename V ⊕ T => tok
+  cases tok <;> simp [EqModGhost] at heq_outputs₂
+  rename_i tok
+  have := Vector.toList_inj.mp heq_outputs'
+  subst this
+  simp [Vector.toList_map] at heq_outputs₁
+  have ⟨_, h⟩ := Vector.forall₂_exists_map (f := .inl) heq_outputs₁
+    (by intros x y; cases y <;> simp [EqModGhost])
+  subst h
+  simp [Vector.toList_map, EqModGhost] at heq_outputs₁
+  have := Vector.toList_inj.mp heq_outputs₁
+  subst this
+  simp [heq_output_names] at hpop'
+  exact ⟨_,
+    .step_output (.step
+      (.triv_output)
+      (.step_output hpop')),
+    by
+      constructor
+      · constructor
+        · exact heq_proc
+        · exact heq_chans'
+      · exact heq_state,
+  ⟩
 
 /-- Equal labels translate to equal labels through `OpSpec.Guard`. -/
 theorem congr_eq_spec_guard

@@ -294,7 +294,14 @@ theorem proc_interp_guarded_det_input
   (hstep₁ : (Config.InterpGuardStep opSpec ioSpec).Step s (.input vals) s₁)
   (hstep₂ : (Config.InterpGuardStep opSpec ioSpec).Step s (.input vals) s₂) :
     s₁ = s₂
-  := sorry
+  := by
+  cases hstep₁ with | step_input hstep₁ =>
+  cases hstep₂ with | step_input hstep₂ =>
+  rcases hstep₁ with ⟨⟨hguard₁⟩, hstep₁⟩
+  rcases hstep₂ with ⟨⟨hguard₂⟩, hstep₂⟩
+  cases hstep₁ with | step_init =>
+  cases hstep₂ with | step_init =>
+  rfl
 
 theorem proc_interp_guarded_unguarded_det_input_mod
   [Arity Op] [PCM T]
@@ -307,7 +314,24 @@ theorem proc_interp_guarded_unguarded_det_input_mod
   (hstep₁ : (Config.InterpGuardStep opSpec ioSpec).Step s (.input vals) s₁)
   (hstep₂ : (Config.InterpTrivStep opSpec).Step s (.input vals) s₂) :
     s₁.1 ≈ s₂.1 ∧ s₁.2 = s₂.2
-  := sorry
+  := by
+  cases hstep₁ with | step_input hstep₁ =>
+  cases hstep₂ with | step_input hstep₂ =>
+  rcases hstep₁ with ⟨⟨hguard₁⟩, hstep₁⟩
+  rcases hstep₂ with ⟨⟨hguard₂⟩, hstep₂⟩
+  cases hstep₁ with | step_init =>
+  cases hstep₂ with | step_init =>
+  constructor
+  · constructor
+    · apply IsRefl.refl
+    · simp
+      apply congr_eq_mod_push_vals
+      · apply IsRefl.refl
+      · simp [Vector.toList_push]
+        apply List.forall₂_append
+        · simp [EqModGhost]
+        · simp [EqModGhost]
+  · rfl
 
 /--
 If a state transitions to an initial state after one output step,
@@ -327,6 +351,7 @@ theorem proc_interp_guarded_output_init_invert
   (hstep : (Config.InterpGuardStep opSpec ioSpec).Step s (.output vals) s')
   (hinit : s'.1.chans = ChanMap.empty) :
     Config.Step.IsFinalFor (λ l => l.isYield ∨ l.isSilent) s.1
-  := sorry
+  := by
+  sorry
 
 end Wavelet.Determinacy

@@ -269,6 +269,37 @@ theorem forall₂_append_to_vector
   simp at h₁ h₂
   simp [h₁, h₂]
 
+theorem forall₂_push_to_vector
+  {α β}
+  {xs : Vector α n} {x : α}
+  {ys : List β}
+  {R : α → β → Prop}
+  (h : List.Forall₂ R (xs.push x).toList ys) :
+    ∃ (ys' : Vector β n) (y' : β),
+      ys = (ys'.push y').toList ∧
+      List.Forall₂ R xs.toList ys'.toList ∧
+      R x y'
+  := by
+  simp [Vector.toList_push] at h
+  have : [x] = #v[x].toList := by simp
+  rw [this] at h
+  have ⟨ys₁', ys₂', h₁, h₂, h₃⟩ := forall₂_append_to_vector h
+  exact ⟨
+    ys₁', ys₂'[0],
+    by
+      simp [h₁, Vector.toList_push]
+      apply List.ext_get
+      · simp
+      · intros i hi
+        simp at hi
+        simp [hi],
+    h₂,
+    by
+      simp at h₃
+      have := List.Forall₂.get h₃ (i := 0) (by simp) (by simp)
+      exact this,
+  ⟩
+
 theorem exists_inverse_to_map
   {f : α → β}
   {xs : Vector β n}
