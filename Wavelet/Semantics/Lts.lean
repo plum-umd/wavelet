@@ -323,6 +323,40 @@ theorem Lts.Star.map_hetero_step
     have ⟨_, hstep'⟩ := hmap hstep
     exact ⟨_, .tail hpref' hstep'⟩
 
+/-- Similar but imposes an additional restriction on labels. -/
+theorem Lts.Star.map_hetero_step_alt
+  {lts : Lts C E} {lts' : Lts C E'}
+  {Label : E → Prop}
+  {Label' : E' → Prop}
+  (hmap : ∀ {c₁ c₂ l}, Label l → lts.Step c₁ l c₂ → ∃ l', Label' l' ∧ lts'.Step c₁ l' c₂)
+  (hsteps : lts.Star c₁ tr c₂)
+  (htr : ∀ {l}, l ∈ tr → Label l) :
+    ∃ tr',
+      (∀ {l'}, l' ∈ tr' → Label' l') ∧
+      lts'.Star c₁ tr' c₂ := by
+  induction hsteps with
+  | refl => exact ⟨_, by simp, .refl⟩
+  | tail hpref hstep ih =>
+    simp at htr
+    have ⟨_, htr', hpref'⟩ := ih (by
+      intros l' hl'
+      apply htr
+      left
+      exact hl')
+    have ⟨_, hl', hstep'⟩ := hmap (by
+      apply htr
+      simp) hstep
+    exact ⟨_,
+      by
+        intros l'' hmem''
+        simp at hmem''
+        cases hmem'' <;> rename_i h
+        · apply htr' h
+        · subst h
+          exact hl',
+      .tail hpref' hstep',
+    ⟩
+
 structure Lts.Simulation
   (lts₁ : Lts C₁ E)
   (lts₂ : Lts C₂ E)
