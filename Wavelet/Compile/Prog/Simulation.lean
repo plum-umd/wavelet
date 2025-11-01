@@ -1012,6 +1012,7 @@ theorem sim_compile_prog_preserves_init
   (haff : prog.AffineInrOp) :
     prog.semantics i ≲ᵣ[PreservesInit] (compileProg prog i).semantics
   := by
+  have : NeZero (sigs i).ι := (sigs i).neZeroᵢ
   rcases i with ⟨i, hlt⟩
   induction i using Nat.strong_induction_on with
   | _ i ih =>
@@ -1022,6 +1023,7 @@ theorem sim_compile_prog_preserves_init
         apply ih
         cases j
         simp
+        exact (sigs ⟨j.toFin, by omega⟩).neZeroᵢ
       · apply IORestrictedSimilaritySt.trans_preserves_init
         · exact sim_compile_fn_preserves_init _ (by apply hwf)
         · exact (sim_map_chans_inj_preserves_init (f := LinkName.base)

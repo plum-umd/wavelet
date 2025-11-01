@@ -15,7 +15,7 @@ open Semantics Seq Dataflow Compile Fn
 
 /-- Helper lemma to run relevant dataflow operators. -/
 private theorem sim_step_br_exec_dataflow
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [NeZero m] [NeZero n]
   {cond left right}
   {ec : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
@@ -222,7 +222,7 @@ private theorem sim_step_br_exec_dataflow
         List.finIdxOf?, List.findFinIdx?, List.findFinIdx?.go]
 
 theorem sim_step_br
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [NeZero m] [NeZero n]
   {cond left right}
   {l : Label Op V m n}
   {ec ec' : Seq.Config Op χ V m n}

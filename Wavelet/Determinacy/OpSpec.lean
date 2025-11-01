@@ -71,6 +71,7 @@ inductive WithSpec {T : Type u} (Op : Type u) [Arity Op] (spec : OpSpec Op V T) 
       (k : Nat) -- Number of input tokens to combine
       (l : Nat) -- Number of values that the token depends on
       (req : Vector V l → T)
+      [NeZero k]
 
 /-- Uses only the LHS `InterpConsts` of a sum for constants. -/
 instance instInterpConstsSum [left : InterpConsts V] : InterpConsts (V ⊕ V') where
@@ -96,9 +97,13 @@ instance instArityWithSpec
   {spec : OpSpec Op V T} :
   Arity (WithSpec Op spec) where
   ι | .op o => arity.ι o + 1
-    | .join k l _ => k + l
+    | WithSpec.join k l _ => k + l
   ω | .op o => arity.ω o + 1
-    | .join _ _ _ => 2
+    | WithSpec.join _ _ _ => 2
+  neZeroᵢ | .op o => by infer_instance
+          | WithSpec.join k l _ => by infer_instance
+  neZeroₒ | .op o => by infer_instance
+          | WithSpec.join _ _ _ => by infer_instance
 
 /-- Interprets the labels with ghost values using the base operators,
 but with dynamic checks for ghost tokens satisfying the specs. -/
@@ -117,7 +122,7 @@ inductive OpSpec.Guard
         ((inputs.map .inl).push (.inr (opSpec.pre op inputs)))
         ((outputs.map .inl).push (.inr (opSpec.post op inputs outputs))))
       (.yield op inputs outputs)
-  | spec_join
+  | spec_join [NeZero k]
     {toks : Vector T k}
     {vals : Vector V l}
     {outputs : Vector (V ⊕ T) 2} :
@@ -150,7 +155,7 @@ inductive OpSpec.TrivGuard [Arity Op]
     opSpec.TrivGuard
       (.yield (.op op) ((inputs.map .inl).push (.inr tok₁)) ((outputs.map .inl).push (.inr tok₂)))
       (.yield op inputs outputs)
-  | triv_join
+  | triv_join [NeZero k]
     {toks : Vector T k}
     {vals : Vector V l}
     {outputs : Vector T 2} :
@@ -188,8 +193,8 @@ theorem OpSpec.spec_guard_implies_triv_guard
   {l₁ l₂} :
     opSpec.Guard ioSpec l₁ l₂ → opSpec.TrivGuard l₁ l₂
   | .spec_yield => by exact .triv_yield
-  | .spec_join .. => by
-    rename_i k l req rem toks vals outputs h₁ h₂ hsum
+  | OpSpec.Guard.spec_join .. => by
+    rename_i k l req rem _ toks vals outputs h₁ h₂ hsum
     have : outputs = #v[req vals, rem].map .inr := by
       apply Vector.ext
       intros i hi
@@ -239,7 +244,12 @@ abbrev ConfigWithSpec [Arity Op] (opSpec : OpSpec Op V T) χ m n
   := Config (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
 
 abbrev extendSigs (sigs : Sigs k) : Sigs k :=
-  λ i => { ι := (sigs i).ι + 1, ω := (sigs i).ω + 1 }
+  λ i => {
+    ι := (sigs i).ι + 1,
+    ω := (sigs i).ω + 1,
+    neZeroᵢ := by infer_instance,
+    neZeroₒ := by infer_instance,
+  }
 
 /-- Extends functions with one extra argument and return value for ghost tokens. -/
 abbrev ProgWithSpec χ [Arity Op]

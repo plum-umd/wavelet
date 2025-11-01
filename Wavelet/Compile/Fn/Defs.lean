@@ -119,7 +119,7 @@ chooses to perform a tail call (with `m` arguments) or return
 `n` final values.
 -/
 def compileExpr
-  [Arity Op] [InterpConsts V] [DecidableEq χ]
+  [Arity Op] [InterpConsts V] [DecidableEq χ] [NeZero m] [NeZero n]
   (definedVars : List χ)
   (pathConds : List (Bool × ChanName χ))
   : Expr Op χ m n → AtomicProcs Op (ChanName χ) V
@@ -185,7 +185,7 @@ Most of the compiled process should be a DAG, except for the back
 edges of channels with the name `.tail_cond []` or `.tail_arg i []`.
 -/
 def compileFn
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [NeZero m] [NeZero n]
   (fn : Fn Op χ V m n) : Proc Op (ChanName χ) V m n
   := {
     inputs, outputs,

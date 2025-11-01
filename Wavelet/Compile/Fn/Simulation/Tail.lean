@@ -23,7 +23,7 @@ private def tailArgsToExprOutputs
 
 /-- Fires `forwardc` and `sink` to get an intermediate state. -/
 private theorem sim_step_tail_forwardc_sink
-  [Arity Op] [InterpConsts V] [DecidableEq χ]
+  [Arity Op] [InterpConsts V] [DecidableEq χ] [NeZero m] [NeZero n]
   {ec : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
   {gs : GhostState χ}
@@ -125,7 +125,7 @@ private theorem sim_step_tail_forwardc_sink
     ∈ pc₁.proc.atoms
   := by grind
   have hsteps₂ : Dataflow.Config.Step.WeakStep .τ pc _ _
-    := .tail_tau hsteps₁
+    := .tail_tau_star hsteps₁
       (Dataflow.Config.Step.step_sink hmem_sink hpop_other_vals)
   apply hsteps₂.eq_rhs
   simp [hpc₁]
@@ -174,7 +174,7 @@ set_option maxHeartbeats 300000
 
 /-- Fires relevant operators on the dataflow side. -/
 private theorem sim_step_tail_exec_dataflow
-  [Arity Op] [InterpConsts V] [DecidableEq χ]
+  [Arity Op] [InterpConsts V] [DecidableEq χ] [NeZero m] [NeZero n]
   {l : Label Op V m n}
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
@@ -479,7 +479,7 @@ private theorem sim_step_tail_exec_dataflow
 /-- TODO: these theorems are similar to `sim_step_ret`,
 figure out a way to share these proofs. -/
 theorem sim_step_tail
-  [Arity Op] [InterpConsts V] [DecidableEq χ]
+  [Arity Op] [InterpConsts V] [DecidableEq χ] [NeZero m] [NeZero n]
   {l : Label Op V m n}
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}

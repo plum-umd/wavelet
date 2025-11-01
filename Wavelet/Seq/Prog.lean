@@ -17,6 +17,14 @@ open Semantics
 structure Sig where
   ι : Nat
   ω : Nat
+  -- Functions with empty inputs/outputs are not allowed
+  -- for some liveness properties
+  neZeroᵢ : NeZero ι
+  neZeroₒ : NeZero ω
+
+instance {sig : Sig} : NeZero sig.ι := sig.neZeroᵢ
+
+instance {sig : Sig} : NeZero sig.ω := sig.neZeroₒ
 
 abbrev Sigs k := Fin k → Sig
 
@@ -38,6 +46,8 @@ def SigOps.elim0 : SigOps sigs ⟨0, by simp⟩ → α
 instance : Arity (SigOps sigs k') where
   ι | .call i => (sigs ↓i).ι
   ω | .call i => (sigs ↓i).ω
+  neZeroᵢ | .call i => (sigs ↓i).neZeroᵢ
+  neZeroₒ | .call i => (sigs ↓i).neZeroₒ
 
 abbrev Prog (Op : Type u) χ V [Arity Op] (sigs : Sigs k) :=
   (i : Fin k) → Fn (Op ⊕ SigOps sigs i.castSucc) χ V (sigs i).ι (sigs i).ω

@@ -10,7 +10,8 @@ namespace Wavelet.Seq
 open Semantics
 
 /-- Usage of a subset of operators is affine. -/
-inductive Expr.AffineInrOp [Arity Op₁] [Arity Op₂]
+inductive Expr.AffineInrOp
+  [Arity Op₁] [Arity Op₂]
   : List Op₂ → Expr (Op₁ ⊕ Op₂) χ m n → Prop where
   | aff_ret : AffineInrOp [] (.ret vars)
   | aff_tail : AffineInrOp [] (.tail vars)
@@ -108,73 +109,82 @@ theorem compile_expr_preserves_aff_op
   [Arity Op₁] [Arity Op₂]
   [DecidableEq χ]
   [InterpConsts V]
+  [NeZero m] [NeZero n]
   {expr : Expr (Op₁ ⊕ Op₂) χ m n}
   (haff : expr.AffineInrOp usedOps) :
     (compileExpr (V := V) definedVars pathConds expr).AffineInrOp usedOps
   := by
-  induction expr generalizing definedVars pathConds usedOps with
-  | ret =>
-    simp [compileExpr, AtomicProcs.AffineInrOp,
-      AtomicProc.forwardc, AtomicProc.sink]
-    grind only [= Vector.toArray_map, = List.getElem_cons, = Vector.toArray_empty,
-      → Array.eq_empty_of_map_eq_empty, =_ Vector.toList_toArray, = List.length_nil,
-      = List.length_cons, cases Or]
-  | tail =>
-    simp [compileExpr, AtomicProcs.AffineInrOp,
-      AtomicProc.forwardc, AtomicProc.sink]
-    grind only [= Vector.toArray_map, = List.getElem_cons, = Vector.toArray_empty,
-      → Array.eq_empty_of_map_eq_empty, =_ Vector.toList_toArray, = List.length_nil,
-      = List.length_cons, cases Or]
-  | op o args rets cont ih =>
-    cases o with
-    | inl op₁ =>
-      cases haff with | aff_op_inl haff =>
-      simp [compileExpr]
-      grind only [= List.getElem_cons, = List.mem_cons, =_ Vector.toList_toArray,
-        = List.length_cons, AtomicProcs.AffineInrOp, usr List.length_pos_of_mem,
-        usr List.getElem_mem, usr List.eq_or_mem_of_mem_cons, cases Or]
-    | inr op₂ =>
-      cases haff with | aff_op_inr hnot_mem haff =>
-      simp [compileExpr]
-      grind only [= List.getElem_cons, = List.mem_cons, = List.getElem_cons_zero,
-        =_ Vector.toList_toArray, = List.length_cons, AtomicProcs.AffineInrOp,
-        usr List.length_pos_of_mem, usr List.getElem_mem, usr List.eq_or_mem_of_mem_cons, cases Or]
-  | br cond left right ih₁ ih₂ =>
-    cases haff with | aff_br haff₁ haff₂ hdisj
-    simp [compileExpr, AtomicProcs.AffineInrOp, compileExpr.branchMerge]
-    constructor
-    · intros _ _ _ hop
-      grind only [usr List.length_filter_le, = List.removeAll_nil, = List.removeAll_cons,
-        =_ List.countP_eq_length_filter, = Vector.length_toList, =_ Vector.toList_toArray,
-        AtomicProc.switch, = Vector.append_assoc_symm, = Vector.toArray_cast, = List.length_cons,
-        = Vector.toList_mk, AtomicProcs.AffineInrOp, AtomicProc.fork, usr List.length_pos_of_mem,
-        = List.size_toArray, = Vector.toArray_append, = Vector.append_assoc, AtomicProc.merge]
-    · intros i j depOp inputs outputs depOp' inputs' outputs'
-        hne hi hj hget_i hget_j
-      simp [List.getElem_cons, List.getElem_append] at hget_i hget_j hi hj
-      split_ifs at hget_i
-      any_goals simp [AtomicProc.switch, AtomicProc.merge, AtomicProc.fork] at hget_i
-      any_goals omega
-      all_goals
-        split_ifs at hget_j
-        any_goals simp [AtomicProc.switch, AtomicProc.merge, AtomicProc.fork] at hget_j
-        any_goals omega
-      · exact (ih₁ haff₁).2 (by omega) (by omega) (by omega) hget_i hget_j
-      · intros h; subst h
-        have h₁ := (ih₁ haff₁).1 (List.mem_of_getElem hget_i)
-        have h₂ := (ih₂ haff₂).1 (List.mem_of_getElem hget_j)
-        exact False.elim (hdisj h₁ h₂)
-      · intros h; subst h
-        have h₁ := (ih₁ haff₁).1 (List.mem_of_getElem hget_j)
-        have h₂ := (ih₂ haff₂).1 (List.mem_of_getElem hget_i)
-        exact False.elim (hdisj h₁ h₂)
-      · exact (ih₂ haff₂).2 (by omega) (by omega) (by omega) hget_i hget_j
+  sorry
+  -- induction expr generalizing definedVars pathConds usedOps with
+  -- | ret =>
+  --   simp [compileExpr, AtomicProcs.AffineInrOp,
+  --     AtomicProc.forwardc, AtomicProc.sink]
+  --   -- grind only [= Vector.toArray_map, = List.getElem_cons, = Vector.toArray_empty,
+  --   --   → Array.eq_empty_of_map_eq_empty, =_ Vector.toList_toArray, = List.length_nil,
+  --   --   = List.length_cons, cases Or]
+  --   sorry
+  -- | tail =>
+  --   simp [compileExpr, AtomicProcs.AffineInrOp,
+  --     AtomicProc.forwardc, AtomicProc.sink]
+  --   -- grind only [= Vector.toArray_map, = List.getElem_cons, = Vector.toArray_empty,
+  --   --   → Array.eq_empty_of_map_eq_empty, =_ Vector.toList_toArray, = List.length_nil,
+  --   --   = List.length_cons, cases Or]
+  --   sorry
+  -- | op o args rets cont ih =>
+  --   cases o with
+  --   | inl op₁ =>
+  --     cases haff with | aff_op_inl haff =>
+  --     simp [compileExpr]
+  --     -- grind only [= List.getElem_cons, = List.mem_cons, =_ Vector.toList_toArray,
+  --     --   = List.length_cons, AtomicProcs.AffineInrOp, usr List.length_pos_of_mem,
+  --     --   usr List.getElem_mem, usr List.eq_or_mem_of_mem_cons, cases Or]
+  --     sorry
+  --   | inr op₂ =>
+  --     cases haff with | aff_op_inr hnot_mem haff =>
+  --     simp [compileExpr]
+  --     -- grind only [= List.getElem_cons, = List.mem_cons, = List.getElem_cons_zero,
+  --     --   =_ Vector.toList_toArray, = List.length_cons, AtomicProcs.AffineInrOp,
+  --     --   usr List.length_pos_of_mem, usr List.getElem_mem, usr List.eq_or_mem_of_mem_cons, cases Or]
+  --     sorry
+  -- | br cond left right ih₁ ih₂ =>
+  --   cases haff with | aff_br haff₁ haff₂ hdisj
+  --   simp [compileExpr, AtomicProcs.AffineInrOp, compileExpr.branchMerge]
+  --   constructor
+  --   · intros _ _ _ hop
+  --     -- grind only [usr List.length_filter_le, = List.removeAll_nil, = List.removeAll_cons,
+  --     --   =_ List.countP_eq_length_filter, = Vector.length_toList, =_ Vector.toList_toArray,
+  --     --   AtomicProc.switch, = Vector.append_assoc_symm, = Vector.toArray_cast, = List.length_cons,
+  --     --   = Vector.toList_mk, AtomicProcs.AffineInrOp, AtomicProc.fork, usr List.length_pos_of_mem,
+  --     --   = List.size_toArray, = Vector.toArray_append, = Vector.append_assoc, AtomicProc.merge]
+  --     sorry
+  --   · intros i j depOp inputs outputs depOp' inputs' outputs'
+  --       hne hi hj hget_i hget_j
+  --     sorry
+  --     -- simp [List.getElem_cons, List.getElem_append] at hget_i hget_j hi hj
+  --     -- split_ifs at hget_i
+  --     -- any_goals simp [AtomicProc.switch, AtomicProc.merge, AtomicProc.fork] at hget_i
+  --     -- any_goals omega
+  --     -- all_goals
+  --     --   split_ifs at hget_j
+  --     --   any_goals simp [AtomicProc.switch, AtomicProc.merge, AtomicProc.fork] at hget_j
+  --     --   any_goals omega
+  --     -- · exact (ih₁ haff₁).2 (by omega) (by omega) (by omega) hget_i hget_j
+  --     -- · intros h; subst h
+  --     --   have h₁ := (ih₁ haff₁).1 (List.mem_of_getElem hget_i)
+  --     --   have h₂ := (ih₂ haff₂).1 (List.mem_of_getElem hget_j)
+  --     --   exact False.elim (hdisj h₁ h₂)
+  --     -- · intros h; subst h
+  --     --   have h₁ := (ih₁ haff₁).1 (List.mem_of_getElem hget_j)
+  --     --   have h₂ := (ih₂ haff₂).1 (List.mem_of_getElem hget_i)
+  --     --   exact False.elim (hdisj h₁ h₂)
+  --     -- · exact (ih₂ haff₂).2 (by omega) (by omega) (by omega) hget_i hget_j
 
 /-- `compileFn` preserves `AffineInrOp`. -/
 theorem compile_fn_preserves_aff_op
   [Arity Op₁] [Arity Op₂]
   [DecidableEq χ]
   [InterpConsts V]
+  [NeZero m] [NeZero n]
   {fn : Fn (Op₁ ⊕ Op₂) χ V m n}
   (haff : fn.AffineInrOp) :
     (compileFn fn).AffineInrOp

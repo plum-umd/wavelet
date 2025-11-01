@@ -29,15 +29,16 @@ ports and `n` outputs ports. -/
 inductive AsyncOp V : Type u where
   | switch (n : Nat) : AsyncOp V
   | steer (flavor : Bool) (n : Nat) : AsyncOp V
-  | merge (state : AsyncOp.MergeState) (n : Nat) : AsyncOp V
-  | forward (n : Nat) : AsyncOp V
+  | merge (state : AsyncOp.MergeState) (n : Nat) [NeZero n] : AsyncOp V
+  | forward (n : Nat) [NeZero n] : AsyncOp V
   | fork (n : Nat) : AsyncOp V
   | const (c : V) (n : Nat) : AsyncOp V
   -- A combination of `forward` and `const` to wait for inputs to arrive,
   -- forward the inputs to the first `n` outputs, and then send constants
   -- to the last `m` outputs.
-  | forwardc (n m : Nat) (consts : Vector V m) : AsyncOp V
-  | sink (n : Nat) : AsyncOp V
+  | forwardc (n m : Nat) (consts : Vector V m) [NeZero n] : AsyncOp V
+  | sink (n : Nat) [NeZero n] : AsyncOp V
+  | inact : AsyncOp V
 
 namespace AsyncOp
 
@@ -88,7 +89,7 @@ inductive Interp
         (decider :: inputs) (deciderVal :: inputVals)
         [] [])
       (.steer flavor k)
-  | interp_merge_left :
+  | interp_merge_left [NeZero k] :
     inputs.length = k + k →
     outputs.length = k →
     Interp (.merge .popLeft k)
@@ -96,7 +97,7 @@ inductive Interp
         (inputs.take k) inputVals
         outputs inputVals)
       (.merge .decider k)
-  | interp_merge_right :
+  | interp_merge_right [NeZero k] :
     inputs.length = k + k →
     outputs.length = k →
     Interp (.merge .popRight k)
@@ -104,7 +105,7 @@ inductive Interp
         (inputs.drop k) inputVals
         outputs inputVals)
       (.merge .decider k)
-  | interp_merge_decider :
+  | interp_merge_decider [NeZero k] :
     inputs.length = k + k →
     outputs.length = k →
     InterpConsts.toBool deciderVal = some deciderBool →
@@ -113,7 +114,7 @@ inductive Interp
         [decider] [deciderVal]
         [] [])
       (.merge (if deciderBool then .popRight else .popLeft) k)
-  | interp_forward :
+  | interp_forward [NeZero k] :
     inputs.length = k →
     outputs.length = k →
     Interp (.forward k)
@@ -137,7 +138,7 @@ inductive Interp
         [act] [actVal]
         outputs (.replicate k c))
       (.const c k)
-  | interp_forwardc :
+  | interp_forwardc [NeZero k] :
     inputs.length = k →
     outputs.length = k + l →
     Interp (.forwardc k l consts)
@@ -145,7 +146,7 @@ inductive Interp
         inputs inputVals
         outputs (inputVals ++ consts.toList))
       (.forwardc k l consts)
-  | interp_sink :
+  | interp_sink [NeZero k] :
     inputs.length = k →
     Interp (.sink k)
       (.mk inputs []

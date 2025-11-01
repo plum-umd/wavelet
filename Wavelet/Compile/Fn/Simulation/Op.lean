@@ -76,7 +76,7 @@ private theorem sim_step_op_defined_vars
       simp [this, h₃]
 
 theorem sim_step_op
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [NeZero m] [NeZero n]
   {args rets cont}
   {l : Label Op V m n}
   {ec ec' : Seq.Config Op χ V m n}

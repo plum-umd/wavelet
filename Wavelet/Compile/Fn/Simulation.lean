@@ -17,9 +17,10 @@ private theorem sim_compile_fn_init
   [Arity Op]
   [InterpConsts V]
   [DecidableEq χ]
+  [NeZero m] [NeZero n]
   (fn : Fn Op χ V m n)
   (hwf : fn.AffineVar) :
-  SimRel .empty fn.semantics.init (compileFn fn).semantics.init
+    SimRel .empty fn.semantics.init (compileFn fn).semantics.init
   := by
   simp [semantics, Fn.semantics, Seq.Config.init,
     Proc.semantics, Dataflow.Config.init]
@@ -55,6 +56,7 @@ theorem sim_compile_fn_preserves_init
   [Arity Op]
   [InterpConsts V]
   [DecidableEq χ]
+  [NeZero m] [NeZero n]
   (fn : Fn Op χ V m n)
   (hwf : fn.AffineVar) :
     fn.semantics ≲ᵣ[PreservesInit] (compileFn fn).semantics
@@ -99,6 +101,7 @@ theorem sim_compile_fn
   [Arity Op]
   [InterpConsts V]
   [DecidableEq χ]
+  [NeZero m] [NeZero n]
   (fn : Fn Op χ V m n)
   (hwf : fn.AffineVar) :
     fn.semantics ≲ᵣ (compileFn fn).semantics

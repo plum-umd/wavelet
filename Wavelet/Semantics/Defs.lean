@@ -10,9 +10,17 @@ in a set of uninterpreted `operators`. -/
 namespace Wavelet.Semantics
 
 /-- Assigns arities to each operator. -/
-class Arity Op where
+class Arity (Op : Type u) where
   ι : Op → Nat
   ω : Op → Nat
+  -- Operators with empty inputs/outputs are not allowed
+  -- for some liveness properties
+  neZeroᵢ : ∀ op, NeZero (ι op)
+  neZeroₒ : ∀ op, NeZero (ω op)
+
+instance [inst : Arity Op] : NeZero (inst.ι op) := Arity.neZeroᵢ op
+
+instance [inst : Arity Op] : NeZero (inst.ω op) := Arity.neZeroₒ op
 
 /-- Arities for a sum of operator sets. -/
 instance [Arity Op₁] [Arity Op₂] : Arity (Op₁ ⊕ Op₂) where
@@ -20,6 +28,8 @@ instance [Arity Op₁] [Arity Op₂] : Arity (Op₁ ⊕ Op₂) where
     | .inr o => Arity.ι o
   ω | .inl o => Arity.ω o
     | .inr o => Arity.ω o
+  neZeroᵢ op := by cases op <;> apply Arity.neZeroᵢ
+  neZeroₒ op := by cases op <;> apply Arity.neZeroₒ
 
 /-- Some required constants in compilation and semantics. -/
 class InterpConsts (V : Type v) where

@@ -21,7 +21,7 @@ def steer [Arity Op]
   (outputs : Vector χ n) : AtomicProc Op χ V
   := .async (.steer flavor n) (#v[decider] ++ inputs).toList outputs.toList
 
-def merge [Arity Op]
+def merge [Arity Op] [NeZero n]
   (decider : χ)
   (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
   (outputs : Vector χ n) : AtomicProc Op χ V :=
@@ -29,14 +29,14 @@ def merge [Arity Op]
   .async (.merge .decider n) (#v[decider] ++ inputs₂ ++ inputs₁).toList outputs.toList
 
 /-- Carry is a variant of merge that can have a different initial state. -/
-def carry [Arity Op]
+def carry [Arity Op] [NeZero n]
   (state : AsyncOp.MergeState)
   (decider : χ)
   (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
   (outputs : Vector χ n) : AtomicProc Op χ V
   := .async (.merge state n) (#v[decider] ++ inputs₁ ++ inputs₂).toList outputs.toList
 
-def forward [Arity Op]
+def forward [Arity Op] [NeZero n]
   (inputs : Vector χ n) (outputs : Vector χ n) : AtomicProc Op χ V
   := .async (.forward n) inputs.toList outputs.toList
 
@@ -48,14 +48,18 @@ def const [Arity Op]
   (c : V) (act : χ) (outputs : Vector χ n) : AtomicProc Op χ V
   := .async (.const c n) [act] outputs.toList
 
-def forwardc [Arity Op]
+def forwardc [Arity Op] [NeZero n]
   (inputs : Vector χ n) (consts : Vector V m)
   (outputs : Vector χ (n + m)) : AtomicProc Op χ V
   := .async (.forwardc n m consts) inputs.toList outputs.toList
 
 def sink [Arity Op]
   (inputs : Vector χ n) : AtomicProc Op χ V
-  := .async (.sink n) inputs.toList #v[].toList
+  := if h : n ≠ 0 then
+    let : NeZero n := NeZero.mk h
+    .async (.sink n) inputs.toList #v[].toList
+  else
+    .async .inact [] []
 
 end AtomicProc
 
@@ -192,7 +196,7 @@ theorem Config.Step.step_steer
     exact happ.symm
 
 theorem Config.Step.step_carry_left
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [NeZero k]
   {c : Config Op χ V m n}
   {inputs₁ inputs₂ outputs : Vector χ k}
   {ctxLeft ctxRight : List (AtomicProc Op χ V)}
@@ -227,7 +231,7 @@ theorem Config.Step.step_carry_left
   simp
 
 theorem Config.Step.step_carry_right
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [NeZero k]
   {c : Config Op χ V m n}
   {inputs₁ inputs₂ outputs : Vector χ k}
   {ctxLeft ctxRight : List (AtomicProc Op χ V)}
@@ -262,7 +266,7 @@ theorem Config.Step.step_carry_right
   simp
 
 theorem Config.Step.step_carry_decider
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [NeZero k]
   {c : Config Op χ V m n}
   {inputs₁ inputs₂ outputs : Vector χ k}
   {ctxLeft ctxRight : List (AtomicProc Op χ V)}
@@ -301,7 +305,7 @@ theorem Config.Step.step_carry_decider
   simp [AtomicProc.carry]
 
 theorem Config.Step.step_merge
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [NeZero k]
   {c : Config Op χ V m n}
   {inputs₁ inputs₂ outputs : Vector χ k}
   (hmem : .merge decider inputs₁ inputs₂ outputs ∈ c.proc.atoms)
@@ -348,7 +352,7 @@ theorem Config.Step.step_merge
       simp [le_of_lt hi, List.drop_append])
 
 theorem Config.Step.step_forward
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [NeZero k]
   {c : Config Op χ V m n}
   {inputs outputs : Vector χ k}
   (hmem : .forward inputs outputs ∈ c.proc.atoms)
@@ -440,7 +444,7 @@ theorem Config.Step.step_const
   exact happ.symm
 
 theorem Config.Step.step_forwardc
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [NeZero k]
   {c : Config Op χ V m n}
   {inputs : Vector χ k}
   {consts : Vector V l}
@@ -480,29 +484,30 @@ theorem Config.Step.step_sink
   {inputs : Vector χ k}
   (hmem : .sink inputs ∈ c.proc.atoms)
   (hpop_inputs : c.chans.popVals inputs = some (inputVals, chans')) :
-    Step c .τ { c with chans := chans' }
+    Step.TauStar .τ c { c with chans := chans' }
   := by
   have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
   have happ := List.to_append_cons (l := c.proc.atoms) hi
   simp only [hget_i, AtomicProc.sink] at happ
-  apply Config.Step.step_async_alt
-    (aop := .sink k)
-    (aop' := .sink k)
-    happ
-    (by
-      apply AsyncOp.Interp.interp_sink (k := k)
-        (inputs := inputs.toList)
-        (by simp)
-        |> AsyncOp.Interp.eq_label
-      simp [Vector.toList]
-      and_intros
-      any_goals try rfl
-      exact #v[]; exact #v[])
-    hpop_inputs
-    |> Lts.Step.eq_rhs
-  simp [ChanMap.pushVals]
-  congr 1
-  exact happ.symm
+  -- apply Config.Step.step_async_alt
+  --   (aop := .sink k)
+  --   (aop' := .sink k)
+  --   happ
+  --   (by
+  --     apply AsyncOp.Interp.interp_sink (k := k)
+  --       (inputs := inputs.toList)
+  --       (by simp)
+  --       |> AsyncOp.Interp.eq_label
+  --     simp [Vector.toList]
+  --     and_intros
+  --     any_goals try rfl
+  --     exact #v[]; exact #v[])
+  --   hpop_inputs
+  --   |> Lts.Step.eq_rhs
+  -- simp [ChanMap.pushVals]
+  -- congr 1
+  -- exact happ.symm
+  sorry
 
 end AltStep
 

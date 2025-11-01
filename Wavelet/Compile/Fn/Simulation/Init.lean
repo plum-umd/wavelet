@@ -14,7 +14,7 @@ namespace Wavelet.Compile.Fn
 open Semantics Seq Dataflow Compile Fn
 
 private theorem init_chans_empty
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [NeZero m] [NeZero n]
   {ec : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}
   {gs : GhostState χ}
@@ -44,7 +44,7 @@ Initial `Seq` and `Dataflow` configurations satisfy
 the simulation relation (modulo some setup steps).
 -/
 theorem sim_step_init
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [NeZero m] [NeZero n]
   {l : Label Op V m n}
   {ec ec' : Seq.Config Op χ V m n}
   {pc : Dataflow.Config Op (ChanName χ) V m n}

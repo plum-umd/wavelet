@@ -333,6 +333,35 @@ theorem proc_interp_guarded_unguarded_det_input_mod
         · simp [EqModGhost]
   · rfl
 
+theorem proc_output_init_invert
+  [Arity Op]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {s s' : ConfigWithSpec opSpec χ m n}
+  (hstep : Config.Step.Step s (.output vals) s')
+  (haff : s.proc.AffineChan)
+  (hinit : s'.chans = ChanMap.empty) :
+    Config.Step.IsFinalFor (λ l => l.isYield ∨ l.isSilent) s
+  := by
+  sorry
+
+theorem proc_guarded_output_init_invert
+  [Arity Op] [PCM T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s s' : ConfigWithSpec opSpec χ m n}
+  (hstep : (Config.GuardStep opSpec ioSpec).Step s (.output vals) s')
+  (haff : s.proc.AffineChan)
+  (hinit : s'.chans = ChanMap.empty) :
+    Config.Step.IsFinalFor (λ l => l.isYield ∨ l.isSilent) s
+  := by
+  rcases hstep with ⟨hguard, hstep⟩
+  cases hguard
+  exact proc_output_init_invert hstep haff hinit
+
 /--
 If a state transitions to an initial state after one output step,
 then the previous state should be final wrt yield/τ.
@@ -349,9 +378,11 @@ theorem proc_interp_guarded_output_init_invert
   {ioSpec : IOSpec V T m n}
   {s s' : ConfigWithSpec opSpec χ m n × opInterp.S}
   (hstep : (Config.InterpGuardStep opSpec ioSpec).Step s (.output vals) s')
+  (haff : s.1.proc.AffineChan)
   (hinit : s'.1.chans = ChanMap.empty) :
     Config.Step.IsFinalFor (λ l => l.isYield ∨ l.isSilent) s.1
   := by
-  sorry
+  cases hstep with | step_output hstep =>
+  exact proc_guarded_output_init_invert hstep haff hinit
 
 end Wavelet.Determinacy

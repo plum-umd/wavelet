@@ -238,14 +238,20 @@ theorem compile_strong_norm
     prog_semanticsᵢ_output_init (htrace_tmp.prepend hinputs) houtput
   have ⟨hfinal_init, hfinal_eq⟩ := hsim₁.sim_prop _ _ hsim_s₂''
   specialize hfinal_init hinit_s₂
-  have hfinal_s₁''' : Dataflow.Config.Step.IsFinalFor _ _ := proc_interp_guarded_output_init_invert houtput'
-    (by simp [hfinal_init, Proc.semantics, Semantics.guard, Dataflow.Config.init])
-  -- Use determinacy to obtain a terminating trace from `s''`
-  have hinv_aff_s'' : (Config.InterpGuardStep opSpec (progSpec i)).IsInvariantAt (·.1.proc.AffineChan) _
+  have hinv_aff_init : (Config.InterpGuardStep opSpec (progSpec i)).IsInvariantAt (·.1.proc.AffineChan) _
     := proc_interp_guarded_inv_aff haff
+  have ⟨haff_s'', hinv_aff_s''⟩ := hinv_aff_init.unfold hinputs''
+  have hfinal_s₁''' : Dataflow.Config.Step.IsFinalFor _ _ :=
+    proc_interp_guarded_output_init_invert
+      houtput'
+      (by
+        have ⟨_, hsteps⟩ := hmiddle.without_length.to_star
+        exact hinv_aff_s'' hsteps)
+      (by simp [hfinal_init, Proc.semantics, Semantics.guard, Dataflow.Config.init])
+  -- Use determinacy to obtain a terminating trace from `s''`
+
   have ⟨_, _, htrace''', hlen₁, heq₃⟩ := proc_interp_guarded_hetero_terminal_confl
-    hconfl hfp hdet hnb
-    (hinv_aff_s''.unfold hinputs'').1
+    hconfl hfp hdet hnb haff_s''
     (Config.DisjointTokens.interp_guarded_init_input hntok rfl hinputs'')
     hmiddle hfinal_s₁''' htrace''
   -- Convert the determinacy result to τ steps after `htrace'`

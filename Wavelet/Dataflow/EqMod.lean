@@ -32,15 +32,16 @@ theorem ChanMap.EqMod.eq_eq {map₁ map₂ : ChanMap χ V} :
 def AsyncOp.EqMod
   (EqV : V → V → Prop) :
     AsyncOp V → AsyncOp V → Prop
-  | .switch n₁, .switch n₂ => n₁ = n₂
-  | .steer f₁ n₁, .steer f₂ n₂ => f₁ = f₂ ∧ n₁ = n₂
-  | .merge s₁ n₁, .merge s₂ n₂ => s₁ = s₂ ∧ n₁ = n₂
-  | .forward n₁, .forward n₂ => n₁ = n₂
-  | .fork n₁, .fork n₂ => n₁ = n₂
-  | .const c₁ n₁, .const c₂ n₂ => EqV c₁ c₂ ∧ n₁ = n₂
-  | .forwardc n₁ m₁ consts₁, .forwardc n₂ m₂ consts₂ =>
+  | switch n₁, switch n₂ => n₁ = n₂
+  | steer f₁ n₁, steer f₂ n₂ => f₁ = f₂ ∧ n₁ = n₂
+  | merge s₁ n₁, merge s₂ n₂ => s₁ = s₂ ∧ n₁ = n₂
+  | forward n₁, forward n₂ => n₁ = n₂
+  | fork n₁, fork n₂ => n₁ = n₂
+  | const c₁ n₁, const c₂ n₂ => EqV c₁ c₂ ∧ n₁ = n₂
+  | forwardc n₁ m₁ consts₁, forwardc n₂ m₂ consts₂ =>
       n₁ = n₂ ∧ m₁ = m₂ ∧ List.Forall₂ EqV consts₁.toList consts₂.toList
-  | .sink n₁, .sink n₂ => n₁ = n₂
+  | sink n₁, sink n₂ => n₁ = n₂
+  | inact, inact => True
   | _, _ => False
 
 def AtomicProc.EqMod

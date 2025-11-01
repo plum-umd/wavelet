@@ -79,7 +79,7 @@ def OrderedPathConds (pathConds : List (Bool × ChanName χ)) : Prop :=
 to the compiled expressions/fns. -/
 @[grind]
 def HasCompiledProcs
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [NeZero m] [NeZero n]
   (ec : Seq.Config Op χ V m n)
   (pc : Dataflow.Config Op (ChanName χ) V m n)
   (gs : GhostState χ) : Prop :=
@@ -102,7 +102,7 @@ def HasCompiledProcs
 
 @[grind]
 def SimRel
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [NeZero m] [NeZero n]
   (gs : GhostState χ)
   (ec : Seq.Config Op χ V m n)
   (pc : Dataflow.Config Op (ChanName χ) V m n) : Prop :=
@@ -128,7 +128,7 @@ variable [Arity Op] [DecidableEq χ] [InterpConsts V]
 variable {ec : Seq.Config Op χ V m n}
 variable {pc : Dataflow.Config Op (ChanName χ) V m n}
 variable {gs : GhostState χ}
-variable {hnz : m > 0 ∧ n > 0}
+variable [NeZero m] [NeZero n]
 variable (hsim : SimRel gs ec pc)
 
 def SimRel.vars_to_chans : pc.chans = varsToChans gs ec := hsim.1

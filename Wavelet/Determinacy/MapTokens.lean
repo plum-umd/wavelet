@@ -31,14 +31,15 @@ open Semantics Determinacy
 
 def AsyncOp.mapValues
   (f : V₁ → V₂) : AsyncOp V₁ → AsyncOp V₂
-  | .switch n => .switch n
-  | .steer flavor n => .steer flavor n
-  | .merge state n => .merge state n
-  | .forward n => .forward n
-  | .fork n => .fork n
-  | .const c n => .const (f c) n
-  | .forwardc n m consts => .forwardc n m (consts.map f)
-  | .sink n => .sink n
+  | switch n => switch n
+  | steer flavor n => steer flavor n
+  | merge state n => merge state n
+  | forward n => forward n
+  | fork n => fork n
+  | const c n => const (f c) n
+  | forwardc n m consts => forwardc n m (consts.map f)
+  | sink n => sink n
+  | inact => inact
 
 def AtomicProc.mapTokens
   [Arity Op]
@@ -46,7 +47,7 @@ def AtomicProc.mapTokens
   (hom : T₁ → T₂) :
   AtomicProc (WithSpec Op opSpec) χ (V ⊕ T₁) → AtomicProc (WithSpec Op (opSpec.mapTokens hom)) χ (V ⊕ T₂)
   | .op (.op o) inputs outputs => .op (.op o) inputs outputs
-  | .op (.join k l req) inputs outputs => .op (.join k l (hom ∘ req)) inputs outputs
+  | .op (WithSpec.join k l req) inputs outputs => .op (.join k l (hom ∘ req)) inputs outputs
   | .async o inputs outputs =>
     .async (o.mapValues mapValue) inputs outputs
   where
