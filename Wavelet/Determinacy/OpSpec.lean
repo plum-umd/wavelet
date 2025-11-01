@@ -19,7 +19,6 @@ open Semantics
 structure OpSpec Op V T [Arity Op] where
   pre : (op : Op) → Vector V (Arity.ι op) → T
   post : (op : Op) → Vector V (Arity.ι op) → Vector V (Arity.ω op) → T
-  -- frame_preserving : ∀ op inputs outputs, pre op inputs ⟹ post op inputs outputs
 
 /-- Two labels are compatible if their inputs correspond to disjoint resources
 and are deterministic. -/
@@ -100,8 +99,12 @@ instance instArityWithSpec
     | WithSpec.join k l _ => k + l
   ω | .op o => arity.ω o + 1
     | WithSpec.join _ _ _ => 2
+
+instance [Arity Op] {spec : OpSpec Op V T} : NeZeroArity (WithSpec Op spec) where
   neZeroᵢ | .op o => by infer_instance
-          | WithSpec.join k l _ => by infer_instance
+          | WithSpec.join k l _ => by
+            simp [Arity.ι]
+            infer_instance
   neZeroₒ | .op o => by infer_instance
           | WithSpec.join _ _ _ => by infer_instance
 
@@ -244,12 +247,11 @@ abbrev ConfigWithSpec [Arity Op] (opSpec : OpSpec Op V T) χ m n
   := Config (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
 
 abbrev extendSigs (sigs : Sigs k) : Sigs k :=
-  λ i => {
-    ι := (sigs i).ι + 1,
-    ω := (sigs i).ω + 1,
-    neZeroᵢ := by infer_instance,
-    neZeroₒ := by infer_instance,
-  }
+  λ i => { ι := (sigs i).ι + 1, ω := (sigs i).ω + 1 }
+
+instance : NeZeroSigs (extendSigs sigs) where
+  neZeroᵢ i := by infer_instance
+  neZeroₒ i := by infer_instance
 
 /-- Extends functions with one extra argument and return value for ghost tokens. -/
 abbrev ProgWithSpec χ [Arity Op]

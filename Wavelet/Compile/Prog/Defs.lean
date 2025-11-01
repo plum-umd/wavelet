@@ -17,8 +17,8 @@ inductive LinkName (χ : Type u) where
   deriving DecidableEq
 
 def linkAtomicProc
-  [Arity Op]
-  (sigs : Sigs k)
+  [Arity Op] [NeZeroArity Op]
+  {sigs : Sigs k} [NeZeroSigs sigs]
   (k' : Fin (k + 1))
   (procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω)
   (atom : AtomicProc (Op ⊕ (SigOps sigs k')) (LinkName χ) V)
@@ -34,22 +34,22 @@ def linkAtomicProc
     [.async aop (inputs.map .main) (outputs.map .main)]
 
 def linkProcs
-  [Arity Op]
-  (sigs : Sigs k)
+  [Arity Op] [NeZeroArity Op]
+  {sigs : Sigs k} [NeZeroSigs sigs]
   (k' : Fin (k + 1))
   (procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω)
   (main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n)
   : Proc Op (LinkName χ) V m n := {
     inputs := main.inputs.map LinkName.main,
     outputs := main.outputs.map LinkName.main,
-    atoms := (main.atoms.map (linkAtomicProc sigs k' procs)).flatten,
+    atoms := (main.atoms.map (linkAtomicProc k' procs)).flatten,
   }
 
 /-- Given a program (a list of functions that non-recursively call each other),
 compile the `i`-th function to a process without any dependencies. -/
 def compileProg
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
-  {sigs : Sigs k}
+  [Arity Op] [DecidableEq χ] [InterpConsts V] [NeZeroArity Op]
+  {sigs : Sigs k} [NeZeroSigs sigs]
   (prog : Prog Op χ V sigs)
   (i : Fin k) : Proc Op (LinkName (ChanName χ)) V (sigs i).ι (sigs i).ω :=
   -- Compile the current function
@@ -62,6 +62,6 @@ def compileProg
       (sigs (j.castLT (by omega))).ω :=
     λ j => compileProg prog (j.castLT (by omega))
   -- Link everything into one dataflow graph
-  linkProcs sigs i.castSucc deps proc
+  linkProcs i.castSucc deps proc
 
 end Wavelet.Compile

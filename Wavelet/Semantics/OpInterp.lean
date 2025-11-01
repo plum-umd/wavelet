@@ -14,6 +14,8 @@ def Empty.elim {α} (e : Empty) : α := by cases e
 instance : Arity Empty where
   ι e := e.elim
   ω e := e.elim
+
+instance : NeZeroArity Empty where
   neZeroᵢ e := e.elim
   neZeroₒ e := e.elim
 

@@ -38,10 +38,10 @@ private def SimRel.linkChans
 
 /-- Simulation relation for `linkProcs`. -/
 private def SimRel
-  [Arity Op]
+  [Arity Op] [NeZeroArity Op]
   [DecidableEq χ]
   [InterpConsts V]
-  {sigs : Sigs k}
+  {sigs : Sigs k} [NeZeroSigs sigs]
   {k' : Fin (k + 1)}
   {procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω}
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
@@ -53,7 +53,7 @@ private def SimRel
   (∀ depOp, (config₁.depStates depOp).proc.outputs = (procs depOp.toFin').outputs) ∧
   config₁.mainState.proc.AffineInrOp ∧
   -- Linking
-  config₂.proc = linkProcs sigs k'
+  config₂.proc = linkProcs k'
     (λ i => (config₁.depStates (.call i)).proc)
     config₁.mainState.proc ∧
   -- Channel maps in two cases
@@ -270,10 +270,10 @@ private theorem sim_link_procs_pop_vals_dep
     simp [sim_link_procs_pop_val_dep (χ := χ) h₂, hpop]
 
 private theorem sim_link_procs_step_dep_spawn
-  [Arity Op]
+  [Arity Op] [NeZeroArity Op]
   [DecidableEq χ]
   [InterpConsts V]
-  {sigs : Sigs k}
+  {sigs : Sigs k} [NeZeroSigs sigs]
   {k' : Fin (k + 1)}
   {procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω}
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
@@ -400,10 +400,10 @@ private theorem sim_link_procs_step_dep_spawn
           simp [SimRel.linkChans, h₁]
 
 private theorem sim_link_procs_step_dep_ret
-  [Arity Op]
+  [Arity Op] [NeZeroArity Op]
   [DecidableEq χ]
   [InterpConsts V]
-  {sigs : Sigs k}
+  {sigs : Sigs k} [NeZeroSigs sigs]
   {k' : Fin (k + 1)}
   {procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω}
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
@@ -588,10 +588,10 @@ private theorem aop_interp_map_inj
     exact .interp_sink (by simp [h₁])
 
 private theorem sim_link_procs_step_main
-  [Arity Op]
+  [Arity Op] [NeZeroArity Op]
   [DecidableEq χ]
   [InterpConsts V]
-  {sigs : Sigs k}
+  {sigs : Sigs k} [NeZeroSigs sigs]
   {k' : Fin (k + 1)}
   {procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω}
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
@@ -680,7 +680,7 @@ private theorem sim_link_procs_step_main
     have := List.flatten_update_index
       (i := i) (j := 0)
       (xs := List.map
-        (linkAtomicProc sigs k' fun i => (s₁.depStates (SigOps.call i)).proc)
+        (linkAtomicProc k' fun i => (s₁.depStates (SigOps.call i)).proc)
         s₁.mainState.proc.atoms)
       (by simp [hi]) (by simp [hget, linkAtomicProc])
       (by
@@ -726,10 +726,10 @@ private theorem sim_link_procs_step_main
     ⟩
 
 private theorem sim_link_procs_step_dep
-  [Arity Op]
+  [Arity Op] [NeZeroArity Op]
   [DecidableEq χ]
   [InterpConsts V]
-  {sigs : Sigs k}
+  {sigs : Sigs k} [NeZeroSigs sigs]
   {k' : Fin (k + 1)}
   {procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω}
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
@@ -823,7 +823,7 @@ private theorem sim_link_procs_step_dep
     have := List.flatten_update_index
       (i := frame.depIdx) (j := i + 1)
       (xs := List.map
-        (linkAtomicProc sigs k' fun i => (s₁.depStates (SigOps.call i)).proc)
+        (linkAtomicProc k' fun i => (s₁.depStates (SigOps.call i)).proc)
         s₁.mainState.proc.atoms)
       (by simp) (by
         simp [hget_dep, linkAtomicProc, AtomicProcs.mapChans]
@@ -911,17 +911,17 @@ private theorem sim_link_procs_step_dep
     ⟩
 
 theorem sim_link_procs_preserves_init
-  [Arity Op]
+  [Arity Op] [NeZeroArity Op]
   [DecidableEq χ]
   [InterpConsts V]
-  {sigs : Sigs k}
+  {sigs : Sigs k} [NeZeroSigs sigs]
   {k' : Fin (k + 1)}
   {procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω}
   {deps : PartInterp Op (SigOps sigs k') V}
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
   (hdeps : ∀ op, deps op = (procs op.toFin').semantics)
   (haff : main.AffineInrOp) :
-    main.semantics.link deps ≲ᵣ[PreservesInit] (linkProcs sigs k' procs main).semantics
+    main.semantics.link deps ≲ᵣ[PreservesInit] (linkProcs k' procs main).semantics
   := by
   replace hdeps :
     deps = λ op : SigOps sigs k' => (procs op.toFin').semantics := by
@@ -964,17 +964,17 @@ theorem sim_link_procs_preserves_init
 
 /-- Linking syntactically simulates linking semantically. -/
 theorem sim_link_procs
-  [Arity Op]
+  [Arity Op] [NeZeroArity Op]
   [DecidableEq χ]
   [InterpConsts V]
-  {sigs : Sigs k}
+  {sigs : Sigs k} [NeZeroSigs sigs]
   {k' : Fin (k + 1)}
   {procs : (i : Fin k') → Proc Op (LinkName χ) V (sigs ↓i).ι (sigs ↓i).ω}
   {deps : PartInterp Op (SigOps sigs k') V}
   {main : Proc (Op ⊕ SigOps sigs k') (LinkName χ) V m n}
   (hdeps : ∀ op, deps op = (procs op.toFin').semantics)
   (haff : main.AffineInrOp) :
-    main.semantics.link deps ≲ᵣ (linkProcs sigs k' procs main).semantics
+    main.semantics.link deps ≲ᵣ (linkProcs k' procs main).semantics
   := (sim_link_procs_preserves_init hdeps haff).weaken
     (by simp)
 
@@ -1002,17 +1002,16 @@ on, e.g., freedom of data races.
 Therefore, in the theorems in this file, we assume property 1 (i.e. `AffineInrOp`).
 -/
 theorem sim_compile_prog_preserves_init
-  [Arity Op]
+  [Arity Op] [NeZeroArity Op]
   [InterpConsts V]
   [DecidableEq χ]
-  {sigs : Sigs k}
+  {sigs : Sigs k} [NeZeroSigs sigs]
   (prog : Prog Op χ V sigs)
   (i : Fin k)
   (hwf : ∀ i, (prog i).AffineVar)
   (haff : prog.AffineInrOp) :
     prog.semantics i ≲ᵣ[PreservesInit] (compileProg prog i).semantics
   := by
-  have : NeZero (sigs i).ι := (sigs i).neZeroᵢ
   rcases i with ⟨i, hlt⟩
   induction i using Nat.strong_induction_on with
   | _ i ih =>
@@ -1023,7 +1022,6 @@ theorem sim_compile_prog_preserves_init
         apply ih
         cases j
         simp
-        exact (sigs ⟨j.toFin, by omega⟩).neZeroᵢ
       · apply IORestrictedSimilaritySt.trans_preserves_init
         · exact sim_compile_fn_preserves_init _ (by apply hwf)
         · exact (sim_map_chans_inj_preserves_init (f := LinkName.base)
@@ -1037,10 +1035,10 @@ theorem sim_compile_prog_preserves_init
         apply haff
 
 theorem sim_compile_prog
-  [Arity Op]
+  [Arity Op] [NeZeroArity Op]
   [InterpConsts V]
   [DecidableEq χ]
-  {sigs : Sigs k}
+  {sigs : Sigs k} [NeZeroSigs sigs]
   (prog : Prog Op χ V sigs)
   (i : Fin k)
   (hwf : ∀ i, (prog i).AffineVar)

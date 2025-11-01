@@ -10,17 +10,20 @@ in a set of uninterpreted `operators`. -/
 namespace Wavelet.Semantics
 
 /-- Assigns arities to each operator. -/
-class Arity (Op : Type u) where
+class Arity Op where
   ι : Op → Nat
   ω : Op → Nat
-  -- Operators with empty inputs/outputs are not allowed
-  -- for some liveness properties
-  neZeroᵢ : ∀ op, NeZero (ι op)
-  neZeroₒ : ∀ op, NeZero (ω op)
 
-instance [inst : Arity Op] : NeZero (inst.ι op) := Arity.neZeroᵢ op
+/-- Operators with non-zero arities. -/
+class NeZeroArity Op [Arity Op] where
+  neZeroᵢ : ∀ op : Op, NeZero (Arity.ι op)
+  neZeroₒ : ∀ op : Op, NeZero (Arity.ω op)
 
-instance [inst : Arity Op] : NeZero (inst.ω op) := Arity.neZeroₒ op
+instance [inst : Arity Op] [NeZeroArity Op] : NeZero (inst.ι op)
+  := NeZeroArity.neZeroᵢ op
+
+instance [inst : Arity Op] [NeZeroArity Op] : NeZero (inst.ω op)
+  := NeZeroArity.neZeroₒ op
 
 /-- Arities for a sum of operator sets. -/
 instance [Arity Op₁] [Arity Op₂] : Arity (Op₁ ⊕ Op₂) where
@@ -28,8 +31,11 @@ instance [Arity Op₁] [Arity Op₂] : Arity (Op₁ ⊕ Op₂) where
     | .inr o => Arity.ι o
   ω | .inl o => Arity.ω o
     | .inr o => Arity.ω o
-  neZeroᵢ op := by cases op <;> apply Arity.neZeroᵢ
-  neZeroₒ op := by cases op <;> apply Arity.neZeroₒ
+
+instance [Arity Op₁] [Arity Op₂] [NeZeroArity Op₁] [NeZeroArity Op₂] :
+  NeZeroArity (Op₁ ⊕ Op₂) where
+  neZeroᵢ op := by cases op <;> simp [Arity.ι] <;> apply NeZeroArity.neZeroᵢ
+  neZeroₒ op := by cases op <;> simp [Arity.ω] <;> apply NeZeroArity.neZeroₒ
 
 /-- Some required constants in compilation and semantics. -/
 class InterpConsts (V : Type v) where
