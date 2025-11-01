@@ -56,7 +56,7 @@ def forwardc [Arity Op] [NeZero n]
 def sink [Arity Op]
   (inputs : Vector χ n) : AtomicProc Op χ V
   := if h : n ≠ 0 then
-    let : NeZero n := NeZero.mk h
+    let _ : NeZero n := NeZero.mk h
     .async (.sink n) inputs.toList #v[].toList
   else
     .async .inact [] []
@@ -489,25 +489,34 @@ theorem Config.Step.step_sink
   have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem
   have happ := List.to_append_cons (l := c.proc.atoms) hi
   simp only [hget_i, AtomicProc.sink] at happ
-  -- apply Config.Step.step_async_alt
-  --   (aop := .sink k)
-  --   (aop' := .sink k)
-  --   happ
-  --   (by
-  --     apply AsyncOp.Interp.interp_sink (k := k)
-  --       (inputs := inputs.toList)
-  --       (by simp)
-  --       |> AsyncOp.Interp.eq_label
-  --     simp [Vector.toList]
-  --     and_intros
-  --     any_goals try rfl
-  --     exact #v[]; exact #v[])
-  --   hpop_inputs
-  --   |> Lts.Step.eq_rhs
-  -- simp [ChanMap.pushVals]
-  -- congr 1
-  -- exact happ.symm
-  sorry
+  if h : k ≠ 0 then
+    let _ : NeZero k := NeZero.mk h
+    apply Lts.TauStar.single
+    simp [h] at happ
+    apply Config.Step.step_async_alt
+      (aop := .sink k)
+      (aop' := .sink k)
+      happ
+      (by
+        apply AsyncOp.Interp.interp_sink (k := k)
+          (inputs := inputs.toList)
+          (by simp)
+          |> AsyncOp.Interp.eq_label
+        simp [Vector.toList]
+        and_intros
+        any_goals try rfl
+        exact #v[]; exact #v[])
+      hpop_inputs
+      |> Lts.Step.eq_rhs
+    simp [ChanMap.pushVals]
+    congr 1
+    exact happ.symm
+  else
+    simp at h
+    subst h
+    simp [Vector.eq_empty] at hpop_inputs
+    subst hpop_inputs
+    exact .refl
 
 end AltStep
 
