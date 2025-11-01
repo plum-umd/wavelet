@@ -494,18 +494,14 @@ theorem IORestrictedSimilaritySt.map_tau_star
   (h : hsim.Sim s₁ s₂)
   (htau : sem₁.lts.TauStar .τ s₁ s₁') :
     ∃ s₂', sem₂.lts.TauStar .τ s₂ s₂' ∧ hsim.Sim s₁' s₂'
-  := sorry
-
-theorem IORestrictedSimilarity.map_tau_star
-  [Arity Op]
-  {sem₁ sem₂ : Semantics Op V m n}
-  (hsim : sem₁ ≲ᵣ sem₂)
-  {s₁ s₁' : sem₁.S}
-  {s₂ : sem₂.S}
-  (h : hsim.Sim s₁ s₂)
-  (htau : sem₁.lts.TauStar .τ s₁ s₁') :
-    ∃ s₂', sem₂.lts.TauStar .τ s₂ s₂' ∧ hsim.Sim s₁' s₂'
-  := sorry
+  := by
+  induction htau with
+  | refl => exact ⟨_, .refl, h⟩
+  | tail pref tail ih =>
+    have ⟨_, pref', h'⟩ := ih
+    have ⟨_, tail', h''⟩ := hsim.sim_step _ _ _ _ h' tail
+    cases tail' with | step_tau tail'' =>
+    exact ⟨_, pref'.trans tail'', h''⟩
 
 instance [Arity Op] : IsRefl (Semantics Op V m n) IORestrictedSimilarity where
   refl := .refl

@@ -208,7 +208,23 @@ theorem link_star_to_dep_star
   (depOp : Op₁) :
     ∃ tr',
       (deps depOp).lts.Star (s.depStates depOp) tr' (s'.depStates depOp)
-  := sorry
+  := by
+  induction hsteps with
+  | refl => exact ⟨_, .refl⟩
+  | tail pref tail ih =>
+    have ⟨_, pref'⟩ := ih
+    cases tail with
+    | step_main => exact ⟨_, pref'⟩
+    | step_dep hcur_sem hpass hstep
+    | step_dep_spawn hcur_sem _ hstep
+    | step_dep_ret hcur_sem hstep _ =>
+      rename Op₁ => depOp'
+      by_cases heq : depOp = depOp'
+      · subst heq
+        simp
+        exact ⟨_, .tail pref' hstep⟩
+      · simp [heq]
+        exact ⟨_, pref'⟩
 
 section Simulation
 

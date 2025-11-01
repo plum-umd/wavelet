@@ -166,6 +166,19 @@ def Lts.InterpStep.star_to_base_star
     have ⟨_, ih'⟩ := ih
     exact ⟨_, .tail ih' tail'⟩
 
+def Lts.InterpStep.from_base_tau_star
+  [Arity Op] {S S'}
+  {lts : Lts S (Label Op V m n)}
+  {lts' : Lts S' (RespLabel Op V)}
+  {s s' : S}
+  {t : S'}
+  (hsteps : lts.TauStar .τ s s') :
+    (Lts.InterpStep lts lts').TauStar .τ (s, t) (s', t)
+  := by
+  induction hsteps with
+  | refl => exact .refl
+  | tail _ tail ih => exact .tail ih (.step_tau tail)
+
 def Lts.IndexedInterpStep.map_step
   [Arity Op] {S S'}
   {lts₁ lts₂ : Lts S (Nat × Label Op V m n)}
@@ -234,7 +247,8 @@ def InterpSim
   [Arity Op]
   [interp : OpInterp.{_, _, w₂} Op V]
   {sem₁ sem₂ : Semantics Op V m n}
-  (hsim : sem₁ ≲ᵣ sem₂)
+  {R : sem₁.S → sem₂.S → Prop}
+  (hsim : sem₁ ≲ᵣ[R] sem₂)
   (s₁ : sem₁.S × interp.S) (s₂ : sem₂.S × interp.S) : Prop
   := hsim.Sim s₁.1 s₂.1 ∧ s₁.2 = s₂.2
 
@@ -248,6 +262,50 @@ theorem sim_interp
   (hsim : sem₁ ≲ᵣ[R] sem₂) :
     sem₁.interpret interp ≲ᵣ[λ s₁ s₂ => R s₁.1 s₂.1 ∧ s₁.2 = s₂.2] sem₂.interpret interp
   := by
-  sorry
+  apply Lts.SimilaritySt.intro (InterpSim hsim)
+  · constructor
+    · simp [InterpSim, Semantics.interpret]
+      exact hsim.sim_init
+    · intros s₁ s₂ l s₁' h hstep
+      rcases s₁ with ⟨s₁₁, s₁₂⟩
+      rcases s₂ with ⟨s₂₁, s₂₂⟩
+      have ⟨h₁, h₂⟩ := h
+      simp at h₁ h₂
+      simp [Semantics.interpret] at hstep
+      cases hstep with
+      | step_tau hstep =>
+        have ⟨_, hstep', h₁'⟩ := hsim.sim_step _ _ _ _ h₁ hstep
+        cases hstep' with | step_tau hstep' =>
+        have hstep'' : (sem₂.interpret interp).lts.IORestrictedStep.Step (_, s₂₂) _ _ :=
+          Lts.IORestrictedStep.step_tau
+            (Lts.InterpStep.from_base_tau_star hstep')
+        exact ⟨_, hstep'', by simp [InterpSim, h₁', h₂]⟩
+      | step_input hstep =>
+        have ⟨_, hstep', h₁'⟩ := hsim.sim_step _ _ _ _ h₁ hstep
+        cases hstep' with | step_input hstep' htau' =>
+        rename_i s₃
+        have htau'' : (sem₂.interpret interp).lts.TauStar .τ (_, s₂₂) _ :=
+          Lts.InterpStep.from_base_tau_star htau'
+        exact ⟨_,
+          .step_input (.step_input hstep') htau'',
+          by simp [InterpSim, h₁', h₂]⟩
+      | step_output hstep =>
+        have ⟨_, hstep', h₁'⟩ := hsim.sim_step _ _ _ _ h₁ hstep
+        cases hstep' with | step_output htau' hstep' =>
+        rename_i s₃
+        have htau'' : (sem₂.interpret interp).lts.TauStar .τ (_, s₂₂) _ :=
+          Lts.InterpStep.from_base_tau_star htau'
+        exact ⟨_,
+          .step_output htau'' (.step_output hstep'),
+          by simp [InterpSim, h₁', h₂]⟩
+      | step_yield hstep hinterp =>
+        have ⟨_, hstep', h₁'⟩ := hsim.sim_step _ _ _ _ h₁ hstep
+        cases hstep' with | step_yield hstep' =>
+        subst h₂
+        exact ⟨_, .step_tau (.single (.step_yield hstep' hinterp)),
+          by simp [InterpSim, h₁']⟩
+  · simp [InterpSim]
+    intros s₁ _ s₂ h
+    exact hsim.sim_prop _ _ h
 
 end Wavelet.Semantics
