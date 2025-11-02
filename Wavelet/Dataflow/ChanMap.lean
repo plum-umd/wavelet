@@ -66,9 +66,6 @@ abbrev ChanMap.PairwiseWithVals
     val₂ ∈ vals →
     P val₁ val₂
 
-/-! Lemmas about `ChanMap`. -/
-section Lemmas
-
 theorem push_vals_disjoint [DecidableEq χ]
   {map : ChanMap χ V}
   {names : Vector χ n}
@@ -725,6 +722,23 @@ theorem push_vals_pairwise
     (map.pushVals names vals).Pairwise P
   := sorry
 
-end Lemmas
+@[simp]
+theorem pop_vals_empty
+  [NeZero n] [DecidableEq χ]
+  {names : Vector χ n} :
+    (ChanMap.empty (χ := χ) (V := V)).popVals names = none
+  := by
+  have hne := NeZero.ne n
+  induction names using Vector.back_induction with
+  | empty => simp at hne
+  | push xs x ih =>
+    rename Nat => n'
+    cases n' with
+    | zero =>
+      simp [Vector.eq_empty, pop_vals_unfold, ChanMap.popVal, ChanMap.empty]
+    | succ =>
+      rw [pop_vals_unfold]
+      specialize ih (by simp)
+      simp [ih]
 
 end Wavelet.Dataflow

@@ -26,8 +26,8 @@ def Proc.AffineChan [Arity Op] (proc : Proc Op χ V m n) : Prop :=
   proc.inputs.toList.Nodup ∧
   proc.outputs.toList.Nodup ∧
   proc.atoms.AffineChan ∧
-  (∀ input ∈ proc.inputs, ∀ ap ∈ proc.atoms, input ∉ ap.outputs) ∧
-  (∀ output ∈ proc.outputs, ∀ ap ∈ proc.atoms, output ∉ ap.inputs)
+  (∀ ap ∈ proc.atoms, ap.outputs.Disjoint proc.inputs.toList) ∧
+  (∀ ap ∈ proc.atoms, ap.inputs.Disjoint proc.outputs.toList)
 
 theorem Proc.AffineChan.atom_inputs_disjoint
   [Arity Op]
@@ -84,23 +84,23 @@ theorem Proc.AffineChan.inv
         have := h₃₂ ⟨j, hj⟩ ⟨k, hk⟩ (by simp [hne])
         simp at this
         grind [AtomicProc.inputs, AtomicProc.outputs]
-      · intros input hmem_input ap hmem_ap
+      · intros ap hmem_ap
         have := List.mem_or_eq_of_mem_set hmem_ap
         cases this with
         | inl hmem_ap =>
-          exact h₄ input hmem_input ap hmem_ap
+          exact h₄ ap hmem_ap
         | inr heq_ap =>
           subst heq_ap
-          have := h₄ input hmem_input _ (List.mem_of_getElem hget)
+          have := h₄ _ (List.mem_of_getElem hget)
           exact this
-      · intros input hmem_input ap hmem_ap
+      · intros ap hmem_ap
         have := List.mem_or_eq_of_mem_set hmem_ap
         cases this with
         | inl hmem_ap =>
-          exact h₅ input hmem_input ap hmem_ap
+          exact h₅ ap hmem_ap
         | inr heq_ap =>
           subst heq_ap
-          have := h₅ input hmem_input _ (List.mem_of_getElem hget)
+          have := h₅ _ (List.mem_of_getElem hget)
           exact this
     | _ => simp [hinv]
 

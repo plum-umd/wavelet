@@ -841,4 +841,103 @@ theorem proc_indexed_interp_guarded_terminal_confl
         (hdisj.unfold hstep).2 hstep₁₂
       exact ⟨_, htail'.prepend hstep₂₁, by simp [hlen]⟩
 
+theorem async_op_interp_ne_zero_inputs
+  [InterpConsts V]
+  {aop aop' : AsyncOp (V ⊕ T)}
+  (hinterp : aop.Interp (.mk allInputs allOutputs inputs inputVals outputs outputVals) aop') :
+    inputs.length ≠ 0
+  := by
+  cases hinterp
+  any_goals simp [NeZero.ne]
+  any_goals rename NeZero _ => inst
+  case interp_merge_left =>
+    intros h
+    subst h
+    rename_i h
+    simp [NeZero.ne'] at h
+  case interp_merge_right =>
+    have := inst.ne
+    omega
+  case interp_forward | interp_forwardc | interp_sink =>
+    intros h
+    subst h
+    rename_i h
+    simp [inst.ne'] at h
+
+theorem proc_output_init_invert
+  [Arity Op]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {s s' : ConfigWithSpec opSpec χ m n}
+  (hstep : Config.Step.Step s (.output vals) s')
+  (haff : s.proc.AffineChan)
+  (hinit : s'.chans = ChanMap.empty) :
+    Config.Step.IsFinalFor (λ l => l.isYield ∨ l.isSilent) s
+  := by
+  cases hstep with | step_output hpop =>
+  simp at hinit
+  subst hinit
+  intros s'' l hl hstep'
+  cases hstep' with
+  | step_op hmem hpop' =>
+    rename_i op inputs outputs inputVals outputVals chans'
+    have ⟨_, _, _, haff_inputs, haff_outputs⟩ := haff
+    specialize haff_inputs _ hmem
+    specialize haff_outputs _ hmem
+    have ⟨_, hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute haff_outputs hpop' hpop
+    simp at hpop₂₁
+  | step_async hi hget hinterp hpop' =>
+    rename_i k₁ k₂ aop aop' allInputs allOutputs inputs inputVals outputs outputVals chans' i
+    have hnz := async_op_interp_ne_zero_inputs hinterp
+    simp at hnz
+    have ⟨_, _, _, haff_inputs, haff_outputs⟩ := haff
+    specialize haff_inputs _ (List.mem_of_getElem hget)
+    specialize haff_outputs _ (List.mem_of_getElem hget)
+    simp [AtomicProc.inputs, AtomicProc.outputs] at haff_inputs haff_outputs
+    have ⟨_, hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute
+      (List.disjoint_of_subset_left hinterp.input_sublist.subset haff_outputs) hpop' hpop
+    have _ : NeZero k₁ := .mk hnz
+    simp at hpop₂₁
+  | _ => simp at hl
+
+theorem proc_guarded_output_init_invert
+  [Arity Op] [PCM T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s s' : ConfigWithSpec opSpec χ m n}
+  (hstep : (Config.GuardStep opSpec ioSpec).Step s (.output vals) s')
+  (haff : s.proc.AffineChan)
+  (hinit : s'.chans = ChanMap.empty) :
+    Config.Step.IsFinalFor (λ l => l.isYield ∨ l.isSilent) s
+  := by
+  rcases hstep with ⟨hguard, hstep⟩
+  cases hguard
+  exact proc_output_init_invert hstep haff hinit
+
+/--
+If a state transitions to an initial state after one output step,
+then the previous state should be final wrt yield/τ.
+
+TODO: This needs some additional assumptions that there is no
+empty input operator that can fire indefinitely.
+-/
+theorem proc_interp_guarded_output_init_invert
+  [Arity Op] [PCM T]
+  [DecidableEq χ]
+  [InterpConsts V]
+  [opInterp : OpInterp Op V]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+  {s s' : ConfigWithSpec opSpec χ m n × opInterp.S}
+  (hstep : (Config.InterpGuardStep opSpec ioSpec).Step s (.output vals) s')
+  (haff : s.1.proc.AffineChan)
+  (hinit : s'.1.chans = ChanMap.empty) :
+    Config.Step.IsFinalFor (λ l => l.isYield ∨ l.isSilent) s.1
+  := by
+  cases hstep with | step_output hstep =>
+  exact proc_guarded_output_init_invert hstep haff hinit
+
 end Wavelet.Determinacy
