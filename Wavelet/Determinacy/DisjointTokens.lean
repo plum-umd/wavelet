@@ -190,14 +190,71 @@ theorem async_op_interp_preserves_no_token_const
   (hinterp : AsyncOp.Interp aop
     (.mk allInputs allOutputs inputs inputVals outputs outputVals) aop') :
     aop'.HasNoTokenConst
-  := sorry
+  := by
+  cases hinterp
+    <;> simp [AsyncOp.HasNoTokenConst] at hntok ⊢
+    <;> exact hntok
+
+theorem async_op_interp_preserves_pairwise_disj_tokens
+  [PCM T] [InterpConsts V]
+  {aop : AsyncOp (V ⊕ T)}
+  (hntok : aop.HasNoTokenConst)
+  (hpw_inputs : inputVals.Pairwise InrDisjointTokens)
+  (hinterp : AsyncOp.Interp aop
+    (.mk allInputs allOutputs inputs inputVals outputs outputVals) aop') :
+    outputVals.Pairwise InrDisjointTokens
+  := by
+  sorry
+
+theorem async_op_interp_preserves_frame_preserving
+  [PCM T] [InterpConsts V]
+  {aop : AsyncOp (V ⊕ T)}
+  (hntok : aop.HasNoTokenConst)
+  (hinterp : AsyncOp.Interp aop
+    (.mk allInputs allOutputs inputs inputVals outputs outputVals) aop') :
+    ∀ t₂ v₂,
+      v₂ ∈ outputVals → v₂ = .inr t₂ →
+      ∃ t₁ v₁, v₁ ∈ inputVals ∧ v₁ = .inr t₁ ∧ t₁ ⟹ t₂
+  := by
+  sorry
+
+theorem pairwise_with_vals_frame_preserving
+  [PCM T] [PCM.Lawful T]
+  {map : ChanMap χ (V ⊕ T)}
+  {vals₁ : Vector (V ⊕ T) n}
+  {vals₂ : Vector (V ⊕ T) m}
+  (hpw_vals₁ : map.PairwiseWithVals InrDisjointTokens vals₁)
+  (hfp : ∀ t₂ v₂,
+    v₂ ∈ vals₂ → v₂ = .inr t₂ →
+    ∃ t₁ v₁, v₁ ∈ vals₁ ∧ v₁ = .inr t₁ ∧ t₁ ⟹ t₂) :
+    map.PairwiseWithVals InrDisjointTokens vals₂
+  := by
+  intros name v₁ v₂ hmem₁ hmem₂
+  cases v₂ with
+  | inl => simp [InrDisjointTokens]
+  | inr t₂ =>
+    have ⟨t₁', v₁', hmem₁', hv₁', hfp'⟩ := hfp t₂ (.inr t₂) hmem₂ rfl
+    simp [InrDisjointTokens]
+    intros t₁ hv₁
+    have := hpw_vals₁ hmem₁ hmem₁' hv₁ hv₁'
+    have := hfp' _ this.symm
+    exact PCM.disjoint.symm this
+
+theorem pairwise_disj_push_tok
+  [PCM T]
+  {vals : Vector V n}
+  {tok : T} :
+    List.Pairwise InrDisjointTokens
+      ((vals.map .inl).push (.inr tok)).toList
+  := by
+  sorry
 
 /--
 `Config.DisjointTokens` is an invariant of a guarded `Proc` semantics,
 when restricted to non-input labels.
 -/
 theorem Config.DisjointTokens.guarded_inv
-  [Arity Op] [PCM T] [DecidableEq χ]
+  [Arity Op] [PCM T] [PCM.Lawful T] [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
@@ -224,6 +281,7 @@ theorem Config.DisjointTokens.guarded_inv
       cases hstep with | step_async _ hget hinterp hpop =>
       simp
       have ⟨hpw', hpw_vals, hpw_chans'_vals⟩ := pop_vals_pairwise hpw hpop
+      have hntok_aop := hntok _ (List.mem_of_getElem hget)
       constructor
       · intros ap hmem
         have := List.mem_or_eq_of_mem_set hmem
@@ -232,19 +290,58 @@ theorem Config.DisjointTokens.guarded_inv
         | inr heq =>
           subst heq
           simp [AtomicProc.HasNoTokenConst]
-          exact async_op_interp_preserves_no_token_const
-            (hntok _ (List.mem_of_getElem hget)) hinterp
+          exact async_op_interp_preserves_no_token_const hntok_aop hinterp
       · apply push_vals_pairwise hpw'
-        · sorry
-        · sorry
+        · exact async_op_interp_preserves_pairwise_disj_tokens
+            hntok_aop hpw_vals hinterp
+        · have hfp := async_op_interp_preserves_frame_preserving
+            hntok_aop hinterp
+          apply pairwise_with_vals_frame_preserving
+          · exact hpw_chans'_vals
+          · simp only [Vector.mem_toList_iff] at hfp
+            exact hfp
     | spec_yield =>
-      -- Normal operator
-      cases hstep with | step_op =>
-      sorry
-    | spec_join =>
+      -- Normal operators
+      cases hstep with | step_op hmem hpop =>
+      rename_i op inputVals outputVals chans' inputs outputs
+      have ⟨hpw', hpw_vals, hpw_chans'_vals⟩ := pop_vals_pairwise hpw hpop
+      constructor
+      · exact hntok
+      · apply push_vals_pairwise hpw'
+        · exact pairwise_disj_push_tok
+        · apply pairwise_with_vals_frame_preserving
+          · exact hpw_chans'_vals
+          · intros t₂ v₂ hmem₂ hv₂
+            simp at hmem₂
+            cases hmem₂ with
+            | inl h => simp [hv₂] at h
+            | inr h =>
+              simp [h] at hv₂
+              subst hv₂
+              exists opSpec.pre op inputVals
+              exists .inr (opSpec.pre op inputVals)
+              simp
+              apply hfp
+    | spec_join houtputs₀ houtputs₁ hsum hdisj =>
+      rename_i k l req rem inst toks vals outputVals
       -- Join
-      cases hstep with | step_op =>
-      sorry
+      cases hstep with | step_op hmem hpop =>
+      rename_i chans' inputs outputs
+      have ⟨hpw', hpw_vals, hpw_chans'_vals⟩ := pop_vals_pairwise hpw hpop
+      constructor
+      · exact hntok
+      · have houtput_vals : outputVals = #v[.inr (req vals), .inr rem] := by
+          ext i hi
+          match i with
+          | 0 => simp [houtputs₀]
+          | 1 => simp [houtputs₁]
+        apply push_vals_pairwise hpw'
+        · rw [houtput_vals]
+          simp [InrDisjointTokens]
+          exact hdisj
+        · rw [houtput_vals]
+
+          sorry
     | spec_input => simp at hl
     | spec_output =>
       -- Output
@@ -280,7 +377,7 @@ theorem Config.DisjointTokens.guarded_init_input
 `Config.DisjointTokens` is an invariant of an interpreted and guarded `Proc` semantics.
 -/
 theorem Config.DisjointTokens.interp_guarded_inv
-  [Arity Op] [PCM T] [DecidableEq χ]
+  [Arity Op] [PCM T] [PCM.Lawful T] [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
@@ -329,7 +426,7 @@ theorem Config.DisjointTokens.interp_guarded_inv
 Converts the previous invariant results to `Config.IdxInterpGuardStep`
 -/
 theorem Config.DisjointTokens.indexed_interp_guarded_inv
-  [Arity Op] [PCM T] [DecidableEq χ]
+  [Arity Op] [PCM T] [PCM.Lawful T] [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}

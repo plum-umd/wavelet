@@ -24,9 +24,9 @@ theorem Config.IdxGuardStep.to_guarded
   case spec_yield =>
     have := Config.IndexedStep.to_step_yield_or_tau hstep
     exact .step .spec_yield this
-  case spec_join h₁ h₂ h₃ =>
+  case spec_join h₁ h₂ h₃ h₄ =>
     have := Config.IndexedStep.to_step_yield_or_tau hstep
-    exact .step (.spec_join h₁ h₂ h₃) this
+    exact .step (.spec_join h₁ h₂ h₃ h₄) this
   case spec_tau =>
     have := Config.IndexedStep.to_step_yield_or_tau hstep
     exact .step .spec_tau this
@@ -50,9 +50,9 @@ theorem Config.GuardStep.to_indexed_guarded
   case step.spec_yield =>
     have ⟨i, hstep'⟩ := Config.IndexedStep.from_step_yield hstep
     exact ⟨i, .step (.idx_guard .spec_yield) hstep'⟩
-  case step.spec_join h₁ h₂ h₃ =>
+  case step.spec_join h₁ h₂ h₃ h₄ =>
     have ⟨i, hstep'⟩ := Config.IndexedStep.from_step_yield hstep
-    exact ⟨i, .step (.idx_guard (.spec_join h₁ h₂ h₃)) hstep'⟩
+    exact ⟨i, .step (.idx_guard (.spec_join h₁ h₂ h₃ h₄)) hstep'⟩
   case step.spec_tau =>
     have ⟨i, hstep'⟩ := Config.IndexedStep.from_step_tau hstep
     exact ⟨i, .step (.idx_guard .spec_tau) hstep'⟩

@@ -64,6 +64,9 @@ instance [PCM R] : Hom (Triv.homFrom R) := by
   constructor
   all_goals intros; trivial
 
+theorem disjoint.symm [PCM C] [Lawful C] {a b : C} : a ⊥ b → b ⊥ a := by
+  intro h; rw [disjoint, Lawful.add_comm]; exact h
+
 end PCM
 
 end Wavelet.Determinacy

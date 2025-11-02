@@ -133,6 +133,7 @@ inductive OpSpec.Guard
     outputs[1] = .inr rem →
     -- For this to be deterministic, we need a `Cancellative` PCM.
     req vals ⊔ rem = PCM.sum toks.toList →
+    (req vals) ⊥ rem →
     Guard opSpec ioSpec
       (.yield (.join k l req)
         ((toks.map .inr : Vector (V ⊕ T) k) ++
@@ -197,7 +198,7 @@ theorem OpSpec.spec_guard_implies_triv_guard
     opSpec.Guard ioSpec l₁ l₂ → opSpec.TrivGuard l₁ l₂
   | .spec_yield => by exact .triv_yield
   | OpSpec.Guard.spec_join .. => by
-    rename_i k l req rem _ toks vals outputs h₁ h₂ hsum
+    rename_i k l req rem _ toks vals outputs h₁ h₂ hsum hdisj
     have : outputs = #v[req vals, rem].map .inr := by
       apply Vector.ext
       intros i hi

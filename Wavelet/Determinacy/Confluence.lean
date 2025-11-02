@@ -271,8 +271,8 @@ private theorem invert_compat_spec_guard
     simp [Label.IsYieldOrSilentAndDet] at hcompat
   case spec_join.spec_join =>
     rename_i
-      k₁ l₁ req₁ rem₁ _ toks₁ vals₁ outputs₁ houtputs₁₀ houtputs₁₁ hsum₁
-      k₂ l₂ req₂ rem₂ _ toks₂ vals₂ outputs₂ houtputs₂₀ houtputs₂₁ hsum₂
+      k₁ l₁ req₁ rem₁ _ toks₁ vals₁ outputs₁ houtputs₁₀ houtputs₁₁ hsum₁ hdisj₁
+      k₂ l₂ req₂ rem₂ _ toks₂ vals₂ outputs₂ houtputs₂₀ houtputs₂₁ hsum₂ hdisj₂
     intros op inputs outputs₁' outputs₂' hop₁ hinputs₁' houtputs₁' hop₂ hinputs₂' houtputs₂'
     cases op <;> simp at hop₁
     have ⟨h₁, h₂, h₃⟩ := hop₁

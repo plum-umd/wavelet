@@ -123,7 +123,9 @@ theorem proc_indexed_guarded_hetero_confl_single
             have ⟨h₁, h₂⟩ := hpop₂
             simp [h₁] at hpop₂'
             exact ⟨_, .step
-              (.idx_guard (.spec_join (by assumption) (by assumption) (by assumption)))
+              (.idx_guard (.spec_join
+                (by assumption) (by assumption)
+                (by assumption) (by assumption)))
               (.step_op (by assumption) hget₂' hpop₂')⟩
         | step_async => simp at hl
       | step_async _ hget₂ hinterp₂ hpop₂ =>
@@ -197,7 +199,9 @@ theorem proc_indexed_guarded_hetero_confl_single
             have ⟨h₁, h₂⟩ := hpop₂
             simp [h₁] at hpop₂'
             exact ⟨_, .step
-              (.idx_guard (.spec_join (by assumption) (by assumption) (by assumption)))
+              (.idx_guard (.spec_join
+                (by assumption) (by assumption)
+                (by assumption) (by assumption)))
               (.step_op (by assumption) hget₂' hpop₂')⟩
         | step_async => simp at hl
       | step_async _ hget₂ hinterp₂ hpop₂ =>
@@ -842,7 +846,7 @@ for some s₁' ≈ s₁ (modulo ghost tokens).
 In particular, the length of s →* s₂ is also bounded by the length of s →* s₁.
 -/
 theorem proc_interp_guarded_hetero_terminal_confl
-  [Arity Op] [PCM T] [PCM.Cancellative T]
+  [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]
