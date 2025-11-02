@@ -466,14 +466,47 @@ theorem async_op_interp_preserves_no_token_const
     <;> exact hntok
 
 theorem async_op_interp_le_tok_sum
-  [PCM T] [InterpConsts V]
+  [PCM T] [PCM.Lawful T] [InterpConsts V]
   {aop : AsyncOp (V ⊕ T)}
   (hntok : aop.HasNoTokenConst)
   (hinterp : AsyncOp.Interp aop
     (.mk allInputs allOutputs inputs inputVals outputs outputVals) aop') :
     PCM.sum (outputVals.map asTok) ≤ PCM.sum (inputVals.map asTok)
   := by
-  sorry
+  cases hinterp with
+  | interp_switch
+  | interp_steer_true
+  | interp_steer_false
+  | interp_merge_left
+  | interp_merge_right
+  | interp_merge_decider
+  | interp_forward
+  | interp_sink => simp
+  | interp_fork _ hclone =>
+    rename V ⊕ T => val
+    cases val <;> simp at hclone
+    simp [asTok]
+  | interp_const =>
+    rename_i c _ _ _
+    cases c <;> simp [AsyncOp.HasNoTokenConst] at hntok
+    simp [asTok]
+  | interp_forwardc h₁ h₂ =>
+    rename_i consts _
+    simp [AsyncOp.HasNoTokenConst] at hntok
+    have : PCM.sum (List.map asTok consts.toList) = PCM.zero := by
+      clear h₁ h₂
+      induction consts using Vector.back_induction with
+      | empty => simp
+      | push xs x ih =>
+        have := hntok x (by simp)
+        cases x <;> simp at this
+        simp [Vector.toList_push, asTok]
+        apply ih
+        intros x' hx'
+        apply hntok
+        simp [hx']
+    simp
+    simp [this]
 
 @[simp]
 theorem sum_as_tok_map_inl

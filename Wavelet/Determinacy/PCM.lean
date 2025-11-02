@@ -159,7 +159,7 @@ theorem add.le_add_congr [PCM C] [PCM.Lawful C]
 @[simp]
 theorem le.refl [PCM C] [Lawful C] (a : C) : a ≤ a := by exists PCM.zero; simp
 
-@[simp, trans]
+@[trans]
 theorem le.trans [PCM C] [Lawful C]
   {a b c : C} (hab : a ≤ b) (hbc : b ≤ c) : a ≤ c := by
   have ⟨d₁, hd₁⟩ := hab
@@ -167,6 +167,11 @@ theorem le.trans [PCM C] [Lawful C]
   subst hd₁; subst hd₂
   exists (d₁ ⊔ d₂)
   rw [Lawful.add_assoc]
+
+@[simp]
+theorem le.zero [PCM C] [Lawful C] (a : C) : PCM.zero ≤ a := by
+  exists a
+  rw [add.left_zero_id]
 
 @[simp]
 theorem sum.nil [inst : PCM C] : sum [] = inst.zero := by simp [sum]
@@ -237,6 +242,14 @@ theorem sum.le_disj_get [PCM C] [Lawful C] {xs : List C}
         simp at hne ⊢
         apply add.le_add_right_alt
         apply ih hne
+
+@[simp]
+theorem sum.replicate_zero
+  [inst : PCM C] [Lawful C] (n : Nat) :
+    sum (List.replicate n PCM.zero) = inst.zero := by
+  induction n with
+  | zero => simp
+  | succ n ih => simp [ih, List.replicate]
 
 end PCM
 
