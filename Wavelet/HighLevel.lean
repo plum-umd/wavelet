@@ -140,7 +140,7 @@ theorem compile_strong_norm
   {sigs : Sigs k}
   {opSpec : OpSpec Op V T}
   {progSpec : ProgSpec V T sigs}
-  -- Required properties on the operator interpretation
+  -- Required properties on the operator interpretation and specs
   (hconfl : opSpec.Confluent opInterp)
   (hfp : opSpec.FramePreserving)
   (hvalid : progSpec.Valid)
