@@ -67,6 +67,14 @@ instance [PCM R] : Hom (Triv.homFrom R) := by
 theorem disjoint.symm [PCM C] [Lawful C] {a b : C} : a ⊥ b → b ⊥ a := by
   intro h; rw [disjoint, Lawful.add_comm]; exact h
 
+theorem valid.add_left [PCM C] [Lawful C] {a b : C} (h : ✓ a ⊔ b) : ✓ a
+  := Lawful.valid_add h
+
+theorem valid.add_right [PCM C] [Lawful C] {a b : C} (h : ✓ a ⊔ b) : ✓ b
+  := by
+  rw [Lawful.add_comm] at h
+  exact Lawful.valid_add h
+
 end PCM
 
 end Wavelet.Determinacy

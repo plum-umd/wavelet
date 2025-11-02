@@ -520,7 +520,7 @@ theorem proc_unguarded_strong_confl_at_mod
   · exact hconfl_guard
 
 theorem proc_indexed_interp_guarded_strong_confl_at
-  [Arity Op] [PCM T] [PCM.Cancellative T]
+  [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]
@@ -643,7 +643,7 @@ theorem proc_indexed_interp_guarded_strong_confl_at
             have := haff.atom_inputs_disjoint
               ⟨i₁, by assumption⟩ ⟨i₂, by assumption⟩ (by simp [heq_ij])
             simp [hget₁, hget₂, AtomicProc.inputs] at this
-            have := pop_vals_pop_vals_disj_preserves_pairwise hdisj.2 this hpop₁ hpop₂
+            have := pop_vals_pop_vals_disj_preserves_pairwise hdisj.2.to_pairwise this hpop₁ hpop₂
             apply this (.inr (opSpec.pre op₁ inputVals₁)) (.inr (opSpec.pre op₂ inputVals₂))
             all_goals simp)
         replace ⟨s', hstep₁', hstep₂'⟩ := h
@@ -661,7 +661,7 @@ TODO: this is probably generalizable to a general confluent `Semantics`.
 TODO: use `proc_indexed_interp_strong_confl_at` to prove this.
 -/
 theorem proc_interp_guarded_strong_confl_at
-  [Arity Op] [PCM T] [PCM.Cancellative T]
+  [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]
@@ -782,7 +782,7 @@ theorem proc_interp_guarded_strong_confl_at
             -- apply PCM.eq_congr_disj htok₁ htok₂
             have := haff.atom_inputs_disjoint ⟨i, hi⟩ ⟨j, hj⟩ (by simp [heq_ij])
             simp [hget_i, hget_j, AtomicProc.inputs] at this
-            have := pop_vals_pop_vals_disj_preserves_pairwise hdisj.2 this hpop₁ hpop₂
+            have := pop_vals_pop_vals_disj_preserves_pairwise hdisj.2.to_pairwise this hpop₁ hpop₂
             -- have := this (.inr _) (.inr _)
             apply this (.inr (opSpec.pre op₁ inputVals₁)) (.inr (opSpec.pre op₂ inputVals₂))
             all_goals simp)
@@ -796,7 +796,7 @@ theorem proc_interp_guarded_strong_confl_at
 /-- If a terminating trace can be demonstrated in the indexed and guarded semantics,
 then any step from the same initial state will converge to the same final state. -/
 theorem proc_indexed_interp_guarded_terminal_confl
-  [Arity Op] [PCM T] [PCM.Cancellative T]
+  [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]

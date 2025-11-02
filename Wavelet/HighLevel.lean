@@ -249,7 +249,6 @@ theorem compile_strong_norm
         exact hinv_aff_s'' hsteps)
       (by simp [hfinal_init, Proc.semantics, Semantics.guard, Dataflow.Config.init])
   -- Use determinacy to obtain a terminating trace from `s''`
-
   have ⟨_, _, htrace''', hlen₁, heq₃⟩ := proc_interp_guarded_hetero_terminal_confl
     hconfl hfp hdet hnb haff_s''
     (Config.DisjointTokens.interp_guarded_init_input hntok rfl hinputs'')

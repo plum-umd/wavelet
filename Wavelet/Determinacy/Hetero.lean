@@ -774,7 +774,7 @@ of `s` in the guarded semantics into its strong normalization
 in the unguarded semantics.
 -/
 theorem proc_indexed_interp_guarded_hetero_terminal_confl
-  [Arity Op] [PCM T] [PCM.Cancellative T]
+  [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]
