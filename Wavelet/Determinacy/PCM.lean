@@ -159,6 +159,15 @@ theorem add.le_add_congr [PCM C] [PCM.Lawful C]
 @[simp]
 theorem le.refl [PCM C] [Lawful C] (a : C) : a ≤ a := by exists PCM.zero; simp
 
+@[simp, trans]
+theorem le.trans [PCM C] [Lawful C]
+  {a b c : C} (hab : a ≤ b) (hbc : b ≤ c) : a ≤ c := by
+  have ⟨d₁, hd₁⟩ := hab
+  have ⟨d₂, hd₂⟩ := hbc
+  subst hd₁; subst hd₂
+  exists (d₁ ⊔ d₂)
+  rw [Lawful.add_assoc]
+
 @[simp]
 theorem sum.nil [inst : PCM C] : sum [] = inst.zero := by simp [sum]
 

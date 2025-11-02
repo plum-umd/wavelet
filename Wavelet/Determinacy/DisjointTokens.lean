@@ -127,6 +127,15 @@ def ChanMap.DisjointWith.imp_frame_preserving
   have := hdisj_with names hnodup
   exact hfp _ this
 
+def ChanMap.DisjointWith.imp_le
+  [PCM T] [PCM.Lawful T]
+  {map : ChanMap χ (V ⊕ T)}
+  {tok₁ tok₂ : T}
+  (hle : tok₂ ≤ tok₁)
+  (hdisj_with : map.DisjointWith tok₁) :
+    map.DisjointWith tok₂
+  := hdisj_with.imp_frame_preserving (PCM.framePreserving.from_le hle)
+
 def ChanMap.DisjointWith.to_disj_toks
   [PCM T] [PCM.Lawful T]
   {map : ChanMap χ (V ⊕ T)} {tok : T}
@@ -260,6 +269,89 @@ theorem pop_vals_disj_toks
   simp at this
   exact this
 
+theorem push_val_disj_with
+  [DecidableEq χ] [PCM T] [PCM.Lawful T]
+  {map : ChanMap χ (V ⊕ T)}
+  {name : χ} {val : V ⊕ T} {tok : T}
+  (hdisj : map.DisjointWith (tok ⊔ asTok val)) :
+    (map.pushVal name val).DisjointWith tok
+  := by
+  intros names hnodup
+  have hsimp_map {names} (hnmem : name ∉ names) :
+    List.map ((map.pushVal name val).tokSum) names
+    = List.map (map.tokSum) names
+    := by
+    apply List.map_congr_left
+    intros n hn
+    simp [ChanMap.tokSum]
+    by_cases h : n = name
+    · subst h
+      exact False.elim (hnmem hn)
+    · simp [h, ChanMap.pushVal]
+  by_cases hmem : name ∈ names
+  · have hdisj' := hdisj names hnodup
+    apply PCM.valid.le hdisj'
+    rw [PCM.Lawful.add_assoc]
+    apply PCM.add.le_add_congr
+    · simp
+    induction names generalizing tok with
+    | nil => simp at hmem
+    | cons name' names' ih =>
+      simp at hmem
+      by_cases h₁ : name = name'
+      · subst h₁
+        simp at hnodup ⊢
+        rw [hsimp_map hnodup.1]
+        simp [ChanMap.pushVal, ChanMap.tokSum]
+        rw [← @PCM.Lawful.add_comm _ _ _ (asTok val)]
+        rw [PCM.Lawful.add_assoc]
+        rw [← PCM.Lawful.add_assoc]
+        simp
+      · simp [h₁] at hnodup hmem
+        simp [ChanMap.pushVal, ChanMap.tokSum, Ne.symm h₁]
+        rw [← PCM.Lawful.add_assoc]
+        specialize ih hdisj hnodup.2 hmem
+          (by
+            apply PCM.valid.le hdisj'
+            apply PCM.add.le_add_congr
+            · simp
+            · simp)
+        apply PCM.le.trans
+        · apply PCM.add.le_add_congr (PCM.le.refl _) ih
+        · rw [← PCM.Lawful.add_assoc]
+          rw [@PCM.Lawful.add_comm _ _ _ (asTok val)]
+          simp
+  · simp [hsimp_map hmem]
+    have := hdisj names hnodup
+    apply PCM.valid.le this
+    apply PCM.add.le_add_congr
+    · simp
+    · simp
+
+theorem push_vals_disj_with
+  [DecidableEq χ] [PCM T] [PCM.Lawful T]
+  {map : ChanMap χ (V ⊕ T)}
+  {names : Vector χ n} {vals : Vector (V ⊕ T) n} {tok : T}
+  (hdisj : map.DisjointWith (tok ⊔ PCM.sum (vals.map asTok).toList)) :
+    (map.pushVals names vals).DisjointWith tok
+  := by
+  induction names using Vector.back_induction
+    generalizing map tok with
+  | empty =>
+    simp [Vector.eq_empty] at hdisj ⊢
+    exact hdisj
+  | push names' name' ih =>
+    simp [push_vals_unfold]
+    apply push_val_disj_with
+    rw [← Vector.push_pop_back vals] at hdisj
+    simp only [Vector.toList_map, Vector.toList_push] at hdisj
+    simp at hdisj
+    rw [@PCM.Lawful.add_comm _ _ _ _ (asTok vals.back)] at hdisj
+    rw [← PCM.Lawful.add_assoc] at hdisj
+    apply ih
+    rw [Vector.toList_map]
+    exact hdisj
+
 theorem push_vals_disj_toks
   [DecidableEq χ] [PCM T] [PCM.Lawful T]
   {map : ChanMap χ (V ⊕ T)}
@@ -267,8 +359,9 @@ theorem push_vals_disj_toks
   (hdisj : map.DisjointWith (PCM.sum (vals.map asTok).toList)) :
     (map.pushVals names vals).DisjointTokens
   := by
-
-  sorry
+  rw [← PCM.add.left_zero_id (a := PCM.sum (vals.map asTok).toList)] at hdisj
+  have := push_vals_disj_with hdisj (names := names)
+  exact this.to_disj_toks
 
 end Wavelet.Dataflow
 
