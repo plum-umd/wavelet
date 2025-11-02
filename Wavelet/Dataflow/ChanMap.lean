@@ -697,31 +697,6 @@ theorem pop_vals_pop_vals_disj_preserves_pairwise
   simp [hget_v₁, hget_v₂] at hpw
   exact hpw
 
-theorem pop_vals_pairwise
-  [DecidableEq χ]
-  {map : ChanMap χ V}
-  {P : V → V → Prop}
-  {names : Vector χ n}
-  {vals : Vector V n}
-  (hpw : map.Pairwise P)
-  (hpop : map.popVals names = some (vals, map')) :
-    map'.Pairwise P ∧
-    vals.toList.Pairwise P ∧
-    map'.PairwiseWithVals P vals
-  := sorry
-
-theorem push_vals_pairwise
-  [DecidableEq χ]
-  {map : ChanMap χ V}
-  {P : V → V → Prop}
-  {names : Vector χ n}
-  {vals : Vector V n}
-  (hpw : map.Pairwise P)
-  (hpw_vals : vals.toList.Pairwise P)
-  (hpw_map : map.PairwiseWithVals P vals) :
-    (map.pushVals names vals).Pairwise P
-  := sorry
-
 @[simp]
 theorem pop_vals_empty
   [NeZero n] [DecidableEq χ]

@@ -68,13 +68,51 @@ def InrDisjointTokens
     v₂ = .inr t₂ →
     t₁ ⊥ t₂
 
+theorem mem_map_tok
+  [PCM T] {map : ChanMap χ (V ⊕ T)}
+  (h : .inr t₁ ∈ map n₁) : t₁ ∈ (map n₁).map asTok
+  := by grind only [= List.mem_map, asTok, → List.eq_nil_of_map_eq_nil]
+
 /-- Weaken `DisjointTokens` to a `Pairwise` statement. -/
 def ChanMap.DisjointTokens.to_pairwise
   [PCM T] [PCM.Lawful T]
   {map : ChanMap χ (V ⊕ T)}
   (hdisj : map.DisjointTokens) :
     map.Pairwise InrDisjointTokens
-  := sorry
+  := by
+  intros n₁ n₂ i j hne hi hj t₁ t₂ hget_i hget_j
+  by_cases h : n₁ = n₂
+  · subst h
+    simp at hne
+    have := hdisj [n₁]
+    simp [ChanMap.tokSum] at this
+    apply PCM.valid.le this
+    have h₁ : t₁ = ((map n₁).map asTok)[i]'(by simp [hi]) := by simp [hget_i, asTok]
+    have h₂ : t₂ = ((map n₁).map asTok)[j]'(by simp [hj]) := by simp [hget_j, asTok]
+    rw [h₁, h₂]
+    apply PCM.sum.le_disj_get hne
+  · have := hdisj [n₁, n₂]
+    simp [ChanMap.tokSum] at this
+    apply PCM.valid.le this
+    apply PCM.add.le_add_congr
+    · apply PCM.sum.mem_to_le
+      have := List.mem_of_getElem hget_i
+      apply mem_map_tok this
+    · apply PCM.sum.mem_to_le
+      have := List.mem_of_getElem hget_j
+      apply mem_map_tok this
+
+def ChanMap.DisjointWith.imp_frame_preserving
+  [PCM T] [PCM.Lawful T]
+  {map : ChanMap χ (V ⊕ T)}
+  {tok₁ tok₂ : T}
+  (hfp : tok₁ ⟹ tok₂)
+  (hdisj_with : map.DisjointWith tok₁) :
+    map.DisjointWith tok₂
+  := by
+  intros names
+  have := hdisj_with names
+  exact hfp _ this
 
 def ChanMap.DisjointWith.imp_disj_toks
   [PCM T] [PCM.Lawful T]
@@ -85,6 +123,15 @@ def ChanMap.DisjointWith.imp_disj_toks
   intros names
   have := hdisj_with names
   exact this.add_right
+
+theorem empty_token_sum_zero
+  [inst : PCM T] [PCM.Lawful T]
+  (names : List χ) :
+    PCM.sum (names.map (ChanMap.empty (χ := χ) (V := V ⊕ T)).tokSum) = inst.zero
+  := by
+  induction names with
+  | nil => simp
+  | cons _ _ ih => simp [ih, ChanMap.tokSum, ChanMap.empty]
 
 theorem pop_vals_disj_toks
   [DecidableEq χ] [PCM T] [PCM.Lawful T]
@@ -206,59 +253,33 @@ theorem async_op_interp_preserves_no_token_const
     <;> simp [AsyncOp.HasNoTokenConst] at hntok ⊢
     <;> exact hntok
 
-theorem async_op_interp_preserves_pairwise_disj_tokens
-  [PCM T] [InterpConsts V]
-  {aop : AsyncOp (V ⊕ T)}
-  (hntok : aop.HasNoTokenConst)
-  (hpw_inputs : inputVals.Pairwise InrDisjointTokens)
-  (hinterp : AsyncOp.Interp aop
-    (.mk allInputs allOutputs inputs inputVals outputs outputVals) aop') :
-    outputVals.Pairwise InrDisjointTokens
-  := by
-  sorry
-
-theorem async_op_interp_preserves_frame_preserving
+theorem async_op_interp_le_tok_sum
   [PCM T] [InterpConsts V]
   {aop : AsyncOp (V ⊕ T)}
   (hntok : aop.HasNoTokenConst)
   (hinterp : AsyncOp.Interp aop
     (.mk allInputs allOutputs inputs inputVals outputs outputVals) aop') :
-    ∀ t₂ v₂,
-      v₂ ∈ outputVals → v₂ = .inr t₂ →
-      ∃ t₁ v₁, v₁ ∈ inputVals ∧ v₁ = .inr t₁ ∧ t₁ ⟹ t₂
+    PCM.sum (outputVals.map asTok) ≤ PCM.sum (inputVals.map asTok)
   := by
   sorry
 
-theorem pairwise_with_vals_frame_preserving
-  [PCM T] [PCM.Lawful T]
-  {map : ChanMap χ (V ⊕ T)}
-  {vals₁ : Vector (V ⊕ T) n}
-  {vals₂ : Vector (V ⊕ T) m}
-  (hpw_vals₁ : map.PairwiseWithVals InrDisjointTokens vals₁)
-  (hfp : ∀ t₂ v₂,
-    v₂ ∈ vals₂ → v₂ = .inr t₂ →
-    ∃ t₁ v₁, v₁ ∈ vals₁ ∧ v₁ = .inr t₁ ∧ t₁ ⟹ t₂) :
-    map.PairwiseWithVals InrDisjointTokens vals₂
+@[simp]
+theorem sum_as_tok_map_inl
+  [PCM T] [PCM.Lawful T] {vals : List V} :
+    PCM.sum (vals.map (asTok ∘ .inl) : List T) = PCM.zero
   := by
-  intros name v₁ v₂ hmem₁ hmem₂
-  cases v₂ with
-  | inl => simp [InrDisjointTokens]
-  | inr t₂ =>
-    have ⟨t₁', v₁', hmem₁', hv₁', hfp'⟩ := hfp t₂ (.inr t₂) hmem₂ rfl
-    simp [InrDisjointTokens]
-    intros t₁ hv₁
-    have := hpw_vals₁ hmem₁ hmem₁' hv₁ hv₁'
-    have := hfp' _ this.symm
-    exact PCM.disjoint.symm this
+  induction vals with
+  | nil => simp
+  | cons _ _ ih => simp [asTok, ih]
 
-theorem pairwise_disj_push_tok
-  [PCM T]
-  {vals : Vector V n}
-  {tok : T} :
-    List.Pairwise InrDisjointTokens
-      ((vals.map .inl).push (.inr tok)).toList
+@[simp]
+theorem sum_as_tok_map_inr
+  [PCM T] [PCM.Lawful T] {toks : List T} :
+    PCM.sum (toks.map (asTok (V := V) ∘ .inr)) = PCM.sum toks
   := by
-  sorry
+  induction toks with
+  | nil => simp
+  | cons _ _ ih => simp [asTok, ih]
 
 /--
 `Config.DisjointTokens` is an invariant of a guarded `Proc` semantics,
@@ -284,91 +305,75 @@ theorem Config.DisjointTokens.guarded_inv
     simp at haff'
     simp [Config.GuardStep] at hstep
     simp at hdisj
-    have ⟨hntok, hpw⟩ := hdisj
+    replace ⟨hntok, hdisj⟩ := hdisj
     rcases hstep with ⟨hguard, hstep⟩
     cases hguard with
     | spec_tau =>
       -- Async operators
       cases hstep with | step_async _ hget hinterp hpop =>
       simp
-      sorry
-      -- have ⟨hpw', hpw_vals, hpw_chans'_vals⟩ := pop_vals_pairwise hpw hpop
-      -- have hntok_aop := hntok _ (List.mem_of_getElem hget)
-      -- constructor
-      -- · intros ap hmem
-      --   have := List.mem_or_eq_of_mem_set hmem
-      --   cases this with
-      --   | inl hmem => exact hntok _ hmem
-      --   | inr heq =>
-      --     subst heq
-      --     simp [AtomicProc.HasNoTokenConst]
-      --     exact async_op_interp_preserves_no_token_const hntok_aop hinterp
-      -- · apply push_vals_pairwise hpw'
-      --   · exact async_op_interp_preserves_pairwise_disj_tokens
-      --       hntok_aop hpw_vals hinterp
-      --   · have hfp := async_op_interp_preserves_frame_preserving
-      --       hntok_aop hinterp
-      --     apply pairwise_with_vals_frame_preserving
-      --     · exact hpw_chans'_vals
-      --     · simp only [Vector.mem_toList_iff] at hfp
-      --       exact hfp
+      have hdisj' := pop_vals_disj_toks hdisj hpop
+      have hntok_aop := hntok _ (List.mem_of_getElem hget)
+      constructor
+      · intros ap hmem
+        have := List.mem_or_eq_of_mem_set hmem
+        cases this with
+        | inl hmem => exact hntok _ hmem
+        | inr heq =>
+          subst heq
+          simp [AtomicProc.HasNoTokenConst]
+          exact async_op_interp_preserves_no_token_const hntok_aop hinterp
+      · apply push_vals_disj_toks
+        apply ChanMap.DisjointWith.imp_frame_preserving _ hdisj'
+        apply PCM.framePreserving.from_le
+        simp [Vector.toList_map]
+        exact async_op_interp_le_tok_sum hntok_aop hinterp
     | spec_yield =>
       -- Normal operators
       cases hstep with | step_op hmem hpop =>
       rename_i op inputVals outputVals chans' inputs outputs
-      sorry
-      -- have ⟨hpw', hpw_vals, hpw_chans'_vals⟩ := pop_vals_pairwise hpw hpop
-      -- constructor
-      -- · exact hntok
-      -- · apply push_vals_pairwise hpw'
-      --   · exact pairwise_disj_push_tok
-      --   · apply pairwise_with_vals_frame_preserving
-      --     · exact hpw_chans'_vals
-      --     · intros t₂ v₂ hmem₂ hv₂
-      --       simp at hmem₂
-      --       cases hmem₂ with
-      --       | inl h => simp [hv₂] at h
-      --       | inr h =>
-      --         simp [h] at hv₂
-      --         subst hv₂
-      --         exists opSpec.pre op inputVals
-      --         exists .inr (opSpec.pre op inputVals)
-      --         simp
-      --         apply hfp
-    | spec_join houtputs₀ houtputs₁ hsum hdisj =>
+      have hdisj' := pop_vals_disj_toks hdisj hpop
+      constructor
+      · exact hntok
+      · apply push_vals_disj_toks
+        apply ChanMap.DisjointWith.imp_frame_preserving _ hdisj'
+        simp [Vector.toList_push, Vector.toList_map, asTok]
+        apply hfp
+    | spec_join houtputs₀ houtputs₁ hsum =>
       rename_i k l req rem inst toks vals outputVals
       -- Join
       cases hstep with | step_op hmem hpop =>
       rename_i chans' inputs outputs
-      sorry
-      -- have ⟨hpw', hpw_vals, hpw_chans'_vals⟩ := pop_vals_pairwise hpw hpop
-      -- constructor
-      -- · exact hntok
-      -- · have houtput_vals : outputVals = #v[.inr (req vals), .inr rem] := by
-      --     ext i hi
-      --     match i with
-      --     | 0 => simp [houtputs₀]
-      --     | 1 => simp [houtputs₁]
-      --   apply push_vals_pairwise hpw'
-      --   · rw [houtput_vals]
-      --     simp [InrDisjointTokens]
-      --     exact hdisj
-      --   · rw [houtput_vals]
-
-      --     sorry
+      have hdisj' := pop_vals_disj_toks hdisj hpop
+      simp [Vector.toList_map, Vector.toList_append] at hdisj'
+      constructor
+      · exact hntok
+      · apply push_vals_disj_toks
+        have houtput_vals : outputVals = #v[.inr (req vals), .inr rem] := by
+          ext i hi
+          match i with
+          | 0 => simp [houtputs₀]
+          | 1 => simp [houtputs₁]
+        rw [houtput_vals]
+        simp [asTok, hsum]
+        exact hdisj'
     | spec_input => simp at hl
     | spec_output =>
       -- Output
-      cases hstep with | step_output =>
-      sorry
+      cases hstep with | step_output hpop =>
+      have hdisj' := pop_vals_disj_toks hdisj hpop
+      constructor
+      · exact hntok
+      · exact hdisj'.imp_disj_toks
 
 /-- Stepping from an initial state with an input label results in a `DisjointTokens` state. -/
 theorem Config.DisjointTokens.guarded_init_input
-  [Arity Op] [PCM T] [DecidableEq χ]
+  [Arity Op] [PCM T] [PCM.Lawful T] [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
   {s s' : Dataflow.ConfigWithSpec opSpec χ m n}
+  (hvalid : ioSpec.Valid)
   (hntok : s.proc.HasNoTokenConst)
   (hinit : s.chans = ChanMap.empty)
   (hinput : (Config.GuardStep opSpec ioSpec).Step s (.input vals) s') :
@@ -378,15 +383,15 @@ theorem Config.DisjointTokens.guarded_init_input
   cases hguard
   cases hstep with | step_init =>
   simp
-  sorry
-  -- constructor
-  -- · exact hntok
-  -- · apply push_vals_pairwise
-  --   · simp [hinit]
-  --   · simp [Vector.toList_push]
-  --     apply List.pairwise_append.mpr
-  --     simp [InrDisjointTokens]
-  --   · simp [hinit, ChanMap.empty]
+  constructor
+  · exact hntok
+  · apply push_vals_disj_toks
+    simp [hinit]
+    intros names
+    simp [Vector.toList_push, Vector.toList_map, asTok,
+      empty_token_sum_zero]
+    simp [PCM.disjoint]
+    apply hvalid.1
 
 /--
 `Config.DisjointTokens` is an invariant of an interpreted and guarded `Proc` semantics.
@@ -471,18 +476,19 @@ theorem Config.DisjointTokens.indexed_interp_guarded_inv
   exact Lts.IsInvariantForAt.to_inv_at (by simp) this
 
 theorem Config.DisjointTokens.interp_guarded_init_input
-  [Arity Op] [PCM T] [DecidableEq χ]
+  [Arity Op] [PCM T] [PCM.Lawful T] [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
   {s s' : Dataflow.ConfigWithSpec opSpec χ m n × opInterp.S}
+  (hvalid : ioSpec.Valid)
   (hntok : s.1.proc.HasNoTokenConst)
   (hinit : s.1.chans = ChanMap.empty)
   (hinput : (Config.InterpGuardStep opSpec ioSpec).Step s (.input vals) s') :
     s'.1.DisjointTokens
   := by
   cases hinput with | step_input hstep =>
-  exact Config.DisjointTokens.guarded_init_input hntok hinit hstep
+  exact Config.DisjointTokens.guarded_init_input hvalid hntok hinit hstep
 
 end Wavelet.Determinacy

@@ -62,6 +62,11 @@ structure IOSpec V T m n where
   -- the input values at an output event.
   post : Vector V n → T
 
+def IOSpec.Valid
+  [PCM T] (ioSpec : IOSpec V T m n) : Prop :=
+  (∀ inputs, ✓ ioSpec.pre inputs) ∧
+  (∀ outputs, ✓ ioSpec.post outputs)
+
 /-- Augments the operator set with an additional ghost argument
 to pass a PCM token, as well as two operators to split and join PCMs. -/
 inductive WithSpec {T : Type u} (Op : Type u) [Arity Op] (spec : OpSpec Op V T) where
@@ -133,7 +138,6 @@ inductive OpSpec.Guard
     outputs[1] = .inr rem →
     -- For this to be deterministic, we need a `Cancellative` PCM.
     req vals ⊔ rem = PCM.sum toks.toList →
-    (req vals) ⊥ rem →
     Guard opSpec ioSpec
       (.yield (.join k l req)
         ((toks.map .inr : Vector (V ⊕ T) k) ++
@@ -198,7 +202,7 @@ theorem OpSpec.spec_guard_implies_triv_guard
     opSpec.Guard ioSpec l₁ l₂ → opSpec.TrivGuard l₁ l₂
   | .spec_yield => by exact .triv_yield
   | OpSpec.Guard.spec_join .. => by
-    rename_i k l req rem _ toks vals outputs h₁ h₂ hsum hdisj
+    rename_i k l req rem _ toks vals outputs h₁ h₂ hsum
     have : outputs = #v[req vals, rem].map .inr := by
       apply Vector.ext
       intros i hi
@@ -241,8 +245,12 @@ abbrev FnWithSpec
   := Fn (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
 
 /-- A collection of `IOSpec`s for `Fn`s in a `Prog`. -/
-abbrev ProgSpec (Op : Type u) V T [Arity Op] (sigs : Sigs k) :=
+abbrev ProgSpec V T (sigs : Sigs k) :=
   (i : Fin k) → IOSpec V T (sigs i).ι (sigs i).ω
+
+def ProgSpec.Valid
+  [PCM T] {sigs : Sigs k}
+  (progSpec : ProgSpec V T sigs) : Prop := ∀ i, (progSpec i).Valid
 
 abbrev ConfigWithSpec [Arity Op] (opSpec : OpSpec Op V T) χ m n
   := Config (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)

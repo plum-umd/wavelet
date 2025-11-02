@@ -449,7 +449,7 @@ theorem congr_eq_spec_guard
       have heq₂ := Vector.inj_map (by simp [Function.Injective]) houtputs₁'.2
       simp [heq₁, heq₂]
     | join k l req =>
-      cases hguard₁ with | spec_join h₁ h₂ h₃ =>
+      cases hguard₁ with | spec_join h₁ h₂ =>
       rename_i rem₁ toks₁ vals₁
       generalize h :
         (Vector.map Sum.inr rem₁ : Vector (V ⊕ T) _) ++

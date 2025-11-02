@@ -124,8 +124,7 @@ theorem proc_indexed_guarded_hetero_confl_single
             simp [h₁] at hpop₂'
             exact ⟨_, .step
               (.idx_guard (.spec_join
-                (by assumption) (by assumption)
-                (by assumption) (by assumption)))
+                (by assumption) (by assumption) (by assumption)))
               (.step_op (by assumption) hget₂' hpop₂')⟩
         | step_async => simp at hl
       | step_async _ hget₂ hinterp₂ hpop₂ =>
@@ -200,8 +199,7 @@ theorem proc_indexed_guarded_hetero_confl_single
             simp [h₁] at hpop₂'
             exact ⟨_, .step
               (.idx_guard (.spec_join
-                (by assumption) (by assumption)
-                (by assumption) (by assumption)))
+                (by assumption) (by assumption) (by assumption)))
               (.step_op (by assumption) hget₂' hpop₂')⟩
         | step_async => simp at hl
       | step_async _ hget₂ hinterp₂ hpop₂ =>

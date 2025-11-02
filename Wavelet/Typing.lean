@@ -12,7 +12,7 @@ def ProgWithSpec.WellPermTyped
   [Arity Op] [PCM T]
   {sigs : Sigs k}
   {opSpec : OpSpec Op V T}
-  (progSpec : ProgSpec Op V T sigs)
+  (progSpec : ProgSpec V T sigs)
   (prog : ProgWithSpec χ sigs opSpec) : Prop := sorry
 
 /-- Well-typing induces a simulation between unguarded
@@ -24,7 +24,7 @@ theorem sim_wt_prog
   [DecidableEq χ]
   {sigs : Sigs k}
   {opSpec : OpSpec Op V T}
-  {progSpec : ProgSpec Op V T sigs}
+  {progSpec : ProgSpec V T sigs}
   (prog : ProgWithSpec χ sigs opSpec)
   (hwt : ProgWithSpec.WellPermTyped progSpec prog) :
     (prog.semantics i).guard opSpec.TrivGuard

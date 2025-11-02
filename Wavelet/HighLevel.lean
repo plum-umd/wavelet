@@ -40,7 +40,7 @@ theorem compile_forward_sim_guarded
   [InterpConsts V]
   {sigs : Sigs k}
   {opSpec : OpSpec Op V T}
-  {progSpec : ProgSpec Op V T sigs}
+  {progSpec : ProgSpec V T sigs}
   (prog : ProgWithSpec χ sigs opSpec)
   (hwt : ProgWithSpec.WellPermTyped progSpec prog)
   (haff₁ : ∀ i, (prog i).AffineVar)
@@ -75,7 +75,7 @@ theorem compile_forward_sim
   [InterpConsts V]
   {sigs : Sigs k}
   {opSpec : OpSpec Op V T}
-  {progSpec : ProgSpec Op V T sigs}
+  {progSpec : ProgSpec V T sigs}
   (prog : ProgWithSpec χ sigs opSpec)
   (hwt : ProgWithSpec.WellPermTyped progSpec prog)
   (haff₁ : ∀ i, (prog i).AffineVar)
@@ -139,10 +139,11 @@ theorem compile_strong_norm
   [opInterp : OpInterp.{_, _, w} Op V]
   {sigs : Sigs k}
   {opSpec : OpSpec Op V T}
-  {progSpec : ProgSpec Op V T sigs}
+  {progSpec : ProgSpec V T sigs}
   -- Required properties on the operator interpretation
   (hconfl : opSpec.Confluent opInterp)
   (hfp : opSpec.FramePreserving)
+  (hvalid : progSpec.Valid)
   (hdet : opInterp.Deterministic)
   (hnb : opInterp.NonBlocking)
   -- Program with well-formedness and typing properties
@@ -251,7 +252,7 @@ theorem compile_strong_norm
   -- Use determinacy to obtain a terminating trace from `s''`
   have ⟨_, _, htrace''', hlen₁, heq₃⟩ := proc_interp_guarded_hetero_terminal_confl
     hconfl hfp hdet hnb haff_s''
-    (Config.DisjointTokens.interp_guarded_init_input hntok rfl hinputs'')
+    (Config.DisjointTokens.interp_guarded_init_input (hvalid _) hntok rfl hinputs'')
     hmiddle hfinal_s₁''' htrace''
   -- Convert the determinacy result to τ steps after `htrace'`
   have this := congr_eq_mod_ghost_proc_interp_unguarded_tau_star_n htrace'''
