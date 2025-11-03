@@ -2,7 +2,7 @@ import Wavelet.Determinacy
 import Wavelet.Seq
 import Wavelet.Dataflow
 import Wavelet.Compile
-import Wavelet.Typing
+import Wavelet.PermType
 
 /-! Some high-level theorems and plans. -/
 
@@ -50,7 +50,7 @@ theorem compile_forward_sim_guarded
       ≲ᵣ[PreservesInit] (compileProg prog i).semantics.guard (opSpec.Guard (progSpec i))
   := by
   apply IORestrictedSimilaritySt.trans_preserves_init
-  · exact sim_wt_prog prog hwt
+  · exact sim_wpt_prog prog hwt
   · apply sim_guard
     apply sim_compile_prog_preserves_init prog i haff₁ haff₂
 

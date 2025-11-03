@@ -1,6 +1,6 @@
 import Wavelet.Dataflow.Proc
 
-/-! Renaming channels of a `Proc`/`AtomicProc` -/
+/-! Renaming channels of a `Proc`/`AtomicProc`. -/
 
 namespace Wavelet.Dataflow
 
