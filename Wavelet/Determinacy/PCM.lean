@@ -1,4 +1,5 @@
 import Mathlib.Data.List.Basic
+import Mathlib.Data.NNRat.Defs
 
 /-! Definitions for PCM. -/
 
@@ -250,6 +251,47 @@ theorem sum.replicate_zero
   induction n with
   | zero => simp
   | succ n ih => simp [ih, List.replicate]
+
+
+/- Fractional permissions indexed by memory locations form a PCM. -/
+section Fractional
+
+variable {Loc : Type u}
+
+abbrev FractionPerm (Loc : Type u) := Loc → NNRat
+
+instance (Loc : Type u) : PCM (FractionPerm Loc) where
+  add a b := λ ℓ => a ℓ + b ℓ
+  zero := λ _ => 0
+  valid a := ∀ ℓ, (a ℓ : ℚ) ≤ 1
+
+namespace FractionPerm
+
+@[simp] lemma add_apply (a b : FractionPerm Loc) (ℓ : Loc) :
+  (PCM.add a b) ℓ = a ℓ + b ℓ := rfl
+
+@[simp] lemma zero_apply (ℓ : Loc) : (PCM.zero : FractionPerm Loc) ℓ = 0 := rfl
+
+lemma le_add_right (a b : FractionPerm Loc) (ℓ : Loc) :
+  a ℓ ≤ (PCM.add a b) ℓ := by
+  change (a ℓ : ℚ) ≤ (a ℓ : ℚ) + (b ℓ : ℚ)
+  exact le_add_of_nonneg_right (show (0 : ℚ) ≤ (b ℓ : ℚ) from (b ℓ).property)
+
+end FractionPerm
+
+instance (Loc : Type u) : PCM.Lawful (FractionPerm Loc) := by
+  constructor
+  · intro a b; funext ℓ; simp [FractionPerm.add_apply, add_comm]
+  · intro a b c; funext ℓ; simp [FractionPerm.add_apply, add_assoc]
+  · intro a; funext ℓ; simp [FractionPerm.add_apply]
+  · intro a b hvalid ℓ
+    have hmono : (a ℓ : ℚ) ≤ ((PCM.add a b) ℓ : ℚ) := by
+      exact_mod_cast FractionPerm.le_add_right (a := a) (b := b) ℓ
+    have hsum := hvalid ℓ
+    exact le_trans hmono hsum
+  · intro ℓ; simp
+
+end Fractional
 
 end PCM
 
