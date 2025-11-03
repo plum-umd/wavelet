@@ -56,6 +56,10 @@ def ChanMap.Pairwise
     (_ : j < (map x₂).length) →
     P (map x₁)[i] (map x₂)[j]
 
+/-- A custom property satisfied by any non-empty channel -/
+def ChanMap.AllNames (P : χ → Prop) (map : ChanMap χ V) : Prop :=
+  ∀ {name}, map name ≠ [] → P name
+
 @[simp]
 abbrev ChanMap.PairwiseWithVals
   (P : V → V → Prop)
@@ -715,5 +719,162 @@ theorem pop_vals_empty
       rw [pop_vals_unfold]
       specialize ih (by simp)
       simp [ih]
+
+@[simp]
+theorem empty_compose
+  {f : χ → χ'} :
+    (ChanMap.empty (V := V) (χ := χ')) ∘ f = ChanMap.empty (χ := χ)
+  := by
+  funext
+  simp [ChanMap.empty]
+
+theorem push_val_map_chans
+  [DecidableEq χ] [DecidableEq χ']
+  {map : ChanMap χ' V}
+  {name : χ} {val : V}
+  {f : χ → χ'}
+  (hf : Function.Injective f) :
+    ChanMap.pushVal (f name) val map ∘ f =
+    ChanMap.pushVal name val (map ∘ f)
+  := by
+  funext name'
+  simp [ChanMap.pushVal, hf.eq_iff]
+
+theorem push_vals_map_chans
+  [DecidableEq χ] [DecidableEq χ']
+  {map : ChanMap χ' V}
+  {names : Vector χ n}
+  {vals : Vector V n}
+  {f : χ → χ'}
+  (hf : Function.Injective f) :
+    ChanMap.pushVals (names.map f) vals map ∘ f =
+    ChanMap.pushVals names vals (map ∘ f)
+  := by
+  induction names using Vector.back_induction
+    generalizing map with
+  | empty => simp
+  | push names' name' ih =>
+    simp [push_vals_unfold]
+    rw [push_val_map_chans hf]
+    congr
+    apply ih
+
+theorem pop_val_map_chans
+  [DecidableEq χ] [DecidableEq χ']
+  {map : ChanMap χ' V}
+  {map' : ChanMap χ V}
+  {name : χ} {val : V}
+  {f : χ → χ'}
+  (hf : Function.Injective f)
+  (hpop : ChanMap.popVal name (map ∘ f) = some (val, map')) :
+    ∃ map'',
+      map'' ∘ f = map' ∧
+      ChanMap.popVal (f name) map = some (val, map'')
+  := by
+  simp [ChanMap.popVal] at hpop
+  split at hpop; contradiction
+  rename_i rest heq
+  simp at hpop
+  have ⟨h₁, h₂⟩ := hpop
+  subst h₁ h₂
+  exists λ n => if n = f name then rest else map n
+  constructor
+  · funext name'
+    simp [hf.eq_iff]
+  · simp [ChanMap.popVal, heq]
+
+theorem pop_vals_map_chans
+  [DecidableEq χ] [DecidableEq χ']
+  {map : ChanMap χ' V}
+  {map' : ChanMap χ V}
+  {names : Vector χ n}
+  {vals : Vector V n}
+  {f : χ → χ'}
+  (hf : Function.Injective f)
+  (hpop : ChanMap.popVals names (map ∘ f) = some (vals, map')) :
+    ∃ map'',
+      map'' ∘ f = map' ∧
+      ChanMap.popVals (names.map f) map = some (vals, map'')
+  := by
+  induction names using Vector.back_induction
+    generalizing map map' with
+  | empty =>
+    simp at hpop ⊢
+    exact hpop
+  | push names' name ih =>
+    simp [pop_vals_unfold, Option.bind] at hpop
+    split at hpop; contradiction
+    rename_i res₁ heq₁
+    rcases res₁ with ⟨vals', map''⟩
+    simp at hpop
+    split at hpop; contradiction
+    rename_i res₂ heq₂
+    rcases res₂ with ⟨val, map'''⟩
+    simp at hpop
+    simp [pop_vals_unfold]
+    have ⟨_, heq₁, hpop₁⟩ := ih heq₁
+    simp [hpop₁]
+    subst heq₁
+    have ⟨_, heq₂, hpop₂⟩ := pop_val_map_chans hf heq₂
+    simp [hpop₂]
+    subst heq₂
+    simp [hpop]
+
+theorem pop_vals_preserves_all_names
+  [DecidableEq χ]
+  {map : ChanMap χ V}
+  {names : Vector χ n}
+  {vals : Vector V n}
+  {P : χ → Prop}
+  (hall : map.AllNames P)
+  (hpop : map.popVals names = some (vals, map')) :
+    map'.AllNames P
+  := by
+  have := pop_vals_monotone hpop
+  intros name h
+  specialize this name
+  have : map name ≠ [] := by
+    intros h₂
+    simp [h₂] at this
+    simp [this] at h
+  exact hall this
+
+theorem push_val_preserves_all_names
+  [DecidableEq χ]
+  {map : ChanMap χ V}
+  {name : χ} {val : V}
+  {P : χ → Prop}
+  (hall : map.AllNames P)
+  (hname : P name) :
+    (map.pushVal name val).AllNames P
+  := by
+  intros name' h
+  simp [ChanMap.pushVal] at h
+  by_cases h₁ : name' = name
+  · subst h₁
+    exact hname
+  · simp [h₁] at h
+    exact hall h
+
+theorem push_vals_preserves_all_names
+  [DecidableEq χ]
+  {map : ChanMap χ V}
+  {names : Vector χ n}
+  {vals : Vector V n}
+  {P : χ → Prop}
+  (hall : map.AllNames P)
+  (hnames : ∀ name ∈ names, P name) :
+    (map.pushVals names vals).AllNames P
+  := by
+  induction names using Vector.back_induction
+    generalizing map with
+  | empty => simp [hall]
+  | push names' name ih =>
+    simp [push_vals_unfold]
+    apply push_val_preserves_all_names
+    · apply ih hall
+      intros name' hname'
+      exact hnames name' (by simp [hname'])
+    · exact hnames name (by simp)
 
 end Wavelet.Dataflow

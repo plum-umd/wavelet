@@ -1024,8 +1024,9 @@ theorem sim_compile_prog_preserves_init
         simp
       · apply IORestrictedSimilaritySt.trans_preserves_init
         · exact sim_compile_fn_preserves_init _ (by apply hwf)
-        · exact (sim_map_chans_inj_preserves_init (f := LinkName.base)
-            (by simp [Function.Injective]))
+        · exact (sim_map_chans_inj_preserves_init
+            (f := LinkName.base)
+            (by simp [Function.Injective])).to_restricted_sim
     · rw [compileProg]
       apply sim_link_procs_preserves_init
       · intros op

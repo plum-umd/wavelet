@@ -203,11 +203,18 @@ end Wavelet
 
 namespace Wavelet.Semantics
 
+abbrev StrongSimilaritySt
+  [Arity Op]
+  (sem₁ sem₂ : Semantics Op V m n)
+  (R : sem₁.S → sem₂.S → Prop) : Prop
+  := Lts.SimilaritySt R sem₁.lts sem₂.lts sem₁.init sem₂.init
+
 abbrev StrongSimilarity
   [Arity Op]
   (sem₁ sem₂ : Semantics Op V m n) : Prop
   := Lts.Similarity sem₁.lts sem₂.lts sem₁.init sem₂.init
 
+notation sem₁ " ≲ₛ" "[" R "] " sem₂ => StrongSimilaritySt sem₁ sem₂ R
 infix:50 " ≲ₛ " => StrongSimilarity
 
 abbrev WeakSimilarity
@@ -499,6 +506,22 @@ theorem IORestrictedSimilarity.to_weak_sim
       | step_output htau hstep' => exact .step htau hstep' .refl
       | step_tau htau => exact .from_tau_star htau
     · exact hR'
+
+theorem StrongSimilaritySt.to_restricted_sim
+  [Arity Op]
+  {sem₁ sem₂ : Semantics Op V m n}
+  {R : sem₁.S → sem₂.S → Prop}
+  (hsim : sem₁ ≲ₛ[R] sem₂) : sem₁ ≲ᵣ[R] sem₂ := by
+  apply Lts.SimilaritySt.intro hsim.Sim
+  · constructor
+    · exact hsim.sim_init
+    · intros s₁ s₂ l s₁' hR hstep
+      have ⟨s₂', hstep', hR'⟩ := hsim.sim_step _ _ _ _ hR hstep
+      exists s₂'
+      constructor
+      · exact Lts.IORestrictedStep.single hstep'
+      · exact hR'
+  · apply hsim.sim_prop
 
 theorem IORestrictedSimilaritySt.map_tau_star
   [Arity Op]
