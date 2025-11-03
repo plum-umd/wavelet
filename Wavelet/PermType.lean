@@ -131,7 +131,8 @@ theorem sim_wpt_prog
   {opSpec : OpSpec Op V T}
   {progSpec : ProgSpec V T sigs}
   (prog : ProgWithSpec χ sigs opSpec)
-  (hwt : ProgWithSpec.WellPermTyped progSpec prog) :
+  (hwt : ProgWithSpec.WellPermTyped progSpec prog)
+  (i : Fin k) :
     (prog.semantics i).guard opSpec.TrivGuard
       ≲ᵣ[PreservesInit] (prog.semantics i).guard (opSpec.Guard (progSpec i))
   := by sorry

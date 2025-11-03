@@ -49,7 +49,7 @@ theorem congr_eq_mod_ghost_async_op_interp
   | interp_switch h₁ h₂ h₃ =>
     cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
     subst heq_aop
-    simp [List.forall₂_cons_left_iff] at heq_inputs
+    simp only [List.forall₂_cons_left_iff, exists_and_left] at heq_inputs
     have ⟨_, heq₁, _, heq₂, heq₃⟩ := heq_inputs
     subst heq₃
     exact ⟨_, _,
@@ -59,7 +59,7 @@ theorem congr_eq_mod_ghost_async_op_interp
     cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
     have ⟨heq₁, heq₂⟩ := heq_aop
     subst heq₁ heq₂
-    simp [List.forall₂_cons_left_iff] at heq_inputs
+    simp only [List.forall₂_cons_left_iff, exists_and_left] at heq_inputs
     have ⟨_, heq₁, _, heq₂, heq₃⟩ := heq_inputs
     subst heq₃
     exact ⟨_, _,
@@ -69,7 +69,7 @@ theorem congr_eq_mod_ghost_async_op_interp
     cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
     have ⟨heq₁, heq₂⟩ := heq_aop
     subst heq₁ heq₂
-    simp [List.forall₂_cons_left_iff] at heq_inputs
+    simp only [List.forall₂_cons_left_iff, exists_and_left] at heq_inputs
     have ⟨_, heq₁, _, heq₂, heq₃⟩ := heq_inputs
     subst heq₃
     exact ⟨_, _,
@@ -93,7 +93,8 @@ theorem congr_eq_mod_ghost_async_op_interp
     cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
     have ⟨heq₁, heq₂⟩ := heq_aop
     subst heq₁ heq₂
-    simp [List.forall₂_cons_left_iff] at heq_inputs
+    simp only [List.forall₂_cons_left_iff, List.forall₂_nil_left_iff,
+      exists_and_left, ↓existsAndEq, true_and] at heq_inputs
     have ⟨_, heq₁, heq₂⟩ := heq_inputs
     subst heq₂
     exact ⟨_, _,
@@ -108,7 +109,8 @@ theorem congr_eq_mod_ghost_async_op_interp
   | interp_fork h₁ h₂ =>
     cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
     subst heq_aop
-    simp [List.forall₂_cons_left_iff] at heq_inputs
+    simp only [List.forall₂_cons_left_iff, List.forall₂_nil_left_iff,
+      exists_and_left, ↓existsAndEq, true_and] at heq_inputs
     have ⟨_, heq₁, heq₂⟩ := heq_inputs
     subst heq₂
     exact ⟨_, _,
@@ -118,7 +120,8 @@ theorem congr_eq_mod_ghost_async_op_interp
     cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
     have ⟨heq₁, heq₂⟩ := heq_aop
     subst heq₂
-    simp [List.forall₂_cons_left_iff] at heq_inputs
+    simp only [List.forall₂_cons_left_iff, List.forall₂_nil_left_iff,
+      exists_and_left, ↓existsAndEq, true_and] at heq_inputs
     have ⟨_, heq₂, heq₃⟩ := heq_inputs
     subst heq₃
     exact ⟨_, _,

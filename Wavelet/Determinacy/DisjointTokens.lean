@@ -492,7 +492,7 @@ theorem async_op_interp_le_tok_sum
     simp [asTok]
   | interp_forwardc h₁ h₂ =>
     rename_i consts _
-    simp [AsyncOp.HasNoTokenConst] at hntok
+    simp only [AsyncOp.HasNoTokenConst] at hntok
     have : PCM.sum (List.map asTok consts.toList) = PCM.zero := by
       clear h₁ h₂
       induction consts using Vector.back_induction with
