@@ -327,4 +327,12 @@ theorem forall₂_append
       (by simp [h₂.length_eq]; omega)
       (by omega)
 
+theorem forall₂_true
+  {xs ys : List α}
+  (hlen : xs.length = ys.length) :
+    List.Forall₂ (λ _ _ => True) xs ys
+  := by
+  apply List.forall₂_iff_get.mpr
+  simp [hlen]
+
 end List

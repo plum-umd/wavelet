@@ -19,12 +19,12 @@ theorem proc_indexed_guarded_hetero_confl_single
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n}
+  {s s₁ s₁' s₂ : ConfigWithSpec opSpec ioSpec χ}
   {l₁ l₂ : Label Op V m n}
   (haff : s.proc.AffineChan)
   (hstep₁ : (Config.IdxGuardStep opSpec ioSpec).Step s (i, l₁) s₁)
   (hstep₂ : (Config.IdxGuardStep opSpec ioSpec).Step s₁ (j, l₂) s₂)
-  (hstep₂' : (Config.IdxTrivStep opSpec).Step s (j, l₂) s₁') :
+  (hstep₂' : (Config.IdxTrivStep opSpec ioSpec).Step s (j, l₂) s₁') :
     ∃ s₁'',
       (Config.IdxGuardStep opSpec ioSpec).Step s (j, l₂) s₁''
   := by
@@ -248,12 +248,12 @@ theorem proc_indexed_interp_guarded_hetero_confl_single
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s₁ s₁' s₂ : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (hdet : opInterp.Deterministic)
   (haff : s.1.proc.AffineChan)
   (hstep₁ : (Config.IdxInterpGuardStep opSpec ioSpec).Step s (i, .τ) s₁)
   (hstep₂ : (Config.IdxInterpGuardStep opSpec ioSpec).Step s₁ (j, .τ) s₂)
-  (hstep₂' : (Config.IdxInterpTrivStep opSpec).Step s (j, .τ) s₁') :
+  (hstep₂' : (Config.IdxInterpTrivStep opSpec ioSpec).Step s (j, .τ) s₁') :
     ∃ s₁'',
       (Config.IdxInterpGuardStep opSpec ioSpec).Step s (j, .τ) s₁'' ∧
       s₁'.1 ≈ s₁''.1 ∧
@@ -438,14 +438,14 @@ theorem proc_indexed_guarded_hetero_confl
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s s₁ s₂ : ConfigWithSpec opSpec χ m n}
+  {s s₁ s₂ : ConfigWithSpec opSpec ioSpec χ}
   {tr : Trace (Nat × Label Op V m n)}
   {l : Label Op V m n}
   (haff : s.proc.AffineChan)
   (htrace₁ : (Config.IdxGuardStep opSpec ioSpec).Star s tr s₁)
   -- The first label in the trace that matches the index should emit the same event
   (hdom : tr.find? (·.1 = i) = .some (i, l))
-  (hstep₂ : (Config.IdxTrivStep opSpec).Step s (i, l) s₂) :
+  (hstep₂ : (Config.IdxTrivStep opSpec ioSpec).Step s (i, l) s₂) :
     ∃ s₂',
       (Config.IdxGuardStep opSpec ioSpec).Step s (i, l) s₂' ∧
       s₂' ≈ s₂
@@ -505,13 +505,13 @@ theorem proc_commute_indexed_unguarded
   [InterpConsts V]
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
-  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s₁ s₂ : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (hnb : opInterp.NonBlocking)
   (haff : s.1.proc.AffineChan)
-  (hstep₁ : (Config.IdxInterpTrivStep opSpec).Step s (i, .τ) s₁)
-  (hstep₂ : (Config.IdxInterpTrivStep opSpec).Step s (j, .τ) s₂)
+  (hstep₁ : (Config.IdxInterpTrivStep opSpec ioSpec).Step s (i, .τ) s₁)
+  (hstep₂ : (Config.IdxInterpTrivStep opSpec ioSpec).Step s (j, .τ) s₂)
   (hne : i ≠ j) :
-    ∃ s₂', (Config.IdxInterpTrivStep opSpec).Step s₁ (j, .τ) s₂'
+    ∃ s₂', (Config.IdxInterpTrivStep opSpec ioSpec).Step s₁ (j, .τ) s₂'
   := by
   cases hstep₁ with
   | step_yield hstep₁ hinterp₁ =>
@@ -716,14 +716,14 @@ theorem proc_indexed_interp_unguarded_term_to_dom
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s₁ s₂ : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   {tr : Trace (Nat × Label Semantics.Empty V m n)}
   {l : Label Semantics.Empty V m n}
   (hnb : opInterp.NonBlocking)
   (haff : s.1.proc.AffineChan)
   (htrace₁ : (Config.IdxInterpGuardStep opSpec ioSpec).Star s tr s₁)
   (hterm : Config.IndexedStep.IsFinalFor (λ (_, l) => l.isYield ∨ l.isSilent) s₁.1)
-  (hstep₂ : (Config.IdxInterpTrivStep opSpec).Step s (i, l) s₂) :
+  (hstep₂ : (Config.IdxInterpTrivStep opSpec ioSpec).Step s (i, l) s₂) :
     ∃ l', (i, l') ∈ tr
   := by
   have hl := proc_indexed_interp_unguarded_step_label hstep₂
@@ -761,7 +761,7 @@ theorem proc_indexed_interp_guarded_hetero_confl
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s₁ s₂ : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   {tr : Trace (Nat × Label Semantics.Empty V m n)}
   {l : Label Semantics.Empty V m n}
   (hdet : opInterp.Deterministic)
@@ -769,7 +769,7 @@ theorem proc_indexed_interp_guarded_hetero_confl
   (haff : s.1.proc.AffineChan)
   (htrace₁ : (Config.IdxInterpGuardStep opSpec ioSpec).Star s tr s₁)
   (hdom : ∃ l', (i, l') ∈ tr)
-  (hstep₂ : (Config.IdxInterpTrivStep opSpec).Step s (i, l) s₂) :
+  (hstep₂ : (Config.IdxInterpTrivStep opSpec ioSpec).Step s (i, l) s₂) :
     ∃ s₂',
       (Config.IdxInterpGuardStep opSpec ioSpec).Step s (i, l) s₂' ∧
       s₂.1 ≈ s₂'.1 ∧
@@ -821,7 +821,7 @@ theorem proc_indexed_interp_guarded_hetero_terminal_confl
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s₁ s₂ : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   {tr₁ tr₂ : Trace (Nat × Label Semantics.Empty V m n)}
   (hconfl : opSpec.Confluent opInterp)
   (hvalid : opSpec.Valid)
@@ -831,9 +831,9 @@ theorem proc_indexed_interp_guarded_hetero_terminal_confl
   (hdisj : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.DisjointTokens) s)
   (htrace₁ : (Config.IdxInterpGuardStep opSpec ioSpec).Star s tr₁ s₁)
   (hterm : Config.IndexedStep.IsFinalFor (λ (_, l) => l.isYield ∨ l.isSilent) s₁.1)
-  (htrace₂ : (Config.IdxInterpTrivStep opSpec).Star s tr₂ s₂) :
+  (htrace₂ : (Config.IdxInterpTrivStep opSpec ioSpec).Star s tr₂ s₂) :
     ∃ s₁' tr₃,
-      (Config.IdxInterpTrivStep opSpec).Star s₂ tr₃ s₁' ∧
+      (Config.IdxInterpTrivStep opSpec ioSpec).Star s₂ tr₃ s₁' ∧
       tr₁.length = tr₂.length + tr₃.length ∧
       s₁.1 ≈ s₁'.1 ∧
       s₁.2 = s₁'.2
@@ -894,7 +894,7 @@ theorem proc_interp_guarded_hetero_terminal_confl
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s₁ s₂ : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (hconfl : opSpec.Confluent opInterp)
   (hvalid : opSpec.Valid)
   (hfp : opSpec.FramePreserving)
@@ -905,9 +905,9 @@ theorem proc_interp_guarded_hetero_terminal_confl
   -- (hdisj : (Config.InterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.DisjointTokens) s)
   (htrace₁ : (Config.InterpGuardStep opSpec ioSpec).TauStarN .τ k₁ s s₁)
   (hterm : Config.Step.IsFinalFor (λ l => l.isYield ∨ l.isSilent) s₁.1)
-  (htrace₂ : (Config.InterpTrivStep opSpec).TauStarN .τ k₂ s s₂) :
+  (htrace₂ : (Config.InterpTrivStep opSpec ioSpec).TauStarN .τ k₂ s s₂) :
     ∃ s₁' k₃,
-      (Config.InterpTrivStep opSpec).TauStarN .τ k₃ s₂ s₁' ∧
+      (Config.InterpTrivStep opSpec ioSpec).TauStarN .τ k₃ s₂ s₁' ∧
       k₁ = k₂ + k₃ ∧
       s₁.1 ≈ s₁'.1 ∧
       s₁.2 = s₁'.2

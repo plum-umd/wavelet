@@ -200,6 +200,17 @@ theorem forall₂_push_toList_to_forall₂
     simp at this
     exact this
 
+theorem forall₂_append_toList_to_forall₂
+  {α β}
+  {xs : Vector α n} {xs' : Vector α m}
+  {ys : Vector β n} {ys' : Vector β m}
+  {R : α → β → Prop}
+  (hforall₂ : List.Forall₂ R (xs ++ xs').toList (ys ++ ys').toList) :
+    List.Forall₂ R xs.toList ys.toList ∧
+    List.Forall₂ R xs'.toList ys'.toList
+:= by
+sorry
+
 theorem forall₂_to_forall₂_push_toList
   {α β}
   {xs : Vector α n}
@@ -327,5 +338,27 @@ theorem forall₂_exists_map
   apply exists_inverse_to_map
   intros x hmem
   exact (this x hmem).2
+
+@[simp]
+theorem append_eq_append_alt
+  {xs₁ ys₁ : Vector α n}
+  {xs₂ ys₂ : Vector α m} :
+    xs₁ ++ xs₂ = ys₁ ++ ys₂ ↔ xs₁ = ys₁ ∧ xs₂ = ys₂
+  := by
+  constructor
+  · sorry
+  · sorry
+
+@[simp]
+theorem map_inl_eq
+  {xs ys : Vector α n} :
+    (xs.map Sum.inl : Vector (α ⊕ β) n) = ys.map Sum.inl ↔ xs = ys
+  := sorry
+
+@[simp]
+theorem map_inr_eq
+  {xs ys : Vector β n} :
+    (xs.map Sum.inr : Vector (α ⊕ β) n) = ys.map Sum.inr ↔ xs = ys
+  := sorry
 
 end Vector

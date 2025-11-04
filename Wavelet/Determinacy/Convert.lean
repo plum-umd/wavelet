@@ -7,14 +7,17 @@ namespace Wavelet.Dataflow
 
 open Semantics Determinacy
 
-/-- Converts an indexed guarded step to a guarded step. -/
-theorem Config.IdxGuardStep.to_guarded
-  [Arity Op] [PCM T]
+variable
+  [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s s' : ConfigWithSpec opSpec χ m n}
+
+/-- Converts an indexed guarded step to a guarded step. -/
+theorem Config.IdxGuardStep.to_guarded
+  [PCM T]
+  {s s' : ConfigWithSpec opSpec ioSpec χ}
   {l : Label Op V m n}
   (hstep : Config.IdxGuardStep opSpec ioSpec s (i, l) s') :
     (Config.GuardStep opSpec ioSpec) s l s'
@@ -34,12 +37,8 @@ theorem Config.IdxGuardStep.to_guarded
 
 /-- Converts a guarded step to an indexed guarded step. -/
 theorem Config.GuardStep.to_indexed_guarded
-  [Arity Op] [PCM T]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {s s' : ConfigWithSpec opSpec χ m n}
+  [PCM T]
+  {s s' : ConfigWithSpec opSpec ioSpec χ}
   {l : Label Op V m n}
   (hl : l.isYield ∨ l.isSilent)
   (hstep : Config.GuardStep opSpec ioSpec s l s') :
@@ -59,14 +58,10 @@ theorem Config.GuardStep.to_indexed_guarded
 
 /-- Converts an indexed unguarded step to an unguarded step. -/
 theorem Config.IdxTrivStep.to_unguarded
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {s s' : ConfigWithSpec opSpec χ m n}
+  {s s' : ConfigWithSpec opSpec ioSpec χ}
   {l : Label Op V m n}
-  (hstep : Config.IdxTrivStep opSpec s (i, l) s') :
-    Config.TrivStep opSpec s l s'
+  (hstep : Config.IdxTrivStep opSpec ioSpec s (i, l) s') :
+    Config.TrivStep opSpec ioSpec s l s'
   := by
   rcases hstep with ⟨⟨hguard⟩, hstep⟩
   cases hguard
@@ -83,15 +78,11 @@ theorem Config.IdxTrivStep.to_unguarded
 
 /-- Converts an unguarded step to an indexed unguarded step. -/
 theorem Config.TrivStep.to_indexed_unguarded
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {s s' : ConfigWithSpec opSpec χ m n}
+  {s s' : ConfigWithSpec opSpec ioSpec χ}
   {l : Label Op V m n}
   (hl : l.isYield ∨ l.isSilent)
-  (hstep : Config.TrivStep opSpec s l s') :
-    ∃ i, Config.IdxTrivStep opSpec s (i, l) s'
+  (hstep : Config.TrivStep opSpec ioSpec s l s') :
+    ∃ i, Config.IdxTrivStep opSpec ioSpec s (i, l) s'
   := by
   cases hstep with | step hguard hstep
   cases hguard <;> simp at hl
@@ -106,61 +97,41 @@ theorem Config.TrivStep.to_indexed_unguarded
     exact ⟨i, .step (.idx_guard .triv_tau) hstep'⟩
 
 theorem Config.IdxGuardStep.to_indexed_unguarded
-  [Arity Op] [PCM T]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {s s' : ConfigWithSpec opSpec χ m n}
+  [PCM T]
+  {s s' : ConfigWithSpec opSpec ioSpec χ}
   {l : Label Op V m n} :
     Config.IdxGuardStep opSpec ioSpec s (i, l) s' →
-    Config.IdxTrivStep opSpec s (i, l) s'
+    Config.IdxTrivStep opSpec ioSpec s (i, l) s'
   := .map_guard (λ ⟨hguard⟩ => ⟨OpSpec.spec_guard_implies_triv_guard hguard⟩)
 
 theorem Config.IdxInterpGuardStep.to_indexed_interp_unguarded
-  [Arity Op] [PCM T]
-  [DecidableEq χ]
-  [InterpConsts V]
+  [PCM T]
   [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {s s' : ConfigWithSpec opSpec χ m n × opInterp.S} :
+  {s s' : ConfigWithSpec opSpec ioSpec χ × opInterp.S} :
     Config.IdxInterpGuardStep opSpec ioSpec s (i, l) s' →
-    Config.IdxInterpTrivStep opSpec s (i, l) s'
+    Config.IdxInterpTrivStep opSpec ioSpec s (i, l) s'
   := Lts.IndexedInterpStep.map_step Config.IdxGuardStep.to_indexed_unguarded
 
 theorem Config.IdxInterpGuardStep.to_indexed_interp_unguarded_star
-  [Arity Op] [PCM T]
-  [DecidableEq χ]
-  [InterpConsts V]
+  [PCM T]
   [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {s s' : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s' : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (htrace : (Config.IdxInterpGuardStep opSpec ioSpec).Star s tr s') :
-    (Config.IdxInterpTrivStep opSpec).Star s tr s'
+    (Config.IdxInterpTrivStep opSpec ioSpec).Star s tr s'
   := htrace.map_step Config.IdxInterpGuardStep.to_indexed_interp_unguarded
 
 theorem Config.IdxInterpGuardStep.to_interp_guarded
-  [Arity Op] [PCM T]
-  [DecidableEq χ]
-  [InterpConsts V]
+  [PCM T]
   [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {s s' : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s' : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (hstep : Config.IdxInterpGuardStep opSpec ioSpec s (i, l) s') :
     Config.InterpGuardStep opSpec ioSpec s l s'
   := hstep.to_interp Config.IdxGuardStep.to_guarded
 
 theorem Config.IdxInterpGuardStep.to_interp_guarded_tau_star
-  [Arity Op] [PCM T]
-  [DecidableEq χ]
-  [InterpConsts V]
+  [PCM T]
   [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {s s' : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s' : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (htrace : (Config.IdxInterpGuardStep opSpec ioSpec).Star s tr s') :
     (Config.InterpGuardStep opSpec ioSpec).TauStarN .τ tr.length s s'
   := by
@@ -174,37 +145,25 @@ theorem Config.IdxInterpGuardStep.to_interp_guarded_tau_star
     exact .tail ih this
 
 theorem Config.InterpGuardStep.to_indexed_interp_guarded_tau
-  [Arity Op] [PCM T]
-  [DecidableEq χ]
-  [InterpConsts V]
+  [PCM T]
   [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {s s' : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s' : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (hstep : Config.InterpGuardStep opSpec ioSpec s .τ s') :
     ∃ i, Config.IdxInterpGuardStep opSpec ioSpec s (i, .τ) s'
   := hstep.to_indexed_interp_tau Config.GuardStep.to_indexed_guarded
 
 theorem Config.InterpGuardStep.to_interp_unguarded
-  [Arity Op] [PCM T]
-  [DecidableEq χ]
-  [InterpConsts V]
+  [PCM T]
   [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {s s' : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s' : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (hstep : Config.InterpGuardStep opSpec ioSpec s l s') :
-    Config.InterpTrivStep opSpec s l s'
+    Config.InterpTrivStep opSpec ioSpec s l s'
   := Lts.InterpStep.map_step (.map_guard opSpec.spec_guard_implies_triv_guard) hstep
 
 theorem Config.InterpGuardStep.to_indexed_interp_guarded_tau_star
-  [Arity Op] [PCM T]
-  [DecidableEq χ]
-  [InterpConsts V]
+  [PCM T]
   [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {s s' : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s' : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (htrace : (Config.InterpGuardStep opSpec ioSpec).TauStarN .τ k s s') :
     ∃ tr,
       tr.length = k ∧
@@ -218,25 +177,17 @@ theorem Config.InterpGuardStep.to_indexed_interp_guarded_tau_star
     exact ⟨_, by simp [h], .tail pref' hstep'⟩
 
 theorem Config.IdxInterpTrivStep.to_interp_unguarded
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
   [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {s s' : ConfigWithSpec opSpec χ m n × opInterp.S}
-  (hstep : Config.IdxInterpTrivStep opSpec s (i, l) s') :
-    Config.InterpTrivStep opSpec s l s'
+  {s s' : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
+  (hstep : Config.IdxInterpTrivStep opSpec ioSpec s (i, l) s') :
+    Config.InterpTrivStep opSpec ioSpec s l s'
   := hstep.to_interp Config.IdxTrivStep.to_unguarded
 
 theorem Config.IdxInterpTrivStep.to_interp_unguarded_tau_star
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
   [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {s s' : ConfigWithSpec opSpec χ m n × opInterp.S}
-  (htrace : (Config.IdxInterpTrivStep opSpec).Star s tr s') :
-    (Config.InterpTrivStep opSpec).TauStarN .τ tr.length s s'
+  {s s' : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
+  (htrace : (Config.IdxInterpTrivStep opSpec ioSpec).Star s tr s') :
+    (Config.InterpTrivStep opSpec ioSpec).TauStarN .τ tr.length s s'
   := by
   induction htrace with
   | refl => exact .refl
@@ -248,27 +199,19 @@ theorem Config.IdxInterpTrivStep.to_interp_unguarded_tau_star
     exact .tail ih this
 
 theorem Config.InterpTrivStep.to_indexed_interp_unguarded_tau
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
   [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {s s' : ConfigWithSpec opSpec χ m n × opInterp.S}
-  (hstep : Config.InterpTrivStep opSpec s .τ s') :
-    ∃ i, Config.IdxInterpTrivStep opSpec s (i, .τ) s'
+  {s s' : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
+  (hstep : Config.InterpTrivStep opSpec ioSpec s .τ s') :
+    ∃ i, Config.IdxInterpTrivStep opSpec ioSpec s (i, .τ) s'
   := hstep.to_indexed_interp_tau Config.TrivStep.to_indexed_unguarded
 
 theorem Config.InterpTrivStep.to_indexed_interp_unuarded_tau_star
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
   [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {s s' : ConfigWithSpec opSpec χ m n × opInterp.S}
-  (htrace : (Config.InterpTrivStep opSpec).TauStarN .τ k s s') :
+  {s s' : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
+  (htrace : (Config.InterpTrivStep opSpec ioSpec).TauStarN .τ k s s') :
     ∃ tr,
       tr.length = k ∧
-      (Config.IdxInterpTrivStep opSpec).Star s tr s'
+      (Config.IdxInterpTrivStep opSpec ioSpec).Star s tr s'
   := by
   induction htrace with
   | refl => exact ⟨_, by simp, .refl⟩

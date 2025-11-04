@@ -388,7 +388,7 @@ theorem proc_guarded_inv_aff
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s : ConfigWithSpec opSpec χ m n}
+  {s : ConfigWithSpec opSpec ioSpec χ}
   (haff : s.proc.AffineChan) :
     (Config.GuardStep opSpec ioSpec).IsInvariantAt (·.proc.AffineChan) s
   := by
@@ -404,7 +404,7 @@ theorem proc_indexed_guarded_inv_aff
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s : ConfigWithSpec opSpec χ m n}
+  {s : ConfigWithSpec opSpec ioSpec χ}
   (haff : s.proc.AffineChan) :
     (Config.IdxGuardStep opSpec ioSpec).IsInvariantAt (·.proc.AffineChan) s
   := by
@@ -422,7 +422,7 @@ theorem proc_interp_guarded_inv_aff
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (haff : s.1.proc.AffineChan) :
     (Config.InterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.proc.AffineChan) s
   := by
@@ -430,7 +430,7 @@ theorem proc_interp_guarded_inv_aff
   have : (Config.InterpGuardStep opSpec ioSpec).IsInvariantAt _ _ :=
     (Lts.InterpStep.map_inv
       (lts' := opInterp.lts)
-      (Inv := λ (s : ConfigWithSpec opSpec χ m n) => s.proc.AffineChan)
+      (Inv := λ (s : ConfigWithSpec opSpec ioSpec χ) => s.proc.AffineChan)
       (Lts.GuardStep.map_inv (P := opSpec.Guard ioSpec) (haff.inv)))
   intros s' tr hsteps
   exact this hsteps
@@ -442,7 +442,7 @@ theorem proc_indexed_interp_guarded_inv_aff
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (haff : s.1.proc.AffineChan) :
     (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.proc.AffineChan) s
   := by
@@ -536,7 +536,7 @@ theorem Config.DisjointTokens.guarded_inv
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
   (hfp : opSpec.FramePreserving)
-  {s : Dataflow.ConfigWithSpec opSpec χ m n}
+  {s : Dataflow.ConfigWithSpec opSpec ioSpec χ}
   (haff : s.proc.AffineChan)
   (hdisj : s.DisjointTokens) :
     (Config.GuardStep opSpec ioSpec).IsInvariantForAt
@@ -624,7 +624,7 @@ theorem Config.DisjointTokens.guarded_init_input
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s s' : Dataflow.ConfigWithSpec opSpec χ m n}
+  {s s' : Dataflow.ConfigWithSpec opSpec ioSpec χ}
   (hvalid : ioSpec.Valid)
   (hntok : s.proc.HasNoTokenConst)
   (hinit : s.chans = ChanMap.empty)
@@ -640,9 +640,8 @@ theorem Config.DisjointTokens.guarded_init_input
   · apply push_vals_disj_toks
     simp [hinit]
     intros names _
-    simp [Vector.toList_push, Vector.toList_map, asTok,
-      empty_token_sum_zero]
-    simp [PCM.disjoint]
+    simp [Vector.toList_append, Vector.toList_map,
+      empty_token_sum_zero, PCM.disjoint]
     apply hvalid.1
 
 /--
@@ -655,7 +654,7 @@ theorem Config.DisjointTokens.interp_guarded_inv
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
   (hfp : opSpec.FramePreserving)
-  {s : Dataflow.ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s : Dataflow.ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (haff : s.1.proc.AffineChan)
   (hdisj : s.1.DisjointTokens) :
     (Config.InterpGuardStep opSpec ioSpec).IsInvariantForAt
@@ -704,7 +703,7 @@ theorem Config.DisjointTokens.indexed_interp_guarded_inv
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
   (hfp : opSpec.FramePreserving)
-  {s : Dataflow.ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s : Dataflow.ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (haff : s.1.proc.AffineChan)
   (hdisj : s.1.DisjointTokens) :
     (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt
@@ -733,7 +732,7 @@ theorem Config.DisjointTokens.interp_guarded_init_input
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s s' : Dataflow.ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s' : Dataflow.ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (hvalid : ioSpec.Valid)
   (hntok : s.1.proc.HasNoTokenConst)
   (hinit : s.1.chans = ChanMap.empty)

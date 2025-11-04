@@ -259,7 +259,7 @@ private theorem invert_compat_spec_guard
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
   {l₁' l₂' : Label Op V m n}
-  {l₁ l₂ : Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1)}
+  {l₁ l₂ : LabelWithSpec opSpec ioSpec}
   (hguard₁ : opSpec.Guard ioSpec l₁ l₁')
   (hguard₂ : opSpec.Guard ioSpec l₂ l₂')
   (hcompat : Label.IsYieldOrSilentAndDet l₁' l₂') :
@@ -329,9 +329,9 @@ private theorem invert_compat_triv_guard
   [Arity Op]
   {opSpec : OpSpec Op V T}
   {l₁' l₂' : Label Op V m n}
-  {l₁ l₂ : Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1)}
-  (hguard₁ : opSpec.TrivGuard l₁ l₁')
-  (hguard₂ : opSpec.TrivGuard l₂ l₂')
+  {l₁ l₂ : LabelWithSpec opSpec ioSpec}
+  (hguard₁ : opSpec.TrivGuard ioSpec l₁ l₁')
+  (hguard₂ : opSpec.TrivGuard ioSpec l₂ l₂')
   (hcompat : Label.IsYieldOrSilentAndDet l₁' l₂') :
     Label.IsYieldOrSilentAndDetMod EqModGhost l₁ l₂
   := by
@@ -378,7 +378,7 @@ theorem proc_indexed_guarded_spec_strong_confl_at
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s : ConfigWithSpec opSpec χ m n}
+  {s : ConfigWithSpec opSpec ioSpec χ}
   (haff : s.proc.AffineChan) :
     (Config.IdxGuardStep opSpec ioSpec).StronglyConfluentAt
       (λ (i₁, l₁) (i₂, l₂) => i₁ = i₂ → Label.IsYieldOrSilentAndDet l₁ l₂)
@@ -416,7 +416,7 @@ theorem proc_guarded_spec_strong_confl_at
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s : ConfigWithSpec opSpec χ m n}
+  {s : ConfigWithSpec opSpec ioSpec χ}
   (haff : s.proc.AffineChan) :
     (Config.GuardStep opSpec ioSpec).StronglyConfluentAt
       Label.IsYieldOrSilentAndDet
@@ -439,12 +439,13 @@ theorem proc_guarded_spec_strong_confl_at
   · exact hconfl_guard
 
 theorem proc_indexed_unguarded_strong_confl_at_mod
-  [Arity Op] [DecidableEq χ]
+  [Arity Op] [PCM T] [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
-  (s : ConfigWithSpec opSpec χ m n)
+  {ioSpec : IOSpec V T m n}
+  (s : ConfigWithSpec opSpec ioSpec χ)
   (haff : s.proc.AffineChan) :
-    (Config.IdxTrivStep opSpec).StronglyConfluentAtMod
+    (Config.IdxTrivStep opSpec ioSpec).StronglyConfluentAtMod
       (λ (i, l) (i', l') =>
         i = i' → Label.IsYieldOrSilentAndDet l l')
       (Config.EqMod EqModGhost)
@@ -455,7 +456,7 @@ theorem proc_indexed_unguarded_strong_confl_at_mod
   simp at hconfl_base
   have hconfl_guard : Lts.StronglyConfluentAtMod _ _ _ _ _ :=
     Lts.guarded_strong_confl_at_mod
-      (Guard := IndexedGuard opSpec.TrivGuard)
+      (Guard := IndexedGuard (opSpec.TrivGuard ioSpec))
       (EqS := Config.EqMod EqModGhost)
       (EqL := λ (i, l) (i', l') => i = i' ∧ Label.EqMod EqModGhost l l')
       (EqL' := Eq)
@@ -473,8 +474,8 @@ theorem proc_indexed_unguarded_strong_confl_at_mod
       hconfl_base
   apply Lts.strong_confl_at_mod_imp_compat
     (Compat₁ := λ l₁' l₂' => ∀ {l₁ l₂},
-      (IndexedGuard opSpec.TrivGuard) l₁ l₁' →
-      (IndexedGuard opSpec.TrivGuard) l₂ l₂' →
+      (IndexedGuard (opSpec.TrivGuard ioSpec)) l₁ l₁' →
+      (IndexedGuard (opSpec.TrivGuard ioSpec)) l₂ l₂' →
       l₁.1 = l₂.1 → Label.IsYieldOrSilentAndDetMod EqModGhost l₁.2 l₂.2)
   · intros l₁' l₂' hcompat
     cases l₁'
@@ -487,12 +488,13 @@ theorem proc_indexed_unguarded_strong_confl_at_mod
   · exact hconfl_guard
 
 theorem proc_unguarded_strong_confl_at_mod
-  [Arity Op] [DecidableEq χ]
+  [Arity Op] [PCM T] [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
-  (s : ConfigWithSpec opSpec χ m n)
+  {ioSpec : IOSpec V T m n}
+  (s : ConfigWithSpec opSpec ioSpec χ)
   (haff : s.proc.AffineChan) :
-    (Config.TrivStep opSpec).StronglyConfluentAtMod
+    (Config.TrivStep opSpec ioSpec).StronglyConfluentAtMod
       Label.IsYieldOrSilentAndDet
       (Config.EqMod EqModGhost)
       Eq
@@ -502,7 +504,7 @@ theorem proc_unguarded_strong_confl_at_mod
     proc_strong_confl_at_mod EqModGhost haff
   have hconfl_guard : Lts.StronglyConfluentAtMod _ _ _ _ _ :=
     Lts.guarded_strong_confl_at_mod
-      (Guard := opSpec.TrivGuard)
+      (Guard := opSpec.TrivGuard ioSpec)
       (EqS := Config.EqMod EqModGhost)
       (EqL := Label.EqMod EqModGhost)
       (EqL' := Eq)
@@ -512,8 +514,8 @@ theorem proc_unguarded_strong_confl_at_mod
       hconfl_base
   apply Lts.strong_confl_at_mod_imp_compat
     (Compat₁ := λ l₁' l₂' => ∀ {l₁ l₂},
-      opSpec.TrivGuard l₁ l₁' →
-      opSpec.TrivGuard l₂ l₂' →
+      opSpec.TrivGuard ioSpec l₁ l₁' →
+      opSpec.TrivGuard ioSpec l₂ l₂' →
       Label.IsYieldOrSilentAndDetMod EqModGhost l₁ l₂)
   · intros
     apply invert_compat_triv_guard
@@ -527,7 +529,7 @@ theorem proc_indexed_interp_guarded_strong_confl_at
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   -- Confluent and deterministic operator interpretation
   (hconfl : opSpec.Confluent opInterp)
   (hvalid : opSpec.Valid)
@@ -686,7 +688,7 @@ theorem proc_indexed_interp_guarded_strong_confl_at
 --   [opInterp : OpInterp Op V]
 --   {opSpec : OpSpec Op V T}
 --   {ioSpec : IOSpec V T m n}
---   {s : ConfigWithSpec opSpec χ m n × opInterp.S}
+--   {s : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
 --   -- Confluent and deterministic op interpretation
 --   (hconfl : OpSpec.Confluent opSpec opInterp)
 --   (hdet : opInterp.Deterministic)
@@ -821,7 +823,7 @@ theorem proc_indexed_interp_guarded_terminal_confl
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s₁ s₂ : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (hconfl : opSpec.Confluent opInterp)
   (hvalid : opSpec.Valid)
   (hdet : opInterp.Deterministic)
@@ -889,7 +891,7 @@ theorem proc_output_init_invert
   [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
-  {s s' : ConfigWithSpec opSpec χ m n}
+  {s s' : ConfigWithSpec opSpec ioSpec χ}
   (hstep : Config.Step.Step s (.output vals) s')
   (haff : s.proc.AffineChan)
   (hinit : s'.chans = ChanMap.empty) :
@@ -927,7 +929,7 @@ theorem proc_guarded_output_init_invert
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s s' : ConfigWithSpec opSpec χ m n}
+  {s s' : ConfigWithSpec opSpec ioSpec χ}
   (hstep : (Config.GuardStep opSpec ioSpec).Step s (.output vals) s')
   (haff : s.proc.AffineChan)
   (hinit : s'.chans = ChanMap.empty) :
@@ -951,7 +953,7 @@ theorem proc_interp_guarded_output_init_invert
   [opInterp : OpInterp Op V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {s s' : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s' : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (hstep : (Config.InterpGuardStep opSpec ioSpec).Step s (.output vals) s')
   (haff : s.1.proc.AffineChan)
   (hinit : s'.1.chans = ChanMap.empty) :

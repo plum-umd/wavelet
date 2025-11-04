@@ -62,15 +62,20 @@ def OpSpec.FramePreserving
 
 /-- Specification on input/output labels. -/
 structure IOSpec V T m n where
-  pre : Vector V m → T
+  k : Nat
+  neZero : NeZero k
+  -- We allow multiple input permission tokens for pipelining.
+  pre : Vector V m → Vector T k
   -- This can only depend on the outputs, due
   -- to a technical issue that we can't access
   -- the input values at an output event.
   post : Vector V n → T
 
+instance {ioSpec : IOSpec V T m n} : NeZero ioSpec.k := ioSpec.neZero
+
 def IOSpec.Valid
   [PCM T] (ioSpec : IOSpec V T m n) : Prop :=
-  (∀ inputs, ✓ ioSpec.pre inputs) ∧
+  (∀ inputs, ✓ PCM.sum (ioSpec.pre inputs).toList) ∧
   (∀ outputs, ✓ ioSpec.post outputs)
 
 /-- Augments the operator set with an additional ghost argument
@@ -148,16 +153,12 @@ theorem WithSpec.opInputs.inj
     if h₁ : ghost then
       subst h₁
       simp [opInputs, Vector.push_eq_push] at h
-      have ⟨h₁, h₂⟩ := h
-      replace h₂ := Vector.inj_map (by simp [Function.Injective]) h₂
-      subst h₁ h₂
-      simp
+      simp [h]
     else
       simp at h₁
       subst h₁
       simp [opInputs] at h
-      have := Vector.inj_map (by simp [Function.Injective]) h
-      simp [this]
+      simp [h]
   · intros h
     have ⟨h₁, h₂⟩ := h
     if h₃ : ghost then
@@ -173,7 +174,7 @@ inductive OpSpec.Guard
   [Arity Op] [PCM T]
   (opSpec : OpSpec Op V T)
   (ioSpec : IOSpec V T m n) :
-  Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) →
+  Label (WithSpec Op opSpec) (V ⊕ T) (m + ioSpec.k) (n + 1) →
   Label Op V m n → Prop where
   | spec_yield
     {op} {ghost : Bool}
@@ -199,7 +200,10 @@ inductive OpSpec.Guard
           (vals.map .inl : Vector (V ⊕ T) l)) outputs) .τ
   | spec_input :
     Guard opSpec ioSpec
-      (.input ((vals.map .inl).push (.inr (ioSpec.pre vals)))) (.input vals)
+      (.input
+        ((vals.map .inl  : Vector (V ⊕ T) _) ++
+          ((ioSpec.pre vals).map .inr : Vector (V ⊕ T) _)))
+      (.input vals)
   | spec_output :
     Guard opSpec ioSpec
       (.output ((vals.map .inl).push (.inr (ioSpec.post vals)))) (.output vals)
@@ -211,11 +215,12 @@ Same signature as `OpSpec.TrivGuard` but does not dynamically
 check the well-formedness of the tokens.
 -/
 inductive OpSpec.TrivGuard [Arity Op]
-  (opSpec : OpSpec Op V T) :
-  Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) →
+  (opSpec : OpSpec Op V T)
+  (ioSpec : IOSpec V T m n) :
+  Label (WithSpec Op opSpec) (V ⊕ T) (m + ioSpec.k) (n + 1) →
   Label Op V m n → Prop where
   | triv_yield {op ghost inputs outputs tok₁ tok₂} :
-    opSpec.TrivGuard
+    opSpec.TrivGuard ioSpec
       (.yield (.op ghost op)
         (WithSpec.opInputs ghost op inputs tok₁)
         ((outputs.map .inl).push (.inr tok₂)))
@@ -224,13 +229,18 @@ inductive OpSpec.TrivGuard [Arity Op]
     {toks : Vector T k}
     {vals : Vector V l}
     {outputs : Vector T 2} :
-    opSpec.TrivGuard (.yield (.join k l req)
+    opSpec.TrivGuard ioSpec (.yield (.join k l req)
       ((toks.map .inr : Vector (V ⊕ T) k) ++
         (vals.map .inl : Vector (V ⊕ T) l))
       (outputs.map .inr)) .τ
-  | triv_input : opSpec.TrivGuard (.input ((vals.map .inl).push (.inr tok))) (.input vals)
-  | triv_output : opSpec.TrivGuard (.output ((vals.map .inl).push (.inr tok))) (.output vals)
-  | triv_tau : opSpec.TrivGuard .τ .τ
+  | triv_input
+    {toks : Vector T ioSpec.k} :
+    opSpec.TrivGuard ioSpec
+      (.input ((vals.map .inl : Vector (V ⊕ T) _) ++ (toks.map .inr : Vector (V ⊕ T) _)))
+      (.input vals)
+  | triv_output :
+    opSpec.TrivGuard ioSpec (.output ((vals.map .inl).push (.inr tok))) (.output vals)
+  | triv_tau : opSpec.TrivGuard ioSpec .τ .τ
 
 instance
   [Arity Op] [PCM T]
@@ -244,7 +254,8 @@ instance
 
 instance
   [Arity Op]
-  {opSpec : OpSpec Op V T} : LawfulGuard (opSpec.TrivGuard (m := m) (n := n)) where
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n} : LawfulGuard (opSpec.TrivGuard ioSpec) where
   guard_tau := .triv_tau
   guard_tau_only h := by cases h; rfl
   guard_input h := by cases h; simp
@@ -256,7 +267,7 @@ theorem OpSpec.spec_guard_implies_triv_guard
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
   {l₁ l₂} :
-    opSpec.Guard ioSpec l₁ l₂ → opSpec.TrivGuard l₁ l₂
+    opSpec.Guard ioSpec l₁ l₂ → opSpec.TrivGuard ioSpec l₁ l₂
   | .spec_yield .. => by exact .triv_yield
   | OpSpec.Guard.spec_join .. => by
     rename_i k l req rem _ toks vals outputs h₁ h₂ hsum
@@ -288,18 +299,34 @@ instance : IsTrans (V ⊕ T) EqModGhost where
 
 end Wavelet.Determinacy
 
+namespace Wavelet.Semantics
+
+open Determinacy
+
+abbrev LabelWithSpec
+  [Arity Op]
+  (opSpec : OpSpec Op V T)
+  (ioSpec : IOSpec V T m n) :=
+  Label (WithSpec Op opSpec) (V ⊕ T) (m + ioSpec.k) (n + 1)
+
+end Wavelet.Semantics
+
 /-! Some abbreviations for `Seq`. -/
 namespace Wavelet.Seq
 
 open Semantics Determinacy
 
 abbrev ExprWithSpec
-  [Arity Op] (opSpec : OpSpec Op V T) χ m n
-  := Expr (WithSpec Op opSpec) χ (m + 1) (n + 1)
+  [Arity Op]
+  (opSpec : OpSpec Op V T)
+  (ioSpec : IOSpec V T m n) χ
+  := Expr (WithSpec Op opSpec) χ (m + ioSpec.k) (n + 1)
 
 abbrev FnWithSpec
-  [Arity Op] (opSpec : OpSpec Op V T) χ m n
-  := Fn (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
+  [Arity Op]
+  (opSpec : OpSpec Op V T)
+  (ioSpec : IOSpec V T m n) χ
+  := Fn (WithSpec Op opSpec) χ (V ⊕ T) (m + ioSpec.k) (n + 1)
 
 /-- A collection of `IOSpec`s for `Fn`s in a `Prog`. -/
 abbrev ProgSpec V T (sigs : Sigs k) :=
@@ -309,21 +336,24 @@ def ProgSpec.Valid
   [PCM T] {sigs : Sigs k}
   (progSpec : ProgSpec V T sigs) : Prop := ∀ i, (progSpec i).Valid
 
-abbrev ConfigWithSpec [Arity Op] (opSpec : OpSpec Op V T) χ m n
-  := Config (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
+abbrev ConfigWithSpec [Arity Op]
+  (opSpec : OpSpec Op V T)
+  (ioSpec : IOSpec V T m n) χ
+  := Config (WithSpec Op opSpec) χ (V ⊕ T) (m + ioSpec.k) (n + 1)
 
-abbrev extendSigs (sigs : Sigs k) : Sigs k :=
-  λ i => { ι := (sigs i).ι + 1, ω := (sigs i).ω + 1 }
+abbrev extendSigs (sigs : Sigs k) (progSpec : ProgSpec V T sigs) : Sigs k :=
+  λ i => { ι := (sigs i).ι + (progSpec i).k, ω := (sigs i).ω + 1 }
 
-instance : NeZeroSigs (extendSigs sigs) where
-  neZeroᵢ i := by infer_instance
+instance : NeZeroSigs (extendSigs sigs progSpec) where
+  neZeroᵢ i := by simp; infer_instance
   neZeroₒ i := by infer_instance
 
 /-- Extends functions with one extra argument and return value for ghost tokens. -/
-abbrev ProgWithSpec χ [Arity Op]
-  (sigs : Sigs k)
-  (opSpec : OpSpec Op V T) :=
-  Prog (WithSpec Op opSpec) χ (V ⊕ T) (extendSigs sigs)
+abbrev ProgWithSpec [Arity Op]
+  {sigs : Sigs k}
+  (opSpec : OpSpec Op V T)
+  (progSpec : ProgSpec V T sigs) χ :=
+  Prog (WithSpec Op opSpec) χ (V ⊕ T) (extendSigs sigs progSpec)
 
 end Wavelet.Seq
 
@@ -333,12 +363,16 @@ namespace Wavelet.Dataflow
 open Semantics Determinacy
 
 abbrev ProcWithSpec
-  [Arity Op] (opSpec : OpSpec Op V T) χ m n
-  := Proc (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
+  [Arity Op]
+  (opSpec : OpSpec Op V T)
+  (ioSpec : IOSpec V T m n) χ
+  := Proc (WithSpec Op opSpec) χ (V ⊕ T) (m + ioSpec.k) (n + 1)
 
 abbrev ConfigWithSpec
-  [Arity Op] (opSpec : OpSpec Op V T) χ m n
-  := Config (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)
+  [Arity Op]
+  (opSpec : OpSpec Op V T)
+  (ioSpec : IOSpec V T m n) χ
+  := Config (WithSpec Op opSpec) χ (V ⊕ T) (m + ioSpec.k) (n + 1)
 
 infix:50 " ≈ " => AsyncOp.EqMod EqModGhost
 infix:50 " ≈ " => AtomicProc.EqMod EqModGhost

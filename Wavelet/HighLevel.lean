@@ -18,10 +18,11 @@ abbrev Seq.Prog.semanticsᵢ
   [opInterp : OpInterp.{_, _, w} Op V]
   {sigs : Sigs k}
   {opSpec : Determinacy.OpSpec Op V T}
-  (prog : Prog (WithSpec Op opSpec) χ (V ⊕ T) (extendSigs sigs))
+  {progSpec : ProgSpec V T sigs}
+  (prog : ProgWithSpec opSpec progSpec χ)
   (i : Fin k) :
     Semantics.{_, _, max u₁ u₂ u₃ w} Semantics.Empty V (sigs i).ι (sigs i).ω
-  := ((prog.semantics i).guard opSpec.TrivGuard).interpret opInterp
+  := ((prog.semantics i).guard (opSpec.TrivGuard (progSpec i))).interpret opInterp
 
 /-- Final semantics of a dataflow program when interpreted
 with a specific operator interpretation. -/
@@ -30,9 +31,10 @@ abbrev Dataflow.Proc.semanticsᵢ
   [Arity Op] [DecidableEq χ] [InterpConsts V]
   [opInterp : OpInterp.{_, _, w} Op V]
   {opSpec : Determinacy.OpSpec Op V T}
-  (proc : Proc (WithSpec Op opSpec) χ (V ⊕ T) (m + 1) (n + 1)) :
+  {ioSpec : IOSpec V T m n}
+  (proc : ProcWithSpec opSpec ioSpec χ) :
     Semantics.{_, _, max u₁ u₂ u₃ w} Semantics.Empty V m n
-  := (proc.semantics.guard opSpec.TrivGuard).interpret opInterp
+  := (proc.semantics.guard (opSpec.TrivGuard ioSpec)).interpret opInterp
 
 theorem compile_forward_sim_guarded
   [Arity Op] [NeZeroArity Op] [PCM T] [PCM.Lawful T]
@@ -41,12 +43,12 @@ theorem compile_forward_sim_guarded
   {sigs : Sigs k}
   {opSpec : OpSpec Op V T}
   {progSpec : ProgSpec V T sigs}
-  (prog : ProgWithSpec χ sigs opSpec)
+  (prog : ProgWithSpec opSpec progSpec χ)
   (hwt : ProgWithSpec.WellPermTyped progSpec prog)
   (haff₁ : ∀ i, (prog i).AffineVar)
   (haff₂ : prog.AffineInrOp)
   (i : Fin k) :
-    (prog.semantics i).guard opSpec.TrivGuard
+    (prog.semantics i).guard (opSpec.TrivGuard (progSpec i))
       ≲ᵣ[PreservesInit] (compileProg prog i).semantics.guard (opSpec.Guard (progSpec i))
   := by
   apply IORestrictedSimilaritySt.trans_preserves_init
@@ -59,8 +61,8 @@ theorem sim_guarded_unguarded
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
   {ioSpec : IOSpec V T m n}
-  {sem : Semantics (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1)} :
-    sem.guard (opSpec.Guard ioSpec) ≲ᵣ sem.guard opSpec.TrivGuard
+  {sem : Semantics (WithSpec Op opSpec) (V ⊕ T) _ _} :
+    sem.guard (opSpec.Guard ioSpec) ≲ᵣ sem.guard (opSpec.TrivGuard ioSpec)
   := by
   apply Lts.Similarity.refl_single
   intros s₁ l s₂ hstep
@@ -76,13 +78,13 @@ theorem compile_forward_sim
   {sigs : Sigs k}
   {opSpec : OpSpec Op V T}
   {progSpec : ProgSpec V T sigs}
-  (prog : ProgWithSpec χ sigs opSpec)
+  (prog : ProgWithSpec opSpec progSpec χ)
   (hwt : ProgWithSpec.WellPermTyped progSpec prog)
   (haff₁ : ∀ i, (prog i).AffineVar)
   (haff₂ : prog.AffineInrOp)
   (i : Fin k) :
-    (prog.semantics i).guard opSpec.TrivGuard
-      ≲ᵣ (compileProg prog i).semantics.guard opSpec.TrivGuard
+    (prog.semantics i).guard (opSpec.TrivGuard (progSpec i))
+      ≲ᵣ (compileProg prog i).semantics.guard (opSpec.TrivGuard (progSpec i))
   := by
   apply IORestrictedSimilarity.trans
   · apply (compile_forward_sim_guarded prog hwt haff₁ haff₂ i).weaken (by simp)
@@ -95,10 +97,11 @@ private theorem prog_semanticsᵢ_star_to_semantics_star
   [opInterp : OpInterp.{_, _, w} Op V]
   {opSpec : OpSpec Op V T}
   {sigs : Sigs k}
-  {prog : Prog (WithSpec Op opSpec) χ (V ⊕ T) (extendSigs sigs)}
+  {progSpec : ProgSpec V T sigs}
+  {prog : ProgWithSpec opSpec progSpec χ}
   {i : Fin k}
   {s s' : (prog.semanticsᵢ i).S}
-  {tr : Trace (Label Semantics.Empty V (sigs i).ι (sigs i).ω)}
+  {tr : Trace (Label Semantics.Empty V _ _)}
   (hsteps : (prog.semanticsᵢ i).lts.Star s tr s') :
     ∃ tr', (prog.semantics i).lts.Star s.1 tr' s'.1
   := by
@@ -115,7 +118,8 @@ private theorem prog_semanticsᵢ_output_init
   [opInterp : OpInterp.{_, _, w} Op V]
   {opSpec : OpSpec Op V T}
   {sigs : Sigs k}
-  {prog : Prog (WithSpec Op opSpec) χ (V ⊕ T) (extendSigs sigs)}
+  {progSpec : ProgSpec V T sigs}
+  {prog : ProgWithSpec opSpec progSpec χ}
   {i : Fin k}
   {s s' : (prog.semanticsᵢ i).S}
   {tr : Trace (Label Semantics.Empty V (sigs i).ι (sigs i).ω)}
@@ -148,7 +152,7 @@ theorem compile_strong_norm
   (hdet : opInterp.Deterministic)
   (hnb : opInterp.NonBlocking)
   -- Program with well-formedness and typing properties
-  (prog : Prog (WithSpec Op opSpec) χ (V ⊕ T) (extendSigs sigs))
+  (prog : ProgWithSpec opSpec progSpec χ)
   (hwt : ProgWithSpec.WellPermTyped progSpec prog)
   (haff₁ : ∀ (i : Fin k), (prog i).AffineVar)
   (haff₂ : prog.AffineInrOp)
@@ -156,7 +160,7 @@ theorem compile_strong_norm
   -- Same inputs and outputs
   {args : Vector V (sigs i).ι}
   {outputVals : Vector V (sigs i).ω}
-  {proc : ProcWithSpec opSpec (LinkName (ChanName χ)) _ _}
+  {proc : ProcWithSpec opSpec (progSpec i) (LinkName (ChanName χ))}
   {s s₁ s₂ : (prog.semanticsᵢ i).S}
   {s' : proc.semanticsᵢ.S}
   -- Compiled dataflow graph

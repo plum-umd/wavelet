@@ -27,8 +27,9 @@ abbrev Config.GuardStep
 abbrev Config.TrivStep {m n}
   [Arity Op] [DecidableEq χ] [InterpConsts V]
   (opSpec : OpSpec Op V T)
+  (ioSpec : IOSpec V T m n)
   := (Dataflow.Config.Step (χ := χ)).GuardStep
-    (opSpec.TrivGuard (m := m) (n := n))
+    (opSpec.TrivGuard ioSpec)
 
 abbrev Config.InterpGuardStep
   [Arity Op] [PCM T] [DecidableEq χ] [InterpConsts V]
@@ -43,8 +44,9 @@ abbrev Config.InterpTrivStep {m n}
   [Arity Op] [DecidableEq χ] [InterpConsts V]
   [opInterp : OpInterp Op V]
   (opSpec : OpSpec Op V T)
+  (ioSpec : IOSpec V T m n)
   := ((Dataflow.Config.Step (χ := χ)).GuardStep
-    (opSpec.TrivGuard (m := m) (n := n))).InterpStep
+    (opSpec.TrivGuard ioSpec)).InterpStep
     opInterp.lts
 
 abbrev Config.IdxGuardStep
@@ -57,8 +59,9 @@ abbrev Config.IdxGuardStep
 abbrev Config.IdxTrivStep {m n}
   [Arity Op] [DecidableEq χ] [InterpConsts V]
   (opSpec : OpSpec Op V T)
+  (ioSpec : IOSpec V T m n)
   := (Dataflow.Config.IndexedStep (χ := χ)).GuardStep
-    (IndexedGuard (opSpec.TrivGuard (m := m) (n := n)))
+    (IndexedGuard (opSpec.TrivGuard ioSpec))
 
 abbrev Config.IdxInterpGuardStep
   [Arity Op] [PCM T] [DecidableEq χ] [InterpConsts V]
@@ -73,8 +76,9 @@ abbrev Config.IdxInterpTrivStep {m n}
   [Arity Op] [DecidableEq χ] [InterpConsts V]
   [opInterp : OpInterp Op V]
   (opSpec : OpSpec Op V T)
+  (ioSpec : IOSpec V T m n)
   := ((Dataflow.Config.IndexedStep (χ := χ)).GuardStep
-    (IndexedGuard (opSpec.TrivGuard (m := m) (n := n)))).IndexedInterpStep
+    (IndexedGuard (opSpec.TrivGuard ioSpec))).IndexedInterpStep
     opInterp.lts
 
 end Wavelet.Dataflow

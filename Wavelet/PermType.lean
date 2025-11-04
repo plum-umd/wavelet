@@ -29,19 +29,22 @@ inductive ProgWithSpec.WellPermTypedExpr
   (progSpec : ProgSpec V T sigs)
   (i : Fin k) :
     Ctx χ V T →
-    Expr (WithSpec Op opSpec ⊕ SigOps (extendSigs sigs) i.castSucc)
-      χ (extendSigs sigs i).ι (extendSigs sigs i).ω →
+    Expr (WithSpec Op opSpec ⊕ SigOps (extendSigs sigs progSpec) i.castSucc)
+      χ (extendSigs sigs progSpec i).ι (extendSigs sigs progSpec i).ω →
     Prop where
   | wpt_ret :
     ctx.vars.getVars vars.pop = some retVals →
     ctx.perms.getVar vars.back = some retPerm →
     retPerm = (progSpec i).post retVals →
     WellPermTypedExpr progSpec i ctx (.ret vars)
-  | wpt_tail :
-    ctx.vars.getVars vars.pop = some vals →
-    ctx.perms.getVar vars.back = some tailPerm →
-    tailPerm = (progSpec i).pre vals →
-    WellPermTypedExpr progSpec i ctx (.tail vars)
+  | wpt_tail
+    {vars : Vector χ (sigs i).ι}
+    {perms : Vector χ (progSpec i).k}
+    {toks : Vector T (progSpec i).k} :
+    ctx.vars.getVars vars = some vals →
+    ctx.perms.getVars perms = some toks →
+    toks = (progSpec i).pre vals →
+    WellPermTypedExpr progSpec i ctx (.tail (vars ++ perms))
   -- Calls to an ordinary operator with a permission token.
   | wpt_op_ghost
     {args : Vector χ (Arity.ι op + 1)}
@@ -92,22 +95,25 @@ inductive ProgWithSpec.WellPermTypedExpr
   -- Calls to another function
   | wpt_call
     {j : Fin k}
-    {args : Vector χ ((sigs j).ι + 1)}
+    {args : Vector χ (sigs j).ι}
+    {perms : Vector χ (progSpec j).k}
+    {toks : Vector T (progSpec j).k}
     {rets : Vector χ ((sigs j).ω + 1)}
     {inputVals : Vector V (sigs j).ι} :
     (hlt : j < i) →
-    ctx.vars.getVars args.pop = some inputVals →
-    ctx.perms.getVar args.back = some perm →
-    perm = (progSpec j).pre inputVals →
+    ctx.vars.getVars args = some inputVals →
+    ctx.perms.getVars perms = some toks →
+    toks = (progSpec j).pre inputVals →
     -- Overapproximating all possible outputs of the function.
     (∀ (outputVals : Vector V (sigs j).ω),
       WellPermTypedExpr progSpec i {
-        vars := (ctx.vars.removeVars args.pop.toList).insertVars rets.pop outputVals,
-        perms := (ctx.perms.removeVar args.back).insertVars
+        vars := (ctx.vars.removeVars args.toList).insertVars rets.pop outputVals,
+        perms := (ctx.perms.removeVars perms.toList).insertVars
           #v[rets.back] #v[(progSpec j).post outputVals],
       } cont) →
     WellPermTypedExpr progSpec i ctx
-      (.op (.inr (.call (j.castLT hlt))) args rets cont)
+      (.op (.inr (.call (j.castLT hlt)))
+        (args ++ perms) rets cont)
   | wpt_br :
     WellPermTypedExpr progSpec i { ctx with vars := ctx.vars.removeVar c } left →
     WellPermTypedExpr progSpec i { ctx with vars := ctx.vars.removeVar c } right →
@@ -118,13 +124,15 @@ def ProgWithSpec.WellPermTypedFn
   {sigs : Sigs k}
   {opSpec : OpSpec Op V T}
   (progSpec : ProgSpec V T sigs)
-  (prog : ProgWithSpec χ sigs opSpec)
+  (prog : ProgWithSpec opSpec progSpec χ)
   (i : Fin k) : Prop :=
-  ∀ args : Vector V (sigs i).ι,
-    let perm := (progSpec i).pre args
+  ∀ (args : Vector V (sigs i).ι)
+    (params : Vector χ (sigs i).ι)
+    (perms : Vector χ (progSpec i).k),
+    (prog i).params = params ++ perms →
     let ctx : Ctx χ V T := {
-      vars := VarMap.empty.insertVars (prog i).params.pop args,
-      perms := VarMap.empty.insertVars #v[(prog i).params.back] #v[perm],
+      vars := VarMap.empty.insertVars params args,
+      perms := VarMap.empty.insertVars perms ((progSpec i).pre args),
     }
     ProgWithSpec.WellPermTypedExpr progSpec i ctx (prog i).body
 
@@ -133,7 +141,7 @@ def ProgWithSpec.WellPermTyped
   {sigs : Sigs k}
   {opSpec : OpSpec Op V T}
   (progSpec : ProgSpec V T sigs)
-  (prog : ProgWithSpec χ sigs opSpec) : Prop :=
+  (prog : ProgWithSpec opSpec progSpec χ) : Prop :=
   ∀ i, prog.WellPermTypedFn progSpec i
 
 /-- Well-permission-typing induces a simulation between unguarded
@@ -146,10 +154,10 @@ theorem sim_wpt_prog
   {sigs : Sigs k}
   {opSpec : OpSpec Op V T}
   {progSpec : ProgSpec V T sigs}
-  (prog : ProgWithSpec χ sigs opSpec)
+  (prog : ProgWithSpec opSpec progSpec χ)
   (hwt : ProgWithSpec.WellPermTyped progSpec prog)
   (i : Fin k) :
-    (prog.semantics i).guard opSpec.TrivGuard
+    (prog.semantics i).guard (opSpec.TrivGuard (progSpec i))
       ≲ᵣ[PreservesInit] (prog.semantics i).guard (opSpec.Guard (progSpec i))
   := by sorry
 

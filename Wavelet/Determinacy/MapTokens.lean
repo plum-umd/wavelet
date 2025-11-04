@@ -19,8 +19,10 @@ def OpSpec.mapTokens
 def IOSpec.mapTokens
   (ioSpec : IOSpec V T₁ m n)
   (hom : T₁ → T₂) : IOSpec V T₂ m n := {
-    pre vals := hom (ioSpec.pre vals),
+    k := ioSpec.k,
+    pre vals := (ioSpec.pre vals).map hom,
     post vals := hom (ioSpec.post vals),
+    neZero := ioSpec.neZero,
   }
 
 end Wavelet.Determinacy
@@ -70,9 +72,10 @@ token constants in the processes. -/
 def Proc.mapTokens
   [Arity Op]
   {opSpec : OpSpec Op V T₁}
+  {ioSpec : IOSpec V T₁ m n}
   (hom : T₁ → T₂)
-  (proc : ProcWithSpec opSpec χ m n) :
-    ProcWithSpec (OpSpec.mapTokens opSpec hom) χ m n
+  (proc : ProcWithSpec opSpec ioSpec χ) :
+    ProcWithSpec (OpSpec.mapTokens opSpec hom) (ioSpec.mapTokens hom) χ
   := {
     inputs := proc.inputs,
     outputs := proc.outputs,

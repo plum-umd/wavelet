@@ -6,13 +6,16 @@ namespace Wavelet.Determinacy
 
 open Semantics Dataflow
 
-theorem proc_indexed_guarded_step_unique_label
-  [Arity Op] [PCM T]
+variable
+  [Arity Op]
   [DecidableEq χ]
   [InterpConsts V]
-  (opSpec : OpSpec Op V T)
-  (ioSpec : IOSpec V T m n)
-  {s s₁ s₂ : ConfigWithSpec opSpec χ m n}
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+
+theorem proc_indexed_guarded_step_unique_label
+  [PCM T]
+  {s s₁ s₂ : ConfigWithSpec opSpec ioSpec χ}
   {l₁ l₂ : Label Op V m n}
   (hstep₁ : (Config.IdxGuardStep opSpec ioSpec).Step s (i, l₁) s₁)
   (hstep₂ : (Config.IdxGuardStep opSpec ioSpec).Step s (i, l₂) s₂)
@@ -57,21 +60,15 @@ theorem proc_indexed_guarded_step_unique_label
       have ⟨h₃₁, h₃₂⟩ := h₃
       subst h₃₁
       simp [Vector.push_eq_push] at h₄
-      replace h₃ := Vector.inj_map (by simp [Function.Injective]) h₄.2
-      subst h₃
-      rfl
+      simp [h₄]
     any_goals rfl
     any_goals
       have := Config.IndexedStep.unique_index hstep₁ hstep₂
       simp [Label.IsYieldOrSilentAndDet, Label.Deterministic] at this
 
 theorem proc_indexed_guarded_step_label
-  [Arity Op] [PCM T]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {s s' : ConfigWithSpec opSpec χ m n}
+  [PCM T]
+  {s s' : ConfigWithSpec opSpec ioSpec χ}
   {l : Label Op V m n}
   (hstep : (Config.IdxGuardStep opSpec ioSpec).Step s (i, l) s') :
     l.isYield ∨ l.isSilent
@@ -80,29 +77,21 @@ theorem proc_indexed_guarded_step_label
   cases hguard <;> cases hstep <;> simp
 
 theorem proc_indexed_unguarded_step_label
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {s s' : ConfigWithSpec opSpec χ m n}
+  {s s' : ConfigWithSpec opSpec ioSpec χ}
   {l : Label Op V m n}
-  (hstep : (Config.IdxTrivStep opSpec).Step s (i, l) s') :
+  (hstep : (Config.IdxTrivStep opSpec ioSpec).Step s (i, l) s') :
     l.isYield ∨ l.isSilent
   := by
   rcases hstep with ⟨⟨hguard⟩, hstep⟩
   cases hguard <;> cases hstep <;> simp
 
 theorem proc_indexed_unguarded_step_same_label_kind
-  [Arity Op] [PCM T]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {s s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n}
+  [PCM T]
+  {s s₁ s₁' s₂ : ConfigWithSpec opSpec ioSpec χ}
   {l₁ l₂ l₃ : Label Op V m n}
   (hstep₁ : (Config.IdxGuardStep opSpec ioSpec).Step s (i, l₁) s₁)
   (hstep₂ : (Config.IdxGuardStep opSpec ioSpec).Step s₁ (j, l₂) s₂)
-  (hstep₂' : (Config.IdxTrivStep opSpec).Step s (j, l₃) s₁') :
+  (hstep₂' : (Config.IdxTrivStep opSpec ioSpec).Step s (j, l₃) s₁') :
     l₂.isYield ↔ l₃.isYield
   := by
     by_cases hij : i = j
@@ -133,14 +122,10 @@ theorem proc_indexed_unguarded_step_same_label_kind
       any_goals simp at hget₂'
 
 theorem proc_indexed_unguarded_step_det_label_mod
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {s s₁ s₂ : ConfigWithSpec opSpec χ m n}
+  {s s₁ s₂ : ConfigWithSpec opSpec ioSpec χ}
   {l₁ l₂ : Label Op V m n}
-  (hstep₁ : (Config.IdxTrivStep opSpec).Step s (i, l₁) s₁)
-  (hstep₂ : (Config.IdxTrivStep opSpec).Step s (i, l₂) s₂) :
+  (hstep₁ : (Config.IdxTrivStep opSpec ioSpec).Step s (i, l₁) s₁)
+  (hstep₂ : (Config.IdxTrivStep opSpec ioSpec).Step s (i, l₂) s₂) :
     Label.EqModYieldOutputs l₁ l₂
   := by
   have hl₁ := proc_indexed_unguarded_step_label hstep₁
@@ -165,14 +150,10 @@ theorem proc_indexed_unguarded_step_det_label_mod
   any_goals simp [Label.EqModYieldOutputs] at heq ⊢
 
 theorem proc_indexed_unguarded_step_det_mod
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {s s₁ s₂ : ConfigWithSpec opSpec χ m n}
+  {s s₁ s₂ : ConfigWithSpec opSpec ioSpec χ}
   {l : Label Op V m n}
-  (hstep₁ : (Config.IdxTrivStep opSpec).Step s (i, l) s₁)
-  (hstep₂ : (Config.IdxTrivStep opSpec).Step s (i, l) s₂) :
+  (hstep₁ : (Config.IdxTrivStep opSpec ioSpec).Step s (i, l) s₁)
+  (hstep₂ : (Config.IdxTrivStep opSpec ioSpec).Step s (i, l) s₂) :
     s₁ ≈ s₂
   := by
   rcases hstep₁ with ⟨⟨hguard₁⟩, hstep₁⟩
@@ -207,13 +188,11 @@ theorem proc_indexed_unguarded_step_det_mod
       all_goals simp [Label.DeterministicMod]
 
 theorem proc_indexed_interp_unguarded_step_det_mod
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
   [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s₁ s₂ : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (hdet : opInterp.Deterministic)
-  (hstep₁ : (Config.IdxInterpTrivStep opSpec).Step s (i, .τ) s₁)
-  (hstep₂ : (Config.IdxInterpTrivStep opSpec).Step s (i, .τ) s₂) :
+  (hstep₁ : (Config.IdxInterpTrivStep opSpec ioSpec).Step s (i, .τ) s₁)
+  (hstep₂ : (Config.IdxInterpTrivStep opSpec ioSpec).Step s (i, .τ) s₂) :
     s₁.1 ≈ s₂.1 ∧ s₁.2 = s₂.2
   := by
   cases hstep₁ <;> cases hstep₂
@@ -243,14 +222,10 @@ theorem proc_indexed_interp_unguarded_step_det_mod
     simp [Label.EqModYieldOutputs] at this
 
 theorem proc_indexed_interp_unguarded_step_label
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
   {interp : Lts S' (RespLabel Op V)}
-  {s s' : ConfigWithSpec opSpec χ m n × S'}
+  {s s' : ConfigWithSpec opSpec ioSpec χ × S'}
   {l : Label Semantics.Empty V m n}
-  (hstep : ((Config.IdxTrivStep opSpec).IndexedInterpStep interp).Step
+  (hstep : ((Config.IdxTrivStep opSpec ioSpec).IndexedInterpStep interp).Step
     s (i, l) s') :
     l = .τ
   := by
@@ -264,13 +239,9 @@ theorem proc_indexed_interp_unguarded_step_label
     simp at hl
 
 theorem proc_indexed_interp_guarded_step_label
-  [Arity Op] [PCM T]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
+  [PCM T]
   {interp : Lts S' (RespLabel Op V)}
-  {s s' : ConfigWithSpec opSpec χ m n × S'}
+  {s s' : ConfigWithSpec opSpec ioSpec χ × S'}
   {l : Label Semantics.Empty V m n}
   (hstep : ((Config.IdxGuardStep opSpec ioSpec).IndexedInterpStep interp).Step
     s (i, l) s') :
@@ -286,13 +257,9 @@ theorem proc_indexed_interp_guarded_step_label
     simp at hl
 
 theorem proc_interp_guarded_det_input
-  [Arity Op] [PCM T]
-  [DecidableEq χ]
-  [InterpConsts V]
+  [PCM T]
   [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s₁ s₂ : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (hstep₁ : (Config.InterpGuardStep opSpec ioSpec).Step s (.input vals) s₁)
   (hstep₂ : (Config.InterpGuardStep opSpec ioSpec).Step s (.input vals) s₂) :
     s₁ = s₂
@@ -306,15 +273,11 @@ theorem proc_interp_guarded_det_input
   rfl
 
 theorem proc_interp_guarded_unguarded_det_input_mod
-  [Arity Op] [PCM T]
-  [DecidableEq χ]
-  [InterpConsts V]
+  [PCM T]
   [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
+  {s s₁ s₂ : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
   (hstep₁ : (Config.InterpGuardStep opSpec ioSpec).Step s (.input vals) s₁)
-  (hstep₂ : (Config.InterpTrivStep opSpec).Step s (.input vals) s₂) :
+  (hstep₂ : (Config.InterpTrivStep opSpec ioSpec).Step s (.input vals) s₂) :
     s₁.1 ≈ s₂.1 ∧ s₁.2 = s₂.2
   := by
   cases hstep₁ with | step_input hstep₁ =>
@@ -329,10 +292,12 @@ theorem proc_interp_guarded_unguarded_det_input_mod
     · simp
       apply congr_eq_mod_push_vals
       · apply IsRefl.refl
-      · simp [Vector.toList_push]
+      · simp [Vector.toList_append, Vector.toList_map]
         apply List.forall₂_append
         · simp [EqModGhost]
         · simp [EqModGhost]
+          apply List.forall₂_true
+          simp
   · rfl
 
 end Wavelet.Determinacy

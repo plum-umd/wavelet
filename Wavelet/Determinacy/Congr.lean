@@ -8,6 +8,12 @@ namespace Wavelet.Dataflow
 
 open Semantics Determinacy
 
+variable
+  [Arity Op]
+  [DecidableEq χ]
+  {opSpec : OpSpec Op V T}
+  {ioSpec : IOSpec V T m n}
+
 theorem congr_eq_interp_bool
   [InterpConsts V]
   {v v' : V ⊕ T}
@@ -141,16 +147,13 @@ theorem congr_eq_mod_ghost_async_op_interp
     exact ⟨_, _, .interp_sink h₁, by simp [AsyncOp.EqMod]⟩
 
 theorem congr_eq_mod_ghost_proc_indexed_unguarded
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  {opSpec : OpSpec Op V T}
-  {s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n}
+  [PCM T] [InterpConsts V]
+  {s₁ s₁' s₂ : ConfigWithSpec opSpec ioSpec χ}
   {l : Nat × Label Op V m n}
-  (hstep : (Config.IdxTrivStep opSpec).Step s₁ l s₂)
+  (hstep : (Config.IdxTrivStep opSpec ioSpec).Step s₁ l s₂)
   (heq : s₁ ≈ s₁') :
     ∃ s₂',
-      (Config.IdxTrivStep opSpec).Step s₁' l s₂' ∧
+      (Config.IdxTrivStep opSpec ioSpec).Step s₁' l s₂' ∧
       s₂ ≈ s₂'
   := by
   have hl := proc_indexed_unguarded_step_label hstep
@@ -313,16 +316,12 @@ theorem congr_eq_mod_ghost_proc_indexed_unguarded
     ⟩
 
 theorem congr_eq_mod_ghost_proc_indexed_interp_unguarded
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
-  (hstep : (Config.IdxInterpTrivStep opSpec).Step s₁ l s₂)
+  [PCM T] [InterpConsts V] [opInterp : OpInterp Op V]
+  {s₁ s₁' s₂ : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
+  (hstep : (Config.IdxInterpTrivStep opSpec ioSpec).Step s₁ l s₂)
   (heq : s₁.1 ≈ s₁'.1 ∧ s₁.2 = s₁'.2) :
     ∃ s₂',
-      (Config.IdxInterpTrivStep opSpec).Step s₁' l s₂' ∧
+      (Config.IdxInterpTrivStep opSpec ioSpec).Step s₁' l s₂' ∧
       s₂.1 ≈ s₂'.1 ∧ s₂.2 = s₂'.2
   := by
   have hl := proc_indexed_interp_unguarded_step_label hstep
@@ -348,16 +347,12 @@ theorem congr_eq_mod_ghost_proc_indexed_interp_unguarded
   | _ hstep => simp at hl
 
 theorem congr_eq_mod_ghost_proc_interp_unguarded_tau
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
-  (hstep : (Config.InterpTrivStep opSpec).Step s₁ .τ s₂)
+  [PCM T] [InterpConsts V] [opInterp : OpInterp Op V]
+  {s₁ s₁' s₂ : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
+  (hstep : (Config.InterpTrivStep opSpec ioSpec).Step s₁ .τ s₂)
   (heq : s₁.1 ≈ s₁'.1 ∧ s₁.2 = s₁'.2) :
     ∃ s₂',
-      (Config.InterpTrivStep opSpec).Step s₁' .τ s₂' ∧
+      (Config.InterpTrivStep opSpec ioSpec).Step s₁' .τ s₂' ∧
       s₂.1 ≈ s₂'.1 ∧ s₂.2 = s₂'.2
   := by
   have ⟨_, hstep'⟩ := Config.InterpTrivStep.to_indexed_interp_unguarded_tau hstep
@@ -365,16 +360,12 @@ theorem congr_eq_mod_ghost_proc_interp_unguarded_tau
   exact ⟨_, Config.IdxInterpTrivStep.to_interp_unguarded hstep'', heq'⟩
 
 theorem congr_eq_mod_ghost_proc_indexed_interp_unguarded_star
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
-  (htrace : (Config.IdxInterpTrivStep opSpec).Star s₁ tr s₂)
+  [PCM T] [InterpConsts V] [opInterp : OpInterp Op V]
+  {s₁ s₁' s₂ : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
+  (htrace : (Config.IdxInterpTrivStep opSpec ioSpec).Star s₁ tr s₂)
   (heq : s₁.1 ≈ s₁'.1 ∧ s₁.2 = s₁'.2) :
     ∃ s₂',
-      (Config.IdxInterpTrivStep opSpec).Star s₁' tr s₂' ∧
+      (Config.IdxInterpTrivStep opSpec ioSpec).Star s₁' tr s₂' ∧
       s₂.1 ≈ s₂'.1 ∧ s₂.2 = s₂'.2
   := by
   induction htrace
@@ -387,16 +378,12 @@ theorem congr_eq_mod_ghost_proc_indexed_interp_unguarded_star
     exact ⟨_, htail'.prepend hstep', heq₂⟩
 
 theorem congr_eq_mod_ghost_proc_interp_unguarded_tau_star_n
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
-  (htrace : (Config.InterpTrivStep opSpec).TauStarN .τ k s₁ s₂)
+  [PCM T] [InterpConsts V] [opInterp : OpInterp Op V]
+  {s₁ s₁' s₂ : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
+  (htrace : (Config.InterpTrivStep opSpec ioSpec).TauStarN .τ k s₁ s₂)
   (heq : s₁.1 ≈ s₁'.1 ∧ s₁.2 = s₁'.2) :
     ∃ s₂',
-      (Config.InterpTrivStep opSpec).TauStarN .τ k s₁' s₂' ∧
+      (Config.InterpTrivStep opSpec ioSpec).TauStarN .τ k s₁' s₂' ∧
       s₂.1 ≈ s₂'.1 ∧ s₂.2 = s₂'.2
   := by
   induction htrace
@@ -408,16 +395,12 @@ theorem congr_eq_mod_ghost_proc_interp_unguarded_tau_star_n
     exact ⟨_, .tail hpref' htail', heq''⟩
 
 theorem congr_eq_mod_ghost_proc_interp_unguarded_output
-  [Arity Op]
-  [DecidableEq χ]
-  [InterpConsts V]
-  [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {s₁ s₁' s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
-  (hstep : (Config.InterpTrivStep opSpec).Step s₁ (.output vals) s₂)
+  [InterpConsts V] [opInterp : OpInterp Op V]
+  {s₁ s₁' s₂ : ConfigWithSpec opSpec ioSpec χ × opInterp.S}
+  (hstep : (Config.InterpTrivStep opSpec ioSpec).Step s₁ (.output vals) s₂)
   (heq : s₁.1 ≈ s₁'.1 ∧ s₁.2 = s₁'.2) :
     ∃ s₂',
-      (Config.InterpTrivStep opSpec).Step s₁' (.output vals) s₂' ∧
+      (Config.InterpTrivStep opSpec ioSpec).Step s₁' (.output vals) s₂' ∧
       s₂.1 ≈ s₂'.1 ∧ s₂.2 = s₂'.2
   := by
   cases hstep with | step_output hstep =>
@@ -456,10 +439,8 @@ theorem congr_eq_mod_ghost_proc_interp_unguarded_output
 
 /-- Equal labels translate to equal labels through `OpSpec.Guard`. -/
 theorem congr_eq_spec_guard
-  [Arity Op] [PCM T]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {l₁ l₂ : Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1)}
+  [PCM T]
+  {l₁ l₂ : LabelWithSpec opSpec ioSpec}
   {l₁' l₂' : Label Op V m n}
   (hguard₁ : opSpec.Guard ioSpec l₁ l₁')
   (hguard₂ : opSpec.Guard ioSpec l₂ l₂')
@@ -480,8 +461,7 @@ theorem congr_eq_spec_guard
         cases hguard₂
         rename_i inputs₂ outputs₂
         simp [Vector.push_eq_push] at hinputs₁' houtputs₁'
-        have heq₂ := Vector.inj_map (by simp [Function.Injective]) houtputs₁'.2
-        simp [hinputs₁', heq₂]
+        simp [hinputs₁', houtputs₁']
     | join k l req =>
       cases hguard₁ with | spec_join h₁ h₂ =>
       rename_i rem₁ toks₁ vals₁
@@ -495,12 +475,12 @@ theorem congr_eq_spec_guard
     cases hguard₁ with | spec_input =>
     rename_i vals₁
     generalize h :
-      (Vector.map Sum.inl vals₁).push (Sum.inr (ioSpec.pre vals₁)) = x
+      (vals₁.map Sum.inl : Vector (V ⊕ T) _) ++
+      ((ioSpec.pre vals₁).map Sum.inr : Vector (V ⊕ T) _) = x
     rw [h] at hguard₂
     cases hguard₂
-    simp [Vector.push_eq_push] at h
-    have heq := Vector.inj_map (by simp [Function.Injective]) h.2
-    simp [heq]
+    simp at h
+    simp [h]
   | output vals =>
     cases hguard₁ with | spec_output =>
     rename_i vals₁
@@ -509,8 +489,7 @@ theorem congr_eq_spec_guard
     rw [h] at hguard₂
     cases hguard₂
     simp [Vector.push_eq_push] at h
-    have heq := Vector.inj_map (by simp [Function.Injective]) h.2
-    simp [heq]
+    simp [h]
   | τ =>
     cases hguard₁
     cases hguard₂
@@ -518,12 +497,11 @@ theorem congr_eq_spec_guard
 
 /-- Similar to `congr_spec_guard` but for `OpSpec.TrivGuard`. -/
 theorem congr_eq_mod_ghost_triv_guard
-  [Arity Op]
-  {opSpec : OpSpec Op V T}
-  {l₁ l₂ : Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1)}
+  [PCM T]
+  {l₁ l₂ : LabelWithSpec opSpec ioSpec}
   {l₁' l₂' : Label Op V m n}
-  (hguard₁ : opSpec.TrivGuard l₁ l₁')
-  (hguard₂ : opSpec.TrivGuard l₂ l₂')
+  (hguard₁ : opSpec.TrivGuard ioSpec l₁ l₁')
+  (hguard₂ : opSpec.TrivGuard ioSpec l₂ l₂')
   (heq : Label.EqMod EqModGhost l₁ l₂) : l₁' = l₂' := by
   cases l₁ <;> cases l₂
     <;> cases hguard₁
@@ -547,9 +525,9 @@ theorem congr_eq_mod_ghost_triv_guard
       simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₃
       simp [heq₂, heq₃]
   case input.input.triv_input.triv_input =>
-    replace ⟨heq, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq
-    simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq
-    simp [heq]
+    have ⟨heq₁, heq₂⟩ := Vector.forall₂_append_toList_to_forall₂ heq
+    simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₁
+    simp [heq₁]
   case output.output.triv_output.triv_output =>
     replace ⟨heq, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq
     simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq

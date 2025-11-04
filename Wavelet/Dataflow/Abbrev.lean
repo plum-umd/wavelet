@@ -324,7 +324,11 @@ theorem Config.Step.step_merge
     := .step_carry_decider (by
       simp [AtomicProc.carry]
       rw [happ]
-      congr; simp; rfl) hpop_decider hdecider
+      congr
+      simp
+      constructor
+      rfl
+      rfl) hpop_decider hdecider
   if hdecider_bool : deciderBool then
     subst hdecider_bool
     have hsteps : Step.TauStar .τ c _
