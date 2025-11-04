@@ -1,6 +1,6 @@
 import Wavelet
 
-open Wavelet.Frontend Wavelet.Compile Wavelet.Determinacy Wavelet.Seq
+open Wavelet.Frontend Wavelet.Compile Wavelet.Determinacy Wavelet.Seq Wavelet.Dataflow
 
 def main : IO Unit := do
   let stdin ← IO.getStdin
@@ -20,12 +20,18 @@ def main : IO Unit := do
     | .ok p => pure p
     | .error err => throw <| IO.userError s!"failed to convert RawProg to Prog: {err}"
   if h : prog.numFns > 0 then
+    -- Compile and link
     let : NeZeroSigs prog.sigs := prog.neZero
     let proc := compileProg prog.prog ⟨prog.numFns - 1, by omega⟩
+    -- Global graph rewrites
+    stderr.putStrLn s!"compiled {prog.numFns} function(s). graph size: {proc.atoms.length} ops"
+    stderr.putStr s!"lowering n-ary ops ..."
+    let proc := proc.mapChans RewriteName.base
+    let proc := { proc with atoms := Rewrite.applyUntilFail (naryLowering) proc.atoms }
+    stderr.putStrLn s!" done. graph size: {proc.atoms.length} ops"
+    -- Dump graph as JSON
     let rawProc := RawProc.fromProc proc
     let output := Lean.ToJson.toJson rawProc
     stdout.putStrLn (Lean.Json.pretty output)
-    stderr.putStrLn s!"compiled {prog.numFns} functions"
-    stderr.putStrLn s!"final graph size: {rawProc.atoms.length} operators"
   else
     stderr.putStrLn "no function provided, exiting"
