@@ -208,8 +208,12 @@ theorem forall₂_append_toList_to_forall₂
   (hforall₂ : List.Forall₂ R (xs ++ xs').toList (ys ++ ys').toList) :
     List.Forall₂ R xs.toList ys.toList ∧
     List.Forall₂ R xs'.toList ys'.toList
-:= by
-sorry
+  := by
+  simp [Vector.toList_append] at hforall₂
+  have h₁ := List.forall₂_take_append _ _ _ hforall₂
+  have h₂ := List.forall₂_drop_append _ _ _ hforall₂
+  simp at h₁ h₂
+  exact ⟨h₁, h₂⟩
 
 theorem forall₂_to_forall₂_push_toList
   {α β}
@@ -346,19 +350,40 @@ theorem append_eq_append_alt
     xs₁ ++ xs₂ = ys₁ ++ ys₂ ↔ xs₁ = ys₁ ∧ xs₂ = ys₂
   := by
   constructor
-  · sorry
-  · sorry
+  · intros h
+    have this := (Vector.append_eq_append_iff rfl).mp h
+    simp [Vector.cast] at this
+    have ⟨zs, h₁, h₂⟩ := this
+    have : zs.toArray = #[] := by
+      ext i
+      · simp
+      · rename_i h₁ h₂
+        simp at h₁
+    simp [this] at h₁ h₂
+    simp [h₁, h₂]
+  · intros h
+    simp [h]
 
 @[simp]
 theorem map_inl_eq
   {xs ys : Vector α n} :
     (xs.map Sum.inl : Vector (α ⊕ β) n) = ys.map Sum.inl ↔ xs = ys
-  := sorry
+  := by
+  constructor
+  · intros h
+    exact inj_map (by simp [Function.Injective]) h
+  · intros h
+    simp [h]
 
 @[simp]
 theorem map_inr_eq
   {xs ys : Vector β n} :
     (xs.map Sum.inr : Vector (α ⊕ β) n) = ys.map Sum.inr ↔ xs = ys
-  := sorry
+  := by
+  constructor
+  · intros h
+    exact inj_map (by simp [Function.Injective]) h
+  · intros h
+    simp [h]
 
 end Vector
