@@ -20,6 +20,9 @@ structure Sig where
 
 abbrev Sigs k := Fin k → Sig
 
+def Sigs.push (sigs : Sigs k) (sig : Sig) : Sigs (k + 1) :=
+  λ i => if h : i.val < k then sigs ⟨i.val, h⟩ else sig
+
 /-- Signatures with non-zero arities. -/
 class NeZeroSigs (sigs : Sigs k) where
   neZeroᵢ : ∀ i : Fin k, NeZero (sigs i).ι

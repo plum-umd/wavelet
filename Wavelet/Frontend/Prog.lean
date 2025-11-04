@@ -1,0 +1,368 @@
+import Lean.Data.Json
+
+import Wavelet.Seq.Prog
+
+/-! A simple JSON format of Seq `Prog`/`Fn`/`Expr`. -/
+
+namespace Wavelet.Seq
+
+open Semantics
+
+/-- Rename operators in an expression, provided that
+the renaming preserves arity. -/
+def Expr.renameOp
+  [Arity Op₁] [Arity Op₂]
+  (f : Op₁ → Op₂)
+  (h : ∀ {op}, Arity.ι op = Arity.ι (f op) ∧ Arity.ω op = Arity.ω (f op))
+  : Expr Op₁ χ m n → Expr Op₂ χ m n
+  | .ret vars => .ret vars
+  | .tail vars => .tail vars
+  | .op o args rets cont =>
+    .op (f o)
+      (args.cast (by simp [h]))
+      (rets.cast (by simp [h]))
+      (cont.renameOp f h)
+  | .br cond left right =>
+    .br cond (left.renameOp f h) (right.renameOp f h)
+
+def Fn.renameOp
+  [Arity Op₁] [Arity Op₂]
+  (f : Op₁ → Op₂)
+  (h : ∀ {op}, Arity.ι op = Arity.ι (f op) ∧ Arity.ω op = Arity.ω (f op))
+  (fn : Fn Op₁ χ V m n) : Fn Op₂ χ V m n
+  := {
+    params := fn.params,
+    body := fn.body.renameOp f h,
+  }
+
+end Wavelet.Seq
+
+namespace Wavelet.Fronend
+
+open Semantics Seq
+
+/-- Extending the base operator set with calls to another function. -/
+inductive WithCall (Op : Type u) (FnName : Type v) where
+  | op : Op → WithCall Op FnName
+  | call : FnName → WithCall Op FnName
+  deriving Repr, Lean.ToJson, Lean.FromJson
+
+inductive RawExpr (Op : Type u) (χ : Type v) : Type (max u v) where
+  | ret : List χ → RawExpr Op χ
+  | tail : List χ → RawExpr Op χ
+  | op (op : Op) (args : List χ) (rets : List χ) (cont : RawExpr Op χ) : RawExpr Op χ
+  | br (cond : χ) (left : RawExpr Op χ) (right : RawExpr Op χ) : RawExpr Op χ
+  deriving Repr, Lean.ToJson, Lean.FromJson
+
+/-- TODO: Why do `Op` and `χ` have to be in the same universe? -/
+structure RawFn (Op χ : Type u) where
+  name : String
+  params : List χ
+  outputs : Nat
+  body : RawExpr Op χ
+  deriving Repr, Lean.ToJson, Lean.FromJson
+
+structure RawProg (Op χ : Type u) where
+  fns : List (RawFn Op χ)
+  deriving Repr, Lean.ToJson, Lean.FromJson
+
+structure EncapProg Op χ V [Arity Op] where
+  numFns : Nat
+  sigs : Sigs numFns
+  prog : Prog Op χ V sigs
+
+/-- State for converting from `RawProg` to `Prog`. -/
+structure CheckState Op χ V [Arity Op] where
+  numFns : Nat
+  nameToIdx : String → Option (Fin numFns)
+  sigs : Sigs numFns
+  prog : Prog Op χ V sigs
+
+abbrev CheckM Op χ V [Arity Op] T := StateT (CheckState Op χ V) (Except String) T
+
+def CheckState.init [Arity Op] : CheckState Op χ V :=
+  {
+    numFns := 0,
+    nameToIdx := λ _ => none,
+    sigs := λ i => i.elim0,
+    prog := λ i => i.elim0,
+  }
+
+/-- Converts operators after a new function has been added to the signature. -/
+def CheckState.pushFn.renameOp {k m n}
+  {sigs : Sigs k}
+  {i : Fin (k + 1)} :
+    Op ⊕ SigOps sigs i →
+    Op ⊕ SigOps (sigs.push { ι := m, ω := n }) i.castSucc
+  | .inl op => .inl op
+  | .inr (.call j) => .inr (.call j)
+
+/-- Pushes a new function into the program, while maintaining the dependent invariants
+within the `Prog` and `Fn` types. -/
+def CheckState.pushFn [Arity Op]
+  (state : CheckState Op χ V)
+  {m n}
+  (name : String)
+  (fn : Fn (Op ⊕ SigOps state.sigs ⟨state.numFns, by simp⟩) χ V m n) :
+    CheckState Op χ V
+  := {
+    numFns := state.numFns + 1,
+    nameToIdx := λ name' =>
+      if name' = name then
+        some ⟨state.numFns, by omega⟩
+      else
+        (state.nameToIdx name).map (λ i => ⟨i.val, by omega⟩),
+    sigs := state.sigs.push ⟨m, n⟩,
+    prog := λ i =>
+      if h : state.numFns = i.val then
+        cast (by
+          rcases i
+          simp at h
+          subst h
+          simp [Sigs.push]) (renameFn fn)
+      else
+        cast (by
+          rcases i with ⟨i, _⟩
+          simp at h
+          have : i < state.numFns := by omega
+          simp [Sigs.push, this]) (renameFn (state.prog ⟨i, by omega⟩)),
+  }
+  where
+    renameFn
+      {i : Fin (state.numFns + 1)} {m' n'}
+      (fn : Fn (Op ⊕ SigOps state.sigs i) χ V m' n') :
+        Fn (Op ⊕ SigOps (state.sigs.push { ι := m, ω := n }) i.castSucc) χ V m' n'
+      := fn.renameOp CheckState.pushFn.renameOp (by
+        intros op
+        cases op <;> simp [CheckState.pushFn.renameOp]
+        · constructor <;> rfl
+        · rename_i call
+          rcases call with ⟨j, hlt⟩
+          have : j < state.numFns := by omega
+          simp [Arity.ι, Arity.ω, Sigs.push, this])
+
+def CheckState.toProg [Arity Op]
+  (state : CheckState Op χ V) : EncapProg Op χ V :=
+  {
+    numFns := state.numFns,
+    sigs := state.sigs,
+    prog := state.prog,
+  }
+
+/-- Converts a `RawExpr` to `Expr` while checking some static constraints. -/
+def RawExpr.checkExpr [Arity Op]
+  (state : CheckState Op χ V)
+  (m n : Nat) :
+    RawExpr (WithCall Op String) χ →
+    Except String (Expr (Op ⊕ SigOps state.sigs ⟨state.numFns, by omega⟩) χ m n)
+  | .ret vars =>
+    if h : vars.length = n then
+      return .ret (vars.toVector.cast h)
+    else
+      .error s!"Unexpected number of return variables: expected {n}, got {vars.length}"
+  | .tail vars =>
+    if h : vars.length = m then
+      return .tail (vars.toVector.cast h)
+    else
+      .error s!"Unexpected number of tail call arguments: expected {m}, got {vars.length}"
+  | .op (.op o) args rets cont => do
+    if h₁ : args.length = Arity.ι o then
+      if h₂ : rets.length = Arity.ω o then
+        return .op (.inl o)
+          (args.toVector.cast h₁)
+          (rets.toVector.cast h₂)
+          (← cont.checkExpr state m n)
+      else
+        .error s!"Unexpected number of return values for operator: expected {Arity.ω o}, got {rets.length}"
+    else
+      .error s!"Unexpected number of arguments for operator: expected {Arity.ι o}, got {args.length}"
+  | .op (.call name) args rets cont => do
+    match state.nameToIdx name with
+    | some i =>
+      if h₁ : args.length = (state.sigs i).ι then
+        if h₂ : rets.length = (state.sigs i).ω then
+          return .op (.inr (.call i))
+            (args.toVector.cast h₁)
+            (rets.toVector.cast h₂)
+            (← cont.checkExpr state m n)
+        else
+          .error s!"Unexpected number of return values for function call {name}: expected {(state.sigs i).ω}, got {rets.length}"
+      else
+        .error s!"Unexpected number of arguments for function call {name}: expected {(state.sigs i).ι}, got {args.length}"
+    | none =>
+      .error s!"Unknown function {name}"
+  | .br cond left right => do
+    return .br cond (← left.checkExpr state m n) (← right.checkExpr state m n)
+
+/-- Converts the `RawFn` to a `Fn` and adds it to the context. -/
+def RawFn.checkFn [Arity Op]
+  (rawFn : RawFn (WithCall Op String) χ) : CheckM Op χ V Unit
+  := do
+  let state ← get
+  let expr ← rawFn.body.checkExpr state rawFn.params.length rawFn.outputs
+  set (state.pushFn rawFn.name {
+    params := rawFn.params.toVector,
+    body := expr,
+  })
+
+def RawProg.checkProg [Arity Op]
+  (rawProg : RawProg (WithCall Op String) χ) : CheckM Op χ V Unit
+  := for fn in rawProg.fns do
+    fn.checkFn
+
+/-- Converts a `RawProg` to the internal dependently typed `Prog`. -/
+def RawProg.toProg [Arity Op]
+  (rawProg : RawProg (WithCall Op String) χ) :
+    Except String (EncapProg Op χ V)
+  := do
+  let (_, state) ← rawProg.checkProg.run CheckState.init
+  return state.toProg
+
+section Examples
+
+inductive MiniOp where
+  | add
+  | sub
+  deriving Repr, Lean.ToJson, Lean.FromJson
+
+instance : Arity MiniOp where
+  ι | .add => 2
+    | .sub => 2
+  ω | .add => 1
+    | .sub => 1
+
+def expr₁ : RawExpr MiniOp String :=
+  .op .add ["a", "b"] ["c"] <|
+  .ret ["c"]
+
+def expr₂ : RawExpr (WithCall String String) String :=
+  .op (.call "foo") ["x", "y"] ["z"] <|
+  .op (.call "bar") ["n"] ["m"] <|
+  .op (.op "add") ["z", "w"] ["k"] <|
+  .br "cond"
+    (.ret ["k"])
+    (.tail ["n", "m"])
+
+#eval Lean.ToJson.toJson expr₁
+#eval Lean.ToJson.toJson expr₂
+
+def fn₁ : RawFn MiniOp String :=
+  {
+    name := "main",
+    params := ["a", "b"],
+    outputs := 1,
+    body := expr₁,
+  }
+
+#eval Lean.ToJson.toJson fn₁
+
+def prog₁ : RawProg MiniOp String := ⟨[fn₁]⟩
+
+def prog₂ : RawProg (WithCall MiniOp String) String :=
+  {
+    fns := [
+      {
+        name := "foo",
+        params := ["x", "y"],
+        outputs := 1,
+        body :=
+          .op (.op .add) ["x", "y"] ["z"] <|
+          .ret ["z"],
+      },
+      {
+        name := "bar",
+        params := ["n", "m"],
+        outputs := 1,
+        body :=
+          .op (.call "foo") ["n", "m"] ["k"] <|
+          .ret ["k"],
+      },
+    ],
+  }
+
+def prog₃ : RawProg (WithCall MiniOp String) String :=
+  {
+    fns := [
+      {
+        name := "foo",
+        params := ["x", "y"],
+        outputs := 1,
+        body :=
+          -- Incorrect arity
+          .op (.op .add) ["x"] ["z"] <|
+          .ret ["z"],
+      },
+      {
+        name := "bar",
+        params := ["n", "m"],
+        outputs := 1,
+        body :=
+          .op (.call "foo") ["n", "m"] ["k"] <|
+          .ret ["k"],
+      },
+    ],
+  }
+
+def prog₄ : RawProg (WithCall MiniOp String) String :=
+  {
+    fns := [
+      {
+        name := "foo",
+        params := ["x", "y"],
+        outputs := 1,
+        body :=
+          .op (.op .add) ["x", "y"] ["z"] <|
+          .ret ["z"],
+      },
+      {
+        name := "bar",
+        params := ["n", "m"],
+        outputs := 1,
+        body :=
+          -- Undefined function
+          .op (.call "foo?") ["n", "m"] ["k"] <|
+          .ret ["k"],
+      },
+    ],
+  }
+
+#eval Lean.ToJson.toJson prog₁
+#eval Lean.ToJson.toJson prog₂
+#eval Lean.ToJson.toJson prog₃
+
+#eval (prog₂.toProg (V := Nat)).map (λ _ => ())
+#eval (prog₃.toProg (V := Nat)).map (λ _ => ())
+#eval (prog₄.toProg (V := Nat)).map (λ _ => ())
+
+def prog₅ : Except String (RawProg (WithCall MiniOp String) String) := do
+  let json ← Lean.Json.parse r#"
+    {"fns":
+    [{"params": ["x", "y"],
+      "outputs": 1,
+      "name": "foo",
+      "body":
+      {"op":
+        {"rets": ["z"],
+        "op": {"op": "add"},
+        "cont": {"ret": ["z"]},
+        "args": ["x", "y"]}}},
+      {"params": ["n", "m"],
+      "outputs": 1,
+      "name": "bar",
+      "body":
+      {"op":
+        {"rets": ["k"],
+        "op": {"call": "foo"},
+        "cont": {"ret": ["k"]},
+        "args": ["n", "m"]}}}]}
+    "#
+  Lean.FromJson.fromJson? json
+
+#eval prog₅
+#eval do
+  let prog₅ ← prog₅
+  let _ ← prog₅.toProg (V := Nat)
+
+end Examples
+
+end Wavelet.Fronend
