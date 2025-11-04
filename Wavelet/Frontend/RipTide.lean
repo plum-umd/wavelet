@@ -18,8 +18,8 @@ inductive SyncOp (Loc : Type u) : Type u where
   | add | sub | mul | div
   | shl | ashr | lshr
   | eq | lt
-  | load (loc : Loc) | store (loc : Loc) | sel
-  | const (v : Value)
+  | load (_ : Loc) | store (_ : Loc) | sel
+  | const (_ : Value)
   | fork (n : Nat)
   deriving Repr, Lean.ToJson, Lean.FromJson
 
@@ -151,7 +151,7 @@ def prog₁ :
   ]⟩
 
 -- #eval (prog₁.toProg (V := Nat)).map (λ _ => ())
--- #eval Lean.ToJson.toJson prog₁
+#eval Lean.ToJson.toJson prog₁
 
 end Examples
 

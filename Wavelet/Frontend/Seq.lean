@@ -51,8 +51,8 @@ inductive WithCall (Op : Type u) (FnName : Type v) where
 inductive RawExpr (Op : Type u) (χ : Type v) : Type (max u v) where
   | ret : List χ → RawExpr Op χ
   | tail : List χ → RawExpr Op χ
-  | op (op : Op) (args : List χ) (rets : List χ) (cont : RawExpr Op χ) : RawExpr Op χ
-  | br (cond : χ) (left : RawExpr Op χ) (right : RawExpr Op χ) : RawExpr Op χ
+  | op : Op → List χ → List χ → RawExpr Op χ → RawExpr Op χ
+  | br : χ → RawExpr Op χ → RawExpr Op χ → RawExpr Op χ
   deriving Repr, Lean.ToJson, Lean.FromJson
 
 structure RawFn (Op : Type u) (χ : Type v) where

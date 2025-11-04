@@ -25,6 +25,7 @@ def main : IO Unit := do
     let rawProc := RawProc.fromProc proc
     let output := Lean.ToJson.toJson rawProc
     stdout.putStrLn (Lean.Json.pretty output)
+    stderr.putStrLn s!"compiled {prog.numFns} functions"
+    stderr.putStrLn s!"final graph size: {rawProc.atoms.length} operators"
   else
     stderr.putStrLn "no function provided, exiting"
-    return ()
