@@ -2,5 +2,6 @@
 
 To check all proofs:
 ```
+lake exec cache get
 lake build
 ```
