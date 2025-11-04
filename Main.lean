@@ -12,12 +12,12 @@ def main : IO Unit := do
     | .ok x => pure x
     | .error err => throw <| IO.userError s!"failed to parse JSON input: {err}"
   -- TODO: add specs here
-  -- let T := RawProg
-  --   (WithCall (WithSpec (RipTide.SyncOp String) RipTide.opSpec) String)
-  --   String
   let T := RawProg
-    (WithCall (RipTide.SyncOp String) String)
+    (WithCall (WithSpec (RipTide.SyncOp String) RipTide.opSpec) String)
     String
+  -- let T := RawProg
+  --   (WithCall (RipTide.SyncOp String) String)
+  --   String
   let rawProg ← match Lean.FromJson.fromJson? json with
     | .ok (x : T) => pure x
     | .error err => throw <| IO.userError s!"failed to decode JSON input as RawProg: {err}"
@@ -25,7 +25,7 @@ def main : IO Unit := do
     | .ok p => pure p
     | .error err => throw <| IO.userError s!"failed to convert RawProg to Prog: {err}"
   if h : prog.numFns > 0 then
-    let : NeZeroSigs prog.sigs := sorry
+    let : NeZeroSigs prog.sigs := prog.neZero
     let proc := compileProg prog.prog ⟨prog.numFns - 1, by omega⟩
     let rawProc := RawProc.fromProc proc
     let output := Lean.ToJson.toJson rawProc

@@ -70,6 +70,7 @@ structure EncapProg Op χ V [Arity Op] where
   numFns : Nat
   sigs : Sigs numFns
   prog : Prog Op χ V sigs
+  neZero : NeZeroSigs sigs
 
 /-- State for converting from `RawProg` to `Prog`. -/
 structure CheckState Op χ V [Arity Op] where
@@ -77,6 +78,7 @@ structure CheckState Op χ V [Arity Op] where
   nameToIdx : String → Option (Fin numFns)
   sigs : Sigs numFns
   prog : Prog Op χ V sigs
+  neZero : NeZeroSigs sigs
 
 abbrev CheckM Op χ V [Arity Op] T := StateT (CheckState Op χ V) (Except String) T
 
@@ -86,6 +88,10 @@ def CheckState.init [Arity Op] : CheckState Op χ V :=
     nameToIdx := λ _ => none,
     sigs := λ i => i.elim0,
     prog := λ i => i.elim0,
+    neZero := {
+      neZeroᵢ := λ i => i.elim0,
+      neZeroₒ := λ i => i.elim0,
+    }
   }
 
 /-- Converts operators after a new function has been added to the signature. -/
@@ -103,7 +109,8 @@ def CheckState.pushFn [Arity Op]
   (state : CheckState Op χ V)
   {m n}
   (name : String)
-  (fn : Fn (Op ⊕ SigOps state.sigs ⟨state.numFns, by simp⟩) χ V m n) :
+  (fn : Fn (Op ⊕ SigOps state.sigs ⟨state.numFns, by simp⟩) χ V m n)
+  (hnz : m ≠ 0 ∧ n ≠ 0) :
     CheckState Op χ V
   := {
     numFns := state.numFns + 1,
@@ -126,6 +133,22 @@ def CheckState.pushFn [Arity Op]
           simp at h
           have : i < state.numFns := by omega
           simp [Sigs.push, this]) (renameFn (state.prog ⟨i, by omega⟩)),
+    neZero := {
+      neZeroᵢ i := by
+        if h : i < state.numFns then
+          simp [Sigs.push, h]
+          apply state.neZero.neZeroᵢ
+        else
+          simp [Sigs.push, h]
+          exact .mk hnz.1,
+      neZeroₒ i := by
+        if h : i < state.numFns then
+          simp [Sigs.push, h]
+          apply state.neZero.neZeroₒ
+        else
+          simp [Sigs.push, h]
+          exact .mk hnz.2,
+    }
   }
   where
     renameFn
@@ -147,6 +170,7 @@ def CheckState.toProg [Arity Op]
     numFns := state.numFns,
     sigs := state.sigs,
     prog := state.prog,
+    neZero := state.neZero,
   }
 
 /-- Converts a `RawExpr` to `Expr` while checking some static constraints. -/
@@ -200,10 +224,15 @@ def RawFn.checkFn [Arity Op]
   := do
   let state ← get
   let expr ← rawFn.body.checkExpr state rawFn.params.length rawFn.outputs
-  set (state.pushFn rawFn.name {
-    params := rawFn.params.toVector,
-    body := expr,
-  })
+  if h₁ : rawFn.params.length = 0 then
+    throw s!"function {rawFn.name} with zero inputs is not allowed"
+  else if h₂ : rawFn.outputs = 0 then
+    throw s!"function {rawFn.name} with zero outputs is not allowed"
+  else
+    set (state.pushFn rawFn.name {
+      params := rawFn.params.toVector,
+      body := expr,
+    } ⟨h₁, h₂⟩)
 
 def RawProg.checkProg [Arity Op]
   (rawProg : RawProg (WithCall Op String) χ) : CheckM Op χ V Unit
