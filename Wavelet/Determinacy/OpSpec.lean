@@ -110,8 +110,8 @@ instance [Arity Op] {spec : OpSpec Op V T} : NeZeroArity (WithSpec Op spec) wher
           | WithSpec.join k l _ => by
             simp [Arity.ι]
             infer_instance
-  neZeroₒ | .op o => by infer_instance
-          | WithSpec.join _ _ _ => by infer_instance
+  -- neZeroₒ | .op o => by infer_instance
+  --         | WithSpec.join _ _ _ => by infer_instance
 
 /-- Interprets the labels with ghost values using the base operators,
 but with dynamic checks for ghost tokens satisfying the specs. -/

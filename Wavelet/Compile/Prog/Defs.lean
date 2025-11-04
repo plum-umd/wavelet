@@ -14,7 +14,7 @@ inductive LinkName (χ : Type u) where
   | base (name : χ)
   | main (name : LinkName χ)
   | dep (op : Nat) (name : LinkName χ)
-  deriving DecidableEq
+  deriving DecidableEq, Repr, Lean.ToJson, Lean.FromJson
 
 def linkAtomicProc
   [Arity Op] [NeZeroArity Op]

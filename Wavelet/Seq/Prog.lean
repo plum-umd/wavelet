@@ -20,9 +20,6 @@ structure Sig where
 
 abbrev Sigs k := Fin k → Sig
 
-def Sigs.push (sigs : Sigs k) (sig : Sig) : Sigs (k + 1) :=
-  λ i => if h : i.val < k then sigs ⟨i.val, h⟩ else sig
-
 /-- Signatures with non-zero arities. -/
 class NeZeroSigs (sigs : Sigs k) where
   neZeroᵢ : ∀ i : Fin k, NeZero (sigs i).ι
@@ -52,7 +49,7 @@ instance : Arity (SigOps sigs k') where
 
 instance [NeZeroSigs sigs] : NeZeroArity (SigOps sigs k') where
   neZeroᵢ | .call i => by apply NeZeroSigs.neZeroᵢ
-  neZeroₒ | .call i => by apply NeZeroSigs.neZeroₒ
+  -- neZeroₒ | .call i => by apply NeZeroSigs.neZeroₒ
 
 abbrev Prog (Op : Type u) χ V [Arity Op] (sigs : Sigs k) :=
   (i : Fin k) → Fn (Op ⊕ SigOps sigs i.castSucc) χ V (sigs i).ι (sigs i).ω

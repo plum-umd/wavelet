@@ -1,5 +1,3 @@
-import Lean.Data.Json
-
 import Wavelet.Seq.Prog
 
 /-! A simple JSON format of Seq `Prog`/`Fn`/`Expr`. -/
@@ -7,6 +5,9 @@ import Wavelet.Seq.Prog
 namespace Wavelet.Seq
 
 open Semantics
+
+def Sigs.push (sigs : Sigs k) (sig : Sig) : Sigs (k + 1) :=
+  λ i => if h : i.val < k then sigs ⟨i.val, by omega⟩ else sig
 
 /-- Rename operators in an expression, provided that
 the renaming preserves arity. -/
@@ -37,7 +38,7 @@ def Fn.renameOp
 
 end Wavelet.Seq
 
-namespace Wavelet.Fronend
+namespace Wavelet.Frontend
 
 open Semantics Seq
 
@@ -54,15 +55,14 @@ inductive RawExpr (Op : Type u) (χ : Type v) : Type (max u v) where
   | br (cond : χ) (left : RawExpr Op χ) (right : RawExpr Op χ) : RawExpr Op χ
   deriving Repr, Lean.ToJson, Lean.FromJson
 
-/-- TODO: Why do `Op` and `χ` have to be in the same universe? -/
-structure RawFn (Op χ : Type u) where
+structure RawFn (Op : Type u) (χ : Type v) where
   name : String
   params : List χ
   outputs : Nat
   body : RawExpr Op χ
   deriving Repr, Lean.ToJson, Lean.FromJson
 
-structure RawProg (Op χ : Type u) where
+structure RawProg (Op : Type u) (χ : Type v) where
   fns : List (RawFn Op χ)
   deriving Repr, Lean.ToJson, Lean.FromJson
 
@@ -159,12 +159,12 @@ def RawExpr.checkExpr [Arity Op]
     if h : vars.length = n then
       return .ret (vars.toVector.cast h)
     else
-      .error s!"Unexpected number of return variables: expected {n}, got {vars.length}"
+      .error s!"unexpected number of return variables: expected {n}, got {vars.length}"
   | .tail vars =>
     if h : vars.length = m then
       return .tail (vars.toVector.cast h)
     else
-      .error s!"Unexpected number of tail call arguments: expected {m}, got {vars.length}"
+      .error s!"unexpected number of tail call arguments: expected {m}, got {vars.length}"
   | .op (.op o) args rets cont => do
     if h₁ : args.length = Arity.ι o then
       if h₂ : rets.length = Arity.ω o then
@@ -173,9 +173,9 @@ def RawExpr.checkExpr [Arity Op]
           (rets.toVector.cast h₂)
           (← cont.checkExpr state m n)
       else
-        .error s!"Unexpected number of return values for operator: expected {Arity.ω o}, got {rets.length}"
+        .error s!"unexpected number of return values for operator: expected {Arity.ω o}, got {rets.length}"
     else
-      .error s!"Unexpected number of arguments for operator: expected {Arity.ι o}, got {args.length}"
+      .error s!"unexpected number of arguments for operator: expected {Arity.ι o}, got {args.length}"
   | .op (.call name) args rets cont => do
     match state.nameToIdx name with
     | some i =>
@@ -186,11 +186,11 @@ def RawExpr.checkExpr [Arity Op]
             (rets.toVector.cast h₂)
             (← cont.checkExpr state m n)
         else
-          .error s!"Unexpected number of return values for function call {name}: expected {(state.sigs i).ω}, got {rets.length}"
+          .error s!"unexpected number of return values for function call {name}: expected {(state.sigs i).ω}, got {rets.length}"
       else
-        .error s!"Unexpected number of arguments for function call {name}: expected {(state.sigs i).ι}, got {args.length}"
+        .error s!"unexpected number of arguments for function call {name}: expected {(state.sigs i).ι}, got {args.length}"
     | none =>
-      .error s!"Unknown function {name}"
+      .error s!"unknown function {name}"
   | .br cond left right => do
     return .br cond (← left.checkExpr state m n) (← right.checkExpr state m n)
 
@@ -365,4 +365,4 @@ def prog₅ : Except String (RawProg (WithCall MiniOp String) String) := do
 
 end Examples
 
-end Wavelet.Fronend
+end Wavelet.Frontend

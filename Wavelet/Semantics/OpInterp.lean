@@ -17,10 +17,10 @@ instance : Arity Empty where
 
 instance : NeZeroArity Empty where
   neZeroᵢ e := e.elim
-  neZeroₒ e := e.elim
+  -- neZeroₒ e := e.elim
 
 /-- The dual action of `Label.yield`. -/
-inductive RespLabel Op V [Arity Op] where
+inductive RespLabel (Op : Type u) (V : Type v) [Arity Op] : Type (max u v) where
   | respond (op : Op) (inputs : Vector V (Arity.ι op)) (outputs : Vector V (Arity.ω op))
 
 def RespLabel.MatchLabel

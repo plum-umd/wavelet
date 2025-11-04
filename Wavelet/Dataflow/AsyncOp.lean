@@ -26,7 +26,7 @@ inductive AsyncOp.MergeState where
 /-- Built-in asynchronous operators: `AsyncOp ... m n`
 is an asynchronous operator with a total of `m` inputs
 ports and `n` outputs ports. -/
-inductive AsyncOp V : Type u where
+inductive AsyncOp V where
   | switch (n : Nat) : AsyncOp V
   | steer (flavor : Bool) (n : Nat) : AsyncOp V
   | merge (state : AsyncOp.MergeState) (n : Nat) [NeZero n] : AsyncOp V
