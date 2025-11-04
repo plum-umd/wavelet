@@ -46,7 +46,8 @@ def AtomicProc.mapTokens
   {opSpec : OpSpec Op V T₁}
   (hom : T₁ → T₂) :
   AtomicProc (WithSpec Op opSpec) χ (V ⊕ T₁) → AtomicProc (WithSpec Op (opSpec.mapTokens hom)) χ (V ⊕ T₂)
-  | .op (.op o) inputs outputs => .op (.op o) inputs outputs
+  | .op (.op true o) inputs outputs => .op (.op true o) inputs outputs
+  | .op (.op false o) inputs outputs => .op (.op false o) inputs outputs
   | .op (WithSpec.join k l req) inputs outputs => .op (.join k l (hom ∘ req)) inputs outputs
   | .async o inputs outputs =>
     .async (o.mapValues mapValue) inputs outputs

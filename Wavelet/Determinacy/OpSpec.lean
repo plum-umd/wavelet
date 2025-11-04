@@ -29,6 +29,12 @@ def OpSpec.CompatLabels
   | .respond op₁ inputs₁ _, .respond op₂ inputs₂ _ =>
     (opSpec.pre op₁ inputs₁) ⊥ (opSpec.pre op₂ inputs₂)
 
+def OpSpec.Valid
+  [Arity Op] [PCM T]
+  (opSpec : OpSpec Op V T) : Prop :=
+  (∀ op inputs, ✓ (opSpec.pre op inputs)) ∧
+  (∀ op inputs outputs, ✓ (opSpec.post op inputs outputs))
+
 /-- The given operator interpretation is confluent for operator
 firings that are compatible according to the `OpSpec`. -/
 def OpSpec.Confluent
@@ -70,7 +76,7 @@ def IOSpec.Valid
 /-- Augments the operator set with an additional ghost argument
 to pass a PCM token, as well as two operators to split and join PCMs. -/
 inductive WithSpec {T : Type u} (Op : Type u) [Arity Op] (spec : OpSpec Op V T) where
-  | op (op : Op)
+  | op (ghost : Bool) (op : Op)
   | join
       (k : Nat) -- Number of input tokens to combine
       (l : Nat) -- Number of values that the token depends on
@@ -100,13 +106,16 @@ instance instArityWithSpec
   [arity : Arity Op]
   {spec : OpSpec Op V T} :
   Arity (WithSpec Op spec) where
-  ι | .op o => arity.ι o + 1
+  ι | .op true o => arity.ι o + 1
+    | .op false o => arity.ι o
     | WithSpec.join k l _ => k + l
-  ω | .op o => arity.ω o + 1
+  ω | .op true o => arity.ω o + 1
+    | .op false o => arity.ω o
     | WithSpec.join _ _ _ => 2
 
-instance [Arity Op] {spec : OpSpec Op V T} : NeZeroArity (WithSpec Op spec) where
-  neZeroᵢ | .op o => by infer_instance
+instance [Arity Op] [NeZeroArity Op] {spec : OpSpec Op V T} : NeZeroArity (WithSpec Op spec) where
+  neZeroᵢ | .op true o => by infer_instance
+          | .op false o => by simp [Arity.ι]; infer_instance
           | WithSpec.join k l _ => by
             simp [Arity.ι]
             infer_instance
@@ -121,14 +130,24 @@ inductive OpSpec.Guard
   (ioSpec : IOSpec V T m n) :
   Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) →
   Label Op V m n → Prop where
-  | spec_yield
+  | spec_yield_ghost
     {op}
     {inputs : Vector V (Arity.ι op)}
     {outputs : Vector V (Arity.ω op)} :
     Guard opSpec ioSpec
-      (.yield (.op op)
+      (.yield (.op true op)
         ((inputs.map .inl).push (.inr (opSpec.pre op inputs)))
         ((outputs.map .inl).push (.inr (opSpec.post op inputs outputs))))
+      (.yield op inputs outputs)
+  | spec_yield
+    {op}
+    {inputs : Vector V (Arity.ι op)}
+    {outputs : Vector V (Arity.ω op)} :
+    opSpec.pre op inputs = PCM.zero →
+    opSpec.post op inputs outputs = PCM.zero →
+    Guard opSpec ioSpec
+      (.yield (.op false op)
+        (inputs.map .inl) (outputs.map .inl))
       (.yield op inputs outputs)
   | spec_join [NeZero k]
     {toks : Vector T k}
@@ -159,9 +178,13 @@ inductive OpSpec.TrivGuard [Arity Op]
   (opSpec : OpSpec Op V T) :
   Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) →
   Label Op V m n → Prop where
+  | triv_yield_ghost :
+    opSpec.TrivGuard
+      (.yield (.op true op) ((inputs.map .inl).push (.inr tok₁)) ((outputs.map .inl).push (.inr tok₂)))
+      (.yield op inputs outputs)
   | triv_yield :
     opSpec.TrivGuard
-      (.yield (.op op) ((inputs.map .inl).push (.inr tok₁)) ((outputs.map .inl).push (.inr tok₂)))
+      (.yield (.op false op) (inputs.map .inl) (outputs.map .inl))
       (.yield op inputs outputs)
   | triv_join [NeZero k]
     {toks : Vector T k}
@@ -200,7 +223,8 @@ theorem OpSpec.spec_guard_implies_triv_guard
   {ioSpec : IOSpec V T m n}
   {l₁ l₂} :
     opSpec.Guard ioSpec l₁ l₂ → opSpec.TrivGuard l₁ l₂
-  | .spec_yield => by exact .triv_yield
+  | .spec_yield_ghost => by exact .triv_yield_ghost
+  | .spec_yield .. => by exact .triv_yield
   | OpSpec.Guard.spec_join .. => by
     rename_i k l req rem _ toks vals outputs h₁ h₂ hsum
     have : outputs = #v[req vals, rem].map .inr := by

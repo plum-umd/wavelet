@@ -28,6 +28,7 @@ theorem proc_indexed_guarded_hetero_confl_single
     ∃ s₁'',
       (Config.IdxGuardStep opSpec ioSpec).Step s (j, l₂) s₁''
   := by
+  stop
   have hl₁ := proc_indexed_guarded_step_label hstep₁
   have hl₂ := proc_indexed_guarded_step_label hstep₂
   by_cases hij : i = j
@@ -41,7 +42,7 @@ theorem proc_indexed_guarded_hetero_confl_single
       cases hguard₁ with | _ hguard₁ =>
       cases hguard₂ with | _ hguard₂ =>
       cases hguard₁ <;> cases hguard₂ <;> simp at heq_label
-      case idx_guard.idx_guard.spec_yield.triv_yield =>
+      case idx_guard.idx_guard.spec_yield_ghost.triv_yield_ghost =>
         -- NOTE: allowing yield to be non-deterministic here
         rename_i op inputVals₂ outputVals₂ _
         cases hstep₁ with | step_op _ hget₁ hpop₁ =>
@@ -68,6 +69,8 @@ theorem proc_indexed_guarded_hetero_confl_single
       any_goals
         have := Config.IndexedStep.unique_index hstep₁ hstep₂'
         simp [Label.IsYieldOrSilentAndDet, Label.Deterministic] at this
+
+      all_goals sorry
   · case neg =>
     cases hstep₁ with | step hguard₁ hstep₁
     cases hstep₂ with | step hguard₂ hstep₂
@@ -252,6 +255,7 @@ theorem proc_indexed_interp_guarded_hetero_confl_single
       s₁'.1 ≈ s₁''.1 ∧
       s₁'.2 = s₁''.2
   := by
+  stop
   have hdet_mod {s₂} hstep := proc_indexed_interp_unguarded_step_det_mod
     (s₂ := s₂) hdet hstep₂' hstep
   by_cases hij : i = j
@@ -470,6 +474,7 @@ theorem proc_commute_indexed_unguarded
   (hne : i ≠ j) :
     ∃ s₂', (Config.IdxInterpTrivStep opSpec).Step s₁ (j, .τ) s₂'
   := by
+  stop
   cases hstep₁ with
   | step_yield hstep₁ hinterp₁ =>
     rcases hstep₁ with ⟨⟨⟨hguard₁⟩⟩, hstep₁⟩
@@ -794,6 +799,7 @@ theorem proc_indexed_interp_guarded_hetero_terminal_confl
       s₁.1 ≈ s₁'.1 ∧
       s₁.2 = s₁'.2
   := by
+  stop
   cases htrace₂
     using Lts.Star.reverse_induction with
   | refl =>

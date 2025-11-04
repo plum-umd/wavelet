@@ -573,8 +573,8 @@ theorem Config.DisjointTokens.guarded_inv
         apply PCM.framePreserving.from_le
         simp [Vector.toList_map]
         exact async_op_interp_le_tok_sum hntok_aop hinterp
-    | spec_yield =>
-      -- Normal operators
+    | spec_yield_ghost =>
+      -- Normal operators with ghost tokens
       cases hstep with | step_op hmem hpop =>
       rename_i op inputVals outputVals chans' inputs outputs
       have hdisj' := pop_vals_disj_toks hdisj hpop
@@ -584,6 +584,16 @@ theorem Config.DisjointTokens.guarded_inv
         apply ChanMap.DisjointWith.imp_frame_preserving _ hdisj'
         simp [Vector.toList_push, Vector.toList_map, asTok]
         apply hfp
+    | spec_yield =>
+      -- Normal operators w/o ghost tokens
+      cases hstep with | step_op hmem hpop =>
+      rename_i op inputVals outputVals chans' inputs outputs
+      have hdisj' := pop_vals_disj_toks hdisj hpop
+      constructor
+      · exact hntok
+      · apply push_vals_disj_toks
+        apply ChanMap.DisjointWith.imp_frame_preserving _ hdisj'
+        simp [Vector.toList_map, PCM.framePreserving]
     | spec_join houtputs₀ houtputs₁ hsum =>
       rename_i k l req rem inst toks vals outputVals
       -- Join

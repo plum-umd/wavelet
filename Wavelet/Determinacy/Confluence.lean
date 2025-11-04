@@ -297,7 +297,7 @@ private theorem invert_compat_spec_guard
     match h : i with
     | 0 => simp [houtputs₁₀, houtputs₂₀]
     | 1 => simp [houtputs₁₁, houtputs₂₁]
-  case spec_yield.spec_yield =>
+  case spec_yield_ghost.spec_yield_ghost =>
     rename_i
       op₁ inputs₁ outputs₁
       op₂ inputs₂ outputs₂
@@ -305,7 +305,8 @@ private theorem invert_compat_spec_guard
       hop₁ hinputs₁' houtputs₁'
       hop₂ hinputs₂' houtputs₂'
     cases op <;> simp at hop₁
-    subst hop₁
+    have ⟨h₁, h₂⟩ := hop₁
+    subst h₁ h₂
     simp at hop₂
     subst hop₂
     simp only [heq_eq_eq] at *
@@ -318,6 +319,34 @@ private theorem invert_compat_spec_guard
       apply hcompat
       any_goals rfl
     simp [heq_outputs]
+  case spec_yield.spec_yield =>
+    rename_i
+      op₁ inputs₁ outputs₁ hpre₁ hpost₁
+      op₂ inputs₂ outputs₂ hpre₂ hpost₂
+    intros op inputs outputs₁' outputs₂'
+      hop₁ hinputs₁' houtputs₁'
+      hop₂ hinputs₂' houtputs₂'
+    cases op <;> simp at hop₁
+    have ⟨h₁, h₂⟩ := hop₁
+    subst h₁ h₂
+    simp at hop₂
+    subst hop₂
+    simp only [heq_eq_eq] at *
+    simp [← hinputs₁'] at hinputs₂'
+    have heq_inputs := Vector.inj_map (by simp [Function.Injective]) hinputs₂'
+    subst heq_inputs
+    simp [← houtputs₁', ← houtputs₂']
+    simp [Label.Deterministic] at hcompat
+    have heq_outputs : outputs₁ = outputs₂ := by
+      apply hcompat
+      any_goals rfl
+    simp [heq_outputs]
+  case spec_yield.spec_yield_ghost |
+    spec_yield_ghost.spec_yield =>
+    intros
+    rename WithSpec.op false _ = _ => h₁
+    rename WithSpec.op true _ = _ => h₂
+    simp [← h₁] at h₂
   all_goals
     intros op
     cases op <;> simp
@@ -341,14 +370,14 @@ private theorem invert_compat_triv_guard
   any_goals
     intros op
     cases op <;> simp
-  case yield.yield.triv_yield.triv_yield.op =>
+  case yield.yield.triv_yield_ghost.triv_yield_ghost.op =>
     rename_i
       op₁ inputs₁ outputs₁ tok₁₁ tok₁₂
-      op₂ inputs₂ outputs₂ tok₂₁ tok₂₂ _
+      op₂ inputs₂ outputs₂ tok₂₁ tok₂₂ ghost₂ _
     intros inputs' outputs₁' outputs₂'
-      hop₁ hinputs₁' houtputs₁'
-      hop₂ hinputs₂' houtputs₂'
-    subst hop₁; subst hop₂
+      hghost₁ hop₁ hinputs₁' houtputs₁'
+      hghost₂ hop₂ hinputs₂' houtputs₂'
+    subst hop₁ hop₂ hghost₁
     have heq_inputs : inputs₁ = inputs₂ := by
       simp at hinputs₁' hinputs₂'
       simp [← hinputs₁', Vector.push_eq_push] at hinputs₂'
@@ -364,12 +393,39 @@ private theorem invert_compat_triv_guard
     apply Vector.forall₂_to_forall₂_push_toList
     · simp [EqModGhost]
     · simp [EqModGhost]
+  case yield.yield.triv_yield.triv_yield.op =>
+    rename_i
+      op₁ inputs₁ outputs₁
+      op₂ inputs₂ outputs₂ ghost₂ _
+    intros inputs' outputs₁' outputs₂'
+      hghost₁ hop₁ hinputs₁' houtputs₁'
+      hghost₂ hop₂ hinputs₂' houtputs₂'
+    subst hop₁ hop₂ hghost₁
+    have heq_inputs : inputs₁ = inputs₂ := by
+      simp at hinputs₁' hinputs₂'
+      simp [← hinputs₁'] at hinputs₂'
+      have heq_inputs := Vector.inj_map (by simp [Function.Injective]) hinputs₂'
+      simp [heq_inputs]
+    subst heq_inputs
+    have heq_outputs : outputs₁ = outputs₂ := by
+      apply hcompat
+      any_goals rfl
+    subst heq_outputs
+    simp at houtputs₁' houtputs₂'
+    simp [← houtputs₁', ← houtputs₂']
+    simp [EqModGhost]
   case yield.yield.triv_join.triv_join.join =>
     intros
     rename_i houtputs₁ _ _ _ _ houtputs₂
     simp [← houtputs₁, ← houtputs₂, Vector.toList_map, EqModGhost]
     apply List.forall₂_iff_get.mpr
     simp
+  case yield.yield.triv_yield_ghost.triv_yield.op |
+    yield.yield.triv_yield.triv_yield_ghost.op =>
+    intros
+    rename _  = true => h₁
+    rename _  = false => h₂
+    simp [h₁] at h₂
 
 theorem proc_indexed_guarded_spec_strong_confl_at
   [Arity Op] [PCM T] [PCM.Cancellative T]
@@ -528,7 +584,8 @@ theorem proc_indexed_interp_guarded_strong_confl_at
   {ioSpec : IOSpec V T m n}
   {s : ConfigWithSpec opSpec χ m n × opInterp.S}
   -- Confluent and deterministic operator interpretation
-  (hconfl : OpSpec.Confluent opSpec opInterp)
+  (hconfl : opSpec.Confluent opInterp)
+  (hvalid : opSpec.Valid)
   (hdet : opInterp.Deterministic)
   -- Some required state invariants
   (haff : s.1.proc.AffineChan)
@@ -614,184 +671,212 @@ theorem proc_indexed_interp_guarded_strong_confl_at
     | inr h =>
       rcases hstep₁ with ⟨⟨hguard₁⟩, hstep₁⟩
       rcases hstep₂ with ⟨⟨hguard₂⟩, hstep₂⟩
-      cases hguard₁
-      cases hguard₂
-      cases hstep₁ with | step_op _ hget₁ hpop₁ =>
-      cases hstep₂ with | step_op _ hget₂ hpop₂ =>
-      by_cases heq_ij : i₁ = i₂
-      · -- Firing the same atom, so the result must be the same by `hdet`
-        left
-        subst heq_ij
-        simp [hget₁] at hget₂
-        have ⟨h₁, h₂, h₃⟩ := hget₂
-        subst h₁; subst h₂; subst h₃
-        simp [hpop₁, Vector.push_eq_push] at hpop₂
-        have ⟨⟨h₄, h₅⟩, h₆⟩ := hpop₂
-        replace h₅ := Vector.inj_map (by simp [Function.Injective]) h₅
-        subst h₅; subst h₆
-        -- simp [h₄, htok₁', htok₂']
-        have ⟨h₇, h₈⟩ := hdet hstep_op₁ hstep_op₂
-        subst h₈
-        constructor
-        · rfl
-        · simp [h₇]
-      · right
-        have ⟨t', hstep_op₁', hstep_op₂'⟩ := hconfl hstep_op₁ hstep_op₂
-          (by
-            -- Firing different atoms, so the tokens must be disjoint by `DisjointTokens`.
-            simp [OpSpec.CompatLabels]
-            have := haff.atom_inputs_disjoint
-              ⟨i₁, by assumption⟩ ⟨i₂, by assumption⟩ (by simp [heq_ij])
-            simp [hget₁, hget₂, AtomicProc.inputs] at this
-            have := pop_vals_pop_vals_disj_preserves_pairwise hdisj.2.to_pairwise this hpop₁ hpop₂
-            apply this (.inr (opSpec.pre op₁ inputVals₁)) (.inr (opSpec.pre op₂ inputVals₂))
-            all_goals simp)
-        replace ⟨s', hstep₁', hstep₂'⟩ := h
-        exists (s', t')
-        exact ⟨
-          .step_yield hstep₁' hstep_op₁',
-          .step_yield hstep₂' hstep_op₂',
-        ⟩
+      rename_i l₁ l₂
+      cases l₁ <;> cases l₂
+      case yield.yield =>
+        rename_i
+          op₁ inputVals₁ outputVals₁
+          op₂ inputVals₂ outputVals₂
+        cases hstep₁ with | step_op _ hget₁ hpop₁ =>
+        cases hstep₂ with | step_op _ hget₂ hpop₂ =>
+        by_cases heq_ij : i₁ = i₂
+        · -- Firing the same atom, so the result must be the same by `hdet`
+          left
+          subst heq_ij
+          simp [hget₁] at hget₂
+          have ⟨h₁, h₂, h₃⟩ := hget₂
+          subst h₁ h₂ h₃
+          cases hguard₁ <;> cases hguard₂
+          case pos.h.spec_yield_ghost.spec_yield_ghost =>
+            simp [hpop₁, Vector.push_eq_push] at hpop₂
+            have ⟨⟨h₄, h₅⟩, h₆⟩ := hpop₂
+            replace h₅ := Vector.inj_map (by simp [Function.Injective]) h₅
+            subst h₅ h₆
+            simp
+            have ⟨h₇, h₈⟩ := hdet hstep_op₁ hstep_op₂
+            subst h₈
+            constructor
+            · rfl
+            · simp [h₇]
+          case pos.h.spec_yield.spec_yield =>
+            simp [hpop₁] at hpop₂
+            have ⟨h₄, h₅⟩ := hpop₂
+            replace h₄ := Vector.inj_map (by simp [Function.Injective]) h₄
+            subst h₄ h₅
+            simp
+            have ⟨h₇, h₈⟩ := hdet hstep_op₁ hstep_op₂
+            subst h₈
+            constructor
+            · rfl
+            · simp [h₇]
+        · right
+          have ⟨t', hstep_op₁', hstep_op₂'⟩ := hconfl hstep_op₁ hstep_op₂
+            (by
+              -- Firing different atoms, so the tokens must be disjoint by `DisjointTokens`.
+              simp [OpSpec.CompatLabels]
+              cases hguard₁ <;> cases hguard₂
+              case spec_yield_ghost.spec_yield_ghost =>
+                have := haff.atom_inputs_disjoint
+                  ⟨i₁, by assumption⟩ ⟨i₂, by assumption⟩ (by simp [heq_ij])
+                simp [hget₁, hget₂, AtomicProc.inputs] at this
+                have := pop_vals_pop_vals_disj_preserves_pairwise hdisj.2.to_pairwise this hpop₁ hpop₂
+                apply this (.inr (opSpec.pre op₁ inputVals₁)) (.inr (opSpec.pre op₂ inputVals₂))
+                all_goals simp
+              case spec_yield_ghost.spec_yield |
+                spec_yield.spec_yield_ghost |
+                spec_yield.spec_yield =>
+                rename opSpec.pre _ _ = PCM.zero => hpre
+                simp [hpre, PCM.disjoint]
+                apply hvalid.1
+            )
+          replace ⟨s', hstep₁', hstep₂'⟩ := h
+          exists (s', t')
+          exact ⟨
+            .step_yield hstep₁' hstep_op₁',
+            .step_yield hstep₂' hstep_op₂',
+          ⟩
+      all_goals cases hguard₁ <;> cases hguard₂
 
-/--
-Strong confluence of a `ProcWithSpec` when interpreted with
-a sound and deterministic interpretation.
+-- TODO: reuse the theorem above to prove this
+-- /--
+-- Strong confluence of a `ProcWithSpec` when interpreted with
+-- a sound and deterministic interpretation.
 
-TODO: this is probably generalizable to a general confluent `Semantics`.
-TODO: use `proc_indexed_interp_strong_confl_at` to prove this.
--/
-theorem proc_interp_guarded_strong_confl_at
-  [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
-  [DecidableEq χ]
-  [InterpConsts V]
-  [opInterp : OpInterp Op V]
-  {opSpec : OpSpec Op V T}
-  {ioSpec : IOSpec V T m n}
-  {s : ConfigWithSpec opSpec χ m n × opInterp.S}
-  -- Confluent and deterministic op interpretation
-  (hconfl : OpSpec.Confluent opSpec opInterp)
-  (hdet : opInterp.Deterministic)
-  -- Some required state invariants
-  (haff : s.1.proc.AffineChan)
-  (hdisj : s.1.DisjointTokens) :
-    (Config.InterpGuardStep opSpec ioSpec).StronglyConfluentAt
-      (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent)
-      s
-  := by
-  rcases s with ⟨s, t⟩
-  intros s₁' s₂' l₁ l₂ hstep₁ hstep₂ hcompat
-  rcases s₁' with ⟨s₁', t₁'⟩
-  rcases s₂' with ⟨s₂', t₂'⟩
-  cases hstep₁ <;> cases hstep₂ <;> simp at hcompat
-  case step_tau.step_tau hstep₁ hstep₂ =>
-    have := proc_guarded_spec_strong_confl_at haff hstep₁ hstep₂
-      (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
-    cases this with
-    | inl heq => simp [heq]
-    | inr h =>
-      right
-      replace ⟨s', hstep₁', hstep₂'⟩ := h
-      exists (s', t)
-      exact ⟨
-        .step_tau hstep₁',
-        .step_tau hstep₂'
-      ⟩
-  case step_tau.step_yield hstep₁ _ _ _ hstep₂ hstep_op₂ =>
-    have := proc_guarded_spec_strong_confl_at haff hstep₁ hstep₂
-      (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
-    cases this with
-    | inl heq => simp at heq
-    | inr h =>
-      right
-      replace ⟨s', hstep₁', hstep₂'⟩ := h
-      exists (s', t₂')
-      exact ⟨
-        .step_yield hstep₁' hstep_op₂,
-        .step_tau hstep₂',
-      ⟩
-  case step_yield.step_tau _ _ _ _ hstep₁ hstep_op₁ hstep₂ =>
-    have := proc_guarded_spec_strong_confl_at haff hstep₁ hstep₂
-      (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
-    cases this with
-    | inl heq => simp at heq
-    | inr h =>
-      right
-      replace ⟨s', hstep₁', hstep₂'⟩ := h
-      exists (s', t₁')
-      exact ⟨
-        .step_tau hstep₁',
-        .step_yield hstep₂' hstep_op₁,
-      ⟩
-  case step_yield.step_yield
-    op₁ inputVals₁ _ hstep₁ hstep_op₁
-    op₂ inputVals₂ _ hstep₂ hstep_op₂ =>
-    have hconfl_sem := proc_guarded_spec_strong_confl_at haff hstep₁ hstep₂
-      (by
-        -- By `hdet`
-        simp only [Label.IsYieldOrSilentAndDet, Label.Deterministic]
-        and_intros
-        · simp
-        · simp
-        · intros op inputVals outputVals₁ outputVals₂ heq_yield₁ heq_yield₂
-          simp at heq_yield₁ heq_yield₂
-          have ⟨heq_op₁, heq_inputs₁, heq_outputs₁⟩ := heq_yield₁
-          have ⟨heq_op₂, heq_inputs₂, heq_outputs₂⟩ := heq_yield₂
-          subst heq_op₁; subst heq_inputs₁; subst heq_outputs₁
-          subst heq_op₂; subst heq_inputs₂; subst heq_outputs₂
-          simp [hdet hstep_op₁ hstep_op₂])
-    cases hconfl_sem with
-    | inl heq =>
-      left
-      simp at heq
-      have ⟨⟨h₁, h₂, h₃⟩, h₄⟩ := heq
-      subst h₁; subst h₂; subst h₃
-      simp [h₄, hdet hstep_op₁ hstep_op₂]
-    | inr h =>
-      cases hstep₁ with | step hguard₁ hstep₁ =>
-      cases hstep₂ with | step hguard₂ hstep₂ =>
-      cases hguard₁ with | spec_yield =>
-      -- rename_i tok₁ tok₁'
-      cases hguard₂ with | spec_yield =>
-      -- rename_i tok₂ tok₂'
-      cases hstep₁ with | step_op hmem₁ hpop₁ =>
-      cases hstep₂ with | step_op hmem₂ hpop₂ =>
-      have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem₁
-      have ⟨j, hj, hget_j⟩ := List.getElem_of_mem hmem₂
-      by_cases heq_ij : i = j
-      · -- Firing the same atom, so the result must be the same by `hdet`
-        left
-        subst heq_ij
-        simp [hget_i] at hget_j
-        have ⟨h₁, h₂, h₃⟩ := hget_j
-        subst h₁; subst h₂; subst h₃
-        simp [hpop₁, Vector.push_eq_push] at hpop₂
-        have ⟨⟨h₄, h₅⟩, h₆⟩ := hpop₂
-        replace h₅ := Vector.inj_map (by simp [Function.Injective]) h₅
-        subst h₅; subst h₆
-        -- simp [h₄, htok₁', htok₂']
-        have ⟨h₇, h₈⟩ := hdet hstep_op₁ hstep_op₂
-        subst h₈
-        constructor
-        · rfl
-        · simp [h₇]
-      · right
-        have ⟨t', hstep_op₁', hstep_op₂'⟩ := hconfl hstep_op₁ hstep_op₂
-          (by
-            -- Firing different atoms, so the tokens must be disjoint by `DisjointTokens`.
-            simp [OpSpec.CompatLabels]
-            -- apply PCM.eq_congr_disj htok₁ htok₂
-            have := haff.atom_inputs_disjoint ⟨i, hi⟩ ⟨j, hj⟩ (by simp [heq_ij])
-            simp [hget_i, hget_j, AtomicProc.inputs] at this
-            have := pop_vals_pop_vals_disj_preserves_pairwise hdisj.2.to_pairwise this hpop₁ hpop₂
-            -- have := this (.inr _) (.inr _)
-            apply this (.inr (opSpec.pre op₁ inputVals₁)) (.inr (opSpec.pre op₂ inputVals₂))
-            all_goals simp)
-        replace ⟨s', hstep₁', hstep₂'⟩ := h
-        exists (s', t')
-        exact ⟨
-          .step_yield hstep₁' hstep_op₁',
-          .step_yield hstep₂' hstep_op₂',
-        ⟩
+-- TODO: this is probably generalizable to a general confluent `Semantics`.
+-- TODO: use `proc_indexed_interp_strong_confl_at` to prove this.
+-- -/
+-- theorem proc_interp_guarded_strong_confl_at
+--   [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
+--   [DecidableEq χ]
+--   [InterpConsts V]
+--   [opInterp : OpInterp Op V]
+--   {opSpec : OpSpec Op V T}
+--   {ioSpec : IOSpec V T m n}
+--   {s : ConfigWithSpec opSpec χ m n × opInterp.S}
+--   -- Confluent and deterministic op interpretation
+--   (hconfl : OpSpec.Confluent opSpec opInterp)
+--   (hdet : opInterp.Deterministic)
+--   -- Some required state invariants
+--   (haff : s.1.proc.AffineChan)
+--   (hdisj : s.1.DisjointTokens) :
+--     (Config.InterpGuardStep opSpec ioSpec).StronglyConfluentAt
+--       (λ l₁ l₂ => l₁.isSilent ∧ l₂.isSilent)
+--       s
+--   := by
+--   rcases s with ⟨s, t⟩
+--   intros s₁' s₂' l₁ l₂ hstep₁ hstep₂ hcompat
+--   rcases s₁' with ⟨s₁', t₁'⟩
+--   rcases s₂' with ⟨s₂', t₂'⟩
+--   cases hstep₁ <;> cases hstep₂ <;> simp at hcompat
+--   case step_tau.step_tau hstep₁ hstep₂ =>
+--     have := proc_guarded_spec_strong_confl_at haff hstep₁ hstep₂
+--       (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
+--     cases this with
+--     | inl heq => simp [heq]
+--     | inr h =>
+--       right
+--       replace ⟨s', hstep₁', hstep₂'⟩ := h
+--       exists (s', t)
+--       exact ⟨
+--         .step_tau hstep₁',
+--         .step_tau hstep₂'
+--       ⟩
+--   case step_tau.step_yield hstep₁ _ _ _ hstep₂ hstep_op₂ =>
+--     have := proc_guarded_spec_strong_confl_at haff hstep₁ hstep₂
+--       (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
+--     cases this with
+--     | inl heq => simp at heq
+--     | inr h =>
+--       right
+--       replace ⟨s', hstep₁', hstep₂'⟩ := h
+--       exists (s', t₂')
+--       exact ⟨
+--         .step_yield hstep₁' hstep_op₂,
+--         .step_tau hstep₂',
+--       ⟩
+--   case step_yield.step_tau _ _ _ _ hstep₁ hstep_op₁ hstep₂ =>
+--     have := proc_guarded_spec_strong_confl_at haff hstep₁ hstep₂
+--       (by simp [Label.IsYieldOrSilentAndDet, Label.Deterministic])
+--     cases this with
+--     | inl heq => simp at heq
+--     | inr h =>
+--       right
+--       replace ⟨s', hstep₁', hstep₂'⟩ := h
+--       exists (s', t₁')
+--       exact ⟨
+--         .step_tau hstep₁',
+--         .step_yield hstep₂' hstep_op₁,
+--       ⟩
+--   case step_yield.step_yield
+--     op₁ inputVals₁ _ hstep₁ hstep_op₁
+--     op₂ inputVals₂ _ hstep₂ hstep_op₂ =>
+--     have hconfl_sem := proc_guarded_spec_strong_confl_at haff hstep₁ hstep₂
+--       (by
+--         -- By `hdet`
+--         simp only [Label.IsYieldOrSilentAndDet, Label.Deterministic]
+--         and_intros
+--         · simp
+--         · simp
+--         · intros op inputVals outputVals₁ outputVals₂ heq_yield₁ heq_yield₂
+--           simp at heq_yield₁ heq_yield₂
+--           have ⟨heq_op₁, heq_inputs₁, heq_outputs₁⟩ := heq_yield₁
+--           have ⟨heq_op₂, heq_inputs₂, heq_outputs₂⟩ := heq_yield₂
+--           subst heq_op₁; subst heq_inputs₁; subst heq_outputs₁
+--           subst heq_op₂; subst heq_inputs₂; subst heq_outputs₂
+--           simp [hdet hstep_op₁ hstep_op₂])
+--     cases hconfl_sem with
+--     | inl heq =>
+--       left
+--       simp at heq
+--       have ⟨⟨h₁, h₂, h₃⟩, h₄⟩ := heq
+--       subst h₁; subst h₂; subst h₃
+--       simp [h₄, hdet hstep_op₁ hstep_op₂]
+--     | inr h =>
+--       cases hstep₁ with | step hguard₁ hstep₁ =>
+--       cases hstep₂ with | step hguard₂ hstep₂ =>
+--       cases hguard₁ with | spec_yield =>
+--       -- rename_i tok₁ tok₁'
+--       cases hguard₂ with | spec_yield =>
+--       -- rename_i tok₂ tok₂'
+--       cases hstep₁ with | step_op hmem₁ hpop₁ =>
+--       cases hstep₂ with | step_op hmem₂ hpop₂ =>
+--       have ⟨i, hi, hget_i⟩ := List.getElem_of_mem hmem₁
+--       have ⟨j, hj, hget_j⟩ := List.getElem_of_mem hmem₂
+--       by_cases heq_ij : i = j
+--       · -- Firing the same atom, so the result must be the same by `hdet`
+--         left
+--         subst heq_ij
+--         simp [hget_i] at hget_j
+--         have ⟨h₁, h₂, h₃⟩ := hget_j
+--         subst h₁; subst h₂; subst h₃
+--         simp [hpop₁, Vector.push_eq_push] at hpop₂
+--         have ⟨⟨h₄, h₅⟩, h₆⟩ := hpop₂
+--         replace h₅ := Vector.inj_map (by simp [Function.Injective]) h₅
+--         subst h₅; subst h₆
+--         -- simp [h₄, htok₁', htok₂']
+--         have ⟨h₇, h₈⟩ := hdet hstep_op₁ hstep_op₂
+--         subst h₈
+--         constructor
+--         · rfl
+--         · simp [h₇]
+--       · right
+--         have ⟨t', hstep_op₁', hstep_op₂'⟩ := hconfl hstep_op₁ hstep_op₂
+--           (by
+--             -- Firing different atoms, so the tokens must be disjoint by `DisjointTokens`.
+--             simp [OpSpec.CompatLabels]
+--             -- apply PCM.eq_congr_disj htok₁ htok₂
+--             have := haff.atom_inputs_disjoint ⟨i, hi⟩ ⟨j, hj⟩ (by simp [heq_ij])
+--             simp [hget_i, hget_j, AtomicProc.inputs] at this
+--             have := pop_vals_pop_vals_disj_preserves_pairwise hdisj.2.to_pairwise this hpop₁ hpop₂
+--             -- have := this (.inr _) (.inr _)
+--             apply this (.inr (opSpec.pre op₁ inputVals₁)) (.inr (opSpec.pre op₂ inputVals₂))
+--             all_goals simp)
+--         replace ⟨s', hstep₁', hstep₂'⟩ := h
+--         exists (s', t')
+--         exact ⟨
+--           .step_yield hstep₁' hstep_op₁',
+--           .step_yield hstep₂' hstep_op₂',
+--         ⟩
 
 /-- If a terminating trace can be demonstrated in the indexed and guarded semantics,
 then any step from the same initial state will converge to the same final state. -/
@@ -804,6 +889,7 @@ theorem proc_indexed_interp_guarded_terminal_confl
   {ioSpec : IOSpec V T m n}
   {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
   (hconfl : opSpec.Confluent opInterp)
+  (hvalid : opSpec.Valid)
   (hdet : opInterp.Deterministic)
   (haff : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.proc.AffineChan) s)
   (hdisj : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.DisjointTokens) s)
@@ -827,7 +913,7 @@ theorem proc_indexed_interp_guarded_terminal_confl
   | head hstep htail ih =>
     rename_i s s' l' tr'
     have hl' := proc_indexed_interp_guarded_step_label hstep
-    have := proc_indexed_interp_guarded_strong_confl_at hconfl hdet
+    have := proc_indexed_interp_guarded_strong_confl_at hconfl hvalid hdet
       haff.base hdisj.base hstep hstep₂ (by simp [hl, hl'])
     cases this with
     | inl h =>
@@ -865,7 +951,7 @@ theorem async_op_interp_ne_zero_inputs
     simp [inst.ne'] at h
 
 theorem proc_output_init_invert
-  [Arity Op]
+  [Arity Op] [NeZeroArity Op]
   [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
@@ -902,7 +988,7 @@ theorem proc_output_init_invert
   | _ => simp at hl
 
 theorem proc_guarded_output_init_invert
-  [Arity Op] [PCM T]
+  [Arity Op] [NeZeroArity Op] [PCM T]
   [DecidableEq χ]
   [InterpConsts V]
   {opSpec : OpSpec Op V T}
@@ -925,7 +1011,7 @@ TODO: This needs some additional assumptions that there is no
 empty input operator that can fire indefinitely.
 -/
 theorem proc_interp_guarded_output_init_invert
-  [Arity Op] [PCM T]
+  [Arity Op] [NeZeroArity Op] [PCM T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp Op V]

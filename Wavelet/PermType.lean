@@ -43,7 +43,7 @@ inductive ProgWithSpec.WellPermTypedExpr
     tailPerm = (progSpec i).pre vals →
     WellPermTypedExpr progSpec i ctx (.tail vars)
   -- Calls to an ordinary operator with a permission token.
-  | wpt_op
+  | wpt_op_ghost
     {args : Vector χ (Arity.ι op + 1)}
     {rets : Vector χ (Arity.ω op + 1)}
     {inputVals : Vector V (Arity.ι op)} :
@@ -58,7 +58,20 @@ inductive ProgWithSpec.WellPermTypedExpr
           #v[rets.back]
           #v[opSpec.post op inputVals outputVals],
       } cont) →
-    WellPermTypedExpr progSpec i ctx (.op (.inl (.op op)) args rets cont)
+    WellPermTypedExpr progSpec i ctx (.op (.inl (.op true op)) args rets cont)
+  -- Calls to a pure operator without permission tokens.
+  | wpt_op
+    {args : Vector χ (Arity.ι op)}
+    {rets : Vector χ (Arity.ω op)}
+    {inputVals : Vector V (Arity.ι op)} :
+    ctx.vars.getVars args = some inputVals →
+    perm = opSpec.pre op inputVals →
+    -- Overapproximating all possible outputs of the operator.
+    (∀ (outputVals : Vector V (Arity.ω op)),
+      WellPermTypedExpr progSpec i { ctx with
+        vars := (ctx.vars.removeVars args.toList).insertVars rets outputVals,
+      } cont) →
+    WellPermTypedExpr progSpec i ctx (.op (.inl (.op false op)) args rets cont)
   -- Calls to the join pseudo-operator.
   | wpt_join [NeZero k]
     {permArgs : Vector χ k}

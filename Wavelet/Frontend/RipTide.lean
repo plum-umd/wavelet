@@ -98,7 +98,12 @@ def opSpec : OpSpec (SyncOp Loc) Value (PCM.FractionPerm Loc) :=
 
 instance [Lean.FromJson Loc] : Lean.FromJson (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) where
   fromJson? json :=
-    (return .op (← Lean.FromJson.fromJson? json)) <|>
+    (do
+      let obj ← json.getObjVal? "op_ghost"
+      return .op true (← Lean.FromJson.fromJson? obj)) <|>
+    (do
+      let obj ← json.getObjVal? "op"
+      return .op false (← Lean.FromJson.fromJson? obj)) <|>
     (do
       let obj ← json.getObjVal? "join"
       let k ← obj.getObjValAs? Nat "toks"
@@ -112,7 +117,10 @@ instance [Lean.FromJson Loc] : Lean.FromJson (WithSpec (RipTide.SyncOp Loc) RipT
 
 instance [Lean.ToJson Loc] : Lean.ToJson (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) where
   toJson
-    | WithSpec.op op => Lean.ToJson.toJson op
+    | WithSpec.op true op =>
+      json% { "op_ghost": $(op) }
+    | WithSpec.op false op =>
+      json% { "op": $(op) }
     | WithSpec.join k l _ =>
       json% { "join": { "toks": $(k), "deps": $(l) } }
 
@@ -129,22 +137,16 @@ def prog₁ :
       outputs := 2,
       body :=
         .op (.op (.join 1 0 (λ _ => PCM.zero))) ["t₀"] ["t₁", "t₂"] <|
-        .op (.op (.join 1 0 (λ _ => PCM.zero))) ["t₁"] ["t₃", "t₄"] <|
-        .op (.op (.join 1 0 (λ _ => PCM.zero))) ["t₂"] ["t₅", "t₆"] <|
-        .op (.op (.join 1 0 (λ _ => PCM.zero))) ["t₃"] ["t₇", "t₈"] <|
-        .op (.op (.join 1 0 (λ _ => PCM.zero))) ["t₄"] ["t₉", "t₁₀"] <|
-        .op (.op (.join 1 0 (λ _ => PCM.zero))) ["t₅"] ["t₁₁", "t₁₂"] <|
-        .op (.op (.join 1 0 (λ _ => PCM.zero))) ["t₆"] ["t₁₃", "t₁₄"] <|
-        .op (.op (.op (.fork 4))) ["i", "t₇"] ["i₁", "i₂", "i₃", "i₄", "t₇'"] <|
-        .op (.op (.op (.fork 2))) ["n", "t₈"] ["n₁", "n₂", "t₈'"] <|
-        .op (.op (.op .lt)) ["i₁", "n₁", "t₉"] ["c", "t₉'"] <|
+        .op (.op (.op false (.fork 4))) ["i"] ["i₁", "i₂", "i₃", "i₄"] <|
+        .op (.op (.op false (.fork 2))) ["n"] ["n₁", "n₂"] <|
+        .op (.op (.op false .lt)) ["i₁", "n₁"] ["c"] <|
         .br "c"
-          (.op (.op (.op (.load "A"))) ["i₂", "t₁₀"] ["x", "t₁₀'"] <|
-           .op (.op (.op .add)) ["sum", "x", "t₁₁"] ["sum'", "t₁₁'"] <|
-           .op (.op (.op (.const 1))) ["i₃", "t₁₂"] ["one", "t₁₂'"] <|
-           .op (.op (.op .add)) ["i₄", "one", "t₁₃"] ["i'", "t₁₃'"] <|
-            .tail ["sum'", "i'", "n₂", "t₁₄"])
-          (.ret ["sum", "t₁₄"]),
+          (.op (.op (.op true (.load "A"))) ["i₂", "t₁"] ["x", "t₁'"] <|
+           .op (.op (.op false .add)) ["sum", "x"] ["sum'"] <|
+           .op (.op (.op false (.const 1))) ["i₃"] ["one"] <|
+           .op (.op (.op false .add)) ["i₄", "one"] ["i'"] <|
+            .tail ["sum'", "i'", "n₂", "t₂"])
+          (.ret ["sum", "t₂"]),
     }
   ]⟩
 

@@ -26,7 +26,7 @@ theorem proc_indexed_guarded_step_unique_label
     case step.step.idx_guard.idx_guard =>
     cases hguard₁ <;> cases hguard₂
       <;> simp [Label.IsYieldOrSilentAndDet] at hdet
-    case spec_yield.spec_yield =>
+    case spec_yield_ghost.spec_yield_ghost =>
       have := Config.IndexedStep.unique_index hstep₁ hstep₂
         (by
           constructor; simp
@@ -59,6 +59,34 @@ theorem proc_indexed_guarded_step_unique_label
       replace h₃ := Vector.inj_map (by simp [Function.Injective]) h₃.2
       subst h₃
       rfl
+    case spec_yield.spec_yield =>
+      have := Config.IndexedStep.unique_index hstep₁ hstep₂
+        (by
+          and_intros
+          · simp
+          · simp
+          · intros op inputs outputs₁ outputs₂ hyield₁ hyield₂
+            simp at hyield₁ hyield₂
+            have ⟨h₁, h₂, h₃⟩ := hyield₁
+            have ⟨h₁', h₂', h₃'⟩ := hyield₂
+            subst h₁ h₂ h₃
+            simp at h₁'
+            subst h₁'
+            simp at h₂' h₃'
+            subst h₃'
+            have := Vector.inj_map (by simp [Function.Injective]) h₂'
+            subst this
+            congr
+            apply hdet
+            rfl
+            rfl)
+      simp at this
+      have ⟨⟨h₁, h₂, h₃⟩, _⟩ := this
+      subst h₁
+      simp at h₂ h₃
+      replace h₂ := Vector.inj_map (by simp [Function.Injective]) h₂
+      replace h₃ := Vector.inj_map (by simp [Function.Injective]) h₃
+      simp [h₂, h₃]
     any_goals rfl
     any_goals
       have := Config.IndexedStep.unique_index hstep₁ hstep₂
@@ -150,15 +178,25 @@ theorem proc_indexed_unguarded_step_det_label_mod
   rename_i l₁' l₂'
   cases l₁ <;> cases l₂ <;> simp at hl₁ hl₂
   case yield.yield =>
-    cases hguard₁
-    cases hguard₂
-    simp [Label.EqModYieldOutputs] at heq ⊢
-    have ⟨h₁, h₂⟩ := heq
-    subst h₁
-    simp [Vector.push_eq_push] at h₂
-    replace h₂ := Vector.inj_map (by simp [Function.Injective]) h₂.2
-    subst h₂
-    simp
+    cases hguard₁ <;> cases hguard₂
+    case triv_yield_ghost.triv_yield_ghost =>
+      simp [Label.EqModYieldOutputs] at heq ⊢
+      have ⟨h₁, h₂⟩ := heq
+      subst h₁
+      simp [Vector.push_eq_push] at h₂
+      replace h₂ := Vector.inj_map (by simp [Function.Injective]) h₂.2
+      subst h₂
+      simp
+    case triv_yield.triv_yield =>
+      simp [Label.EqModYieldOutputs] at heq ⊢
+      have ⟨h₁, h₂⟩ := heq
+      subst h₁; simp at h₂
+      replace h₂ := Vector.inj_map (by simp [Function.Injective]) h₂
+      subst h₂
+      simp
+    case triv_yield_ghost.triv_yield |
+      triv_yield.triv_yield_ghost =>
+      simp [Label.EqModYieldOutputs] at heq
   any_goals cases hguard₁ <;> cases hguard₂
   any_goals simp [Label.EqModYieldOutputs] at heq ⊢
 
@@ -181,7 +219,7 @@ theorem proc_indexed_unguarded_step_det_mod
   · constructor
     · cases hstep₂ <;> simp
     · cases hguard₁ <;> cases hguard₂
-      case triv_yield.triv_yield =>
+      case triv_yield_ghost.triv_yield_ghost =>
         intros op inputVals outputVals₁ outputVals₂ hyield₁ hyield₂
         simp at hyield₁ hyield₂
         have ⟨h₁, h₂, h₃⟩ := hyield₁
@@ -192,6 +230,21 @@ theorem proc_indexed_unguarded_step_det_mod
         apply Vector.forall₂_to_forall₂_push_toList
         · simp [EqModGhost]
         · simp [EqModGhost]
+      case triv_yield.triv_yield =>
+        intros op inputVals outputVals₁ outputVals₂ hyield₁ hyield₂
+        simp at hyield₁ hyield₂
+        have ⟨h₁, h₂, h₃⟩ := hyield₁
+        have ⟨h₁', h₂', h₃'⟩ := hyield₂
+        subst h₁
+        simp at h₂ h₃ h₂' h₃'
+        simp [← h₃, ← h₃', EqModGhost]
+      case triv_yield_ghost.triv_yield |
+        triv_yield.triv_yield_ghost =>
+        intros _ _ _ _ hyield₁ hyield₂
+        simp at hyield₁ hyield₂
+        have ⟨h₁, _⟩ := hyield₁
+        have ⟨h₁', _⟩ := hyield₂
+        simp [← h₁] at h₁'
       case triv_join.triv_join =>
         intros op inputVals outputVals₁ outputVals₂ hyield₁ hyield₂
         simp at hyield₁ hyield₂

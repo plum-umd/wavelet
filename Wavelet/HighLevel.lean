@@ -35,7 +35,7 @@ abbrev Dataflow.Proc.semanticsᵢ
   := (proc.semantics.guard opSpec.TrivGuard).interpret opInterp
 
 theorem compile_forward_sim_guarded
-  [Arity Op] [PCM T] [PCM.Lawful T]
+  [Arity Op] [NeZeroArity Op] [PCM T] [PCM.Lawful T]
   [DecidableEq χ]
   [InterpConsts V]
   {sigs : Sigs k}
@@ -70,7 +70,7 @@ theorem sim_guarded_unguarded
   exact opSpec.spec_guard_implies_triv_guard
 
 theorem compile_forward_sim
-  [Arity Op] [PCM T] [PCM.Lawful T]
+  [Arity Op] [NeZeroArity Op] [PCM T] [PCM.Lawful T]
   [DecidableEq χ]
   [InterpConsts V]
   {sigs : Sigs k}
@@ -133,7 +133,7 @@ private theorem prog_semanticsᵢ_output_init
 
 theorem compile_strong_norm
   {Op V T : Type u}
-  [Arity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
+  [Arity Op] [NeZeroArity Op] [PCM T] [PCM.Lawful T] [PCM.Cancellative T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp.{_, _, w} Op V]
