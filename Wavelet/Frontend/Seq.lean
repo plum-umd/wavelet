@@ -272,8 +272,8 @@ def expr₂ : RawExpr (WithCall String String) String :=
     (.ret ["k"])
     (.tail ["n", "m"])
 
-#eval Lean.ToJson.toJson expr₁
-#eval Lean.ToJson.toJson expr₂
+-- #eval Lean.ToJson.toJson expr₁
+-- #eval Lean.ToJson.toJson expr₂
 
 def fn₁ : RawFn MiniOp String :=
   {
@@ -283,7 +283,7 @@ def fn₁ : RawFn MiniOp String :=
     body := expr₁,
   }
 
-#eval Lean.ToJson.toJson fn₁
+-- #eval Lean.ToJson.toJson fn₁
 
 def prog₁ : RawProg MiniOp String := ⟨[fn₁]⟩
 
@@ -355,13 +355,13 @@ def prog₄ : RawProg (WithCall MiniOp String) String :=
     ],
   }
 
-#eval Lean.ToJson.toJson prog₁
-#eval Lean.ToJson.toJson prog₂
-#eval Lean.ToJson.toJson prog₃
+-- #eval Lean.ToJson.toJson prog₁
+-- #eval Lean.ToJson.toJson prog₂
+-- #eval Lean.ToJson.toJson prog₃
 
-#eval (prog₂.toProg (V := Nat)).map (λ _ => ())
-#eval (prog₃.toProg (V := Nat)).map (λ _ => ())
-#eval (prog₄.toProg (V := Nat)).map (λ _ => ())
+-- #eval (prog₂.toProg (V := Nat)).map (λ _ => ())
+-- #eval (prog₃.toProg (V := Nat)).map (λ _ => ())
+-- #eval (prog₄.toProg (V := Nat)).map (λ _ => ())
 
 def prog₅ : Except String (RawProg (WithCall MiniOp String) String) := do
   let json ← Lean.Json.parse r#"
@@ -387,10 +387,10 @@ def prog₅ : Except String (RawProg (WithCall MiniOp String) String) := do
     "#
   Lean.FromJson.fromJson? json
 
-#eval prog₅
-#eval do
-  let prog₅ ← prog₅
-  let _ ← prog₅.toProg (V := Nat)
+-- #eval prog₅
+-- #eval do
+--   let prog₅ ← prog₅
+--   let _ ← prog₅.toProg (V := Nat)
 
 end Examples
 

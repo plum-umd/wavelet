@@ -631,7 +631,7 @@ theorem proc_indexed_interp_guarded_strong_confl_at
           simp [hget₁] at hget₂
           have ⟨h₁, h₂, h₃⟩ := hget₂
           subst h₁ h₂ h₃
-          cases hguard₁ <;> cases hguard₂
+          cases hguard₁; cases hguard₂
           simp [hpop₁] at hpop₂
           have ⟨⟨h₄, h₅⟩, h₆⟩ := hpop₂
           subst h₄ h₆

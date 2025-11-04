@@ -150,8 +150,8 @@ def prog₁ :
     }
   ]⟩
 
-#eval (prog₁.toProg (V := Nat)).map (λ _ => ())
-#eval Lean.ToJson.toJson prog₁
+-- #eval (prog₁.toProg (V := Nat)).map (λ _ => ())
+-- #eval Lean.ToJson.toJson prog₁
 
 end Examples
 

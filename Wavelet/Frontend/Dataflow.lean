@@ -66,16 +66,16 @@ def RawProc.fromProc [Arity Op] (proc : Proc Op χ V m n) : RawProc Op χ V :=
 
 section Examples
 
-#eval Lean.ToJson.toJson (RawAsyncOp.switch 3 : RawAsyncOp Nat)
-#eval Lean.ToJson.toJson (RawAsyncOp.inact : RawAsyncOp Nat)
-#eval Lean.ToJson.toJson ({
-    inputs := ["decider", "a", "b"],
-    outputs := ["d"],
-    atoms := [
-      .async (RawAsyncOp.steer true 1) ["decider", "a", "b"] ["c"],
-      .op "id" ["c"] ["d"],
-    ]
-  } : RawProc String String Nat)
+-- #eval Lean.ToJson.toJson (RawAsyncOp.switch 3 : RawAsyncOp Nat)
+-- #eval Lean.ToJson.toJson (RawAsyncOp.inact : RawAsyncOp Nat)
+-- #eval Lean.ToJson.toJson ({
+--     inputs := ["decider", "a", "b"],
+--     outputs := ["d"],
+--     atoms := [
+--       .async (RawAsyncOp.steer true 1) ["decider", "a", "b"] ["c"],
+--       .op "id" ["c"] ["d"],
+--     ]
+--   } : RawProc String String Nat)
 
 end Examples
 
