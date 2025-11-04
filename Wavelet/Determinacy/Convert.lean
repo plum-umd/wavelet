@@ -21,12 +21,9 @@ theorem Config.IdxGuardStep.to_guarded
   := by
   rcases hstep with ⟨⟨hguard⟩, hstep⟩
   cases hguard
-  case spec_yield_ghost =>
+  case spec_yield h₁ =>
     have := Config.IndexedStep.to_step_yield_or_tau hstep
-    exact .step .spec_yield_ghost this
-  case spec_yield h₁ h₂ =>
-    have := Config.IndexedStep.to_step_yield_or_tau hstep
-    exact .step (.spec_yield h₁ h₂) this
+    exact .step (.spec_yield h₁) this
   case spec_join h₁ h₂ h₃ =>
     have := Config.IndexedStep.to_step_yield_or_tau hstep
     exact .step (.spec_join h₁ h₂ h₃) this
@@ -50,12 +47,9 @@ theorem Config.GuardStep.to_indexed_guarded
   := by
   cases hstep with | step hguard hstep
   cases hguard <;> simp at hl
-  case step.spec_yield_ghost =>
+  case step.spec_yield h₁ =>
     have ⟨i, hstep'⟩ := Config.IndexedStep.from_step_yield hstep
-    exact ⟨i, .step (.idx_guard .spec_yield_ghost) hstep'⟩
-  case step.spec_yield h₁ h₂ =>
-    have ⟨i, hstep'⟩ := Config.IndexedStep.from_step_yield hstep
-    exact ⟨i, .step (.idx_guard (.spec_yield h₁ h₂)) hstep'⟩
+    exact ⟨i, .step (.idx_guard (.spec_yield h₁)) hstep'⟩
   case step.spec_join h₁ h₂ h₃ =>
     have ⟨i, hstep'⟩ := Config.IndexedStep.from_step_yield hstep
     exact ⟨i, .step (.idx_guard (.spec_join h₁ h₂ h₃)) hstep'⟩
@@ -76,9 +70,6 @@ theorem Config.IdxTrivStep.to_unguarded
   := by
   rcases hstep with ⟨⟨hguard⟩, hstep⟩
   cases hguard
-  case triv_yield_ghost =>
-    have := Config.IndexedStep.to_step_yield_or_tau hstep
-    exact .step .triv_yield_ghost this
   case triv_yield =>
     have := Config.IndexedStep.to_step_yield_or_tau hstep
     exact .step .triv_yield this
@@ -104,9 +95,6 @@ theorem Config.TrivStep.to_indexed_unguarded
   := by
   cases hstep with | step hguard hstep
   cases hguard <;> simp at hl
-  case step.triv_yield_ghost =>
-    have ⟨i, hstep'⟩ := Config.IndexedStep.from_step_yield hstep
-    exact ⟨i, .step (.idx_guard .triv_yield_ghost) hstep'⟩
   case step.triv_yield =>
     have ⟨i, hstep'⟩ := Config.IndexedStep.from_step_yield hstep
     exact ⟨i, .step (.idx_guard .triv_yield) hstep'⟩

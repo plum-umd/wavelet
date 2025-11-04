@@ -297,10 +297,10 @@ private theorem invert_compat_spec_guard
     match h : i with
     | 0 => simp [houtputs₁₀, houtputs₂₀]
     | 1 => simp [houtputs₁₁, houtputs₂₁]
-  case spec_yield_ghost.spec_yield_ghost =>
+  case spec_yield.spec_yield =>
     rename_i
-      op₁ inputs₁ outputs₁
-      op₂ inputs₂ outputs₂
+      op₁ ghost₁ inputs₁ outputs₁ hpre₁
+      op₂ ghost₂ inputs₂ outputs₂ hpre₂
     intros op inputs outputs₁' outputs₂'
       hop₁ hinputs₁' houtputs₁'
       hop₂ hinputs₂' houtputs₂'
@@ -308,10 +308,11 @@ private theorem invert_compat_spec_guard
     have ⟨h₁, h₂⟩ := hop₁
     subst h₁ h₂
     simp at hop₂
-    subst hop₂
+    have ⟨h₁, h₂⟩ := hop₂
+    subst h₁ h₂
     simp only [heq_eq_eq] at *
-    simp [← hinputs₁', Vector.push_eq_push] at hinputs₂'
-    have heq_inputs := Vector.inj_map (by simp [Function.Injective]) hinputs₂'.2
+    simp [← hinputs₁'] at hinputs₂'
+    replace ⟨heq_inputs, hinputs₂'⟩ := hinputs₂'
     subst heq_inputs
     simp [← houtputs₁', ← houtputs₂', Vector.push_eq_push]
     simp [Label.Deterministic] at hcompat
@@ -319,34 +320,6 @@ private theorem invert_compat_spec_guard
       apply hcompat
       any_goals rfl
     simp [heq_outputs]
-  case spec_yield.spec_yield =>
-    rename_i
-      op₁ inputs₁ outputs₁ hpre₁ hpost₁
-      op₂ inputs₂ outputs₂ hpre₂ hpost₂
-    intros op inputs outputs₁' outputs₂'
-      hop₁ hinputs₁' houtputs₁'
-      hop₂ hinputs₂' houtputs₂'
-    cases op <;> simp at hop₁
-    have ⟨h₁, h₂⟩ := hop₁
-    subst h₁ h₂
-    simp at hop₂
-    subst hop₂
-    simp only [heq_eq_eq] at *
-    simp [← hinputs₁'] at hinputs₂'
-    have heq_inputs := Vector.inj_map (by simp [Function.Injective]) hinputs₂'
-    subst heq_inputs
-    simp [← houtputs₁', ← houtputs₂']
-    simp [Label.Deterministic] at hcompat
-    have heq_outputs : outputs₁ = outputs₂ := by
-      apply hcompat
-      any_goals rfl
-    simp [heq_outputs]
-  case spec_yield.spec_yield_ghost |
-    spec_yield_ghost.spec_yield =>
-    intros
-    rename WithSpec.op false _ = _ => h₁
-    rename WithSpec.op true _ = _ => h₂
-    simp [← h₁] at h₂
   all_goals
     intros op
     cases op <;> simp
@@ -370,19 +343,18 @@ private theorem invert_compat_triv_guard
   any_goals
     intros op
     cases op <;> simp
-  case yield.yield.triv_yield_ghost.triv_yield_ghost.op =>
+  case yield.yield.triv_yield.triv_yield.op =>
     rename_i
-      op₁ inputs₁ outputs₁ tok₁₁ tok₁₂
-      op₂ inputs₂ outputs₂ tok₂₁ tok₂₂ ghost₂ _
+      op₁ ghost₁ inputs₁ outputs₁ tok₁₁ tok₁₂
+      op₂ ghost₂ inputs₂ outputs₂ tok₂₁ tok₂₂ _ _
     intros inputs' outputs₁' outputs₂'
       hghost₁ hop₁ hinputs₁' houtputs₁'
       hghost₂ hop₂ hinputs₂' houtputs₂'
-    subst hop₁ hop₂ hghost₁
+    subst hop₁ hop₂ hghost₁ hghost₂
     have heq_inputs : inputs₁ = inputs₂ := by
       simp at hinputs₁' hinputs₂'
-      simp [← hinputs₁', Vector.push_eq_push] at hinputs₂'
-      have heq_inputs := Vector.inj_map (by simp [Function.Injective]) hinputs₂'.2
-      simp [heq_inputs]
+      simp [← hinputs₁'] at hinputs₂'
+      simp [hinputs₂']
     subst heq_inputs
     have heq_outputs : outputs₁ = outputs₂ := by
       apply hcompat
@@ -393,39 +365,12 @@ private theorem invert_compat_triv_guard
     apply Vector.forall₂_to_forall₂_push_toList
     · simp [EqModGhost]
     · simp [EqModGhost]
-  case yield.yield.triv_yield.triv_yield.op =>
-    rename_i
-      op₁ inputs₁ outputs₁
-      op₂ inputs₂ outputs₂ ghost₂ _
-    intros inputs' outputs₁' outputs₂'
-      hghost₁ hop₁ hinputs₁' houtputs₁'
-      hghost₂ hop₂ hinputs₂' houtputs₂'
-    subst hop₁ hop₂ hghost₁
-    have heq_inputs : inputs₁ = inputs₂ := by
-      simp at hinputs₁' hinputs₂'
-      simp [← hinputs₁'] at hinputs₂'
-      have heq_inputs := Vector.inj_map (by simp [Function.Injective]) hinputs₂'
-      simp [heq_inputs]
-    subst heq_inputs
-    have heq_outputs : outputs₁ = outputs₂ := by
-      apply hcompat
-      any_goals rfl
-    subst heq_outputs
-    simp at houtputs₁' houtputs₂'
-    simp [← houtputs₁', ← houtputs₂']
-    simp [EqModGhost]
   case yield.yield.triv_join.triv_join.join =>
     intros
     rename_i houtputs₁ _ _ _ _ houtputs₂
     simp [← houtputs₁, ← houtputs₂, Vector.toList_map, EqModGhost]
     apply List.forall₂_iff_get.mpr
     simp
-  case yield.yield.triv_yield_ghost.triv_yield.op |
-    yield.yield.triv_yield.triv_yield_ghost.op =>
-    intros
-    rename _  = true => h₁
-    rename _  = false => h₂
-    simp [h₁] at h₂
 
 theorem proc_indexed_guarded_spec_strong_confl_at
   [Arity Op] [PCM T] [PCM.Cancellative T]
@@ -687,47 +632,36 @@ theorem proc_indexed_interp_guarded_strong_confl_at
           have ⟨h₁, h₂, h₃⟩ := hget₂
           subst h₁ h₂ h₃
           cases hguard₁ <;> cases hguard₂
-          case pos.h.spec_yield_ghost.spec_yield_ghost =>
-            simp [hpop₁, Vector.push_eq_push] at hpop₂
-            have ⟨⟨h₄, h₅⟩, h₆⟩ := hpop₂
-            replace h₅ := Vector.inj_map (by simp [Function.Injective]) h₅
-            subst h₅ h₆
-            simp
-            have ⟨h₇, h₈⟩ := hdet hstep_op₁ hstep_op₂
-            subst h₈
-            constructor
-            · rfl
-            · simp [h₇]
-          case pos.h.spec_yield.spec_yield =>
-            simp [hpop₁] at hpop₂
-            have ⟨h₄, h₅⟩ := hpop₂
-            replace h₄ := Vector.inj_map (by simp [Function.Injective]) h₄
-            subst h₄ h₅
-            simp
-            have ⟨h₇, h₈⟩ := hdet hstep_op₁ hstep_op₂
-            subst h₈
-            constructor
-            · rfl
-            · simp [h₇]
+          simp [hpop₁] at hpop₂
+          have ⟨⟨h₄, h₅⟩, h₆⟩ := hpop₂
+          subst h₄ h₆
+          simp
+          have ⟨h₇, h₈⟩ := hdet hstep_op₁ hstep_op₂
+          subst h₈
+          constructor
+          · rfl
+          · simp [h₇]
         · right
           have ⟨t', hstep_op₁', hstep_op₂'⟩ := hconfl hstep_op₁ hstep_op₂
             (by
               -- Firing different atoms, so the tokens must be disjoint by `DisjointTokens`.
               simp [OpSpec.CompatLabels]
-              cases hguard₁ <;> cases hguard₂
-              case spec_yield_ghost.spec_yield_ghost =>
+              cases hguard₁ with | spec_yield hpre₁ =>
+              rename Bool => ghost₁
+              cases hguard₂ with | spec_yield hpre₂ =>
+              rename Bool => ghost₂
+              cases ghost₁ <;> cases ghost₂
+              case true.true =>
                 have := haff.atom_inputs_disjoint
                   ⟨i₁, by assumption⟩ ⟨i₂, by assumption⟩ (by simp [heq_ij])
                 simp [hget₁, hget₂, AtomicProc.inputs] at this
                 have := pop_vals_pop_vals_disj_preserves_pairwise hdisj.2.to_pairwise this hpop₁ hpop₂
                 apply this (.inr (opSpec.pre op₁ inputVals₁)) (.inr (opSpec.pre op₂ inputVals₂))
-                all_goals simp
-              case spec_yield_ghost.spec_yield |
-                spec_yield.spec_yield_ghost |
-                spec_yield.spec_yield =>
-                rename opSpec.pre _ _ = PCM.zero => hpre
-                simp [hpre, PCM.disjoint]
-                apply hvalid.1
+                all_goals simp [WithSpec.opInputs]
+              all_goals
+                simp [hpre₁, hpre₂, PCM.disjoint,
+                  PCM.Lawful.valid_zero,
+                  hvalid.1]
             )
           replace ⟨s', hstep₁', hstep₂'⟩ := h
           exists (s', t')

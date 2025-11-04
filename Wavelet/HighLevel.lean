@@ -143,7 +143,8 @@ theorem compile_strong_norm
   -- Required properties on the operator interpretation and specs
   (hconfl : opSpec.Confluent opInterp)
   (hfp : opSpec.FramePreserving)
-  (hvalid : progSpec.Valid)
+  (hvalid₁ : opSpec.Valid)
+  (hvalid₂ : progSpec.Valid)
   (hdet : opInterp.Deterministic)
   (hnb : opInterp.NonBlocking)
   -- Program with well-formedness and typing properties
@@ -251,8 +252,8 @@ theorem compile_strong_norm
       (by simp [hfinal_init, Proc.semantics, Semantics.guard, Dataflow.Config.init])
   -- Use determinacy to obtain a terminating trace from `s''`
   have ⟨_, _, htrace''', hlen₁, heq₃⟩ := proc_interp_guarded_hetero_terminal_confl
-    hconfl hfp hdet hnb haff_s''
-    (Config.DisjointTokens.interp_guarded_init_input (hvalid _) hntok rfl hinputs'')
+    hconfl hvalid₁ hfp hdet hnb haff_s''
+    (Config.DisjointTokens.interp_guarded_init_input (hvalid₂ _) hntok rfl hinputs'')
     hmiddle hfinal_s₁''' htrace''
   -- Convert the determinacy result to τ steps after `htrace'`
   have this := congr_eq_mod_ghost_proc_interp_unguarded_tau_star_n htrace'''

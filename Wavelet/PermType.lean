@@ -62,14 +62,17 @@ inductive ProgWithSpec.WellPermTypedExpr
   -- Calls to a pure operator without permission tokens.
   | wpt_op
     {args : Vector χ (Arity.ι op)}
-    {rets : Vector χ (Arity.ω op)}
+    {rets : Vector χ (Arity.ω op + 1)}
     {inputVals : Vector V (Arity.ι op)} :
     ctx.vars.getVars args = some inputVals →
     perm = opSpec.pre op inputVals →
     -- Overapproximating all possible outputs of the operator.
     (∀ (outputVals : Vector V (Arity.ω op)),
-      WellPermTypedExpr progSpec i { ctx with
-        vars := (ctx.vars.removeVars args.toList).insertVars rets outputVals,
+      WellPermTypedExpr progSpec i {
+        vars := (ctx.vars.removeVars args.toList).insertVars rets.pop outputVals,
+        perms := ctx.perms.insertVars
+          #v[rets.back]
+          #v[opSpec.post op inputVals outputVals],
       } cont) →
     WellPermTypedExpr progSpec i ctx (.op (.inl (.op false op)) args rets cont)
   -- Calls to the join pseudo-operator.

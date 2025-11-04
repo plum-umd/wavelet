@@ -109,8 +109,7 @@ instance instArityWithSpec
   ι | .op true o => arity.ι o + 1
     | .op false o => arity.ι o
     | WithSpec.join k l _ => k + l
-  ω | .op true o => arity.ω o + 1
-    | .op false o => arity.ω o
+  ω | .op _ o => arity.ω o + 1
     | WithSpec.join _ _ _ => 2
 
 instance [Arity Op] [NeZeroArity Op] {spec : OpSpec Op V T} : NeZeroArity (WithSpec Op spec) where
@@ -122,6 +121,52 @@ instance [Arity Op] [NeZeroArity Op] {spec : OpSpec Op V T} : NeZeroArity (WithS
   -- neZeroₒ | .op o => by infer_instance
   --         | WithSpec.join _ _ _ => by infer_instance
 
+/-- Constructs the desired operator inputs depending on whether it accepts ghost tokens. -/
+def WithSpec.opInputs
+  [Arity Op]
+  {opSpec : OpSpec Op V T}
+  (ghost : Bool) (o : Op)
+  (inputs : Vector V (Arity.ι o))
+  (tok : T) : Vector (V ⊕ T) (Arity.ι (WithSpec.op (spec := opSpec) ghost o)) :=
+  if h : ghost then
+    ((inputs.map .inl).push (.inr tok)).cast (by simp [h]; rfl)
+  else
+    (inputs.map .inl).cast (by simp [h]; rfl)
+
+@[simp]
+theorem WithSpec.opInputs.inj
+  [Arity Op] {o : Op}
+  {opSpec : OpSpec Op V T}
+  {inputs₁ : Vector V (Arity.ι o)}
+  {inputs₂ : Vector V (Arity.ι o)} :
+    (opInputs (opSpec := opSpec) ghost o inputs₁ tok₁ =
+      opInputs (opSpec := opSpec) ghost o inputs₂ tok₂)
+    ↔ (inputs₁ = inputs₂ ∧ (ghost → tok₁ = tok₂))
+  := by
+  constructor
+  · intros h
+    if h₁ : ghost then
+      subst h₁
+      simp [opInputs, Vector.push_eq_push] at h
+      have ⟨h₁, h₂⟩ := h
+      replace h₂ := Vector.inj_map (by simp [Function.Injective]) h₂
+      subst h₁ h₂
+      simp
+    else
+      simp at h₁
+      subst h₁
+      simp [opInputs] at h
+      have := Vector.inj_map (by simp [Function.Injective]) h
+      simp [this]
+  · intros h
+    have ⟨h₁, h₂⟩ := h
+    if h₃ : ghost then
+      simp [h₃] at h₂
+      subst h₁ h₂
+      rfl
+    else
+      simp [h₁, opInputs, h₃]
+
 /-- Interprets the labels with ghost values using the base operators,
 but with dynamic checks for ghost tokens satisfying the specs. -/
 inductive OpSpec.Guard
@@ -130,24 +175,15 @@ inductive OpSpec.Guard
   (ioSpec : IOSpec V T m n) :
   Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) →
   Label Op V m n → Prop where
-  | spec_yield_ghost
-    {op}
-    {inputs : Vector V (Arity.ι op)}
-    {outputs : Vector V (Arity.ω op)} :
-    Guard opSpec ioSpec
-      (.yield (.op true op)
-        ((inputs.map .inl).push (.inr (opSpec.pre op inputs)))
-        ((outputs.map .inl).push (.inr (opSpec.post op inputs outputs))))
-      (.yield op inputs outputs)
   | spec_yield
-    {op}
+    {op} {ghost : Bool}
     {inputs : Vector V (Arity.ι op)}
     {outputs : Vector V (Arity.ω op)} :
-    opSpec.pre op inputs = PCM.zero →
-    opSpec.post op inputs outputs = PCM.zero →
+    (¬ ghost → opSpec.pre op inputs = PCM.zero) →
     Guard opSpec ioSpec
-      (.yield (.op false op)
-        (inputs.map .inl) (outputs.map .inl))
+      (.yield (.op ghost op)
+        (WithSpec.opInputs ghost op inputs (opSpec.pre op inputs))
+        ((outputs.map .inl).push (.inr (opSpec.post op inputs outputs))))
       (.yield op inputs outputs)
   | spec_join [NeZero k]
     {toks : Vector T k}
@@ -178,13 +214,11 @@ inductive OpSpec.TrivGuard [Arity Op]
   (opSpec : OpSpec Op V T) :
   Label (WithSpec Op opSpec) (V ⊕ T) (m + 1) (n + 1) →
   Label Op V m n → Prop where
-  | triv_yield_ghost :
+  | triv_yield {op ghost inputs outputs tok₁ tok₂} :
     opSpec.TrivGuard
-      (.yield (.op true op) ((inputs.map .inl).push (.inr tok₁)) ((outputs.map .inl).push (.inr tok₂)))
-      (.yield op inputs outputs)
-  | triv_yield :
-    opSpec.TrivGuard
-      (.yield (.op false op) (inputs.map .inl) (outputs.map .inl))
+      (.yield (.op ghost op)
+        (WithSpec.opInputs ghost op inputs tok₁)
+        ((outputs.map .inl).push (.inr tok₂)))
       (.yield op inputs outputs)
   | triv_join [NeZero k]
     {toks : Vector T k}
@@ -223,7 +257,6 @@ theorem OpSpec.spec_guard_implies_triv_guard
   {ioSpec : IOSpec V T m n}
   {l₁ l₂} :
     opSpec.Guard ioSpec l₁ l₂ → opSpec.TrivGuard l₁ l₂
-  | .spec_yield_ghost => by exact .triv_yield_ghost
   | .spec_yield .. => by exact .triv_yield
   | OpSpec.Guard.spec_join .. => by
     rename_i k l req rem _ toks vals outputs h₁ h₂ hsum

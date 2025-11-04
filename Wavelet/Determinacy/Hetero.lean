@@ -28,7 +28,6 @@ theorem proc_indexed_guarded_hetero_confl_single
     ∃ s₁'',
       (Config.IdxGuardStep opSpec ioSpec).Step s (j, l₂) s₁''
   := by
-  stop
   have hl₁ := proc_indexed_guarded_step_label hstep₁
   have hl₂ := proc_indexed_guarded_step_label hstep₂
   by_cases hij : i = j
@@ -42,26 +41,24 @@ theorem proc_indexed_guarded_hetero_confl_single
       cases hguard₁ with | _ hguard₁ =>
       cases hguard₂ with | _ hguard₂ =>
       cases hguard₁ <;> cases hguard₂ <;> simp at heq_label
-      case idx_guard.idx_guard.spec_yield_ghost.triv_yield_ghost =>
+      case idx_guard.idx_guard.spec_yield.triv_yield =>
         -- NOTE: allowing yield to be non-deterministic here
-        rename_i op inputVals₂ outputVals₂ _
+        rename_i hpre op ghost inputVals₂ outputVals₂ _ _
         cases hstep₁ with | step_op _ hget₁ hpop₁ =>
         rename_i inputs₁ outputs₁
         cases hstep₂' with | step_op hi hget₂ hpop₂ =>
         rename_i inputs₂ outputs₂
         simp [hget₂] at hget₁
-        have ⟨h₁, h₂, h₃⟩ := hget₁
-        subst h₁; subst h₂; subst h₃
+        have ⟨⟨h₁₁, h₁₂⟩, h₂, h₃⟩ := hget₁
+        subst h₁₁ h₁₂ h₂ h₃
         simp [hpop₁] at hpop₂
-        have ⟨h₁, _⟩ := hpop₂
-        simp [Vector.push_eq_push] at h₁
-        replace h₁ := Vector.inj_map (by simp [Function.Injective]) h₁.2
-        subst h₁
+        have ⟨⟨h₁₁, h₁₂⟩, h₂⟩ := hpop₂
+        subst h₁₁ h₂
         exact ⟨_,
           by
             apply Lts.GuardStep.step
             · apply IndexedGuard.idx_guard
-              apply OpSpec.Guard.spec_yield
+              apply OpSpec.Guard.spec_yield hpre
             · exact .step_op hi hget₂ hpop₁
         ⟩
       any_goals
@@ -69,8 +66,6 @@ theorem proc_indexed_guarded_hetero_confl_single
       any_goals
         have := Config.IndexedStep.unique_index hstep₁ hstep₂'
         simp [Label.IsYieldOrSilentAndDet, Label.Deterministic] at this
-
-      all_goals sorry
   · case neg =>
     cases hstep₁ with | step hguard₁ hstep₁
     cases hstep₂ with | step hguard₂ hstep₂
@@ -98,8 +93,8 @@ theorem proc_indexed_guarded_hetero_confl_single
             simp at hl
             simp [hget₂'] at hget₂
           case spec_yield.triv_yield =>
-            have ⟨h₁, h₂⟩ := hget₂
-            subst h₁; subst h₂
+            have ⟨h₁, h₂, h₃⟩ := hget₂
+            subst h₁ h₂ h₃
             simp at hpop₂
             have hdisj_inputs := haff.atom_inputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
             have hdisj_outputs := haff.atom_outputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
@@ -108,10 +103,14 @@ theorem proc_indexed_guarded_hetero_confl_single
             rw [pop_vals_push_vals_commute hpop₁₂] at hpop₂
             simp at hpop₂
             have ⟨h₁, h₂⟩ := hpop₂
-            simp [Vector.push_eq_push] at h₁ h₂
-            simp [h₁] at hpop₂'
-            exact ⟨_, .step
-              (.idx_guard .spec_yield)
+            rename Bool => ghost
+            cases ghost with
+            | true => exact ⟨_, .step
+              (.idx_guard (.spec_yield (by simp)))
+              (.step_op (by assumption) hget₂'
+                (by simp at h₁; subst h₁; exact hpop₂'))⟩
+            | false => exact ⟨_, .step
+              (.idx_guard (.spec_yield hguard₂))
               (.step_op (by assumption) hget₂' hpop₂')⟩
           case spec_join.triv_join =>
             have ⟨⟨h₁, h₂, h₃⟩, h₄, h₅⟩ := hget₂
@@ -167,8 +166,8 @@ theorem proc_indexed_guarded_hetero_confl_single
             simp at hl
             simp [hget₂', hij] at hget₂
           case spec_yield.triv_yield =>
-            have ⟨h₁, h₂⟩ := hget₂
-            subst h₁; subst h₂
+            have ⟨h₁, h₂, h₃⟩ := hget₂
+            subst h₁ h₂ h₃
             simp at hpop₂
             have hdisj_inputs := haff.atom_inputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
             have hdisj_outputs := haff.atom_outputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
@@ -180,10 +179,15 @@ theorem proc_indexed_guarded_hetero_confl_single
             rw [pop_vals_push_vals_commute hpop₁₂] at hpop₂
             simp at hpop₂
             have ⟨h₁, h₂⟩ := hpop₂
-            simp [Vector.push_eq_push] at h₁ h₂
-            simp [h₁] at hpop₂'
-            exact ⟨_, .step
-              (.idx_guard .spec_yield)
+            subst h₂
+            rename Bool => ghost
+            cases ghost with
+            | true => exact ⟨_, .step
+              (.idx_guard (.spec_yield (by simp)))
+              (.step_op (by assumption) hget₂'
+                (by simp at h₁; subst h₁; exact hpop₂'))⟩
+            | false => exact ⟨_, .step
+              (.idx_guard (.spec_yield hguard₂))
               (.step_op (by assumption) hget₂' hpop₂')⟩
           case spec_join.triv_join =>
             have ⟨⟨h₁, h₂, h₃⟩, h₄, h₅⟩ := hget₂
@@ -255,7 +259,6 @@ theorem proc_indexed_interp_guarded_hetero_confl_single
       s₁'.1 ≈ s₁''.1 ∧
       s₁'.2 = s₁''.2
   := by
-  stop
   have hdet_mod {s₂} hstep := proc_indexed_interp_unguarded_step_det_mod
     (s₂ := s₂) hdet hstep₂' hstep
   by_cases hij : i = j
@@ -293,8 +296,8 @@ theorem proc_indexed_interp_guarded_hetero_confl_single
       cases hstep₁ with
       | step_op _ hget₁ hpop₁ =>
         simp [hget₂'] at hget₂
-        have ⟨h₁, h₂, h₃⟩ := hget₂
-        subst h₁; subst h₂; subst h₃
+        have ⟨⟨h₁₁, h₁₂⟩, h₂, h₃⟩ := hget₂
+        subst h₁₁ h₁₂ h₂ h₃
         simp at hpop₂
         have hdisj_inputs := haff.atom_inputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
         have hdisj_outputs := haff.atom_outputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
@@ -302,27 +305,39 @@ theorem proc_indexed_interp_guarded_hetero_confl_single
         have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂'
         rw [pop_vals_push_vals_commute hpop₁₂] at hpop₂
         simp at hpop₂
-        have ⟨h₁, h₂⟩ := hpop₂
-        simp [Vector.push_eq_push] at h₁ h₂
-        simp [h₁] at hpop₂'
-        have := Vector.inj_map (by simp [Function.Injective]) h₁.2
-        subst this
+        have ⟨⟨h₁₁, h₁₂⟩, h₂⟩ := hpop₂
+        subst h₁₁
         have ⟨h₁, h₂⟩ := hdet hinterp₂' hinterp₂
-        subst h₁; subst h₂
-        have : (Config.IdxInterpGuardStep opSpec ioSpec).Step _ _ _ :=
-          Lts.IndexedInterpStep.step_yield (.step
-            (.idx_guard .spec_yield)
-            (.step_op (by assumption) hget₂' hpop₂')) hinterp₂'
-        exact ⟨_, this,
-          by
-            have := hdet_mod (Config.IdxInterpGuardStep.to_indexed_interp_unguarded this)
-            simp at this
-            simp [this],
-        ⟩
+        subst h₁ h₂
+        rename Bool => ghost
+        cases ghost with
+        | true =>
+          have : (Config.IdxInterpGuardStep opSpec ioSpec).Step _ _ _ :=
+            Lts.IndexedInterpStep.step_yield (.step
+              (.idx_guard (.spec_yield (by assumption)))
+              (.step_op (by assumption) hget₂'
+                (by simp at h₁₂; subst h₁₂; exact hpop₂'))) hinterp₂'
+          exact ⟨_, this,
+            by
+              have := hdet_mod (Config.IdxInterpGuardStep.to_indexed_interp_unguarded this)
+              simp at this
+              simp [this],
+          ⟩
+        | false =>
+          have : (Config.IdxInterpGuardStep opSpec ioSpec).Step _ _ _ :=
+            Lts.IndexedInterpStep.step_yield (.step
+              (.idx_guard (.spec_yield (by assumption)))
+              (.step_op (by assumption) hget₂' hpop₂')) hinterp₂'
+          exact ⟨_, this,
+            by
+              have := hdet_mod (Config.IdxInterpGuardStep.to_indexed_interp_unguarded this)
+              simp at this
+              simp [this],
+          ⟩
       | step_async _ hget₁ hinterp₁ hpop₁ =>
         simp [hij, hget₂'] at hget₂
-        have ⟨h₁, h₂, h₃⟩ := hget₂
-        subst h₁; subst h₂; subst h₃
+        have ⟨⟨h₁₁, h₁₂⟩, h₂, h₃⟩ := hget₂
+        subst h₁₁ h₁₂ h₂ h₃
         simp at hpop₂
         have hdisj_inputs := haff.atom_inputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
         have hdisj_outputs := haff.atom_outputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
@@ -333,23 +348,35 @@ theorem proc_indexed_interp_guarded_hetero_confl_single
           hpop₁ hpop₂'
         rw [pop_vals_push_vals_commute hpop₁₂] at hpop₂
         simp at hpop₂
-        have ⟨h₁, h₂⟩ := hpop₂
-        simp [Vector.push_eq_push] at h₁ h₂
-        simp [h₁] at hpop₂'
-        have := Vector.inj_map (by simp [Function.Injective]) h₁.2
-        subst this
+        have ⟨⟨h₁₁, h₁₂⟩, h₂⟩ := hpop₂
+        subst h₁₁
         have ⟨h₁, h₂⟩ := hdet hinterp₂' hinterp₂
-        subst h₁; subst h₂
-        have : (Config.IdxInterpGuardStep opSpec ioSpec).Step _ _ _ :=
-          .step_yield (.step
-            (.idx_guard .spec_yield)
-            (.step_op (by assumption) hget₂' hpop₂')) hinterp₂'
-        exact ⟨_, this,
-          by
-            have := hdet_mod (Config.IdxInterpGuardStep.to_indexed_interp_unguarded this)
-            simp at this
-            simp [this],
-        ⟩
+        subst h₁ h₂
+        rename Bool => ghost
+        cases ghost with
+        | true =>
+          have : (Config.IdxInterpGuardStep opSpec ioSpec).Step _ _ _ :=
+            Lts.IndexedInterpStep.step_yield (.step
+              (.idx_guard (.spec_yield (by assumption)))
+              (.step_op (by assumption) hget₂'
+                (by simp at h₁₂; subst h₁₂; exact hpop₂'))) hinterp₂'
+          exact ⟨_, this,
+            by
+              have := hdet_mod (Config.IdxInterpGuardStep.to_indexed_interp_unguarded this)
+              simp at this
+              simp [this],
+          ⟩
+        | false =>
+          have : (Config.IdxInterpGuardStep opSpec ioSpec).Step _ _ _ :=
+            Lts.IndexedInterpStep.step_yield (.step
+              (.idx_guard (.spec_yield (by assumption)))
+              (.step_op (by assumption) hget₂' hpop₂')) hinterp₂'
+          exact ⟨_, this,
+            by
+              have := hdet_mod (Config.IdxInterpGuardStep.to_indexed_interp_unguarded this)
+              simp at this
+              simp [this],
+          ⟩
     case neg.step_yield.step_yield.step_yield =>
       rename_i hinterp₁ _ _ _ _ _ hinterp₂ _ _ _ _ _ hinterp₂'
       rcases hstep₁ with ⟨⟨hguard₁⟩, hstep₁⟩
@@ -363,8 +390,8 @@ theorem proc_indexed_interp_guarded_hetero_confl_single
       cases hstep₁ with
       | step_op _ hget₁ hpop₁ =>
         simp [hget₂'] at hget₂
-        have ⟨h₁, h₂, h₃⟩ := hget₂
-        subst h₁; subst h₂; subst h₃
+        have ⟨⟨h₁₁, h₁₂⟩, h₂, h₃⟩ := hget₂
+        subst h₁₁ h₁₂ h₂ h₃
         simp at hpop₂
         have hdisj_inputs := haff.atom_inputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
         have hdisj_outputs := haff.atom_outputs_disjoint ⟨i, by assumption⟩ ⟨j, by assumption⟩ (by simp [hij])
@@ -372,21 +399,33 @@ theorem proc_indexed_interp_guarded_hetero_confl_single
         have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂'
         rw [pop_vals_push_vals_commute hpop₁₂] at hpop₂
         simp at hpop₂
-        have ⟨h₁, h₂⟩ := hpop₂
-        simp [Vector.push_eq_push] at h₁ h₂
-        simp [h₁] at hpop₂'
-        have := Vector.inj_map (by simp [Function.Injective]) h₁.2
-        subst this
-        have : (Config.IdxInterpGuardStep opSpec ioSpec).Step _ _ _ :=
-          .step_yield (.step
-            (.idx_guard .spec_yield)
-            (.step_op (by assumption) hget₂' hpop₂')) hinterp₂'
-        exact ⟨_, this,
-          by
-            have := hdet_mod (Config.IdxInterpGuardStep.to_indexed_interp_unguarded this)
-            simp at this
-            simp [this],
-        ⟩
+        have ⟨⟨h₁₁, h₁₂⟩, h₂⟩ := hpop₂
+        subst h₁₁
+        rename Bool => ghost
+        cases ghost with
+        | true =>
+          have : (Config.IdxInterpGuardStep opSpec ioSpec).Step _ _ _ :=
+            Lts.IndexedInterpStep.step_yield (.step
+              (.idx_guard (.spec_yield (by assumption)))
+              (.step_op (by assumption) hget₂'
+                (by simp at h₁₂; subst h₁₂; exact hpop₂'))) hinterp₂'
+          exact ⟨_, this,
+            by
+              have := hdet_mod (Config.IdxInterpGuardStep.to_indexed_interp_unguarded this)
+              simp at this
+              simp [this],
+          ⟩
+        | false =>
+          have : (Config.IdxInterpGuardStep opSpec ioSpec).Step _ _ _ :=
+            Lts.IndexedInterpStep.step_yield (.step
+              (.idx_guard (.spec_yield (by assumption)))
+              (.step_op (by assumption) hget₂' hpop₂')) hinterp₂'
+          exact ⟨_, this,
+            by
+              have := hdet_mod (Config.IdxInterpGuardStep.to_indexed_interp_unguarded this)
+              simp at this
+              simp [this],
+          ⟩
 
 /--
 If there is a guarded τ trace from `s` to a final state `s₁`,
@@ -474,7 +513,6 @@ theorem proc_commute_indexed_unguarded
   (hne : i ≠ j) :
     ∃ s₂', (Config.IdxInterpTrivStep opSpec).Step s₁ (j, .τ) s₂'
   := by
-  stop
   cases hstep₁ with
   | step_yield hstep₁ hinterp₁ =>
     rcases hstep₁ with ⟨⟨⟨hguard₁⟩⟩, hstep₁⟩
@@ -786,6 +824,7 @@ theorem proc_indexed_interp_guarded_hetero_terminal_confl
   {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
   {tr₁ tr₂ : Trace (Nat × Label Semantics.Empty V m n)}
   (hconfl : opSpec.Confluent opInterp)
+  (hvalid : opSpec.Valid)
   (hdet : opInterp.Deterministic)
   (hnb : opInterp.NonBlocking)
   (haff : s.1.proc.AffineChan)
@@ -799,7 +838,6 @@ theorem proc_indexed_interp_guarded_hetero_terminal_confl
       s₁.1 ≈ s₁'.1 ∧
       s₁.2 = s₁'.2
   := by
-  stop
   cases htrace₂
     using Lts.Star.reverse_induction with
   | refl =>
@@ -815,10 +853,10 @@ theorem proc_indexed_interp_guarded_hetero_terminal_confl
     have hinv_aff : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt _ _ :=
       proc_indexed_interp_guarded_inv_aff haff
     have ⟨_, htrace₁', hlen⟩ := proc_indexed_interp_guarded_terminal_confl
-      hconfl hdet hinv_aff hdisj
+      hconfl hvalid hdet hinv_aff hdisj
       htrace₁ hterm hstep₂'
     have ⟨_, _, htrace₂', hlen₂', heq₂'⟩ := proc_indexed_interp_guarded_hetero_terminal_confl
-      hconfl hdet hnb
+      hconfl hvalid hdet hnb
       (hinv_aff.unfold hstep₂').1
       (hdisj.unfold hstep₂').2
       htrace₁' hterm htail₂'
@@ -858,6 +896,7 @@ theorem proc_interp_guarded_hetero_terminal_confl
   {ioSpec : IOSpec V T m n}
   {s s₁ s₂ : ConfigWithSpec opSpec χ m n × opInterp.S}
   (hconfl : opSpec.Confluent opInterp)
+  (hvalid : opSpec.Valid)
   (hfp : opSpec.FramePreserving)
   (hdet : opInterp.Deterministic)
   (hnb : opInterp.NonBlocking)
@@ -880,7 +919,7 @@ theorem proc_interp_guarded_hetero_terminal_confl
   have hinv_disj : (Config.IdxInterpGuardStep opSpec ioSpec).IsInvariantAt (·.1.DisjointTokens) s :=
     Config.DisjointTokens.indexed_interp_guarded_inv hfp haff hdisj
   have ⟨_, _, htrace₃', hlen₃, heq⟩ := proc_indexed_interp_guarded_hetero_terminal_confl
-    hconfl hdet hnb
+    hconfl hvalid hdet hnb
     haff
     hinv_disj
     htrace₁'

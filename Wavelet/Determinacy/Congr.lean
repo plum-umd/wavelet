@@ -169,10 +169,13 @@ theorem congr_eq_mod_ghost_proc_indexed_unguarded
     subst h₁ h₂ h₃
     have ⟨inputVals', _, hpop', heq_inputs, heq_chans'⟩ := congr_eq_mod_pop_vals heq_chans hpop
     cases hguard with
-    -- Normal operators (w/ ghost tokens)
-    | triv_yield_ghost =>
-      cases inputVals' using Vector.back_induction with
-      | push inputVals' inputValsBack' ih =>
+    -- Normal operators
+    | triv_yield =>
+      rename Bool => ghost
+      cases ghost with
+      | true =>
+        cases inputVals' using Vector.back_induction with
+        | push inputVals' inputValsBack' ih =>
         replace ⟨heq_inputs, heq_back⟩ := Vector.forall₂_push_toList_to_forall₂ heq_inputs
         simp [Vector.toList_map] at heq_inputs
         simp [EqModGhost] at heq_back
@@ -190,7 +193,7 @@ theorem congr_eq_mod_ghost_proc_indexed_unguarded
         exact ⟨
           _,
           .step
-            (.idx_guard (.triv_yield_ghost (tok₂ := tok₂)))
+            (.idx_guard (.triv_yield (tok₂ := tok₂)))
             (.step_op
               (by simp [← heq_aps.length_eq, hi])
               hget'
@@ -204,33 +207,34 @@ theorem congr_eq_mod_ghost_proc_indexed_unguarded
               · simp [EqModGhost]
               · simp [EqModGhost]
         ⟩
-    -- Normal operators (w/o ghost tokens)
-    | triv_yield =>
-      simp [Vector.toList_map] at heq_inputs
-      have ⟨inputVals', h⟩ := Vector.forall₂_exists_map heq_inputs
-        (f := Sum.inl)
-        (by
-          intros x y heq
-          cases y <;> simp [EqModGhost] at heq
-          simp)
-      subst h
-      simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq_inputs
-      simp [← heq_inputs] at hpop'
-      exact ⟨
-        _,
-        .step
-          (.idx_guard .triv_yield)
-          (.step_op
-            (by simp [← heq_aps.length_eq, hi])
-            hget'
-            hpop'),
-        by
-          constructor
-          · exact ⟨heq_proc_inputs, heq_proc_outputs, heq_aps⟩
-          · simp
-            apply congr_eq_mod_push_vals heq_chans'
-            simp [EqModGhost]
-      ⟩
+      | false =>
+        rename T => tok₂
+        simp [WithSpec.opInputs, Vector.toList_map] at heq_inputs
+        have ⟨inputVals', h⟩ := Vector.forall₂_exists_map heq_inputs
+          (f := Sum.inl)
+          (by
+            intros x y heq
+            cases y <;> simp [EqModGhost] at heq
+            simp)
+        subst h
+        simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq_inputs
+        simp [← heq_inputs] at hpop'
+        exact ⟨
+          _,
+          .step
+            -- Choice of `tok₁` is arbitrary here since it's not used
+            (.idx_guard (.triv_yield (tok₁ := tok₂) (tok₂ := tok₂)))
+            (.step_op
+              (by simp [← heq_aps.length_eq, hi])
+              hget'
+              hpop'),
+          by
+            constructor
+            · exact ⟨heq_proc_inputs, heq_proc_outputs, heq_aps⟩
+            · simp
+              apply congr_eq_mod_push_vals heq_chans'
+              simp [EqModGhost]
+        ⟩
     -- Calling join
     | triv_join =>
       rename_i toks vals outputToks _ _
@@ -466,31 +470,18 @@ theorem congr_eq_spec_guard
     cases op with
     | op ghost op =>
       cases hguard₁
-      case spec_yield_ghost =>
-        rename_i inputs₁ outputs₁
+      case spec_yield =>
+        rename_i inputs₁ outputs₁ hpre
         generalize hinputs₁' :
-          (Vector.map Sum.inl inputs₁).push (Sum.inr (opSpec.pre op inputs₁)) = inputs₁'
+          WithSpec.opInputs ghost op inputs₁ (opSpec.pre op inputs₁) = inputs₁'
         generalize houtputs₁' :
           (Vector.map Sum.inl outputs₁).push (Sum.inr (opSpec.post op inputs₁ outputs₁)) = outputs₁'
         rw [hinputs₁', houtputs₁'] at hguard₂
         cases hguard₂
         rename_i inputs₂ outputs₂
         simp [Vector.push_eq_push] at hinputs₁' houtputs₁'
-        have heq₁ := Vector.inj_map (by simp [Function.Injective]) hinputs₁'.2
         have heq₂ := Vector.inj_map (by simp [Function.Injective]) houtputs₁'.2
-        simp [heq₁, heq₂]
-      case spec_yield =>
-        rename_i inputs₁ outputs₁ _ _
-        generalize hinputs₁' :
-          Vector.map Sum.inl inputs₁ = inputs₁'
-        generalize houtputs₁' :
-          Vector.map Sum.inl outputs₁ = outputs₁'
-        rw [hinputs₁', houtputs₁'] at hguard₂
-        cases hguard₂
-        rename_i inputs₂ outputs₂
-        have heq₁ := Vector.inj_map (by simp [Function.Injective]) hinputs₁'
-        have heq₂ := Vector.inj_map (by simp [Function.Injective]) houtputs₁'
-        simp [heq₁, heq₂]
+        simp [hinputs₁', heq₂]
     | join k l req =>
       cases hguard₁ with | spec_join h₁ h₂ =>
       rename_i rem₁ toks₁ vals₁
@@ -539,20 +530,22 @@ theorem congr_eq_mod_ghost_triv_guard
     <;> cases hguard₂
     <;> simp [Label.EqMod] at heq
   any_goals rfl
-  case yield.yield.triv_yield_ghost.triv_yield_ghost =>
-    have ⟨h₁, heq₂, heq₃⟩ := heq
-    subst h₁
-    replace ⟨heq₂, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq₂
-    replace ⟨heq₃, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq₃
-    simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₂
-    simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₃
-    simp [heq₂, heq₃]
   case yield.yield.triv_yield.triv_yield =>
-    have ⟨h₁, heq₂, heq₃⟩ := heq
-    subst h₁
-    simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₂
-    simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₃
-    simp [heq₂, heq₃]
+    have ⟨⟨h₁, h₂⟩, heq₂, heq₃⟩ := heq
+    subst h₁ h₂
+    rename Bool => ghost
+    cases ghost with
+    | true =>
+      replace ⟨heq₂, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq₂
+      replace ⟨heq₃, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq₃
+      simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₂
+      simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₃
+      simp [heq₂, heq₃]
+    | false =>
+      simp [WithSpec.opInputs, Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₂
+      replace ⟨heq₃, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq₃
+      simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₃
+      simp [heq₂, heq₃]
   case input.input.triv_input.triv_input =>
     replace ⟨heq, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq
     simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq

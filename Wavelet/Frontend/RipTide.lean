@@ -137,14 +137,14 @@ def prog₁ :
       outputs := 2,
       body :=
         .op (.op (.join 1 0 (λ _ => PCM.zero))) ["t₀"] ["t₁", "t₂"] <|
-        .op (.op (.op false (.fork 4))) ["i"] ["i₁", "i₂", "i₃", "i₄"] <|
-        .op (.op (.op false (.fork 2))) ["n"] ["n₁", "n₂"] <|
-        .op (.op (.op false .lt)) ["i₁", "n₁"] ["c"] <|
+        .op (.op (.op false (.fork 4))) ["i"] ["i₁", "i₂", "i₃", "i₄", "dummy₁"] <|
+        .op (.op (.op false (.fork 2))) ["n"] ["n₁", "n₂", "dummy₂"] <|
+        .op (.op (.op false .lt)) ["i₁", "n₁"] ["c", "dummy₃"] <|
         .br "c"
           (.op (.op (.op true (.load "A"))) ["i₂", "t₁"] ["x", "t₁'"] <|
-           .op (.op (.op false .add)) ["sum", "x"] ["sum'"] <|
-           .op (.op (.op false (.const 1))) ["i₃"] ["one"] <|
-           .op (.op (.op false .add)) ["i₄", "one"] ["i'"] <|
+           .op (.op (.op false .add)) ["sum", "x"] ["sum'", "dummy₄"] <|
+           .op (.op (.op false (.const 1))) ["i₃"] ["one", "dummy₅"] <|
+           .op (.op (.op false .add)) ["i₄", "one"] ["i'", "dummy₆"] <|
             .tail ["sum'", "i'", "n₂", "t₂"])
           (.ret ["sum", "t₂"]),
     }
