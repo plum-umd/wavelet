@@ -41,6 +41,32 @@ inductive AsyncOp V where
   | sink (n : Nat) [NeZero n] : AsyncOp V
   | inact : AsyncOp V
 
+/-- Input arity of an async operator. -/
+def AsyncOp.ι : AsyncOp V → Nat
+  | switch n => n + 1
+  | steer _ n => n + 1
+  | merge _ n => n + n + 1
+  | forward n => n
+  | fork _ => 1
+  | order n => n
+  | const _ _ => 1
+  | forwardc n _ _ => n
+  | sink n => n
+  | inact => 0
+
+/-- Output arity of an async operator. -/
+def AsyncOp.ω : AsyncOp V → Nat
+  | switch n => n + n
+  | steer _ n => n
+  | merge _ n => n
+  | forward n => n
+  | fork n => n
+  | order _ => 1
+  | const _ n => n
+  | forwardc n m _ => n + m
+  | sink _ => 0
+  | inact => 0
+
 namespace AsyncOp
 
 structure Label χ V where

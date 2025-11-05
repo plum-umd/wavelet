@@ -1,4 +1,5 @@
 import Wavelet.Dataflow.Proc
+import Wavelet.Dataflow.Abbrev
 import Wavelet.Compile.MapChans
 
 /-!
@@ -39,18 +40,16 @@ inductive Rewrite (Op : Type u) (χ : Type v) (V : Type w) [Arity Op] : Nat → 
 /-- Lowers n-ary async operators to unary operators. -/
 def naryLowering [Arity Op] : Rewrite Op χ V 1 :=
   .match_on λ
-    | .async (AsyncOp.switch k) inputs outputs =>
-      if h : k > 1 ∧ inputs.length = k + 1 ∧ outputs.length = k + k then
-        let hne : inputs ≠ [] := by intros h'; simp [h'] at h
-        let decider := inputs.head hne
-        let deciders := (List.range k).map λ i => .rename i decider
-        let inputs := inputs.tail
-        let outputs₁ := outputs.take k
-        let outputs₂ := outputs.drop k
+    | .async (AsyncOp.switch k) (decider :: inputs) outputs =>
+      if h : k > 1 ∧ inputs.length = k ∧ outputs.length = k + k then
+        let deciders := (Vector.finRange k).map λ i => .rename i decider
+        let inputs : Vector _ k := inputs.toVector.cast (by omega)
+        let outputs₁ : Vector _ k := (outputs.take k).toVector.cast (by simp; omega)
+        let outputs₂ : Vector _ k := (outputs.drop k).toVector.cast (by simp; omega)
         .done (
-          .async (.fork k) [decider] deciders ::
-          (deciders |>.zip inputs |>.zip outputs₁ |>.zip outputs₂ |>.map
-            (λ (((d, i), o₁), o₂) => .async (AsyncOp.switch 1) [d, i] [o₁, o₂]))
+          .fork decider deciders ::
+          (deciders ⊗ inputs ⊗ outputs₁ ⊗ outputs₂ |>.map
+            (λ ⟨d, i, o₁, o₂⟩ => .switch d #v[i] #v[o₁] #v[o₂])).toList
         )
       else
         .fail

@@ -2,24 +2,23 @@ import Wavelet
 
 open Wavelet.Frontend Wavelet.Compile Wavelet.Determinacy Wavelet.Seq Wavelet.Dataflow
 
+def Except.unwrapIO {ε α} (e : Except ε α) (msg : String) [ToString ε] : IO α :=
+  match e with
+  | .ok x => pure x
+  | .error err => throw <| IO.userError s!"{msg}: {toString err}"
+
 def main : IO Unit := do
   let stdin ← IO.getStdin
   let stderr ← IO.getStderr
   let stdout ← IO.getStdout
   let input ← stdin.readToEnd
-  let json ← match Lean.Json.parse input with
-    | .ok x => pure x
-    | .error err => throw <| IO.userError s!"failed to parse JSON input: {err}"
+  let json ← (Lean.Json.parse input).unwrapIO "failed to parse JSON input"
   let T := RawProg
     (WithCall (WithSpec (RipTide.SyncOp String) RipTide.opSpec) String)
     String
+  let rawProg : T ← (Lean.FromJson.fromJson? json).unwrapIO "failed to decode JSON input as RawProg"
+  let prog ← (rawProg.toProg (V := RipTide.Value)).unwrapIO "failed to convert RawProg to Prog"
 
-  let rawProg ← match Lean.FromJson.fromJson? json with
-    | .ok (x : T) => pure x
-    | .error err => throw <| IO.userError s!"failed to decode JSON input as RawProg: {err}"
-  let prog ← match rawProg.toProg (V := RipTide.Value) with
-    | .ok p => pure p
-    | .error err => throw <| IO.userError s!"failed to convert RawProg to Prog: {err}"
   if h : prog.numFns > 0 then
     -- Some abbreviations
     let : NeZeroSigs prog.sigs := prog.neZero
@@ -38,18 +37,20 @@ def main : IO Unit := do
     let proc := compileProg prog.prog last
     let proc := proc.renameChans
     stderr.putStrLn s!"compiled {prog.numFns} function(s). graph size: {proc.atoms.length} ops"
+    proc.checkAffineChan.unwrapIO "dfg invariant error"
 
     -- Erase ghost tokens
     let proc := proc.eraseGhost
     stderr.putStrLn s!"erased ghost tokens. graph size: {proc.atoms.length} ops"
+    proc.checkAffineChan.unwrapIO "dfg invariant error"
 
-    -- Some graph rewrites
-
+    -- Some optimizations
     let applyRewrites {k} (descr : String) (rw : Rewrite _ _ _ k) (proc : P Nat) : IO (P Nat) := do
       stderr.putStr s!"{descr} ..."
       let proc : P (RewriteName Nat) := proc.mapChans RewriteName.base
       let (numRws, atoms) := Rewrite.applyUntilFail rw proc.atoms
       let proc : P Nat := { proc with atoms }.renameChans
+      proc.checkAffineChan.unwrapIO "dfg invariant error"
       stderr.putStrLn s!" {numRws} rewrites. graph size: {proc.atoms.length} ops"
       return proc
 
@@ -62,4 +63,4 @@ def main : IO Unit := do
     let output := Lean.ToJson.toJson rawProc
     stdout.putStrLn (Lean.Json.pretty output)
   else
-    stderr.putStrLn "no function provided, exiting"
+    stderr.putStrLn "no function provided"

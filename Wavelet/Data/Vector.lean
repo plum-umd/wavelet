@@ -386,4 +386,6 @@ theorem map_inr_eq
   · intros h
     simp [h]
 
+infixr:65 " ⊗ " => Vector.zip
+
 end Vector

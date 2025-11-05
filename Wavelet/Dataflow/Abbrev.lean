@@ -44,6 +44,10 @@ def fork [Arity Op]
   (input : χ) (outputs : Vector χ n) : AtomicProc Op χ V
   := .async (.fork n) [input] outputs.toList
 
+def order [Arity Op] [NeZero n]
+  (inputs : Vector χ n) (output : χ) : AtomicProc Op χ V
+  := .async (.order n) inputs.toList [output]
+
 def const [Arity Op]
   (c : V) (act : χ) (outputs : Vector χ n) : AtomicProc Op χ V
   := .async (.const c n) [act] outputs.toList
