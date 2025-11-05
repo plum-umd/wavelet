@@ -82,6 +82,27 @@ theorem mapM_some_iff_forall₂
         simp [Option.some.injEq, cons.injEq, and_true]
         rw [h₂]
 
+theorem forM_ok_iff_all_ok
+  {α ε} {f : α → Except ε PUnit} {xs : List α} :
+  (xs.forM f).isOk ↔ ∀ x ∈ xs, (f x).isOk
+:= by
+  induction xs with
+  | nil => simp; rfl
+  | cons x xs' ih =>
+    simp
+    constructor
+    · intros h
+      simp [bind, Except.bind] at h
+      split at h; contradiction
+      rename_i h₁
+      simp [h₁, Except.isOk, Except.toBool]
+      exact ih.mp h
+    · intros h
+      have ⟨h₁, h₂⟩ := h
+      cases h₃ : f x <;> simp [h₃, Except.isOk, Except.toBool] at h₁
+      simp [bind, Except.bind]
+      exact ih.mpr h₂
+
 theorem forall₂_implies_all_left {α β} {R : α → β → Prop} {xs : List α} {ys : List β} :
   List.Forall₂ R xs ys →
   ∀ x ∈ xs, ∃ y ∈ ys, R x y
