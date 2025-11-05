@@ -28,6 +28,12 @@ def main : IO Unit := do
       (RipTide.SyncOp String) χ RipTide.Value
       (prog.sigs last).ι (prog.sigs last).ω
 
+    -- Check some static properties
+    for i in List.finRange prog.numFns do
+      if ¬ (prog.prog i).AffineVar then
+        let name := rawProg.fns[i]?.map (·.name) |>.getD s!"unknown"
+        throw <| IO.userError s!"function {i} ({name}) does not satisfy affine variable usage"
+
     -- Compile and link
     let proc := compileProg prog.prog last
     let proc := proc.renameChans

@@ -81,7 +81,6 @@ structure CheckState Op χ V [Arity Op] where
   -- Some validated invariants
   neZero : NeZeroSigs sigs
 
-
 abbrev CheckM Op χ V [Arity Op] T := StateT (CheckState Op χ V) (Except String) T
 
 def CheckState.init [Arity Op] : CheckState Op χ V :=

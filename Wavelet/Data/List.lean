@@ -335,4 +335,16 @@ theorem forall₂_true
   apply List.forall₂_iff_get.mpr
   simp [hlen]
 
+instance instDecidableDisjoint [DecidableEq α] {xs ys : List α} : Decidable (xs.Disjoint ys) :=
+  match xs with
+  | nil => isTrue (by simp)
+  | cons x xs' =>
+    have : Decidable (xs'.Disjoint ys) := instDecidableDisjoint
+    if h : x ∉ ys ∧ xs'.Disjoint ys then
+      isTrue (by simp [h])
+    else
+      isFalse (by
+        simp at h ⊢
+        exact h)
+
 end List
