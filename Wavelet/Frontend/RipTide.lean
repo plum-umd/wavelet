@@ -2,6 +2,7 @@ import Wavelet.Dataflow.Proc
 import Wavelet.Dataflow.Plot
 import Wavelet.Semantics.OpInterp
 import Wavelet.Determinacy.OpSpec
+import Wavelet.Compile.Rewrite.Defs
 
 import Wavelet.Frontend.Seq
 
@@ -9,7 +10,7 @@ import Wavelet.Frontend.Seq
 
 namespace Wavelet.Frontend.RipTide
 
-open Semantics Determinacy
+open Semantics Determinacy Compile
 
 -- TODO: Using Int for now since `Int32` doesn't implement ToJson/FromJson
 abbrev Value := Int
@@ -44,7 +45,7 @@ instance : NeZeroArity (SyncOp Loc) where
 
 /-- Some constants used for compilation. -/
 instance : InterpConsts Value where
-  junkVal := 0
+  junkVal := -1
   toBool | 0 => some false
          | 1 => some true
          | _ => none
@@ -178,5 +179,13 @@ instance [ToString Loc] : Dataflow.DotName (SyncOp Loc) where
 
 instance : Dataflow.DotName Value where
   dotName v := s!"\"{v}\""
+
+/-- Custom rewrites for RipTide. -/
+def operatorSel [DecidableEq χ] : Rewrite (RipTide.SyncOp Loc) χ V 1 :=
+  .match_on λ
+    -- Lower `copy` to `fork`
+    | ctx, .op (.copy n) inputs outputs =>
+      .done [.fork (inputs[0]'(by simp [Arity.ι])) outputs]
+    | _, _ => .fail
 
 end Wavelet.Frontend.RipTide

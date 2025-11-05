@@ -56,6 +56,7 @@ def main : IO Unit := do
 
     let proc : P Nat := proc.renameChans
     let proc ← applyRewrites "lowering n-ary ops" naryLowering proc
+    let proc ← applyRewrites "operator selection" RipTide.operatorSel proc
     let proc ← applyRewrites "dead code elimination" deadCodeElim proc
 
     -- Dump graph as DOT
