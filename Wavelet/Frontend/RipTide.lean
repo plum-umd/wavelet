@@ -1,4 +1,5 @@
 import Wavelet.Dataflow.Proc
+import Wavelet.Dataflow.Plot
 import Wavelet.Semantics.OpInterp
 import Wavelet.Determinacy.OpSpec
 
@@ -157,5 +158,25 @@ def prog₁ :
 -- #eval Lean.ToJson.toJson prog₁
 
 end Examples
+
+instance [ToString Loc] : Dataflow.DotName (SyncOp Loc) where
+  dotName
+    | .add => "\"+\""
+    | .sub => "\"-\""
+    | .mul => "\"*\""
+    | .div => "\"/\""
+    | .shl => "\"<<\""
+    | .ashr => "\"a>>\""
+    | .lshr => "\"l>>\""
+    | .eq => "\"=\""
+    | .lt => "\"<\""
+    | .load loc => s!"<LD<sub>{loc}</sub>>"
+    | .store loc => s!"<ST<sub>{loc}</sub>>"
+    | .sel => "\"SEL\""
+    | .const v => s!"\"{v}\""
+    | .copy .. => s!"\"CP\""
+
+instance : Dataflow.DotName Value where
+  dotName v := s!"\"{v}\""
 
 end Wavelet.Frontend.RipTide

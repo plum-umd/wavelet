@@ -12,15 +12,6 @@ namespace Wavelet.Compile
 
 open Semantics Dataflow
 
-/-
-TODOs:
-[-] Expand n-ary merge/carry/steer
-[-] Eliminate forwards
-[ ] Eliminate dummy sinks
-[ ] Eliminate dummy forks
-[ ] Remove inact
--/
-
 inductive RewriteName (χ : Type u) where
   | base (_ : χ)
   | rw (_ : RewriteName χ)
@@ -228,6 +219,14 @@ def deadCodeElim [Arity Op] [DecidableEq χ] : Rewrite Op χ V 2 :=
             else
               .fail
           | _ => .fail
+      else
+        .fail
+    -- Order with one input can be rewritten to a forward
+    | .async (AsyncOp.order 1) inputs outputs =>
+      if h : inputs.length = 1 ∧ outputs.length = 1 then
+        let input := inputs[0]'(by omega)
+        let output := outputs[0]'(by omega)
+        .done [.forward #v[input] #v[output]]
       else
         .fail
     | _ => .fail

@@ -5,3 +5,4 @@ import Wavelet.Dataflow.EqMod
 import Wavelet.Dataflow.IndexedStep
 import Wavelet.Dataflow.Proc
 import Wavelet.Dataflow.AffineChan
+import Wavelet.Dataflow.Plot

@@ -22,6 +22,14 @@ inductive AtomicProc (Op χ V : Type*) [Arity Op] where
   | op (op : Op) (inputs : Vector χ (Arity.ι op)) (outputs : Vector χ (Arity.ω op))
   | async (aop : AsyncOp V) (inputs : List χ) (outputs : List χ)
 
+def AtomicProc.inputs [Arity Op] : AtomicProc Op χ V → List χ
+  | .op _ inputs _ => inputs.toList
+  | .async _ inputs _ => inputs
+
+def AtomicProc.outputs [Arity Op] : AtomicProc Op χ V → List χ
+  | .op _ _ outputs => outputs.toList
+  | .async _ _ outputs => outputs
+
 abbrev AtomicProcs Op χ V [Arity Op] := List (AtomicProc Op χ V)
 
 /-- `Proc ... m n` is a process with `m` inputs and `n` outputs. -/

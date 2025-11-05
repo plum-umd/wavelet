@@ -58,6 +58,10 @@ def main : IO Unit := do
     let proc ← applyRewrites "lowering n-ary ops" naryLowering proc
     let proc ← applyRewrites "dead code elimination" deadCodeElim proc
 
+    -- Dump graph as DOT
+    let plot ← proc.plot.run.unwrapIO "failed to generate DOT plot"
+    stderr.putStrLn plot
+
     -- Dump graph as JSON
     let rawProc := RawProc.fromProc proc
     let output := Lean.ToJson.toJson rawProc

@@ -1,5 +1,5 @@
-import Wavelet.Seq
-import Wavelet.Dataflow
+import Wavelet.Seq.Prog
+import Wavelet.Dataflow.Proc
 
 import Wavelet.Compile.Fn.Defs
 import Wavelet.Compile.Prog.Defs

@@ -9,14 +9,6 @@ namespace Wavelet.Dataflow
 
 open Semantics
 
-def AtomicProc.inputs [Arity Op] : AtomicProc Op χ V → List χ
-  | .op _ inputs _ => inputs.toList
-  | .async _ inputs _ => inputs
-
-def AtomicProc.outputs [Arity Op] : AtomicProc Op χ V → List χ
-  | .op _ _ outputs => outputs.toList
-  | .async _ _ outputs => outputs
-
 /-- Each channel name is used at most once. -/
 def AtomicProcs.AffineChan [Arity Op] (aps : AtomicProcs Op χ V) : Prop
   :=
