@@ -196,37 +196,37 @@ def deadCodeElim [Arity Op] [DecidableEq χ] : Rewrite Op χ V 2 :=
           | _ => .fail
       else
         .fail
-    -- -- Fork with zero outputs can be replaced with a sink (which enables further rewrites)
-    -- | .async (AsyncOp.fork 0) inputs outputs =>
-    --   if h : inputs.length = 1 ∧ outputs.length = 0 then
-    --     .done [.async (AsyncOp.sink 1) inputs []]
-    --   else
-    --     .fail
-    -- -- Fork with exactly one output is a forward
-    -- | .async (AsyncOp.fork 1) inputs outputs =>
-    --   if h : inputs.length = 1 ∧ outputs.length = 1 then
-    --     .done [.async (AsyncOp.forward 1) inputs outputs]
-    --   else
-    --     .fail
-    -- -- Fork with one of the outputs being a sink
-    -- | .async (AsyncOp.fork n) inputs outputs =>
-    --   if h : inputs.length = 1 ∧ outputs.length = n then
-    --     let input := inputs[0]'(by omega)
-    --     .match_on λ
-    --       | .async (AsyncOp.sink 1) inputs' outputs' =>
-    --         if h : inputs'.length = 1 ∧ outputs'.length = 0 then
-    --           let sink := inputs'[0]'(by omega)
-    --           if sink ∈ outputs then
-    --             .done [
-    --               .async (AsyncOp.fork (n - 1)) [input] (outputs.erase sink),
-    --             ]
-    --           else
-    --             .fail
-    --         else
-    --           .fail
-    --       | _ => .fail
-    --   else
-    --     .fail
+    -- Fork with zero outputs can be replaced with a sink (which enables further rewrites)
+    | .async (AsyncOp.fork 0) inputs outputs =>
+      if h : inputs.length = 1 ∧ outputs.length = 0 then
+        .done [.async (AsyncOp.sink 1) inputs []]
+      else
+        .fail
+    -- Fork with exactly one output is a forward
+    | .async (AsyncOp.fork 1) inputs outputs =>
+      if h : inputs.length = 1 ∧ outputs.length = 1 then
+        .done [.async (AsyncOp.forward 1) inputs outputs]
+      else
+        .fail
+    -- Fork with one of the outputs being a sink
+    | .async (AsyncOp.fork n) inputs outputs =>
+      if h : inputs.length = 1 ∧ outputs.length = n then
+        let input := inputs[0]'(by omega)
+        .match_on λ
+          | .async (AsyncOp.sink 1) inputs' outputs' =>
+            if h : inputs'.length = 1 ∧ outputs'.length = 0 then
+              let sink := inputs'[0]'(by omega)
+              if sink ∈ outputs then
+                .done [
+                  .async (AsyncOp.fork (n - 1)) [input] (outputs.erase sink),
+                ]
+              else
+                .fail
+            else
+              .fail
+          | _ => .fail
+      else
+        .fail
     | _ => .fail
 
 /--
