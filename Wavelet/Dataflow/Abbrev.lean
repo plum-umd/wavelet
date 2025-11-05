@@ -25,8 +25,7 @@ def merge [Arity Op] [NeZero n]
   (decider : χ)
   (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
   (outputs : Vector χ n) : AtomicProc Op χ V :=
-  -- TODO: make the order of inputs₁ and inputs₂ more consistent.
-  .async (.merge .decider n) (#v[decider] ++ inputs₂ ++ inputs₁).toList outputs.toList
+  .async (.merge .decider n) (#v[decider] ++ inputs₁ ++ inputs₂).toList outputs.toList
 
 /-- Carry is a variant of merge that can have a different initial state. -/
 def carry [Arity Op] [NeZero n]
@@ -316,7 +315,7 @@ theorem Config.Step.step_merge
   (hpop_decider : c.chans.popVal decider = some (deciderVal, chans'))
   (hdecider : InterpConsts.toBool deciderVal = some deciderBool)
   (hpop_inputs : chans'.popVals
-    (if deciderBool then inputs₁ else inputs₂) = some (inputVals, chans'')) :
+    (if deciderBool then inputs₂ else inputs₁) = some (inputVals, chans'')) :
     Step.TauStar .τ c { c with
       chans := chans''.pushVals outputs inputVals
     }

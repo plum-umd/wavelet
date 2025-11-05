@@ -106,8 +106,8 @@ def compileExpr.branchMerge
   let leftConds := (true, condName) :: pathConds
   let rightConds := (false, condName) :: pathConds
   .merge (.merge_cond condName)
-    (compileExpr.exprOutputs m n leftConds)
     (compileExpr.exprOutputs m n rightConds)
+    (compileExpr.exprOutputs m n leftConds)
     (compileExpr.exprOutputs m n pathConds)
 
 /--
