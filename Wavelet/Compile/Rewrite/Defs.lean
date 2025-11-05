@@ -202,7 +202,7 @@ def deadCodeElim [Arity Op] [DecidableEq χ] : Rewrite Op χ V 2 :=
         .done [.forward #v[inputs[0]] #v[outputs[0]]]
       else
         .fail
-    -- Fork with one of the outputs being a sink
+    -- Fork with one of the outputs being a sink or another fork
     | .async (AsyncOp.fork n) inputs outputs =>
       if h : inputs.length = 1 ∧ outputs.length = n then
         let input := inputs[0]'(by omega)
@@ -216,6 +216,18 @@ def deadCodeElim [Arity Op] [DecidableEq χ] : Rewrite Op χ V 2 :=
                 ]
               else
                 .fail
+            else
+              .fail
+          -- Folding two consecutive forks
+          | .async (AsyncOp.fork m) inputs' outputs' =>
+            if h : inputs'.length = 1 ∧ outputs'.length = m then
+              let input' := inputs'[0]'(by omega)
+              if input' ∈ outputs then
+                .done [
+                  .fork input (outputs.erase input' ++ outputs').toVector,
+                ]
+              else
+              .fail
             else
               .fail
           | _ => .fail
@@ -235,7 +247,7 @@ def deadCodeElim [Arity Op] [DecidableEq χ] : Rewrite Op χ V 2 :=
 TODO: This is quite inefficient (e.g., doing pattern matching on a graph with n nodes will take O(n^k).)
 Implement a proper graph rewriting algorithm in the future.
 -/
-def Rewrite.apply [Arity Op]
+def Rewrite.applyAtoms [Arity Op]
   (rw : Rewrite Op χ V k)
   (aps : AtomicProcs Op (RewriteName χ) V) : Option (AtomicProcs Op (RewriteName χ) V) :=
   match rw with
@@ -244,21 +256,30 @@ def Rewrite.apply [Arity Op]
   | .match_on f =>
     aps.mapIdx (λ i ap => (i, f ap)) |>.firstM λ (i, rw') =>
       -- Remove the matched atomic proc and continue matching
-      rw'.apply (aps.take i ++ aps.drop (i + 1))
+      rw'.applyAtoms (aps.take i ++ aps.drop (i + 1))
+
+def Rewrite.apply [Arity Op]
+  (rw : Rewrite Op χ V k)
+  (proc : Proc Op (RewriteName χ) V m n) : Option (Proc Op (RewriteName χ) V m n) :=
+  return {
+    inputs := proc.inputs.map .rw,
+    outputs := proc.outputs.map .rw,
+    atoms := ← rw.applyAtoms proc.atoms,
+  }
 
 partial def Rewrite.applyUntilFail'
   [Arity Op]
   (rw : Rewrite Op χ V k)
-  (aps : AtomicProcs Op (RewriteName χ) V)
-  (n : Nat) : Nat × AtomicProcs Op (RewriteName χ) V :=
-  match rw.apply aps with
-  | some aps' => Rewrite.applyUntilFail' rw aps' (n + 1)
-  | none => (n, aps)
+  (proc : Proc Op (RewriteName χ) V m n)
+  (numRewrites : Nat) : Nat × Proc Op (RewriteName χ) V m n :=
+  match rw.apply proc with
+  | some proc' => Rewrite.applyUntilFail' rw proc' (numRewrites + 1)
+  | none => (numRewrites, proc)
 
 def Rewrite.applyUntilFail
   [Arity Op]
   (rw : Rewrite Op χ V k)
-  (aps : AtomicProcs Op (RewriteName χ) V) : Nat × AtomicProcs Op (RewriteName χ) V :=
-  Rewrite.applyUntilFail' rw aps 0
+  (proc : Proc Op (RewriteName χ) V m n) : Nat × Proc Op (RewriteName χ) V m n :=
+  Rewrite.applyUntilFail' rw proc 0
 
 end Wavelet.Compile

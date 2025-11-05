@@ -48,8 +48,8 @@ def main : IO Unit := do
     let applyRewrites {k} (descr : String) (rw : Rewrite _ _ _ k) (proc : P Nat) : IO (P Nat) := do
       stderr.putStr s!"{descr} ..."
       let proc : P (RewriteName Nat) := proc.mapChans RewriteName.base
-      let (numRws, atoms) := Rewrite.applyUntilFail rw proc.atoms
-      let proc : P Nat := { proc with atoms }.renameChans
+      let (numRws, proc) := Rewrite.applyUntilFail rw proc
+      let proc : P Nat := proc.renameChans
       proc.checkAffineChan.unwrapIO "dfg invariant error"
       stderr.putStrLn s!" {numRws} rewrites. graph size: {proc.atoms.length} ops"
       return proc
