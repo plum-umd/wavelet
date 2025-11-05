@@ -13,6 +13,7 @@ def main : IO Unit := do
   let T := RawProg
     (WithCall (WithSpec (RipTide.SyncOp String) RipTide.opSpec) String)
     String
+
   let rawProg ← match Lean.FromJson.fromJson? json with
     | .ok (x : T) => pure x
     | .error err => throw <| IO.userError s!"failed to decode JSON input as RawProg: {err}"
@@ -20,15 +21,35 @@ def main : IO Unit := do
     | .ok p => pure p
     | .error err => throw <| IO.userError s!"failed to convert RawProg to Prog: {err}"
   if h : prog.numFns > 0 then
-    -- Compile and link
+    -- Some abbreviations
     let : NeZeroSigs prog.sigs := prog.neZero
-    let proc := compileProg prog.prog ⟨prog.numFns - 1, by omega⟩
-    -- Global graph rewrites
+    let last : Fin prog.numFns := ⟨prog.numFns - 1, by omega⟩
+    let P χ := Proc
+      (WithSpec (RipTide.SyncOp String) RipTide.opSpec) χ RipTide.Value
+      (prog.sigs last).ι (prog.sigs last).ω
+
+    -- Compile and link
+    let proc := compileProg prog.prog last
+    let proc := proc.renameChans
+
+    -- Some graph rewrites
     stderr.putStrLn s!"compiled {prog.numFns} function(s). graph size: {proc.atoms.length} ops"
+
+    -- Rename channels to `Nat`
+    let proc : P Nat := proc.renameChans
+
     stderr.putStr s!"lowering n-ary ops ..."
-    let proc := proc.mapChans RewriteName.base
-    let proc := { proc with atoms := Rewrite.applyUntilFail (naryLowering) proc.atoms }
-    stderr.putStrLn s!" done. graph size: {proc.atoms.length} ops"
+    let proc : P (RewriteName Nat) := proc.mapChans RewriteName.base
+    let (numRws, atoms) := Rewrite.applyUntilFail naryLowering proc.atoms
+    let proc : P Nat := { proc with atoms }.renameChans
+    stderr.putStrLn s!" {numRws} rewrites. graph size: {proc.atoms.length} ops"
+
+    stderr.putStr s!"folding forwards ..."
+    let proc : P (RewriteName Nat) := proc.mapChans RewriteName.base
+    let (numRws, atoms) := Rewrite.applyUntilFail forwardElim proc.atoms
+    let proc : P Nat := { proc with atoms }.renameChans
+    stderr.putStrLn s!" {numRws} rewrites. graph size: {proc.atoms.length} ops"
+
     -- Dump graph as JSON
     let rawProc := RawProc.fromProc proc
     let output := Lean.ToJson.toJson rawProc
