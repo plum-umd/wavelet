@@ -17,14 +17,13 @@ class Arity Op where
 /-- Operators with non-zero arities. -/
 class NeZeroArity Op [Arity Op] where
   neZeroᵢ : ∀ op : Op, NeZero (Arity.ι op)
-  -- Currently we don't need this anywhere
-  -- neZeroₒ : ∀ op : Op, NeZero (Arity.ω op)
+  neZeroₒ : ∀ op : Op, NeZero (Arity.ω op)
 
 instance [inst : Arity Op] [NeZeroArity Op] : NeZero (inst.ι op)
   := NeZeroArity.neZeroᵢ op
 
--- instance [inst : Arity Op] [NeZeroArity Op] : NeZero (inst.ω op)
---   := NeZeroArity.neZeroₒ op
+instance [inst : Arity Op] [NeZeroArity Op] : NeZero (inst.ω op)
+  := NeZeroArity.neZeroₒ op
 
 /-- Arities for a sum of operator sets. -/
 instance [Arity Op₁] [Arity Op₂] : Arity (Op₁ ⊕ Op₂) where
@@ -36,7 +35,7 @@ instance [Arity Op₁] [Arity Op₂] : Arity (Op₁ ⊕ Op₂) where
 instance [Arity Op₁] [Arity Op₂] [NeZeroArity Op₁] [NeZeroArity Op₂] :
   NeZeroArity (Op₁ ⊕ Op₂) where
   neZeroᵢ op := by cases op <;> simp [Arity.ι] <;> apply NeZeroArity.neZeroᵢ
-  -- neZeroₒ op := by cases op <;> simp [Arity.ω] <;> apply NeZeroArity.neZeroₒ
+  neZeroₒ op := by cases op <;> simp [Arity.ω] <;> apply NeZeroArity.neZeroₒ
 
 /-- Some required constants in compilation and semantics. -/
 class InterpConsts (V : Type v) where

@@ -37,6 +37,7 @@ def AsyncOp.EqMod
   | merge s₁ n₁, merge s₂ n₂ => s₁ = s₂ ∧ n₁ = n₂
   | forward n₁, forward n₂ => n₁ = n₂
   | fork n₁, fork n₂ => n₁ = n₂
+  | order n₁, order n₂ => n₁ = n₂
   | const c₁ n₁, const c₂ n₂ => EqV c₁ c₂ ∧ n₁ = n₂
   | forwardc n₁ m₁ consts₁, forwardc n₂ m₂ consts₂ =>
       n₁ = n₂ ∧ m₁ = m₂ ∧ List.Forall₂ EqV consts₁.toList consts₂.toList

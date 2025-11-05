@@ -20,7 +20,7 @@ inductive SyncOp (Loc : Type u) : Type u where
   | eq | lt
   | load (_ : Loc) | store (_ : Loc) | sel
   | const (_ : Value)
-  | fork (n : Nat)
+  | copy (n : Nat)
   deriving Repr, Lean.ToJson, Lean.FromJson
 
 instance : Arity (SyncOp Loc) where
@@ -28,15 +28,18 @@ instance : Arity (SyncOp Loc) where
     | .shl => 2 | .ashr => 2 | .lshr => 2
     | .eq => 2 | .lt => 2
     | .load _ => 1 | .store _ => 2 | .sel => 3
-    | .const _ => 1 | .fork _ => 1
+    | .const _ => 1 | .copy _ => 1
   ω | .add => 1 | .sub => 1 | .mul => 1 | .div => 1
     | .shl => 1 | .ashr => 1 | .lshr => 1
     | .eq => 1 | .lt => 1
-    | .load _ => 1 | .store _ => 0 | .sel => 1
-    | .const _ => 1 | .fork n => n
+    | .load _ => 1 | .store _ => 1 | .sel => 1
+    | .const _ => 1
+    -- NOTE: `copy n` outputs `n + 1` values
+    | .copy n => n + 1
 
 instance : NeZeroArity (SyncOp Loc) where
   neZeroᵢ op := by cases op <;> infer_instance
+  neZeroₒ op := by cases op <;> infer_instance
 
 /-- Some constants used for compilation. -/
 instance : InterpConsts Value where
@@ -79,7 +82,7 @@ inductive InterpOp [DecidableEq Loc] : Lts (State Loc) (RespLabel (SyncOp Loc) V
     InterpOp s (.respond (SyncOp.load loc) inputs outputs) s
   | interp_store
     {inputs : Vector Value 2} :
-    InterpOp s (.respond (SyncOp.store loc) inputs #v[])
+    InterpOp s (.respond (SyncOp.store loc) inputs #v[0])
       (s.store loc inputs[0] inputs[1])
 
 def opInterp [DecidableEq Loc] :
@@ -137,8 +140,8 @@ def prog₁ :
       outputs := 2,
       body :=
         .op (.op (.join 1 0 (λ _ => PCM.zero))) ["t₀"] ["t₁", "t₂"] <|
-        .op (.op (.op false (.fork 4))) ["i"] ["i₁", "i₂", "i₃", "i₄", "dummy₁"] <|
-        .op (.op (.op false (.fork 2))) ["n"] ["n₁", "n₂", "dummy₂"] <|
+        .op (.op (.op false (.copy 3))) ["i"] ["i₁", "i₂", "i₃", "i₄", "dummy₁"] <|
+        .op (.op (.op false (.copy 1))) ["n"] ["n₁", "n₂", "dummy₂"] <|
         .op (.op (.op false .lt)) ["i₁", "n₁"] ["c", "dummy₃"] <|
         .br "c"
           (.op (.op (.op true (.load "A"))) ["i₂", "t₁"] ["x", "t₁'"] <|

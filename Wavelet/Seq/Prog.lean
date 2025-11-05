@@ -49,7 +49,7 @@ instance : Arity (SigOps sigs k') where
 
 instance [NeZeroSigs sigs] : NeZeroArity (SigOps sigs k') where
   neZeroᵢ | .call i => by apply NeZeroSigs.neZeroᵢ
-  -- neZeroₒ | .call i => by apply NeZeroSigs.neZeroₒ
+  neZeroₒ | .call i => by apply NeZeroSigs.neZeroₒ
 
 abbrev Prog (Op : Type u) χ V [Arity Op] (sigs : Sigs k) :=
   (i : Fin k) → Fn (Op ⊕ SigOps sigs i.castSucc) χ V (sigs i).ι (sigs i).ω

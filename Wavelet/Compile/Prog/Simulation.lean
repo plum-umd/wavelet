@@ -577,6 +577,9 @@ private theorem aop_interp_map_inj
   | interp_fork h₁ h₂ =>
     simp [Vector.toList_map, hinputs', houtputs']
     exact .interp_fork (by simp [h₁]) (by simp [h₂])
+  | interp_order h₁ h₂ =>
+    simp [Vector.toList_map, hinputs', houtputs']
+    exact .interp_order (by simp [h₁]) (by simp [h₂])
   | interp_const h₁ =>
     simp [Vector.toList_map, hinputs', houtputs']
     exact .interp_const (by simp [h₁])

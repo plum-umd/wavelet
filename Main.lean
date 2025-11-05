@@ -25,30 +25,31 @@ def main : IO Unit := do
     let : NeZeroSigs prog.sigs := prog.neZero
     let last : Fin prog.numFns := ⟨prog.numFns - 1, by omega⟩
     let P χ := Proc
-      (WithSpec (RipTide.SyncOp String) RipTide.opSpec) χ RipTide.Value
+      (RipTide.SyncOp String) χ RipTide.Value
       (prog.sigs last).ι (prog.sigs last).ω
 
     -- Compile and link
     let proc := compileProg prog.prog last
     let proc := proc.renameChans
-
-    -- Some graph rewrites
     stderr.putStrLn s!"compiled {prog.numFns} function(s). graph size: {proc.atoms.length} ops"
 
-    -- Rename channels to `Nat`
+    -- Erase ghost tokens
+    let proc := proc.eraseGhost
+    stderr.putStrLn s!"erased ghost tokens. graph size: {proc.atoms.length} ops"
+
+    -- Some graph rewrites
+
+    let applyRewrites {k} (descr : String) (rw : Rewrite _ _ _ k) (proc : P Nat) : IO (P Nat) := do
+      stderr.putStr s!"{descr} ..."
+      let proc : P (RewriteName Nat) := proc.mapChans RewriteName.base
+      let (numRws, atoms) := Rewrite.applyUntilFail rw proc.atoms
+      let proc : P Nat := { proc with atoms }.renameChans
+      stderr.putStrLn s!" {numRws} rewrites. graph size: {proc.atoms.length} ops"
+      return proc
+
     let proc : P Nat := proc.renameChans
-
-    stderr.putStr s!"lowering n-ary ops ..."
-    let proc : P (RewriteName Nat) := proc.mapChans RewriteName.base
-    let (numRws, atoms) := Rewrite.applyUntilFail naryLowering proc.atoms
-    let proc : P Nat := { proc with atoms }.renameChans
-    stderr.putStrLn s!" {numRws} rewrites. graph size: {proc.atoms.length} ops"
-
-    stderr.putStr s!"folding forwards ..."
-    let proc : P (RewriteName Nat) := proc.mapChans RewriteName.base
-    let (numRws, atoms) := Rewrite.applyUntilFail forwardElim proc.atoms
-    let proc : P Nat := { proc with atoms }.renameChans
-    stderr.putStrLn s!" {numRws} rewrites. graph size: {proc.atoms.length} ops"
+    let proc ← applyRewrites "lowering n-ary ops" naryLowering proc
+    let proc ← applyRewrites "dead code elimination" deadCodeElim proc
 
     -- Dump graph as JSON
     let rawProc := RawProc.fromProc proc

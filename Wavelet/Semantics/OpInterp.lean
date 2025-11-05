@@ -17,7 +17,7 @@ instance : Arity Empty where
 
 instance : NeZeroArity Empty where
   neZeroᵢ e := e.elim
-  -- neZeroₒ e := e.elim
+  neZeroₒ e := e.elim
 
 /-- The dual action of `Label.yield`. -/
 inductive RespLabel (Op : Type u) (V : Type v) [Arity Op] : Type (max u v) where

@@ -88,6 +88,12 @@ inductive WithSpec {T : Type u} (Op : Type u) [Arity Op] (spec : OpSpec Op V T) 
       (req : Vector V l → T)
       [NeZero k]
 
+instance [Arity Op] [Repr Op] {opSpec : OpSpec Op V T} : Repr (WithSpec Op opSpec) where
+  reprPrec
+    | .op true o, _ => "WithSpec.op true " ++ repr o
+    | .op false o, _ => "WithSpec.op false " ++ repr o
+    | WithSpec.join k l _, _ => "WithSpec.join " ++ repr k ++ " " ++ repr l
+
 /-- Uses only the LHS `InterpConsts` of a sum for constants. -/
 instance instInterpConstsSum [left : InterpConsts V] : InterpConsts (V ⊕ V') where
   junkVal := .inl (left.junkVal)
@@ -123,8 +129,8 @@ instance [Arity Op] [NeZeroArity Op] {spec : OpSpec Op V T} : NeZeroArity (WithS
           | WithSpec.join k l _ => by
             simp [Arity.ι]
             infer_instance
-  -- neZeroₒ | .op o => by infer_instance
-  --         | WithSpec.join _ _ _ => by infer_instance
+  neZeroₒ | .op _ o => by infer_instance
+          | WithSpec.join _ _ _ => by infer_instance
 
 /-- Constructs the desired operator inputs depending on whether it accepts ghost tokens. -/
 def WithSpec.opInputs

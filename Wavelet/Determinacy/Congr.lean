@@ -122,6 +122,14 @@ theorem congr_eq_mod_ghost_async_op_interp
     exact ⟨_, _,
       .interp_fork h₁ (congr_eq_is_clonable h₂ heq₁),
       by simp [AsyncOp.EqMod, List.forall₂_replicate heq₁]⟩
+  | interp_order h₁ h₂ =>
+    cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
+    subst heq_aop
+    simp [heq_inputs.length_eq] at h₂
+    exact ⟨_, _, .interp_order h₁ h₂,
+      by
+        simp [AsyncOp.EqMod]
+        apply heq_inputs.get⟩
   | interp_const h₁ =>
     cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
     have ⟨heq₁, heq₂⟩ := heq_aop

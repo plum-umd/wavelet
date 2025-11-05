@@ -32,6 +32,7 @@ inductive AsyncOp V where
   | merge (state : AsyncOp.MergeState) (n : Nat) [NeZero n] : AsyncOp V
   | forward (n : Nat) [NeZero n] : AsyncOp V
   | fork (n : Nat) : AsyncOp V
+  | order (n : Nat) [NeZero n] : AsyncOp V
   | const (c : V) (n : Nat) : AsyncOp V
   -- A combination of `forward` and `const` to wait for inputs to arrive,
   -- forward the inputs to the first `n` outputs, and then send constants
@@ -131,6 +132,14 @@ inductive Interp
         [input] [inputVal]
         outputs (.replicate k inputVal))
       (.fork k)
+  | interp_order [NeZero k] :
+    inputs.length = k →
+    (h : inputVals.length = k) →
+    Interp (.order k)
+      (.mk inputs [output]
+        inputs inputVals
+        [output] [inputVals[0]'(by have := NeZero.ne k; omega)])
+      (.order k)
   | interp_const :
     outputs.length = k →
     Interp (.const c k)

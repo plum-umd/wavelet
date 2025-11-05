@@ -76,6 +76,9 @@ theorem async_op_interp_map_chans
   | interp_fork h₁ h₂ =>
     rw [← List.length_map f] at h₁
     exact .interp_fork h₁ h₂
+  | interp_order h₁ h₂ =>
+    rw [← List.length_map f] at h₁
+    exact .interp_order h₁ h₂
   | interp_const h₁ =>
     rw [← List.length_map f] at h₁
     exact .interp_const h₁

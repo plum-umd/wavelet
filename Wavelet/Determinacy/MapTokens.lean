@@ -38,6 +38,7 @@ def AsyncOp.mapValues
   | merge state n => merge state n
   | forward n => forward n
   | fork n => fork n
+  | order n => order n
   | const c n => const (f c) n
   | forwardc n m consts => forwardc n m (consts.map f)
   | sink n => sink n

@@ -880,7 +880,7 @@ theorem async_op_interp_ne_zero_inputs
   case interp_merge_right =>
     have := inst.ne
     omega
-  case interp_forward | interp_forwardc | interp_sink =>
+  case interp_forward | interp_forwardc | interp_sink | interp_order =>
     intros h
     subst h
     rename_i h

@@ -174,7 +174,7 @@ def CheckState.toProg [Arity Op]
   }
 
 /-- Converts a `RawExpr` to `Expr` while checking some static constraints. -/
-def RawExpr.checkExpr [Arity Op]
+def RawExpr.checkExpr [Arity Op] [Repr Op]
   (state : CheckState Op χ V)
   (m n : Nat) :
     RawExpr (WithCall Op String) χ →
@@ -197,7 +197,7 @@ def RawExpr.checkExpr [Arity Op]
           (rets.toVector.cast h₂)
           (← cont.checkExpr state m n)
       else
-        .error s!"unexpected number of return values for operator: expected {Arity.ω o}, got {rets.length}"
+        .error s!"unexpected number of return values for operator `{repr o}`: expected {Arity.ω o}, got {rets.length}"
     else
       .error s!"unexpected number of arguments for operator: expected {Arity.ι o}, got {args.length}"
   | .op (.call name) args rets cont => do
@@ -210,16 +210,16 @@ def RawExpr.checkExpr [Arity Op]
             (rets.toVector.cast h₂)
             (← cont.checkExpr state m n)
         else
-          .error s!"unexpected number of return values for function call {name}: expected {(state.sigs i).ω}, got {rets.length}"
+          .error s!"unexpected number of return values for function call `{name}`: expected {(state.sigs i).ω}, got {rets.length}"
       else
-        .error s!"unexpected number of arguments for function call {name}: expected {(state.sigs i).ι}, got {args.length}"
+        .error s!"unexpected number of arguments for function call `{name}`: expected {(state.sigs i).ι}, got {args.length}"
     | none =>
       .error s!"unknown function {name}"
   | .br cond left right => do
     return .br cond (← left.checkExpr state m n) (← right.checkExpr state m n)
 
 /-- Converts the `RawFn` to a `Fn` and adds it to the context. -/
-def RawFn.checkFn [Arity Op]
+def RawFn.checkFn [Arity Op] [Repr Op]
   (rawFn : RawFn (WithCall Op String) χ) : CheckM Op χ V Unit
   := do
   let state ← get
@@ -234,13 +234,13 @@ def RawFn.checkFn [Arity Op]
       body := expr,
     } ⟨h₁, h₂⟩)
 
-def RawProg.checkProg [Arity Op]
+def RawProg.checkProg [Arity Op] [Repr Op]
   (rawProg : RawProg (WithCall Op String) χ) : CheckM Op χ V Unit
   := for fn in rawProg.fns do
     fn.checkFn
 
 /-- Converts a `RawProg` to the internal dependently typed `Prog`. -/
-def RawProg.toProg [Arity Op]
+def RawProg.toProg [Arity Op] [Repr Op]
   (rawProg : RawProg (WithCall Op String) χ) :
     Except String (EncapProg Op χ V)
   := do

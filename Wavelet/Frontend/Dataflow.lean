@@ -18,6 +18,7 @@ inductive RawAsyncOp V where
   | merge (state : RawMergeState) (n : Nat) : RawAsyncOp V
   | forward (n : Nat) : RawAsyncOp V
   | fork (n : Nat) : RawAsyncOp V
+  | order (n : Nat) : RawAsyncOp V
   | const (c : V) (n : Nat) : RawAsyncOp V
   | forwardc (n m : Nat) (consts : List V) : RawAsyncOp V
   | sink (n : Nat) : RawAsyncOp V
@@ -47,6 +48,7 @@ instance : Coe (AsyncOp V) (RawAsyncOp V) where
     | AsyncOp.merge state n => .merge ↑state n
     | AsyncOp.forward n => .forward n
     | AsyncOp.fork n => .fork n
+    | AsyncOp.order n => .order n
     | AsyncOp.const c n => .const c n
     | AsyncOp.forwardc n m consts => .forwardc n m consts.toList
     | AsyncOp.sink n => .sink n

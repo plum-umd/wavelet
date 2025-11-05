@@ -486,6 +486,11 @@ theorem async_op_interp_le_tok_sum
     rename V ⊕ T => val
     cases val <;> simp at hclone
     simp [asTok]
+  | interp_order =>
+    apply PCM.sum.mem_to_le
+    simp only [List.map_singleton, PCM.sum.singleton]
+    grind only [= List.mem_map, usr List.length_pos_of_mem, usr List.getElem_mem,
+      → List.eq_nil_of_map_eq_nil]
   | interp_const =>
     rename_i c _ _ _
     cases c <;> simp [AsyncOp.HasNoTokenConst] at hntok
