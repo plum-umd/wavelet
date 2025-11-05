@@ -92,7 +92,7 @@ theorem sim_step_op
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
     hatoms, hcomp_fn, hrest, hret, hcont,
   ⟩ := hsim.has_compiled_procs
-  have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont _ hop
+  have ⟨hcarryInLoop, ⟨_, hwf_expr⟩, hcurrent⟩ := hcont _ hop
   simp [compileExpr] at hcurrent
   -- Deduce some facts from `hstep` and `hwf_expr`
   cases hstep with
@@ -105,7 +105,7 @@ theorem sim_step_op
     subst h₁; subst h₂; subst h₃; subst h₄
     clear hexpr
     cases hwf_expr with
-    | wf_op hargs_nodup hrets_nodup hrets_disj hargs_subset hwf_cont =>
+    | wf_op hargs_nodup hrets_nodup _ hrets_disj hargs_subset hwf_cont =>
     -- Step 1: Pop inputs of `o` and run `o`
     have ⟨chans₁, inputVals', hpop_input_vals, hchans₁, hinput_vals⟩ :=
       pop_vals_singleton

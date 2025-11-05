@@ -97,7 +97,7 @@ def HasCompiledProcs
       gs.pathConds = []) ∧
     (∀ expr, ec.cont = .expr expr →
       mergeState = .decider ∧
-      expr.AffineVar gs.definedVars ∧
+      (∃ used, expr.AffineVar used gs.definedVars) ∧
       compileExpr gs.definedVars gs.pathConds expr = ctxCurrent)
 
 @[grind]

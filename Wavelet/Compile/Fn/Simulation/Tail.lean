@@ -191,7 +191,7 @@ private theorem sim_step_tail_exec_dataflow
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
     hatoms, hcomp_fn, hrest, hret, hcont,
   ⟩ := hsim.has_compiled_procs
-  have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont _ hexpr
+  have ⟨hcarryInLoop, ⟨_, hwf_expr⟩, hcurrent⟩ := hcont _ hexpr
   cases hstep with
   | step_init hexpr' | step_br hexpr' | step_ret hexpr' | step_op hexpr' =>
     simp [hexpr] at hexpr'
@@ -495,7 +495,7 @@ theorem sim_step_tail
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
     hatoms, hcomp_fn, hrest, hret, hcont,
   ⟩ := hsim.has_compiled_procs
-  have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont _ hexpr
+  have ⟨hcarryInLoop, ⟨_, hwf_expr⟩, hcurrent⟩ := hcont _ hexpr
   cases hstep with
   | step_init hexpr' | step_br hexpr' | step_ret hexpr' | step_op hexpr' =>
     simp [hexpr] at hexpr'
@@ -527,7 +527,7 @@ theorem sim_step_tail
           simp only [hatoms, compileFn, compileFn.initCarry, hcarryInLoop]
           simp only [compileFn, List.cons.injEq, true_and] at hcomp_fn
           simp only [← hcomp_fn, compileFn.bodyComp, List.nil_append, true_and]
-          exact hsim.wf_fn.2
+          exact ⟨_, hsim.wf_fn.2⟩
     ⟩
 
 end Wavelet.Compile.Fn

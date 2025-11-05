@@ -179,7 +179,7 @@ private theorem sim_step_ret_exec_dataflow
     rest', carryInLoop, ctxLeft, ctxCurrent, ctxRight,
     hatoms, hcomp_fn, hrest, hret, hcont,
   ⟩ := hsim.has_compiled_procs
-  have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont _ hexpr
+  have ⟨hcarryInLoop, ⟨_, hwf_expr⟩, hcurrent⟩ := hcont _ hexpr
   have : rest = rest' := by
     simp [hatoms] at hpc_atoms
     exact hpc_atoms.2.symm
@@ -437,7 +437,7 @@ theorem sim_step_ret
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
     hatoms, hcomp_fn, hrest, hret, hcont,
   ⟩ := hsim.has_compiled_procs
-  have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont _ hexpr
+  have ⟨hcarryInLoop, ⟨_, hwf_expr⟩, hcurrent⟩ := hcont _ hexpr
   simp [hcarryInLoop] at hatoms
   have hsteps := sim_step_ret_exec_dataflow hsim hstep hexpr hatoms
   cases hstep with

@@ -188,7 +188,7 @@ theorem sim_step_init
         constructor
         · exists [], compileFn.resultSteers m n
           simp [← hcomp_fn, compileFn.bodyComp]
-        · exact hsim.wf_fn.2
+        · exact ⟨_, hsim.wf_fn.2⟩
   ⟩
 
 end Wavelet.Compile.Fn

@@ -78,7 +78,9 @@ structure CheckState Op χ V [Arity Op] where
   nameToIdx : String → Option (Fin numFns)
   sigs : Sigs numFns
   prog : Prog Op χ V sigs
+  -- Some validated invariants
   neZero : NeZeroSigs sigs
+
 
 abbrev CheckM Op χ V [Arity Op] T := StateT (CheckState Op χ V) (Except String) T
 

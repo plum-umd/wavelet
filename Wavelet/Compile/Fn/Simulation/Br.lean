@@ -36,7 +36,7 @@ private theorem sim_step_br_exec_dataflow
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
     hatoms, hcomp_fn, hrest, hret, hcont,
   ⟩ := hsim.has_compiled_procs
-  have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont _ hbr
+  have ⟨hcarryInLoop, ⟨_, hwf_expr⟩, hcurrent⟩ := hcont _ hbr
   simp only [compileExpr] at hcurrent
   cases hwf_expr with | wf_br hwf_left hwf_right =>
   -- Some abbreviations
@@ -239,7 +239,7 @@ theorem sim_step_br
     rest, carryInLoop, ctxLeft, ctxCurrent, ctxRight,
     hatoms, hcomp_fn, hrest, hret, hcont,
   ⟩ := hsim.has_compiled_procs
-  have ⟨hcarryInLoop, hwf_expr, hcurrent⟩ := hcont _ hbr
+  have ⟨hcarryInLoop, ⟨_, hwf_expr⟩, hcurrent⟩ := hcont _ hbr
   cases hstep with
   | step_init hexpr | step_ret hexpr | step_tail hexpr
   | step_op hexpr => simp [hbr] at hexpr
