@@ -189,7 +189,7 @@ def CheckState.pushFn [Arity Op]
       if name' = name then
         some ⟨state.numFns, by omega⟩
       else
-        (state.nameToIdx name).map (λ i => ⟨i.val, by omega⟩),
+        (state.nameToIdx name').map (λ i => ⟨i.val, by omega⟩),
     sigs := state.sigs.push ⟨m, n⟩,
     prog := λ i =>
       if h : state.numFns = i.val then
