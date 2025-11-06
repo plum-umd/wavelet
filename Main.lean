@@ -1,5 +1,7 @@
+import Cli
 import Wavelet
 
+open Cli
 open Wavelet.Frontend Wavelet.Compile Wavelet.Determinacy Wavelet.Seq Wavelet.Dataflow
 
 def Except.unwrapIO {ε α} (e : Except ε α) (msg : String) [ToString ε] : IO α :=
@@ -7,16 +9,40 @@ def Except.unwrapIO {ε α} (e : Except ε α) (msg : String) [ToString ε] : IO
   | .ok x => pure x
   | .error err => throw <| IO.userError s!"{msg}: {toString err}"
 
-def main : IO Unit := do
-  let stdin ← IO.getStdin
+def Option.unwrapIO {α} (o : Option α) (msg : String) : IO α :=
+  match o with
+  | some x => pure x
+  | none => throw <| IO.userError msg
+
+inductive OutputFormat where
+  | json
+  | dot
+  deriving Repr
+
+def trace (msg : String) : IO Unit := do
   let stderr ← IO.getStderr
-  let stdout ← IO.getStdout
-  let input ← stdin.readToEnd
+  stderr.putStrLn s!"[trace] {msg}"
+
+def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
+  -- CLI option parsing
+  let inputPath := p.positionalArg! "input" |>.as! String
+  let outputPath? := p.flag? "output" |>.map (·.as! String)
+  let format ← match p.flag! "format" |>.as! String with
+    | "json" => pure OutputFormat.json
+    | "dot"  => pure OutputFormat.dot
+    | fmt    => throw <| IO.userError s!"unknown output format: {fmt}"
+  let writeOutput (content : String) : IO Unit :=
+    match outputPath? with
+    | some path => IO.FS.writeFile path content
+    | none      => IO.getStdout >>= (·.putStrLn content)
+
+  let input ← IO.FS.readFile inputPath
   let json ← (Lean.Json.parse input).unwrapIO "failed to parse JSON input"
-  let T := RawProg
+
+  let RawT := RawProg
     (WithCall (WithSpec (RipTide.SyncOp String) RipTide.opSpec) String)
     String
-  let rawProg : T ← (Lean.FromJson.fromJson? json).unwrapIO "failed to decode JSON input as RawProg"
+  let rawProg : RawT ← (Lean.FromJson.fromJson? json).unwrapIO "failed to decode JSON input as RawProg"
   let prog ← (rawProg.toProg (V := RipTide.Value)).unwrapIO "failed to convert RawProg to Prog"
 
   if h : prog.numFns > 0 then
@@ -36,22 +62,21 @@ def main : IO Unit := do
     -- Compile and link
     let proc := compileProg prog.prog last
     let proc := proc.renameChans
-    stderr.putStrLn s!"compiled {prog.numFns} function(s). graph size: {proc.atoms.length} ops"
+    trace s!"compiled {prog.numFns} function(s). graph size: {proc.atoms.length} ops"
     proc.checkAffineChan.unwrapIO "dfg invariant error"
 
     -- Erase ghost tokens
     let proc := proc.eraseGhost
-    stderr.putStrLn s!"erased ghost tokens. graph size: {proc.atoms.length} ops"
+    trace s!"erased ghost tokens. graph size: {proc.atoms.length} ops"
     proc.checkAffineChan.unwrapIO "dfg invariant error"
 
     -- Some optimizations
     let applyRewrites (descr : String) (rw : Rewrite _ _ _) (proc : P Nat) : IO (P Nat) := do
-      stderr.putStr s!"{descr} ..."
       let proc : P (RewriteName Nat) := proc.mapChans RewriteName.base
       let (numRws, proc) := Rewrite.applyUntilFail rw proc
       let proc : P Nat := proc.renameChans
       proc.checkAffineChan.unwrapIO "dfg invariant error"
-      stderr.putStrLn s!" {numRws} rewrites. graph size: {proc.atoms.length} ops"
+      trace s!"{descr}: {numRws} rewrites. graph size: {proc.atoms.length} ops"
       return proc
 
     let proc : P Nat := proc.renameChans
@@ -59,13 +84,35 @@ def main : IO Unit := do
     let proc ← applyRewrites "operator selection" RipTide.operatorSel proc
     let proc ← applyRewrites "dead code elimination" deadCodeElim proc
 
-    -- Dump graph as DOT
-    let plot ← proc.plot.run.unwrapIO "failed to generate DOT plot"
-    stderr.putStrLn plot
-
-    -- Dump graph as JSON
-    let rawProc := RawProc.fromProc proc
-    let output := Lean.ToJson.toJson rawProc
-    stdout.putStrLn (Lean.Json.pretty output)
+    match format with
+    | .dot =>
+      -- Dump graph as DOT
+      let plot ← proc.plot.run.unwrapIO "failed to generate DOT plot"
+      writeOutput plot
+    | .json =>
+      -- Dump graph as JSON
+      let rawProc := RawProc.fromProc proc
+      let output := Lean.ToJson.toJson rawProc
+      writeOutput (Lean.Json.pretty output)
+    return 0
   else
-    stderr.putStrLn "no function provided"
+    trace "no function provided"
+    return 0
+
+def compileCmd := `[Cli|
+    compileCmd VIA runCompileCmd; ["0.0.1"]
+    "Wavelet compiler (Lean backend)"
+
+    FLAGS:
+      o, output : String; "Path to output final dataflow graph in JSON (Default: stdout)"
+      f, format : String; "Output format [json|dot]"
+
+    ARGS:
+      input : String; "Input sequential program in JSON"
+
+    EXTENSIONS:
+      defaultValues! #[("format", "json")]
+  ]
+
+def main (args : List String) : IO UInt32 :=
+  compileCmd.validate args
