@@ -81,7 +81,8 @@ def Proc.plot.inputPortName
   [Arity Op] [DecidableEq χ]
   (ap : AtomicProc Op χ V) (portIdx : Nat) : String :=
   match ap with
-  | .async (.steer _ 1) .. =>
+  | .async (.steer _ 1) ..
+  | .async (.switch 1) .. =>
     if portIdx = 0 then "e" -- Decider
     else "n" -- Input
   | .async (.merge _ 1) .. =>
