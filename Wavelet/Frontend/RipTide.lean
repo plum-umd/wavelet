@@ -22,7 +22,7 @@ inductive SyncOp (Loc : Type u) : Type u where
   | eq | lt
   | load (_ : Loc) | store (_ : Loc) | sel
   | const (_ : Value)
-  | copy (n : Nat)
+  | copy (_ : Nat)
   deriving Repr, Lean.ToJson, Lean.FromJson
 
 instance : Arity (SyncOp Loc) where

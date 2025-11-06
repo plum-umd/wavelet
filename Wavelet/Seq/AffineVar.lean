@@ -13,9 +13,11 @@ inductive Expr.AffineVar [Arity Op] [DecidableEq χ]
   : List χ → List χ → Expr Op χ n m → Prop where
   | wf_ret :
     vars.toList.Nodup →
+    vars.toList ⊆ definedVars →
     AffineVar usedVars definedVars (.ret vars)
   | wf_tail :
     vars.toList.Nodup →
+    vars.toList ⊆ definedVars →
     AffineVar usedVars definedVars (.tail vars)
   | wf_op :
     args.toList.Nodup →
@@ -27,6 +29,7 @@ inductive Expr.AffineVar [Arity Op] [DecidableEq χ]
     AffineVar (usedVars ++ args.toList) ((definedVars.removeAll args.toList) ++ rets.toList) cont →
     AffineVar usedVars definedVars (.op o args rets cont)
   | wf_br :
+    c ∈ definedVars →
     AffineVar (c :: usedVars) (definedVars.removeAll [c]) left →
     AffineVar (c :: usedVars) (definedVars.removeAll [c]) right →
     AffineVar usedVars definedVars (.br c left right)
@@ -43,21 +46,21 @@ instance Expr.AffineVar.instDecidable [Arity Op] [DecidableEq χ]
   {expr : Expr Op χ n m} : Decidable (expr.AffineVar usedVars definedVars) :=
   match expr with
   | .ret vars =>
-    if h : vars.toList.Nodup then
-      isTrue (Expr.AffineVar.wf_ret h)
+    if h : vars.toList.Nodup ∧ vars.toList ⊆ definedVars then
+      isTrue (Expr.AffineVar.wf_ret h.1 h.2)
     else
       isFalse (by
-        intro h
-        rcases h with ⟨hnodup⟩
-        contradiction)
+        intro h'
+        cases h' with | wf_ret hnodup hsub =>
+        exact False.elim (h ⟨hnodup, hsub⟩))
   | .tail vars =>
-    if h : vars.toList.Nodup then
-      isTrue (Expr.AffineVar.wf_tail h)
+    if h : vars.toList.Nodup ∧ vars.toList ⊆ definedVars then
+      isTrue (Expr.AffineVar.wf_tail h.1 h.2)
     else
       isFalse (by
-        intro h
-        rcases h with ⟨hnodup⟩
-        contradiction)
+        intro h'
+        cases h' with | wf_tail hnodup hsub =>
+        exact False.elim (h ⟨hnodup, hsub⟩))
   | .op o args rets cont =>
     have : Decidable
       (cont.AffineVar (usedVars ++ args.toList) ((definedVars.removeAll args.toList) ++ rets.toList))
@@ -81,11 +84,12 @@ instance Expr.AffineVar.instDecidable [Arity Op] [DecidableEq χ]
       (right.AffineVar (c :: usedVars) (definedVars.removeAll [c]))
       := instDecidable
     if h₁ :
+      c ∈ definedVars ∧
       left.AffineVar (c :: usedVars) (definedVars.removeAll [c]) ∧
       right.AffineVar (c :: usedVars) (definedVars.removeAll [c]) then
       isTrue (by
-        have ⟨hl, hr⟩ := h₁
-        apply Expr.AffineVar.wf_br hl hr)
+        have ⟨hmem, hl, hr⟩ := h₁
+        apply Expr.AffineVar.wf_br hmem hl hr)
     else
       isFalse (by intros h'; rcases h'; grind only)
 
