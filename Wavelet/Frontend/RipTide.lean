@@ -181,30 +181,29 @@ instance : Dataflow.DotName Value where
   dotName v := s!"\"{v}\""
 
 /-- Custom rewrites for RipTide. -/
-def operatorSel [DecidableEq χ] : Rewrite (RipTide.SyncOp Loc) χ Value 1 :=
-  .match_on λ
+def operatorSel [DecidableEq χ] : Rewrite (RipTide.SyncOp Loc) χ Value :=
+  .choose λ
   -- Lower `copy` to `fork`
-  | ctx, .op (.copy n) inputs outputs =>
-    .done [.fork (inputs[0]'(by simp [Arity.ι])) outputs]
+  | .op (.copy n) inputs outputs =>
+    return [.fork (inputs[0]'(by simp [Arity.ι])) outputs]
   -- Lower `const` to the built-in `const`
-  | ctx, .op (.const v) inputs outputs =>
-    .done [.const v (inputs[0]'(by simp [Arity.ι])) outputs]
+  | .op (.const v) inputs outputs =>
+    return [.const v (inputs[0]'(by simp [Arity.ι])) outputs]
   -- Lower `switch` to two `steer`s
   -- This is optional but may enable more rewrites
-  | ctx, .async (.switch 1) inputs outputs =>
+  | .async (.switch 1) inputs outputs =>
     if h : inputs.length = 2 ∧ outputs.length = 2 then
       let decider := inputs[0]'(by omega)
       let input := inputs[1]'(by omega)
       let output₁ := outputs[0]'(by omega)
       let output₂ := outputs[1]'(by omega)
-      .done [
+      return [
         .fork input #v[.rename 0 input, .rename 1 input],
         .fork decider #v[.rename 0 decider, .rename 1 decider],
         .steer true (.rename 0 decider) #v[.rename 0 input] #v[output₁],
         .steer false (.rename 1 decider) #v[.rename 1 input] #v[output₂],
       ]
-    else
-      .fail
-  | _, _ => .fail
+    else failure
+  | _ => failure
 
 end Wavelet.Frontend.RipTide

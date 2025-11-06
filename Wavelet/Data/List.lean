@@ -10,6 +10,13 @@ namespace List
 def toVector (xs : List α) : Vector α xs.length :=
   xs.toArray.toVector
 
+/-- Dynamically cast a vector and fail if the lengths don't match the expected length. -/
+def toVectorDyn [Alternative M] (xs : List α) n : M (Vector α n) :=
+  if h : xs.length = n then
+    pure (xs.toVector.cast h)
+  else
+    failure
+
 theorem all_some_implies_mapM_some {α β} {f : α → Option β} {xs : List α}
   (h : ∀ x ∈ xs, ∃ y, f x = some y) :
   ∃ ys, mapM f xs = some ys

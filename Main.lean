@@ -45,7 +45,7 @@ def main : IO Unit := do
     proc.checkAffineChan.unwrapIO "dfg invariant error"
 
     -- Some optimizations
-    let applyRewrites {k} (descr : String) (rw : Rewrite _ _ _ k) (proc : P Nat) : IO (P Nat) := do
+    let applyRewrites (descr : String) (rw : Rewrite _ _ _) (proc : P Nat) : IO (P Nat) := do
       stderr.putStr s!"{descr} ..."
       let proc : P (RewriteName Nat) := proc.mapChans RewriteName.base
       let (numRws, proc) := Rewrite.applyUntilFail rw proc

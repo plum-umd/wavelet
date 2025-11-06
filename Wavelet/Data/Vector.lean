@@ -388,4 +388,11 @@ theorem map_inr_eq
 
 infixr:65 " ⊗ " => Vector.zip
 
+/-- Dynamically cast a vector and fail if the lengths don't match. -/
+def castDyn [Alternative M] (xs : Vector α n) m : M (Vector α m) :=
+  if h : n = m then
+    pure (xs.cast h)
+  else
+    failure
+
 end Vector
