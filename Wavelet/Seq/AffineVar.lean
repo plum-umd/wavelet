@@ -40,7 +40,8 @@ def Fn.AffineVar [Arity Op] [DecidableEq χ]
   fn.body.AffineVar [] fn.params.toList
 
 /-- Executable version of `Expr.AffineVar` -/
-instance Expr.AffineVar.instDecidable [Arity Op] [DecidableEq χ]
+instance Expr.AffineVar.instDecidable
+  [Arity Op] [DecidableEq χ] [Repr χ]
   {usedVars : List χ}
   {definedVars : List χ}
   {expr : Expr Op χ n m} : Decidable (expr.AffineVar usedVars definedVars) :=
@@ -49,6 +50,7 @@ instance Expr.AffineVar.instDecidable [Arity Op] [DecidableEq χ]
     if h : vars.toList.Nodup ∧ vars.toList ⊆ definedVars then
       isTrue (Expr.AffineVar.wf_ret h.1 h.2)
     else
+      -- dbg_trace s!"duplicate or undefined return vars: {repr vars}"
       isFalse (by
         intro h'
         cases h' with | wf_ret hnodup hsub =>
@@ -57,6 +59,7 @@ instance Expr.AffineVar.instDecidable [Arity Op] [DecidableEq χ]
     if h : vars.toList.Nodup ∧ vars.toList ⊆ definedVars then
       isTrue (Expr.AffineVar.wf_tail h.1 h.2)
     else
+      -- dbg_trace s!"duplicate or undefined tail args: {repr vars}"
       isFalse (by
         intro h'
         cases h' with | wf_tail hnodup hsub =>
@@ -75,6 +78,7 @@ instance Expr.AffineVar.instDecidable [Arity Op] [DecidableEq χ]
         have ⟨h₁, h₂, h₃, h₄, h₅, h₆⟩ := h
         apply Expr.AffineVar.wf_op h₁ h₂ h₃ h₄ h₅ h₆)
     else
+      -- dbg_trace s!"non-affine operator vars: {repr args} -> {repr rets}"
       isFalse (by intros h'; rcases h'; grind only)
   | .br c left right =>
     have : Decidable
@@ -94,7 +98,7 @@ instance Expr.AffineVar.instDecidable [Arity Op] [DecidableEq χ]
       isFalse (by intros h'; rcases h'; grind only)
 
 /-- Executable version of `Fn.AffineVar` -/
-instance Fn.AffineVar.instDecidable [Arity Op] [DecidableEq χ]
+instance Fn.AffineVar.instDecidable [Arity Op] [DecidableEq χ] [Repr χ]
   (fn : Fn Op χ V m n) : Decidable (fn.AffineVar) :=
   if h : fn.params.toList.Nodup ∧ fn.body.AffineVar [] fn.params.toList then
     isTrue h

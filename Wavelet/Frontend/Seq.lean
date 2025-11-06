@@ -46,25 +46,95 @@ open Semantics Seq
 inductive WithCall (Op : Type u) (FnName : Type v) where
   | op : Op → WithCall Op FnName
   | call : FnName → WithCall Op FnName
-  deriving Repr, Lean.ToJson, Lean.FromJson
+  deriving Repr, Lean.ToJson
 
 inductive RawExpr (Op : Type u) (χ : Type v) : Type (max u v) where
   | ret : List χ → RawExpr Op χ
   | tail : List χ → RawExpr Op χ
   | op : Op → List χ → List χ → RawExpr Op χ → RawExpr Op χ
   | br : χ → RawExpr Op χ → RawExpr Op χ → RawExpr Op χ
-  deriving Repr, Lean.ToJson, Lean.FromJson
+  deriving Repr, Lean.ToJson
 
 structure RawFn (Op : Type u) (χ : Type v) where
   name : String
   params : List χ
   outputs : Nat
   body : RawExpr Op χ
-  deriving Repr, Lean.ToJson, Lean.FromJson
+  deriving Repr, Lean.ToJson
 
 structure RawProg (Op : Type u) (χ : Type v) where
   fns : List (RawFn Op χ)
-  deriving Repr, Lean.ToJson, Lean.FromJson
+  deriving Repr, Lean.ToJson
+
+/-! Custom instances for `FromJson` for better error messages. -/
+section FromJson
+
+instance [Lean.FromJson Op] [Lean.FromJson FnName] : Lean.FromJson (WithCall Op FnName) where
+  fromJson? json := do
+    if let .ok obj := json.getObjVal? "op" then
+      .op <$> Lean.fromJson? obj
+    else if let .ok obj := json.getObjVal? "call" then
+      .call <$> Lean.fromJson? obj
+    else
+      .error s!"unable to parse operator or function call: {json}"
+
+partial def RawExpr.fromJson? [Lean.FromJson Op] [Lean.FromJson χ]
+  (json : Lean.Json) : Except String (RawExpr Op χ) := do
+  if let .ok obj := json.getObjVal? "ret" then
+    .ret <$> Lean.fromJson? obj
+    |>.mapError (λ e => s!"when parsing return: {e}")
+  else if let .ok obj := json.getObjVal? "tail" then
+    .tail <$> Lean.fromJson? obj
+    |>.mapError (λ e => s!"when parsing tail call: {e}")
+  else if let .ok obj := json.getObjVal? "op" then
+    let arr ← obj.getArr?
+    if h : arr.size = 4 then
+      .op
+        <$> Lean.fromJson? (arr[0])
+        <*> Lean.fromJson? (arr[1])
+        <*> Lean.fromJson? (arr[2])
+        <*> RawExpr.fromJson? (arr[3])
+      |>.mapError (λ e => s!"when parsing operator call: {e}")
+    else
+      .error s!"unable to parse operator call: {json}"
+  else if let .ok obj := json.getObjVal? "br" then
+    let arr ← obj.getArr?
+    if h : arr.size = 3 then
+      .br
+        <$> Lean.fromJson? (arr[0])
+        <*> RawExpr.fromJson? (arr[1])
+        <*> RawExpr.fromJson? (arr[2])
+      |>.mapError (λ e => s!"when parsing branching: {e}")
+    else
+      .error s!"unable to parse branching: {json}"
+  else
+    .error s!"when parsing expr: {json}"
+
+instance RawExpr.instFromJson [Lean.FromJson Op] [Lean.FromJson χ] : Lean.FromJson (RawExpr Op χ) where
+  fromJson? := RawExpr.fromJson?
+
+instance [Lean.FromJson Op] [Lean.FromJson χ] : Lean.FromJson (RawFn Op χ) where
+  fromJson? json := do
+    let name ← json.getObjValAs? String "name"
+      |>.mapError (λ e => s!"when parsing function name: {e}")
+    return {
+      name := name,
+      params := ← json.getObjValAs? (List χ) "params"
+        |>.mapError (λ e => s!"when parsing params of function `{name}`: {e}"),
+      outputs := ← json.getObjValAs? Nat "outputs"
+        |>.mapError (λ e => s!"when parsing output number of function `{name}`: {e}"),
+      body := ← json.getObjValAs? (RawExpr Op χ) "body"
+        |>.mapError (λ e => s!"when parsing body of function `{name}`: {e}"),
+    }
+
+instance [Lean.FromJson Op] [Lean.FromJson χ] : Lean.FromJson (RawProg Op χ) where
+  fromJson? json :=
+    return {
+      fns := ← json.getObjValAs? (List (RawFn Op χ)) "fns"
+        |>.mapError (λ e => s!"when parsing program: {e}"),
+    }
+
+end FromJson
 
 structure EncapProg Op χ V [Arity Op] where
   numFns : Nat
@@ -198,9 +268,9 @@ def RawExpr.checkExpr [Arity Op] [Repr Op]
           (rets.toVector.cast h₂)
           (← cont.checkExpr state m n)
       else
-        .error s!"unexpected number of return values for operator `{repr o}`: expected {Arity.ω o}, got {rets.length}"
+        .error s!"unexpected output arity for operator `{repr o}`: expected {Arity.ω o}, got {rets.length}"
     else
-      .error s!"unexpected number of arguments for operator: expected {Arity.ι o}, got {args.length}"
+      .error s!"unexpected input arity for operator `{repr o}`: expected {Arity.ι o}, got {args.length}"
   | .op (.call name) args rets cont => do
     match state.nameToIdx name with
     | some i =>
@@ -211,9 +281,9 @@ def RawExpr.checkExpr [Arity Op] [Repr Op]
             (rets.toVector.cast h₂)
             (← cont.checkExpr state m n)
         else
-          .error s!"unexpected number of return values for function call `{name}`: expected {(state.sigs i).ω}, got {rets.length}"
+          .error s!"unexpected output arity for function call `{name}`: expected {(state.sigs i).ω}, got {rets.length}"
       else
-        .error s!"unexpected number of arguments for function call `{name}`: expected {(state.sigs i).ι}, got {args.length}"
+        .error s!"unexpected input arity for function call `{name}`: expected {(state.sigs i).ι}, got {args.length}"
     | none =>
       .error s!"unknown function {name}"
   | .br cond left right => do
@@ -225,6 +295,7 @@ def RawFn.checkFn [Arity Op] [Repr Op]
   := do
   let state ← get
   let expr ← rawFn.body.checkExpr state rawFn.params.length rawFn.outputs
+    |>.mapError (λ e => s!"when checking function `{rawFn.name}`: {e}")
   if h₁ : rawFn.params.length = 0 then
     throw s!"function {rawFn.name} with zero inputs is not allowed"
   else if h₂ : rawFn.outputs = 0 then
