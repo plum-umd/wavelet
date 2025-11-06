@@ -50,7 +50,7 @@ instance Expr.AffineVar.instDecidable
     if h : vars.toList.Nodup ∧ vars.toList ⊆ definedVars then
       isTrue (Expr.AffineVar.wf_ret h.1 h.2)
     else
-      -- dbg_trace s!"duplicate or undefined return vars: {repr vars}"
+      dbg_trace s!"duplicate or undefined return vars: {repr vars}"
       isFalse (by
         intro h'
         cases h' with | wf_ret hnodup hsub =>
@@ -59,7 +59,7 @@ instance Expr.AffineVar.instDecidable
     if h : vars.toList.Nodup ∧ vars.toList ⊆ definedVars then
       isTrue (Expr.AffineVar.wf_tail h.1 h.2)
     else
-      -- dbg_trace s!"duplicate or undefined tail args: {repr vars}"
+      dbg_trace s!"duplicate or undefined tail args: {repr vars}"
       isFalse (by
         intro h'
         cases h' with | wf_tail hnodup hsub =>
@@ -78,7 +78,12 @@ instance Expr.AffineVar.instDecidable
         have ⟨h₁, h₂, h₃, h₄, h₅, h₆⟩ := h
         apply Expr.AffineVar.wf_op h₁ h₂ h₃ h₄ h₅ h₆)
     else
-      -- dbg_trace s!"non-affine operator vars: {repr args} -> {repr rets}"
+      -- have h1 : Bool := args.toList.Nodup
+      -- have h2 : Bool := rets.toList.Nodup
+      -- have h3 : Bool := usedVars.Disjoint rets.toList
+      -- have h4 : Bool := definedVars.Disjoint rets.toList
+      -- have h5 : Bool := args.toList ⊆ definedVars
+      -- dbg_trace s!"non-affine operator vars: {repr args} -> {repr rets}: {h1}, {h2}, {h3}, {h4}, {h5}"
       isFalse (by intros h'; rcases h'; grind only)
   | .br c left right =>
     have : Decidable

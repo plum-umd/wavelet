@@ -89,22 +89,22 @@ partial def RawExpr.fromJson? [Lean.FromJson Op] [Lean.FromJson χ]
   else if let .ok obj := json.getObjVal? "op" then
     let arr ← obj.getArr?
     if h : arr.size = 4 then
-      .op
+      (.op
         <$> Lean.fromJson? (arr[0])
         <*> Lean.fromJson? (arr[1])
         <*> Lean.fromJson? (arr[2])
+        |>.mapError (λ e => s!"when parsing operator call: {e}"))
         <*> RawExpr.fromJson? (arr[3])
-      |>.mapError (λ e => s!"when parsing operator call: {e}")
     else
       .error s!"unable to parse operator call: {json}"
   else if let .ok obj := json.getObjVal? "br" then
     let arr ← obj.getArr?
     if h : arr.size = 3 then
-      .br
+      (.br
         <$> Lean.fromJson? (arr[0])
+        |>.mapError (λ e => s!"when parsing branching: {e}"))
         <*> RawExpr.fromJson? (arr[1])
         <*> RawExpr.fromJson? (arr[2])
-      |>.mapError (λ e => s!"when parsing branching: {e}")
     else
       .error s!"unable to parse branching: {json}"
   else

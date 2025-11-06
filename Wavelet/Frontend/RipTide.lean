@@ -19,7 +19,8 @@ abbrev Value := Int
 inductive SyncOp (Loc : Type u) : Type u where
   | add | sub | mul | div
   | shl | ashr | lshr
-  | eq | lt
+  | eq | lt | le
+  | and
   | load (_ : Loc) | store (_ : Loc) | sel
   | const (_ : Value)
   | copy (_ : Nat)
@@ -28,12 +29,14 @@ inductive SyncOp (Loc : Type u) : Type u where
 instance : Arity (SyncOp Loc) where
   ι | .add => 2 | .sub => 2 | .mul => 2 | .div => 2
     | .shl => 2 | .ashr => 2 | .lshr => 2
-    | .eq => 2 | .lt => 2
+    | .eq => 2 | .lt => 2 | .le => 2
+    | .and => 2
     | .load _ => 1 | .store _ => 2 | .sel => 3
     | .const _ => 1 | .copy _ => 1
   ω | .add => 1 | .sub => 1 | .mul => 1 | .div => 1
     | .shl => 1 | .ashr => 1 | .lshr => 1
-    | .eq => 1 | .lt => 1
+    | .eq => 1 | .lt => 1 | .le => 1
+    | .and => 1
     | .load _ => 1 | .store _ => 1 | .sel => 1
     | .const _ => 1
     -- NOTE: `copy n` outputs `n + 1` values
@@ -118,7 +121,8 @@ instance [Lean.FromJson Loc] : Lean.FromJson (WithSpec (RipTide.SyncOp Loc) RipT
       else
         let : NeZero k := .mk h
         -- TODO: currently not parsing permission annotations
-        return .join k l (λ _ => PCM.zero))
+        return .join k l (λ _ => PCM.zero)) <|>
+    (.error s!"failed to parse RipTide operator {json}")
 
 instance [Lean.ToJson Loc] : Lean.ToJson (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) where
   toJson
@@ -171,6 +175,8 @@ instance [ToString Loc] : Dataflow.DotName (SyncOp Loc) where
     | .lshr => "\"l>>\""
     | .eq => "\"=\""
     | .lt => "\"<\""
+    | .le => "\"<=\""
+    | .and => "\"&&\""
     | .load loc => s!"<LD<sub>{loc}</sub>>"
     | .store loc => s!"<ST<sub>{loc}</sub>>"
     | .sel => "\"SEL\""
