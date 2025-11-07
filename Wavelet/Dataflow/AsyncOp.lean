@@ -39,6 +39,7 @@ inductive AsyncOp V where
   -- to the last `m` outputs.
   | forwardc (n m : Nat) (consts : Vector V m) [NeZero n] : AsyncOp V
   | sink (n : Nat) [NeZero n] : AsyncOp V
+  | inv (flavor : Bool) (c : Option V) : AsyncOp V
   | inact (n : Nat) : AsyncOp V
 
 /-- Input arity of an async operator. -/
@@ -52,6 +53,7 @@ def AsyncOp.ι : AsyncOp V → Nat
   | const _ _ => 1
   | forwardc n _ _ => n
   | sink n => n
+  | inv _ _ => 2
   | inact _ => 0
 
 /-- Output arity of an async operator. -/
@@ -65,6 +67,7 @@ def AsyncOp.ω : AsyncOp V → Nat
   | const _ n => n
   | forwardc n m _ => n + m
   | sink _ => 0
+  | inv _ _ => 1
   | inact n => n
 
 namespace AsyncOp
@@ -188,6 +191,38 @@ inductive Interp
         inputs inputVals
         [] [])
       (.sink k)
+  -- An invariant waiting for the initial input
+  | interp_inv_init :
+    inputs.length = 1 →
+    outputs.length = 1 →
+    InterpConsts.isClonable inputVal →
+    Interp (.inv flavor none)
+      (.mk (decider :: inputs) outputs
+        inputs [inputVal]
+        outputs [inputVal])
+      (.inv flavor (some inputVal))
+  -- An invariant reading a true decider
+  | interp_inv_true :
+    inputs.length = 1 →
+    outputs.length = 1 →
+    InterpConsts.toBool deciderVal = some deciderBool →
+    deciderBool = flavor →
+    Interp (.inv flavor (some val))
+      (.mk (decider :: inputs) outputs
+        [decider] [deciderVal]
+        outputs [val])
+      (.inv flavor (some val))
+  -- An invariant reading a false decider and restoring to the initial state
+  | interp_inv_false :
+    inputs.length = 1 →
+    outputs.length = 1 →
+    InterpConsts.toBool deciderVal = some deciderBool →
+    deciderBool ≠ flavor →
+    Interp (.inv flavor (some val))
+      (.mk (decider :: inputs) outputs
+        [decider] [deciderVal]
+        [] [])
+      (.inv flavor none)
 
 theorem Interp.eq_label
   [InterpConsts V]

@@ -589,6 +589,15 @@ private theorem aop_interp_map_inj
   | interp_sink h₁ =>
     simp [Vector.toList_map, hinputs', houtputs']
     exact .interp_sink (by simp [h₁])
+  | interp_inv_init h₁ h₂ h₃ =>
+    simp [Vector.toList_map, hinputs', houtputs']
+    exact .interp_inv_init (by simp [h₁]) (by simp [h₂]) h₃
+  | interp_inv_true h₁ h₂ h₃ h₄ =>
+    simp [Vector.toList_map, hinputs', houtputs']
+    exact .interp_inv_true (by simp [h₁]) (by simp [h₂]) h₃ h₄
+  | interp_inv_false h₁ h₂ h₃ h₄ =>
+    simp [Vector.toList_map, hinputs', houtputs']
+    exact .interp_inv_false (by simp [h₁]) (by simp [h₂]) h₃ h₄
 
 private theorem sim_link_procs_step_main
   [Arity Op] [NeZeroArity Op]

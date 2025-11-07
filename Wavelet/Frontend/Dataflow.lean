@@ -22,6 +22,7 @@ inductive RawAsyncOp V where
   | const (c : V) (n : Nat) : RawAsyncOp V
   | forwardc (n m : Nat) (consts : List V) : RawAsyncOp V
   | sink (n : Nat) : RawAsyncOp V
+  | inv (flavor : Bool) (c : Option V) : RawAsyncOp V
   | inact (n : Nat) : RawAsyncOp V
   deriving Repr, Lean.ToJson, Lean.FromJson
 
@@ -52,6 +53,7 @@ instance : Coe (AsyncOp V) (RawAsyncOp V) where
     | AsyncOp.const c n => .const c n
     | AsyncOp.forwardc n m consts => .forwardc n m consts.toList
     | AsyncOp.sink n => .sink n
+    | AsyncOp.inv flavor c => .inv flavor c
     | AsyncOp.inact n => .inact n
 
 instance [Arity Op] : Coe (AtomicProc Op χ V) (RawAtomicProc Op χ V) where

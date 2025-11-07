@@ -88,6 +88,15 @@ theorem async_op_interp_map_chans
   | interp_sink h₁ =>
     rw [← List.length_map f] at h₁
     exact .interp_sink h₁
+  | interp_inv_init h₁ h₂ h₃ =>
+    rw [← List.length_map f] at h₁ h₂
+    exact .interp_inv_init h₁ h₂ h₃
+  | interp_inv_true h₁ h₂ h₃ h₄ =>
+    rw [← List.length_map f] at h₁ h₂
+    exact .interp_inv_true h₁ h₂ h₃ h₄
+  | interp_inv_false h₁ h₂ h₃ h₄ =>
+    rw [← List.length_map f] at h₁ h₂
+    exact .interp_inv_false h₁ h₂ h₃ h₄
 
 theorem sim_map_chans_inj_preserves_init
   {χ χ' : Type u}

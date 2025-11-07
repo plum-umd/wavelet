@@ -73,6 +73,8 @@ def AtomicProc.dotAttrs [Arity Op] [DotName Op] [DotName V] : AtomicProc Op χ V
     s!"label=\"idc\" shape=square fixedsize=true height=0.5 width=0.5 style=filled fillcolor=lightgrey"
   | .async (AsyncOp.sink _) .. =>
     s!"label=\"⊥\" shape=plaintext"
+  | .async (AsyncOp.inv _ _) .. =>
+    s!"label=\"I\" shape=triangle orientation=180 fixedsize=true height=0.6 width=0.513 style=filled fillcolor=lightgrey"
   | .async (AsyncOp.inact _) .. =>
     s!"label=\"⊤\" shape=plaintext"
 

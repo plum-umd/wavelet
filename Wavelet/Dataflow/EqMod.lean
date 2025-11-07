@@ -42,6 +42,8 @@ def AsyncOp.EqMod
   | forwardc n₁ m₁ consts₁, forwardc n₂ m₂ consts₂ =>
       n₁ = n₂ ∧ m₁ = m₂ ∧ List.Forall₂ EqV consts₁.toList consts₂.toList
   | sink n₁, sink n₂ => n₁ = n₂
+  | inv f₁ (some c₁), inv f₂ (some c₂) => f₁ = f₂ ∧ EqV c₁ c₂
+  | inv f₁ none, inv f₂ none => f₁ = f₂
   | inact n₁, inact n₂ => n₁ = n₂
   | _, _ => False
 
@@ -91,7 +93,11 @@ instance ChanMap.EqMod.instTrans {EqV : V → V → Prop} [IsTrans V EqV] :
 
 instance AsyncOp.EqMod.instRefl {EqV : V → V → Prop} [IsRefl V EqV] :
   IsRefl (AsyncOp V) (AsyncOp.EqMod EqV) where
-  refl aop := by cases aop <;> simp [AsyncOp.EqMod, IsRefl.refl]
+  refl aop := by
+    cases aop <;> simp [AsyncOp.EqMod, IsRefl.refl]
+    case inv =>
+      rename Option V => c
+      cases c <;> simp [IsRefl.refl]
 
 instance AsyncOp.EqMod.instSymm {EqV : V → V → Prop} [instSymm : IsSymm V EqV] :
   IsSymm (AsyncOp V) (AsyncOp.EqMod EqV) where
@@ -107,11 +113,15 @@ instance AsyncOp.EqMod.instTrans {EqV : V → V → Prop} [instTrans : IsTrans V
   IsTrans (AsyncOp V) (AsyncOp.EqMod EqV) where
   trans aop₁ aop₂ aop₃ := by
     have := instTrans.trans
-    cases aop₁ <;> cases aop₂ <;> cases aop₃ <;> simp [AsyncOp.EqMod]
-    any_goals grind only [cases Or]
+    intros h₁ h₂
+    cases aop₁ <;> cases aop₂ <;> simp [AsyncOp.EqMod] at h₁
+    any_goals cases aop₃ <;> simp [AsyncOp.EqMod] at h₂
+    any_goals simp [AsyncOp.EqMod, h₁, h₂]
+    any_goals grind only [cases Or, AsyncOp.EqMod]
     case forwardc.forwardc =>
-      intros h₁ h₂ h₃ h₄ h₅ h₆
-      simp [h₁, h₂, h₄, h₅, IsTrans.trans _ _ _ h₃ h₆]
+      have ⟨_, _, h₁⟩ := h₁
+      have ⟨_, _, h₂⟩ := h₂
+      simp [IsTrans.trans _ _ _ h₁ h₂]
 
 instance AtomicProc.EqMod.instRefl {EqV : V → V → Prop} [Arity Op] [IsRefl V EqV] :
   IsRefl (AtomicProc Op χ V) (AtomicProc.EqMod EqV) where
@@ -188,6 +198,11 @@ theorem AsyncOp.EqMod.eq_eq : AsyncOp.EqMod Eq = Eq (α := AsyncOp V) := by
     intros h₁ h₂
     subst h₁; subst h₂
     simp [Vector.toList_inj]
+  case inv.inv =>
+    rename Option V => c₁
+    cases c₁
+      <;> rename Option V => c₂
+      <;> cases c₂ <;> simp
 
 @[simp]
 theorem AtomicProc.EqMod.eq_eq

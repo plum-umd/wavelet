@@ -153,6 +153,41 @@ theorem congr_eq_mod_ghost_async_op_interp
     cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
     subst heq_aop
     exact ⟨_, _, .interp_sink h₁, by simp [AsyncOp.EqMod]⟩
+  | interp_inv_init h₁ h₂ h₃ =>
+    cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
+    rename Option (V ⊕ T) => c
+    cases c <;> simp at heq_aop
+    subst heq_aop
+    simp only [List.forall₂_cons_left_iff, exists_and_left] at heq_inputs
+    have ⟨_, heq₁, _, heq₂, heq₃⟩ := heq_inputs
+    simp at heq₂
+    subst heq₂ heq₃
+    exact ⟨_, _, .interp_inv_init h₁ h₂ (congr_eq_is_clonable h₃ heq₁),
+      by simp [AsyncOp.EqMod, heq₁]⟩
+  | interp_inv_true h₁ h₂ h₃ h₄ =>
+    cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
+    rename Option (V ⊕ T) => c
+    cases c <;> simp at heq_aop
+    have ⟨heq₁, heq₂⟩ := heq_aop
+    subst heq₁
+    simp only [List.forall₂_cons_left_iff, exists_and_left] at heq_inputs
+    have ⟨_, heq₁, _, heq₂, heq₃⟩ := heq_inputs
+    simp at heq₂
+    subst heq₂ heq₃
+    exact ⟨_, _, .interp_inv_true h₁ h₂ (congr_eq_interp_bool h₃ heq₁) h₄,
+      by simp [AsyncOp.EqMod, heq₂]⟩
+  | interp_inv_false h₁ h₂ h₃ h₄ =>
+    cases aop' <;> simp [AsyncOp.EqMod] at heq_aop
+    rename Option (V ⊕ T) => c
+    cases c <;> simp at heq_aop
+    have ⟨heq₁, heq₂⟩ := heq_aop
+    subst heq₁
+    simp only [List.forall₂_cons_left_iff, exists_and_left] at heq_inputs
+    have ⟨_, heq₁, _, heq₂, heq₃⟩ := heq_inputs
+    simp at heq₂
+    subst heq₂ heq₃
+    exact ⟨_, _, .interp_inv_false h₁ h₂ (congr_eq_interp_bool h₃ heq₁) h₄,
+      by simp [AsyncOp.EqMod]⟩
 
 theorem congr_eq_mod_ghost_proc_indexed_unguarded
   [PCM T] [InterpConsts V]

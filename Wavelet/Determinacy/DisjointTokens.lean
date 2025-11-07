@@ -17,6 +17,7 @@ def AsyncOp.HasNoTokenConst :
   AsyncOp (V ⊕ T) → Prop
   | const c _ => c.isLeft
   | forwardc _ _ consts => ∀ v ∈ consts, v.isLeft
+  | inv _ (some c) => c.isLeft
   | _ => True
 
 def AtomicProc.HasNoTokenConst [Arity Op] :
@@ -463,7 +464,10 @@ theorem async_op_interp_preserves_no_token_const
   := by
   cases hinterp
     <;> simp [AsyncOp.HasNoTokenConst] at hntok ⊢
-    <;> exact hntok
+    <;> try exact hntok
+  rename V ⊕ T => val
+  rename InterpConsts.isClonable _ = _ => h
+  cases val <;> simp at h ⊢
 
 theorem async_op_interp_le_tok_sum
   [PCM T] [PCM.Lawful T] [InterpConsts V]
@@ -512,6 +516,13 @@ theorem async_op_interp_le_tok_sum
         simp [hx']
     simp
     simp [this]
+  | interp_inv_init => simp
+  | interp_inv_true =>
+    rename V ⊕ T => val
+    simp [AsyncOp.HasNoTokenConst] at hntok
+    cases val <;> simp at hntok
+    simp [asTok]
+  | interp_inv_false => simp
 
 @[simp]
 theorem sum_as_tok_map_inl

@@ -872,7 +872,7 @@ theorem async_op_interp_ne_zero_inputs
   cases hinterp
   any_goals simp [NeZero.ne]
   any_goals rename NeZero _ => inst
-  case interp_merge_left =>
+  case interp_merge_left | interp_inv_init =>
     intros h
     subst h
     rename_i h

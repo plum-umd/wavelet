@@ -42,6 +42,7 @@ def AsyncOp.mapValues
   | const c n => const (f c) n
   | forwardc n m consts => forwardc n m (consts.map f)
   | sink n => sink n
+  | inv flavor c => inv flavor (c.map f)
   | inact n => inact n
 
 def AtomicProc.mapTokens
