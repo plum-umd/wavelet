@@ -157,6 +157,17 @@ def RewriteM.ctxWithNames [Arity Op] [DecidableEq χ] [Hashable χ]
     -- |>.filter (↑· ∉ s.matched)
     |>.map (s.aps[·])
 
+/-- Similar to `ctxWithNames` but keeps atom indices. -/
+@[always_inline]
+def RewriteM.idxCtxWithNames [Arity Op] [DecidableEq χ] [Hashable χ]
+  (names : List (RewriteName χ)) :
+    RewriteM Op χ V (List (Nat × AtomicProc Op (RewriteName χ) V)) := do
+  let s ← get
+  return names.map (s.chanToAtoms.getD · [])
+    |>.flatten
+    -- |>.filter (↑· ∉ s.matched)
+    |>.map (λ i : Fin _ => (↑i, s.aps[i]))
+
 /-- Checks if the given two channels are output of the same fork. -/
 @[always_inline]
 def RewriteM.assumeFromSameFork
@@ -193,6 +204,39 @@ def RewriteM.checkFromConst
     if chan ∈ outputs then return v
     else failure
   | _ => failure
+
+/-- Checks if the given name has a "synchronous path"
+to the other set of output names, where a synchronous path
+means a path going through only synchronous operators, forks,
+orders, consts. -/
+partial def RewriteM.checkSyncPathTo
+  [Arity Op] [DecidableEq χ] [Hashable χ]
+  (chan : RewriteName χ)
+  (outputs : List (RewriteName χ))
+  (hist : List Nat := []) :
+    RewriteM Op χ V Unit
+  := do
+  if chan ∈ outputs then
+    return ()
+  else
+    (← .idxCtxWithNames [chan]).firstM λ (i, ap) =>
+    if i ∈ hist then
+      failure -- Avoid cycles
+    else
+      match ap with
+      | .op _ inputs' outputs' =>
+        if chan ∈ outputs' then
+          inputs'.firstM λ input' =>
+            RewriteM.checkSyncPathTo input' outputs (i :: hist)
+        else failure
+      | .async (AsyncOp.fork _) inputs' outputs'
+      | .async (AsyncOp.order _) inputs' outputs'
+      | .async (AsyncOp.const _ _) inputs' outputs' =>
+        if chan ∈ outputs' then
+          inputs'.firstM λ input' =>
+            RewriteM.checkSyncPathTo input' outputs (i :: hist)
+        else failure
+      | _ => failure
 
 /-- Lowers n-ary async operators to unary operators. -/
 def naryLowering [Arity Op] [DecidableEq χ] [Hashable χ] :
@@ -439,11 +483,11 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
     let input := inputs[0]'(by omega)
     let output := outputs[0]'(by omega)
     return [.forward #v[input] #v[output]]
-  -- Nested order can be folded
   | .async (AsyncOp.order n) inputs outputs =>
     .assume (n > 1 ∧ inputs.length = n ∧ outputs.length = 1) λ h => do
     let output := outputs[0]'(by omega)
     .chooseNames (inputs ++ outputs) λ
+    -- Nested order can be folded
     | .async (AsyncOp.order m) inputs' outputs' =>
       .assume (m > 1 ∧ inputs'.length = m ∧ outputs'.length = 1) λ h => do
       let output' := outputs'[0]'(by omega)
@@ -458,6 +502,27 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
         ]
       else
         failure
+    -- If an order has two inputs, one (non-first) input from
+    -- a fork and another one tracing back to the same fork through
+    -- a "synchronous path", then that non-first input can be removed.
+    | .async (.fork m) inputs' outputs' =>
+      .assume (inputs'.length = 1 ∧ outputs'.length = m) λ h =>
+      let input' := inputs'[0]'(by omega)
+      (inputs.drop 1).firstM λ input₁ =>
+        if input₁ ∈ outputs' then
+          inputs.firstM λ input₂ => do
+            if input₁ ≠ input₂ then
+              .checkSyncPathTo input₂ outputs'
+              let newInputs := inputs.erase input₁
+              let newOutputs' := outputs'.erase input₁
+              .assume (newInputs.length ≠ 0) λ h' => do
+              let : NeZero newInputs.length := by constructor; omega
+              return [
+                .fork input' newOutputs'.toVector,
+                .order newInputs.toVector output,
+              ]
+            else failure
+        else failure
     | _ => failure
   -- Constant with a sink output can be rewritten to a sink
   | .async (.const v 1) inputs outputs =>
