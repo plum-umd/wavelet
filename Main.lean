@@ -67,6 +67,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
 
     -- Erase ghost tokens
     let proc := proc.eraseGhost
+    let proc : P Nat := proc.renameChans
     trace s!"erased ghost tokens. graph size: {proc.atoms.length} ops"
     proc.checkAffineChan.unwrapIO "dfg invariant error"
 
@@ -74,15 +75,16 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     let applyRewrites (descr : String) (rw : Rewrite _ _ _) (proc : P Nat) : IO (P Nat) := do
       -- let proc : P (RewriteName Nat) := proc.mapChans RewriteName.base
       let (numRws, proc) := Rewrite.applyUntilFailNat rw proc
-      let proc : P Nat := proc.renameChans
       proc.checkAffineChan.unwrapIO "dfg invariant error"
       trace s!"{descr}: {numRws} rewrites. graph size: {proc.atoms.length} ops"
       return proc
 
-    let proc : P Nat := proc.renameChans
-    let proc ← applyRewrites "lowering n-ary ops" naryLowering proc
-    let proc ← applyRewrites "operator selection" RipTide.operatorSel proc
-    let proc ← applyRewrites "dead code elimination" deadCodeElim proc
+    -- let proc ← applyRewrites "lowering n-ary ops" naryLowering proc
+    -- let proc ← applyRewrites "operator selection" RipTide.operatorSel proc
+    -- let proc ← applyRewrites "dead code elimination" deadCodeElim proc
+
+    let proc ← applyRewrites "operator selection and optimization"
+      (naryLowering <|> deadCodeElim <|> RipTide.operatorSel) proc
 
     match format with
     | .dot =>

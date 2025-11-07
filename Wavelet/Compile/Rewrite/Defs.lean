@@ -84,10 +84,10 @@ partial def Rewrite.applyUntilFail
 /-- Similar to `applyUntilFail` but performs `renameChans` every round
 for slightly better performance. -/
 partial def Rewrite.applyUntilFailNat
-  [Arity Op]
+  [Arity Op] [DecidableEq χ]
   (rw : Rewrite Op Nat V)
-  (proc : Proc Op Nat V m n) : Nat × Proc Op Nat V m n :=
-    loop 0 proc
+  (proc : Proc Op χ V m n) : Nat × Proc Op Nat V m n :=
+    loop 0 proc.renameChans
   where
     loop numRewrites proc : Nat × Proc Op Nat V m n :=
       match rw.apply (proc.mapChans .base) with
