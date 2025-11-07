@@ -55,9 +55,9 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
 
     -- Check some static properties
     for i in List.finRange prog.numFns do
-      if ¬ (prog.prog i).AffineVar then
-        let name := rawProg.fns[i]?.map (·.name) |>.getD s!"unknown"
-        throw <| IO.userError s!"function {i} ({name}) does not satisfy affine variable usage"
+      let name := rawProg.fns[i]?.map (·.name) |>.getD s!"unknown"
+      (prog.prog i).checkAffineVar.resolve
+        |>.unwrapIO s!"function {i} ({name})"
 
     -- Compile and link
     let proc := compileProg prog.prog last
@@ -72,8 +72,8 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
 
     -- Some optimizations
     let applyRewrites (descr : String) (rw : Rewrite _ _ _) (proc : P Nat) : IO (P Nat) := do
-      let proc : P (RewriteName Nat) := proc.mapChans RewriteName.base
-      let (numRws, proc) := Rewrite.applyUntilFail rw proc
+      -- let proc : P (RewriteName Nat) := proc.mapChans RewriteName.base
+      let (numRws, proc) := Rewrite.applyUntilFailNat rw proc
       let proc : P Nat := proc.renameChans
       proc.checkAffineChan.unwrapIO "dfg invariant error"
       trace s!"{descr}: {numRws} rewrites. graph size: {proc.atoms.length} ops"

@@ -1,4 +1,6 @@
 import Wavelet.Data.List
+import Wavelet.Data.Except
+
 import Wavelet.Seq.Fn
 
 namespace Wavelet.Seq
@@ -39,75 +41,80 @@ def Fn.AffineVar [Arity Op] [DecidableEq χ]
   fn.params.toList.Nodup ∧
   fn.body.AffineVar [] fn.params.toList
 
+def Expr.checkAffineVar
+  [Arity Op] [DecidableEq χ] [Repr χ]
+  (usedVars : List χ)
+  (definedVars : List χ) :
+    (expr : Expr Op χ n m) →
+    ExceptDec String (expr.AffineVar usedVars definedVars)
+  | .ret vars => do
+    let h₁ ← ExceptDec.check vars.toList.Nodup s!"duplicate return vars {repr vars.toList}"
+      |>.necessary λ h => by cases h; assumption
+    let h₂ ← ExceptDec.check (vars.toList ⊆ definedVars) s!"undefined return vars {repr vars.toList}"
+      |>.necessary λ h => by cases h; assumption
+    return ⟨.wf_ret h₁.down h₂.down⟩
+  | .tail vars => do
+    let h₁ ← ExceptDec.check vars.toList.Nodup s!"duplicate tail args {repr vars.toList}"
+      |>.necessary λ h => by cases h; assumption
+    let h₂ ← ExceptDec.check (vars.toList ⊆ definedVars) s!"undefined tail args {repr vars.toList}"
+      |>.necessary λ h => by cases h; assumption
+    return ⟨.wf_tail h₁.down h₂.down⟩
+  | .op o args rets cont => do
+    let h₁ ← ExceptDec.check args.toList.Nodup s!"duplicate operator args {repr args.toList}"
+      |>.necessary λ h => by cases h; assumption
+    let h₂ ← ExceptDec.check rets.toList.Nodup s!"duplicate operator return variables {repr rets.toList}"
+      |>.necessary λ h => by cases h; assumption
+    let h₃ ← ExceptDec.check (usedVars.Disjoint rets.toList)
+      s!"redefining used variables {repr rets.toList}"
+      |>.necessary λ h => by cases h; assumption
+    let h₄ ← ExceptDec.check (definedVars.Disjoint rets.toList)
+      s!"redefining variables {repr rets.toList}"
+      |>.necessary λ h => by cases h; assumption
+    let h₅ ← ExceptDec.check (args.toList ⊆ definedVars)
+      s!"one or more operator args not defined: {repr args.toList}"
+      |>.necessary λ h => by cases h; assumption
+    let h₆ ← cont.checkAffineVar
+      (usedVars ++ args.toList)
+      ((definedVars.removeAll args.toList) ++ rets.toList)
+      |>.necessary λ h => by cases h; assumption
+    return ⟨.wf_op h₁.down h₂.down h₃.down h₄.down h₅.down h₆.down⟩
+  | .br c left right => do
+    let h₁ ← ExceptDec.check (c ∈ definedVars)
+      s!"undefined branch condition {repr c}"
+      |>.necessary λ h => by cases h; assumption
+    let h₂ ← left.checkAffineVar
+      (c :: usedVars)
+      (definedVars.removeAll [c])
+      |>.necessary λ h => by cases h; assumption
+    let h₃ ← right.checkAffineVar
+      (c :: usedVars)
+      (definedVars.removeAll [c])
+      |>.necessary λ h => by cases h; assumption
+    return ⟨.wf_br h₁.down h₂.down h₃.down⟩
+
+def Fn.checkAffineVar
+  [Arity Op] [DecidableEq χ] [Repr χ]
+  (fn : Fn Op χ V m n) :
+    ExceptDec String (fn.AffineVar) := do
+  let h₁ ← ExceptDec.check fn.params.toList.Nodup
+    s!"duplicate function params {repr fn.params.toList}"
+    |>.necessary λ h => by cases h; assumption
+  let h₂ ← fn.body.checkAffineVar [] fn.params.toList
+    |>.necessary λ h => by cases h; assumption
+  return ⟨h₁.down, h₂.down⟩
+
 /-- Executable version of `Expr.AffineVar` -/
-instance Expr.AffineVar.instDecidable
+instance
   [Arity Op] [DecidableEq χ] [Repr χ]
   {usedVars : List χ}
   {definedVars : List χ}
-  {expr : Expr Op χ n m} : Decidable (expr.AffineVar usedVars definedVars) :=
-  match expr with
-  | .ret vars =>
-    if h : vars.toList.Nodup ∧ vars.toList ⊆ definedVars then
-      isTrue (Expr.AffineVar.wf_ret h.1 h.2)
-    else
-      dbg_trace s!"duplicate or undefined return vars: {repr vars}"
-      isFalse (by
-        intro h'
-        cases h' with | wf_ret hnodup hsub =>
-        exact False.elim (h ⟨hnodup, hsub⟩))
-  | .tail vars =>
-    if h : vars.toList.Nodup ∧ vars.toList ⊆ definedVars then
-      isTrue (Expr.AffineVar.wf_tail h.1 h.2)
-    else
-      dbg_trace s!"duplicate or undefined tail args: {repr vars}"
-      isFalse (by
-        intro h'
-        cases h' with | wf_tail hnodup hsub =>
-        exact False.elim (h ⟨hnodup, hsub⟩))
-  | .op o args rets cont =>
-    have : Decidable
-      (cont.AffineVar (usedVars ++ args.toList) ((definedVars.removeAll args.toList) ++ rets.toList))
-      := instDecidable
-    if h : args.toList.Nodup ∧
-      rets.toList.Nodup ∧
-      usedVars.Disjoint rets.toList ∧
-      definedVars.Disjoint rets.toList ∧
-      args.toList ⊆ definedVars ∧
-      cont.AffineVar (usedVars ++ args.toList) ((definedVars.removeAll args.toList) ++ rets.toList) then
-      isTrue (by
-        have ⟨h₁, h₂, h₃, h₄, h₅, h₆⟩ := h
-        apply Expr.AffineVar.wf_op h₁ h₂ h₃ h₄ h₅ h₆)
-    else
-      -- have h1 : Bool := args.toList.Nodup
-      -- have h2 : Bool := rets.toList.Nodup
-      -- have h3 : Bool := usedVars.Disjoint rets.toList
-      -- have h4 : Bool := definedVars.Disjoint rets.toList
-      -- have h5 : Bool := args.toList ⊆ definedVars
-      -- dbg_trace s!"non-affine operator vars: {repr args} -> {repr rets}: {h1}, {h2}, {h3}, {h4}, {h5}"
-      isFalse (by intros h'; rcases h'; grind only)
-  | .br c left right =>
-    have : Decidable
-      (left.AffineVar (c :: usedVars) (definedVars.removeAll [c]))
-      := instDecidable
-    have : Decidable
-      (right.AffineVar (c :: usedVars) (definedVars.removeAll [c]))
-      := instDecidable
-    if h₁ :
-      c ∈ definedVars ∧
-      left.AffineVar (c :: usedVars) (definedVars.removeAll [c]) ∧
-      right.AffineVar (c :: usedVars) (definedVars.removeAll [c]) then
-      isTrue (by
-        have ⟨hmem, hl, hr⟩ := h₁
-        apply Expr.AffineVar.wf_br hmem hl hr)
-    else
-      isFalse (by intros h'; rcases h'; grind only)
+  {expr : Expr Op χ n m} :
+  Decidable (expr.AffineVar usedVars definedVars) :=
+  (expr.checkAffineVar usedVars definedVars).toDecidable
 
 /-- Executable version of `Fn.AffineVar` -/
 instance Fn.AffineVar.instDecidable [Arity Op] [DecidableEq χ] [Repr χ]
   (fn : Fn Op χ V m n) : Decidable (fn.AffineVar) :=
-  if h : fn.params.toList.Nodup ∧ fn.body.AffineVar [] fn.params.toList then
-    isTrue h
-  else
-    isFalse (by intros h'; rcases h'; grind only)
+  (fn.checkAffineVar).toDecidable
 
 end Wavelet.Seq

@@ -1,9 +1,11 @@
-import Wavelet.Dataflow.Proc
-import Wavelet.Dataflow.Abbrev
-import Wavelet.Compile.MapChans
-
 import Wavelet.Data.List
 import Wavelet.Data.Vector
+
+import Wavelet.Dataflow.Proc
+import Wavelet.Dataflow.Abbrev
+
+import Wavelet.Compile.MapChans
+import Wavelet.Compile.Rewrite.Rename
 
 /-!
 Definitions for basic optimizations on dataflow graphs.
@@ -41,7 +43,7 @@ def RewriteM.apply {Op χ V} [Arity Op]
   return {
     inputs := proc.inputs.map .rw,
     outputs := proc.outputs.map .rw,
-    atoms := AtomicProcs.mapChans .rw (unmatched ++ aps')
+    atoms := AtomicProcs.mapChans .rw (aps' ++ unmatched)
   }
 
 /-- Apply the given rewrite until failure. -/
@@ -56,6 +58,18 @@ partial def Rewrite.applyUntilFail
       | some proc' => loop (numRewrites + 1) proc'
       | none => (numRewrites, proc)
 
+/-- Similar but use `Nat` names for slightly better performance. -/
+partial def Rewrite.applyUntilFailNat
+  [Arity Op]
+  (rw : Rewrite Op Nat V)
+  (proc : Proc Op Nat V m n) : Nat × Proc Op Nat V m n :=
+    loop 0 proc
+  where
+    loop numRewrites proc : Nat × Proc Op Nat V m n :=
+      match rw.apply (proc.mapChans .base) with
+      | some proc' => loop (numRewrites + 1) proc'.renameChans
+      | none => (numRewrites, proc.renameChans)
+
 /--
 Tries to match every atomic proc in the context with the continuation,
 and returns the first with non-failure result.
@@ -63,17 +77,19 @@ and returns the first with non-failure result.
 TODO: This is quite inefficient (e.g., doing pattern matching on a graph with n nodes will take O(n^k).)
 Implement a proper graph rewriting algorithm in the future.
 -/
+@[always_inline]
 def RewriteM.choose {Op χ V} [Arity Op]
   (cont : AtomicProc Op (RewriteName χ) V → RewriteM Op χ V α) :
     RewriteM Op χ V α
   := do
   let s ← get
-  (List.finRange s.ctx.length).firstM λ i : Fin _ => do
-    if ↑i ∉ s.matched then
+  (List.finRange s.ctx.length).filter (↑· ∉ s.matched)
+    |>.firstM λ i : Fin _ => do
+      -- dbg_trace s!"rewriting depth {s.matched.length}, index {i}"
       set { s with matched := i :: s.matched }
       cont s.ctx[i]
-    else failure
 
+@[always_inline]
 def RewriteM.assume {Op χ V} [Arity Op]
   (p : Prop) [Decidable p]
   (cont : p → RewriteM Op χ V α) : RewriteM Op χ V α :=
@@ -82,6 +98,7 @@ def RewriteM.assume {Op χ V} [Arity Op]
   else
     failure
 
+@[always_inline]
 def RewriteM.ctx [Arity Op] : RewriteM Op χ V (AtomicProcs Op (RewriteName χ) V) := do
   let s ← get
   return s.ctx.mapIdx (·, ·)
@@ -89,6 +106,7 @@ def RewriteM.ctx [Arity Op] : RewriteM Op χ V (AtomicProcs Op (RewriteName χ) 
     |>.map (·.snd)
 
 /-- Checks if the given two channels are output of the same fork. -/
+@[always_inline]
 def RewriteM.assumeFromSameFork
   [Arity Op] [DecidableEq χ]
   (chan₁ chan₂ : RewriteName χ) :
@@ -193,7 +211,7 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V 
       else if input ∈ outputs' then
         return [.op op inputs' (outputs'.replace input output)]
       else failure
-  | .async (AsyncOp.switch 1) inputs outputs =>
+  | .async (.switch 1) inputs outputs =>
     .assume (inputs.length = 2 ∧ outputs.length = 2) λ h => do
     let decider := inputs[0]'(by omega)
     let input := inputs[1]'(by omega)
@@ -201,7 +219,7 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V 
     let output₂ := outputs[1]'(by omega)
     .choose λ
     -- Switch with one of the outputs being a sink can be reduced to a steer
-    | .async (AsyncOp.sink 1) inputs' outputs' =>
+    | .async (.sink 1) inputs' outputs' =>
       .assume (inputs'.length = 1 ∧ outputs'.length = 0) λ h => do
       let sink := inputs'[0]'(by omega)
       if output₁ = sink then
@@ -210,14 +228,14 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V 
         return [.steer true decider #v[input] #v[output₁]]
       else failure
     | _ => failure
-  | .async (AsyncOp.steer flavor 1) inputs outputs =>
+  | .async (.steer flavor 1) inputs outputs =>
     .assume (inputs.length = 2 ∧ outputs.length = 1) λ h => do
     let decider := inputs[0]'(by omega)
     let input := inputs[1]'(by omega)
     let output := outputs[0]'(by omega)
     .choose λ
     -- Steer with a sink output can be reduced to two sinks on the decider and the input
-    | .async (AsyncOp.sink 1) inputs' outputs' =>
+    | .async (.sink 1) inputs' outputs' =>
       .assume (inputs'.length = 1 ∧ outputs'.length = 0) λ h => do
       let sink := inputs'[0]'(by omega)
       if output = sink then
@@ -227,7 +245,7 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V 
         ]
       else failure
     -- Two consecutive steers with the same flavor and same decider can be folded
-    | .async (AsyncOp.steer flavor' 1) inputs' outputs' =>
+    | .async (.steer flavor' 1) inputs' outputs' =>
       .assume (inputs'.length = 2 ∧ outputs'.length = 1) λ h => do
       let decider' := inputs'[0]'(by omega)
       let input' := inputs'[1]'(by omega)
@@ -241,26 +259,26 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V 
       else failure
     | _ => failure
   -- Fork with zero outputs can be replaced with a sink (which enables further rewrites)
-  | .async (AsyncOp.fork 0) inputs outputs =>
+  | .async (.fork 0) inputs outputs =>
     .assume (inputs.length = 1 ∧ outputs.length = 0) λ h => do
     return [.sink inputs.toVector]
   -- Fork with exactly one output is a forward
-  | .async (AsyncOp.fork 1) inputs outputs =>
+  | .async (.fork 1) inputs outputs =>
     .assume (inputs.length = 1 ∧ outputs.length = 1) λ h => do
     return [.forward #v[inputs[0]] #v[outputs[0]]]
   -- Fork with one of the outputs being a sink or another fork
-  | .async (AsyncOp.fork n) inputs outputs =>
+  | .async (.fork n) inputs outputs =>
     .assume (inputs.length = 1 ∧ outputs.length = n) λ h => do
     let input := inputs[0]'(by omega)
     .choose λ
-    | .async (AsyncOp.sink 1) inputs' outputs' =>
+    | .async (.sink 1) inputs' outputs' =>
       .assume (inputs'.length = 1 ∧ outputs'.length = 0) λ h => do
       let sink := inputs'[0]'(by omega)
       if sink ∈ outputs then
         return [.fork input (outputs.erase sink).toVector]
       else failure
     -- Folding two consecutive forks
-    | .async (AsyncOp.fork m) inputs' outputs' =>
+    | .async (.fork m) inputs' outputs' =>
       .assume (inputs'.length = 1 ∧ outputs'.length = m) λ h => do
       let input' := inputs'[0]'(by omega)
       if input' ∈ outputs then
@@ -268,18 +286,18 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V 
       else failure
     | _ => failure
   -- Order with one input can be rewritten to a forward
-  | .async (AsyncOp.order 1) inputs outputs =>
+  | .async (.order 1) inputs outputs =>
     .assume (inputs.length = 1 ∧ outputs.length = 1) λ h => do
     let input := inputs[0]'(by omega)
     let output := outputs[0]'(by omega)
     return [.forward #v[input] #v[output]]
   -- Constant with a sink output can be rewritten to a sink
-  | .async (AsyncOp.const v 1) inputs outputs =>
+  | .async (.const v 1) inputs outputs =>
     .assume (inputs.length = 1 ∧ outputs.length = 1) λ h => do
     let act := inputs[0]'(by omega)
     let output := outputs[0]'(by omega)
     .choose λ
-    | .async (AsyncOp.sink 1) inputs' outputs' =>
+    | .async (.sink 1) inputs' outputs' =>
       .assume (inputs'.length = 1 ∧ outputs'.length = 0) λ h => do
       let sink := inputs'[0]'(by omega)
       if output = sink then
@@ -287,7 +305,7 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V 
       else failure
     | _ => failure
   -- TODO: these rewrites might be a bit risky and may change deadlock behavior
-  | .async (AsyncOp.merge .decider 1) inputs outputs =>
+  | .async (.merge .decider 1) inputs outputs =>
     .assume (inputs.length = 3 ∧ outputs.length = 1) λ h => do
     let decider := inputs[0]'(by omega)
     let inputL := inputs[1]'(by omega)
@@ -296,7 +314,7 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V 
     .choose λ
     -- Merge -> steer can be optimized to a steer and a sink
     -- if they have the same decider (both deciders coming from a fork)
-    | .async (AsyncOp.steer flavor 1) inputs' outputs' =>
+    | .async (.steer flavor 1) inputs' outputs' =>
       .assume (inputs'.length = 2 ∧ outputs'.length = 1) λ h => do
       let decider' := inputs'[0]'(by omega)
       let input' := inputs'[1]'(by omega)
@@ -320,9 +338,9 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V 
       else failure
     -- Merge in the decider state with a constant false LHS and constant true RHS
     -- can be rewritten to a forward from the decider
-    | .async (AsyncOp.const (V := V) v₁ 1) inputs₁ outputs₁ =>
+    | .async (.const v₁ 1) inputs₁ outputs₁ =>
       .choose λ
-      | .async (AsyncOp.const (V := V) v₂ 1) inputs₂ outputs₂ =>
+      | .async (.const v₂ 1) inputs₂ outputs₂ =>
         .assume (inputs₁.length = 1 ∧ outputs₁.length = 1 ∧
           inputs₂.length = 1 ∧ outputs₂.length = 1) λ h => do
         let outputs₁ := outputs₁[0]'(by omega)
