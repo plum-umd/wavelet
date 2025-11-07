@@ -191,10 +191,10 @@ def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite (RipTide.SyncOp Loc) χ
   .choose λ
   -- Lower `copy` to `fork`
   | .op (.copy n) inputs outputs =>
-    return [.fork (inputs[0]'(by simp [Arity.ι])) outputs]
+    return .mk "riptide-copy" [.fork (inputs[0]'(by simp [Arity.ι])) outputs]
   -- Lower `const` to the built-in `const`
   | .op (.const v) inputs outputs =>
-    return [.const v (inputs[0]'(by simp [Arity.ι])) outputs]
+    return .mk "riptide-const" [.const v (inputs[0]'(by simp [Arity.ι])) outputs]
   -- Lower `switch` to two `steer`s
   -- This is optional but may enable more rewrites
   | .async (.switch 1) inputs outputs =>
@@ -203,7 +203,7 @@ def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite (RipTide.SyncOp Loc) χ
       let input := inputs[1]'(by omega)
       let output₁ := outputs[0]'(by omega)
       let output₂ := outputs[1]'(by omega)
-      return [
+      return .mk "riptide-switch" [
         .fork input #v[.rename 0 input, .rename 1 input],
         .fork decider #v[.rename 0 decider, .rename 1 decider],
         .steer true (.rename 0 decider) #v[.rename 0 input] #v[output₁],

@@ -84,19 +84,14 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
           atoms := .sink #v[proc.outputs.back] :: proc.atoms }
       else cast (by simp [P, h]) proc
 
-    let applyRewrites (descr : String) (rw : Rewrite _ _ _) (proc : P Nat) : IO (P Nat) := do
-      -- let proc : P (RewriteName Nat) := proc.mapChans RewriteName.base
-      let (numRws, proc) := Rewrite.applyUntilFailNat rw proc
-      proc.checkAffineChan.unwrapIO "dfg invariant error"
-      trace s!"{descr}: {numRws} rewrites. graph size: {proc.atoms.length} ops"
-      return proc
-
-    -- let proc ← applyRewrites "lowering n-ary ops" naryLowering proc
-    -- let proc ← applyRewrites "operator selection" RipTide.operatorSel proc
-    -- let proc ← applyRewrites "dead code elimination" deadCodeElim proc
-
-    let proc ← applyRewrites "op selection and optimization"
+    trace s!"applying op selection and optimizations..."
+    let (numRws, stats, proc) := Rewrite.applyUntilFailNat
       (naryLowering <|> deadCodeElim <|> RipTide.operatorSel) proc
+    trace s!"{numRws} rewrites. graph size: {proc.atoms.length} ops"
+
+    trace "rewrite rule stats:"
+    for (rwName, count) in stats.toList do
+      trace s!"  {rwName}: {count}"
 
     let numNonTrivial :=
       proc.atoms
