@@ -566,16 +566,75 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
     let inputL := inputs[1]'(by omega)
     let inputR := inputs[2]'(by omega)
     let output := outputs[0]'(by omega)
-    let val ← .checkFromConst decider
-    if let some val := InterpConsts.toBool val then
-      if ¬val then
-        -- The right input is never consumed
-        return [
-          .forward #v[inputL] #v[output],
-          .sink #v[decider],
-          .sink #v[inputR],
-        ]
-    failure
+    -- If we have:
+    --   |
+    -- carry -> fork 2 -> other output
+    --           |
+    --         steer -> (back to carry)
+    -- such that carry and steer share the same decider
+    -- Then this can be rewritten to an invariant operator (true flavor)
+    --
+    -- Note that this only addresses recursion constants
+    -- that are used at the top level of a function, without
+    -- going through any branches.
+    (do
+      .chooseNames outputs λ
+      | .async (.fork 2) inputs' outputs' =>
+        .assume (inputs'.length = 1 ∧ outputs'.length = 2) λ h =>
+        let input' := inputs'[0]'(by omega)
+        let output₁' := outputs'[0]'(by omega)
+        let output₂' := outputs'[1]'(by omega)
+        if output = input' then
+          .chooseNames outputs' λ
+          | .async (.steer true 1) inputs'' outputs'' =>
+            .assume (inputs''.length = 2 ∧ outputs''.length = 1) λ h => do
+            let decider'' := inputs''[0]'(by omega)
+            let input'' := inputs''[1]'(by omega)
+            let output'' := outputs''[0]'(by omega)
+            .assumeFromSameFork decider decider''
+            if output'' = inputR then
+              if input'' = output₁' then
+                return [
+                  .inv true none decider inputL output₂',
+                  .sink #v[decider''],
+                ]
+              else if input'' = output₂' then
+                return [
+                  .inv true none decider inputL output₁',
+                  .sink #v[decider''],
+                ]
+              else failure
+            else failure
+          | _ => failure
+        else failure
+      | _ => failure) <|>
+    -- If we have:
+    --   |
+    -- carry -> steer -> (back to carry)
+    -- Then this is essentially a sink (assuming no deadlocks in the original program)
+    (do
+      .chooseNames outputs λ
+      | .async (.steer true 1) inputs' outputs' =>
+        .assume (inputs'.length = 2 ∧ outputs'.length = 1) λ h => do
+        let decider' := inputs'[0]'(by omega)
+        let input' := inputs'[1]'(by omega)
+        let output' := outputs'[0]'(by omega)
+        .assumeFromSameFork decider decider'
+        if output = input' ∧ output' = inputR then
+          return [.sink #v[decider, decider', inputL]]
+        else failure
+      | _ => failure) <|>
+    (do
+      let val ← .checkFromConst decider
+      if let some val := InterpConsts.toBool val then
+        if ¬val then
+          -- The right input is never consumed
+          return [
+            .forward #v[inputL] #v[output],
+            .sink #v[decider],
+            .sink #v[inputR],
+          ]
+      failure)
   -- Carry (false flavor) with a constant true decider
   | .async (.merge .popRight 1) inputs outputs =>
     .assume (inputs.length = 3 ∧ outputs.length = 1) λ h => do
@@ -583,6 +642,7 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
     let inputL := inputs[1]'(by omega)
     let inputR := inputs[2]'(by omega)
     let output := outputs[0]'(by omega)
+    -- TODO: add the false flavor version of the invariant rewrite above
     let val ← .checkFromConst decider
     if let some val := InterpConsts.toBool val then
       if val then

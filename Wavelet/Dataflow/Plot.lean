@@ -92,6 +92,11 @@ def Proc.plot.inputPortName
     | 0 => "e" -- Decider
     | 1 => "nw" -- Input 1
     | _ => "ne" -- Input 2
+  | .async (.inv _ _) .. =>
+    match portIdx with
+    | 0 => "e" -- Decider
+    | 1 => "n" -- Input
+    | _ => "n"
   | _ =>
     match ap.inputs.length with
     | 2 => ["nw", "ne"][portIdx]?.getD "n"

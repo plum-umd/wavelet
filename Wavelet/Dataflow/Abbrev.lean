@@ -64,6 +64,10 @@ def sink [Arity Op]
   else
     .async (.inact 0) [] []
 
+def inv [Arity Op]
+  (flavor : Bool) (c : Option V) (decider : χ) (input : χ) (output : χ) : AtomicProc Op χ V
+  := .async (.inv flavor c) [decider, input] [output]
+
 def inact [Arity Op]
   (outputs : Vector χ n) : AtomicProc Op χ V
   := .async (.inact n) [] outputs.toList
