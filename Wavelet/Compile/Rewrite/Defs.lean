@@ -21,22 +21,45 @@ inductive RewriteName (χ : Type u) where
   | base (_ : χ)
   | rw (_ : RewriteName χ)
   | rename (_ : Nat) (_ : RewriteName χ)
-  deriving Repr, DecidableEq, Lean.ToJson, Lean.FromJson
+  deriving Repr, Hashable, DecidableEq, Lean.ToJson, Lean.FromJson
 
-structure RewriteState Op χ V [Arity Op] where
-  ctx : AtomicProcs Op (RewriteName χ) V
+structure RewriteState Op χ V [Arity Op] [DecidableEq χ] [Hashable χ] where
+  aps : AtomicProcs Op (RewriteName χ) V
+  chanToAtoms : Std.HashMap (RewriteName χ) (List (Fin aps.length))
   matched : List Nat
 
-abbrev RewriteM Op χ V [Arity Op] := StateT (RewriteState Op χ V) Option
+def RewriteState.buildChanToAtomsMap [Arity Op] [DecidableEq χ] [Hashable χ]
+  (aps : AtomicProcs Op (RewriteName χ) V) :
+    Std.HashMap (RewriteName χ) (List (Fin aps.length)) :=
+  List.finRange aps.length
+    |>.foldl
+      (λ m i => m
+        |> aps[i].inputs.foldl (λ m name => m.insert name (i :: m.getD name []))
+        |> aps[i].outputs.foldl (λ m name => m.insert name (i :: m.getD name [])))
+      (Std.HashMap.emptyWithCapacity (2 * aps.length))
 
-abbrev Rewrite Op χ V [Arity Op] := RewriteM Op χ V (AtomicProcs Op (RewriteName χ) V)
+def RewriteState.init [Arity Op] [DecidableEq χ] [Hashable χ]
+  (aps : AtomicProcs Op (RewriteName χ) V) : RewriteState Op χ V :=
+  {
+    aps,
+    -- Builds a map from channel names to "related" atom indices
+    -- for faster lookup.
+    chanToAtoms := buildChanToAtomsMap aps,
+    matched := []
+  }
 
-def RewriteM.apply {Op χ V} [Arity Op]
+abbrev RewriteM Op χ V [Arity Op] [DecidableEq χ] [Hashable χ] :=
+  StateT (RewriteState Op χ V) Option
+
+abbrev Rewrite Op χ V [Arity Op] [DecidableEq χ] [Hashable χ] :=
+  RewriteM Op χ V (AtomicProcs Op (RewriteName χ) V)
+
+def RewriteM.apply [Arity Op] [DecidableEq χ] [Hashable χ]
   (rw : RewriteM Op χ V (AtomicProcs Op (RewriteName χ) V))
   (proc : Proc Op (RewriteName χ) V m n) :
     Option (Proc Op (RewriteName χ) V m n) := do
-  let (aps', s) ← rw.run { ctx := proc.atoms, matched := [] }
-  let unmatched := s.ctx.mapIdx (·, ·)
+  let (aps', s) ← rw.run (.init proc.atoms)
+  let unmatched := s.aps.mapIdx (·, ·)
     |>.filter (λ (i, _) => i ∉ s.matched)
     |>.map (·.snd)
   -- Final renaming to avoid name conflicts in the future
@@ -48,7 +71,7 @@ def RewriteM.apply {Op χ V} [Arity Op]
 
 /-- Apply the given rewrite until failure. -/
 partial def Rewrite.applyUntilFail
-  [Arity Op]
+  [Arity Op] [DecidableEq χ] [Hashable χ]
   (rw : Rewrite Op χ V)
   (proc : Proc Op (RewriteName χ) V m n) : Nat × Proc Op (RewriteName χ) V m n :=
     loop 0 proc
@@ -58,7 +81,8 @@ partial def Rewrite.applyUntilFail
       | some proc' => loop (numRewrites + 1) proc'
       | none => (numRewrites, proc)
 
-/-- Similar but use `Nat` names for slightly better performance. -/
+/-- Similar to `applyUntilFail` but performs `renameChans` every round
+for slightly better performance. -/
 partial def Rewrite.applyUntilFailNat
   [Arity Op]
   (rw : Rewrite Op Nat V)
@@ -78,19 +102,35 @@ TODO: This is quite inefficient (e.g., doing pattern matching on a graph with n 
 Implement a proper graph rewriting algorithm in the future.
 -/
 @[always_inline]
-def RewriteM.choose {Op χ V} [Arity Op]
+def RewriteM.choose [Arity Op] [DecidableEq χ] [Hashable χ]
   (cont : AtomicProc Op (RewriteName χ) V → RewriteM Op χ V α) :
     RewriteM Op χ V α
   := do
   let s ← get
-  (List.finRange s.ctx.length).filter (↑· ∉ s.matched)
+  (List.finRange s.aps.length).filter (↑· ∉ s.matched)
     |>.firstM λ i : Fin _ => do
       -- dbg_trace s!"rewriting depth {s.matched.length}, index {i}"
       set { s with matched := i :: s.matched }
-      cont s.ctx[i]
+      cont s.aps[i]
+
+/-- Choose only atoms that are "relevant" to the given names,
+i.e., the name is either an input or output of the atom. -/
+@[always_inline]
+def RewriteM.chooseNames [Arity Op] [DecidableEq χ] [Hashable χ]
+  (names : List (RewriteName χ))
+  (cont : AtomicProc Op (RewriteName χ) V → RewriteM Op χ V α) :
+    RewriteM Op χ V α
+  := do
+  let s ← get
+  names.map (s.chanToAtoms.getD · [])
+    |>.firstM λ ids => ids.filter (↑· ∉ s.matched)
+    |>.firstM λ i : Fin _ => do
+      -- dbg_trace s!"rewriting depth {s.matched.length}, index {i}"
+      set { s with matched := i :: s.matched }
+      cont s.aps[i]
 
 @[always_inline]
-def RewriteM.assume {Op χ V} [Arity Op]
+def RewriteM.assume [Arity Op] [DecidableEq χ] [Hashable χ]
   (p : Prop) [Decidable p]
   (cont : p → RewriteM Op χ V α) : RewriteM Op χ V α :=
   if h : p then
@@ -99,16 +139,17 @@ def RewriteM.assume {Op χ V} [Arity Op]
     failure
 
 @[always_inline]
-def RewriteM.ctx [Arity Op] : RewriteM Op χ V (AtomicProcs Op (RewriteName χ) V) := do
+def RewriteM.ctx [Arity Op] [DecidableEq χ] [Hashable χ] :
+    RewriteM Op χ V (AtomicProcs Op (RewriteName χ) V) := do
   let s ← get
-  return s.ctx.mapIdx (·, ·)
+  return s.aps.mapIdx (·, ·)
     |>.filter (λ (i, _) => i ∉ s.matched)
     |>.map (·.snd)
 
 /-- Checks if the given two channels are output of the same fork. -/
 @[always_inline]
 def RewriteM.assumeFromSameFork
-  [Arity Op] [DecidableEq χ]
+  [Arity Op] [DecidableEq χ] [Hashable χ]
   (chan₁ chan₂ : RewriteName χ) :
     RewriteM Op χ V Unit := do
   if (← .ctx).any λ
@@ -120,7 +161,8 @@ def RewriteM.assumeFromSameFork
     failure
 
 /-- Lowers n-ary async operators to unary operators. -/
-def naryLowering [Arity Op] : Rewrite Op χ V :=
+def naryLowering [Arity Op] [DecidableEq χ] [Hashable χ] :
+    Rewrite Op χ V :=
   .choose λ
   | .async (AsyncOp.switch k) (decider :: inputs) outputs =>
     .assume (k > 1) λ h => do
@@ -190,7 +232,8 @@ def naryLowering [Arity Op] : Rewrite Op χ V :=
   | _ => failure
 
 /-- Optimizing combinations of steer/switch/sink/fork/forward. -/
-def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V :=
+def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
+    Rewrite Op χ V :=
   .choose λ
   -- Forwards can be folded into either the sender or the receiver
   -- depending on which is available.
@@ -198,7 +241,7 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V 
     .assume (inputs.length = 1 ∧ outputs.length = 1) λ h => do
     let input := inputs[0]'(by omega)
     let output := outputs[0]'(by omega)
-    .choose λ
+    .chooseNames [input, output] λ
     | .async aop inputs' outputs' => do
       if output ∈ inputs' then
         return [.async aop (inputs'.replace output input) outputs']
@@ -217,7 +260,7 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V 
     let input := inputs[1]'(by omega)
     let output₁ := outputs[0]'(by omega)
     let output₂ := outputs[1]'(by omega)
-    .choose λ
+    .chooseNames [output₁, output₂] λ
     -- Switch with one of the outputs being a sink can be reduced to a steer
     | .async (.sink 1) inputs' outputs' =>
       .assume (inputs'.length = 1 ∧ outputs'.length = 0) λ h => do
@@ -233,7 +276,7 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V 
     let decider := inputs[0]'(by omega)
     let input := inputs[1]'(by omega)
     let output := outputs[0]'(by omega)
-    .choose λ
+    .chooseNames (inputs ++ outputs) λ
     -- Steer with a sink output can be reduced to two sinks on the decider and the input
     | .async (.sink 1) inputs' outputs' =>
       .assume (inputs'.length = 1 ∧ outputs'.length = 0) λ h => do
@@ -270,7 +313,7 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V 
   | .async (.fork n) inputs outputs =>
     .assume (inputs.length = 1 ∧ outputs.length = n) λ h => do
     let input := inputs[0]'(by omega)
-    .choose λ
+    .chooseNames (inputs ++ outputs) λ
     | .async (.sink 1) inputs' outputs' =>
       .assume (inputs'.length = 1 ∧ outputs'.length = 0) λ h => do
       let sink := inputs'[0]'(by omega)
@@ -296,7 +339,7 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V 
     .assume (inputs.length = 1 ∧ outputs.length = 1) λ h => do
     let act := inputs[0]'(by omega)
     let output := outputs[0]'(by omega)
-    .choose λ
+    .chooseNames (inputs ++ outputs) λ
     | .async (.sink 1) inputs' outputs' =>
       .assume (inputs'.length = 1 ∧ outputs'.length = 0) λ h => do
       let sink := inputs'[0]'(by omega)
@@ -311,7 +354,7 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V 
     let inputL := inputs[1]'(by omega)
     let inputR := inputs[2]'(by omega)
     let output := outputs[0]'(by omega)
-    .choose λ
+    .chooseNames (inputs ++ outputs) λ
     -- Merge -> steer can be optimized to a steer and a sink
     -- if they have the same decider (both deciders coming from a fork)
     | .async (.steer flavor 1) inputs' outputs' =>
@@ -339,7 +382,7 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [InterpConsts V] : Rewrite Op χ V 
     -- Merge in the decider state with a constant false LHS and constant true RHS
     -- can be rewritten to a forward from the decider
     | .async (.const v₁ 1) inputs₁ outputs₁ =>
-      .choose λ
+      .chooseNames (inputs ++ outputs) λ
       | .async (.const v₂ 1) inputs₂ outputs₂ =>
         .assume (inputs₁.length = 1 ∧ outputs₁.length = 1 ∧
           inputs₂.length = 1 ∧ outputs₂.length = 1) λ h => do

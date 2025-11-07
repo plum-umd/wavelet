@@ -187,7 +187,7 @@ instance : Dataflow.DotName Value where
   dotName v := s!"\"{v}\""
 
 /-- Custom rewrites for RipTide. -/
-def operatorSel [DecidableEq χ] : Rewrite (RipTide.SyncOp Loc) χ Value :=
+def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite (RipTide.SyncOp Loc) χ Value :=
   .choose λ
   -- Lower `copy` to `fork`
   | .op (.copy n) inputs outputs =>
