@@ -449,6 +449,18 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
             else failure)
         else failure
       | _ => failure
+    -- Const followed by a steer can commute (this can move const closer to sync
+    -- operators and expose more optimization opportunities)
+    | .async (.const v 1) inputs' outputs' =>
+      .assume (inputs'.length = 1 ∧ outputs'.length = 1) λ h => do
+      let act := inputs'[0]'(by omega)
+      let output' := outputs'[0]'(by omega)
+      if output' = input then
+        return [
+          .steer flavor decider #v[act] #v[output'],
+          .const v output' #v[output],
+        ]
+      else failure
     | _ => failure
   -- Fork with zero outputs can be replaced with a sink (which enables further rewrites)
   | .async (.fork 0) inputs outputs =>
@@ -559,26 +571,26 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
         ]
       else failure
     | _ => failure
-  -- Carry (true flavor) with a constant false decider
+  -- Carry (true flavor)
   | .async (.merge .popLeft 1) inputs outputs =>
     .assume (inputs.length = 3 ∧ outputs.length = 1) λ h => do
     let decider := inputs[0]'(by omega)
     let inputL := inputs[1]'(by omega)
     let inputR := inputs[2]'(by omega)
     let output := outputs[0]'(by omega)
-    -- If we have:
-    --   |
-    -- carry -> fork 2 -> other output
-    --           |
-    --         steer -> (back to carry)
-    -- such that carry and steer share the same decider
-    -- Then this can be rewritten to an invariant operator (true flavor)
-    --
-    -- Note that this only addresses recursion constants
-    -- that are used at the top level of a function, without
-    -- going through any branches.
     (do
       .chooseNames outputs λ
+      -- If we have:
+      --   |
+      -- carry -> fork 2 -> other output
+      --           |
+      --         steer -> (back to carry)
+      -- such that carry and steer share the same decider
+      -- Then this can be rewritten to an invariant operator (true flavor)
+      --
+      -- Note that this only addresses recursion constants
+      -- that are used at the top level of a function, without
+      -- going through any branches.
       | .async (.fork 2) inputs' outputs' =>
         .assume (inputs'.length = 1 ∧ outputs'.length = 2) λ h =>
         let input' := inputs'[0]'(by omega)
@@ -607,13 +619,6 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
             else failure
           | _ => failure
         else failure
-      | _ => failure) <|>
-    -- If we have:
-    --   |
-    -- carry -> steer -> (back to carry)
-    -- Then this is essentially a sink (assuming no deadlocks in the original program)
-    (do
-      .chooseNames outputs λ
       | .async (.steer true 1) inputs' outputs' =>
         .assume (inputs'.length = 2 ∧ outputs'.length = 1) λ h => do
         let decider' := inputs'[0]'(by omega)
@@ -621,9 +626,32 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
         let output' := outputs'[0]'(by omega)
         .assumeFromSameFork decider decider'
         if output = input' ∧ output' = inputR then
+          -- If we have:
+          --   |
+          -- carry -> steer -> (back to carry)
+          -- such that carry and steer share the same decider
+          -- Then this is essentially a sink (assuming no deadlocks in the original program)
           return [.sink #v[decider, decider', inputL]]
-        else failure
+        else
+          -- Similar to the case above, if we have:
+          --   |
+          -- carry -> order -> steer -> (back to carry)
+          -- such that carry and steer share the same decider
+          -- Then this is essentially a sink (assuming no deadlocks in the original program)
+          .chooseNames [output'] λ
+          | .async (AsyncOp.order n) inputs'' outputs'' =>
+            .assume (n > 0 ∧ inputs''.length = n ∧ outputs''.length = 1) λ h => do
+            let output'' := outputs''[0]'(by omega)
+            if output = input' ∧ output' ∈ inputs'' ∧ output'' = inputR then
+              return [
+                .sink (#v[
+                  decider, decider', inputL,
+                ] ++ (inputs''.erase output').toVector)
+              ]
+            else failure
+          | _ => failure
       | _ => failure) <|>
+    -- Carry (true flavor) with a constant false decider
     (do
       let val ← .checkFromConst decider
       if let some val := InterpConsts.toBool val then
