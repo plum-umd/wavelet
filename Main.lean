@@ -31,6 +31,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     | "json" => pure OutputFormat.json
     | "dot"  => pure OutputFormat.dot
     | fmt    => throw <| IO.userError s!"unknown output format: {fmt}"
+  let permOut := p.hasFlag "perm-out"
   let writeOutput (content : String) : IO Unit :=
     match outputPath? with
     | some path => IO.FS.writeFile path content
@@ -49,9 +50,6 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     -- Some abbreviations
     let : NeZeroSigs prog.sigs := prog.neZero
     let last : Fin prog.numFns := ⟨prog.numFns - 1, by omega⟩
-    let P χ := Proc
-      (RipTide.SyncOp String) χ RipTide.Value
-      (prog.sigs last).ι (prog.sigs last).ω
 
     -- Check some static properties
     for i in List.finRange prog.numFns do
@@ -67,11 +65,25 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
 
     -- Erase ghost tokens
     let proc := proc.eraseGhost
-    let proc : P Nat := proc.renameChans
+    let proc := proc.renameChans
     trace s!"erased ghost tokens. graph size: {proc.atoms.length} ops"
     proc.checkAffineChan.unwrapIO "dfg invariant error"
 
     -- Some optimizations
+    let P χ := Proc
+      (RipTide.SyncOp String) χ RipTide.Value
+      (prog.sigs last).ι
+      (if ¬ permOut then (prog.sigs last).ω - 1 else (prog.sigs last).ω)
+    let proc : P Nat :=
+      if h : ¬ permOut then
+        -- If we don't need output permission from the entire graph,
+        -- the last output (which assumed to be a ghost permission output)
+        -- can be replaced with a sink to enable more optimizations.
+        { proc with
+          outputs := proc.outputs.pop.cast (by simp [h]),
+          atoms := .sink #v[proc.outputs.back] :: proc.atoms }
+      else cast (by simp [P, h]) proc
+
     let applyRewrites (descr : String) (rw : Rewrite _ _ _) (proc : P Nat) : IO (P Nat) := do
       -- let proc : P (RewriteName Nat) := proc.mapChans RewriteName.base
       let (numRws, proc) := Rewrite.applyUntilFailNat rw proc
@@ -83,7 +95,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     -- let proc ← applyRewrites "operator selection" RipTide.operatorSel proc
     -- let proc ← applyRewrites "dead code elimination" deadCodeElim proc
 
-    let proc ← applyRewrites "operator selection and optimization"
+    let proc ← applyRewrites "op selection and optimization"
       (naryLowering <|> deadCodeElim <|> RipTide.operatorSel) proc
 
     let numNonTrivial :=
@@ -121,6 +133,7 @@ def compileCmd := `[Cli|
     FLAGS:
       o, output : String; "Path to output final dataflow graph in JSON (Default: stdout)"
       f, format : String; "Output format [json|dot]"
+      "perm-out"; "Enable permission output which might increase graph size"
 
     ARGS:
       input : String; "Input sequential program in JSON"

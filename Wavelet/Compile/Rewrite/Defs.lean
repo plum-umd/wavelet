@@ -523,6 +523,15 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
               ]
             else failure
         else failure
+    -- Order -> sink can be optimized away
+    | .async (AsyncOp.sink n) inputs' outputs' =>
+      .assume (n > 0 ∧ inputs'.length = n ∧ outputs'.length = 0) λ h => do
+      if output ∈ inputs' then
+        return [
+          .sink inputs.toVector,
+          .sink (inputs'.erase output).toVector,
+        ]
+      else failure
     | _ => failure
   -- Constant with a sink output can be rewritten to a sink
   | .async (.const v 1) inputs outputs =>
@@ -592,6 +601,17 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
     let inputR := inputs[2]'(by omega)
     let output := outputs[0]'(by omega)
     .chooseNames (inputs ++ outputs) λ
+    -- Merge -> sink can be optimized away
+    | .async (AsyncOp.sink n) inputs' outputs' =>
+      .assume (n > 0 ∧ inputs'.length = n ∧ outputs'.length = 0) λ h => do
+      if output ∈ inputs' then
+        return [
+          .sink #v[decider],
+          .sink #v[inputL],
+          .sink #v[inputR],
+          .sink (inputs'.erase output).toVector,
+        ]
+      else failure
     -- Merge -> steer can be optimized to a steer and a sink
     -- if they have the same decider (both deciders coming from a fork)
     | .async (.steer flavor 1) inputs' outputs' =>
