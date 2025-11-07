@@ -143,7 +143,7 @@ def RewriteM.ctx [Arity Op] [DecidableEq χ] [Hashable χ] :
     RewriteM Op χ V (AtomicProcs Op (RewriteName χ) V) := do
   let s ← get
   return s.aps.mapIdx (·, ·)
-    |>.filter (λ (i, _) => i ∉ s.matched)
+    -- |>.filter (λ (i, _) => i ∉ s.matched)
     |>.map (·.snd)
 
 /-- Gets the list of operators that reference the give names in the context. -/
@@ -154,7 +154,7 @@ def RewriteM.ctxWithNames [Arity Op] [DecidableEq χ] [Hashable χ]
   let s ← get
   return names.map (s.chanToAtoms.getD · [])
     |>.flatten
-    |>.filter (↑· ∉ s.matched)
+    -- |>.filter (↑· ∉ s.matched)
     |>.map (s.aps[·])
 
 /-- Checks if the given two channels are output of the same fork. -/
@@ -334,7 +334,6 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
           .sink #v[decider],
         ]
       else failure
-    -- Two consecutive steers with the same flavor and same decider can be folded
     | .async (.steer flavor' 1) inputs' outputs' =>
       .assume (inputs'.length = 2 ∧ outputs'.length = 1) λ h => do
       let decider' := inputs'[0]'(by omega)
@@ -342,11 +341,70 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
       let output' := outputs'[0]'(by omega)
       .assumeFromSameFork decider decider'
       if flavor = flavor' ∧ output = input' then
+        -- Two consecutive steers with the same flavor and same decider can be folded
         return [
           .steer flavor decider #v[input] #v[output'],
           .sink #v[decider'],
         ]
+      else
+        failure
+    -- A specific pattern of `steer → order → steer`
+    -- can be reduced to `steer → order` if the deciders and flavors match
+    | .async (AsyncOp.order n) inputs' outputs' =>
+      .assume (n > 0 ∧ inputs'.length = n ∧ outputs'.length = 1) λ h => do
+      let output' := outputs'[0]'(by omega)
+      let inputs' ← inputs'.toVectorDyn n
+      if output ∈ inputs' then -- The steer output doesn't have to be the first order input
+        .chooseNames [output'] λ
+        | .async (.steer flavor'' 1) inputs'' outputs'' => do
+          .assume (inputs''.length = 2 ∧ outputs''.length = 1) λ h => do
+          let decider'' := inputs''[0]'(by omega)
+          let input'' := inputs''[1]'(by omega)
+          let output'' := outputs''[0]'(by omega)
+          if flavor = flavor'' ∧ output' = input'' then
+            .assumeFromSameFork decider decider''
+            return [
+              .steer flavor decider #v[input] #v[output], -- Same steer
+              .order inputs' output'', -- order directly send to second steer output
+              .sink #v[decider''],
+            ]
+          else failure
+        | _ => failure
       else failure
+    | .async (.fork n) inputs' outputs' =>
+      .assume (inputs'.length = 1 ∧ outputs'.length = n) λ h => do
+      let input' := inputs'[0]'(by omega)
+      let outputs' ← outputs'.toVectorDyn n
+      .chooseNames outputs'.toList λ
+      | .async (.steer flavor'' 1) inputs'' outputs'' =>
+        .assume (inputs''.length = 2 ∧ outputs''.length = 1) λ h => do
+        let decider'' := inputs''[0]'(by omega)
+        let input'' := inputs''[1]'(by omega)
+        let output'' := outputs''[0]'(by omega)
+        if flavor = flavor'' then
+          .assumeFromSameFork decider decider''
+          -- Two parallel steers with the same flavor and same input can be combined
+          (do
+            .assumeFromSameFork input input''
+            return [
+              .fork input' outputs',
+              .steer flavor decider #v[input] #v[.rename 0 output],
+              .sink #v[decider''],
+              .sink #v[input''],
+              .fork (.rename 0 output) #v[output, output''],
+            ]) <|>
+          -- Two consecutive steers (gated by a fork) with the same flavor can be folded
+          (do
+            if input'' ∈ outputs' ∧ input' ∈ outputs then
+              return [
+                .fork input' (outputs'.push output''), -- Add one more result to fork
+                .sink #v[decider''], -- Following steer removed
+                .sink #v[input''],
+                .steer flavor decider #v[input] #v[output], -- Original steer kept the same
+              ]
+            else failure)
+        else failure
+      | _ => failure
     | _ => failure
   -- Fork with zero outputs can be replaced with a sink (which enables further rewrites)
   | .async (.fork 0) inputs outputs =>
@@ -381,6 +439,26 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
     let input := inputs[0]'(by omega)
     let output := outputs[0]'(by omega)
     return [.forward #v[input] #v[output]]
+  -- Nested order can be folded
+  | .async (AsyncOp.order n) inputs outputs =>
+    .assume (n > 1 ∧ inputs.length = n ∧ outputs.length = 1) λ h => do
+    let output := outputs[0]'(by omega)
+    .chooseNames (inputs ++ outputs) λ
+    | .async (AsyncOp.order m) inputs' outputs' =>
+      .assume (m > 1 ∧ inputs'.length = m ∧ outputs'.length = 1) λ h => do
+      let output' := outputs'[0]'(by omega)
+      if output ∈ inputs' then
+        let newInputs' := inputs'
+          |>.map (λ name => if name = output then inputs else [name])
+          |>.flatten
+        .assume (newInputs'.length ≠ 0) λ h' => do
+        let : NeZero newInputs'.length := by constructor; omega
+        return [
+          .order newInputs'.toVector output',
+        ]
+      else
+        failure
+    | _ => failure
   -- Constant with a sink output can be rewritten to a sink
   | .async (.const v 1) inputs outputs =>
     .assume (inputs.length = 1 ∧ outputs.length = 1) λ h => do

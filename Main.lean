@@ -94,8 +94,8 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         | .async (AsyncOp.forwardc ..) ..
         | .async (AsyncOp.inact ..) ..
         | .async (AsyncOp.const ..) ..
-        | .async (AsyncOp.sink ..) .. => true
-        | _ => false)
+        | .async (AsyncOp.sink ..) .. => false
+        | _ => true)
       |>.length
     trace s!"non-trivial operators: {numNonTrivial}"
 
