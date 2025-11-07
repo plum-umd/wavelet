@@ -146,19 +146,53 @@ def RewriteM.ctx [Arity Op] [DecidableEq χ] [Hashable χ] :
     |>.filter (λ (i, _) => i ∉ s.matched)
     |>.map (·.snd)
 
+/-- Gets the list of operators that reference the give names in the context. -/
+@[always_inline]
+def RewriteM.ctxWithNames [Arity Op] [DecidableEq χ] [Hashable χ]
+  (names : List (RewriteName χ)) :
+    RewriteM Op χ V (AtomicProcs Op (RewriteName χ) V) := do
+  let s ← get
+  return names.map (s.chanToAtoms.getD · [])
+    |>.flatten
+    |>.filter (↑· ∉ s.matched)
+    |>.map (s.aps[·])
+
 /-- Checks if the given two channels are output of the same fork. -/
 @[always_inline]
 def RewriteM.assumeFromSameFork
   [Arity Op] [DecidableEq χ] [Hashable χ]
   (chan₁ chan₂ : RewriteName χ) :
     RewriteM Op χ V Unit := do
-  if (← .ctx).any λ
-    | .async (AsyncOp.fork _) _ outputs =>
-      chan₁ ∈ outputs ∧ chan₂ ∈ outputs
-    | _ => false then
-    return ()
-  else
-    failure
+  (← .ctxWithNames [chan₁, chan₂]).firstM λ
+  | .async (AsyncOp.fork _) _ outputs =>
+    if chan₁ ∈ outputs ∧ chan₂ ∈ outputs then
+      return ()
+    else failure
+  | _ => failure
+
+/-- Checks if a channel is the output of a constant gate, modulo one or no forks
+(since multiple forks will be combined). -/
+def RewriteM.checkFromConst
+  [Arity Op] [DecidableEq χ] [Hashable χ]
+  (chan : RewriteName χ) :
+    RewriteM Op χ V V := do
+  (← .ctxWithNames [chan]).firstM λ
+  | .async (AsyncOp.fork _) inputs outputs =>
+    .assume (inputs.length = 1) λ h => do
+    let input := inputs[0]'(by omega)
+    if chan ∈ outputs then
+      -- Continue searching through the outputs of the fork
+      (← .ctxWithNames [input]).firstM λ
+      | .async (.const v k) _ outputs =>
+        if input ∈ outputs then
+          return v
+        else failure
+      | _ => failure
+    else failure
+  | .async (.const v k) _ outputs =>
+    if chan ∈ outputs then return v
+    else failure
+  | _ => failure
 
 /-- Lowers n-ary async operators to unary operators. -/
 def naryLowering [Arity Op] [DecidableEq χ] [Hashable χ] :
@@ -228,7 +262,7 @@ def naryLowering [Arity Op] [DecidableEq χ] [Hashable χ] :
     .assume (n > 1 ∧ inputs.length = n ∧ outputs.length = 0) λ h => do
     let inputs : Vector _ n := inputs.toVector.cast (by omega)
     return (inputs.map λ i => .sink #v[i]).toList
-  | .async .inact _ _ => return []
+  | .async (.inact 0) _ _ => return []
   | _ => failure
 
 /-- Optimizing combinations of steer/switch/sink/fork/forward. -/
@@ -276,6 +310,19 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
     let decider := inputs[0]'(by omega)
     let input := inputs[1]'(by omega)
     let output := outputs[0]'(by omega)
+    -- Steer with decider coming from a constant can be replaced with a sink or order
+    (do
+      let val ← .checkFromConst decider
+      if let some val := InterpConsts.toBool val then
+        if val = flavor then
+          return [.order #v[decider, input] output]
+        else
+          return [
+            .sink #v[input],
+            .sink #v[decider],
+            .inact #v[output],
+          ]
+      failure) <|>
     .chooseNames (inputs ++ outputs) λ
     -- Steer with a sink output can be reduced to two sinks on the decider and the input
     | .async (.sink 1) inputs' outputs' =>
@@ -347,6 +394,53 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
         return [.sink #v[act]]
       else failure
     | _ => failure
+  | .async (.inact n) inputs outputs =>
+    .assume (n > 0 ∧ inputs.length = 0 ∧ outputs.length = n) λ h => do
+    .chooseNames outputs λ
+    -- Inact + sink : the channel between them can be removed
+    | .async (AsyncOp.sink m) inputs' outputs' =>
+      .assume (inputs'.length = m ∧ outputs'.length = 0) λ h => do
+      if ¬ outputs.Disjoint inputs' then
+        return [
+          .inact (outputs.removeAll inputs').toVector,
+          .sink (inputs'.removeAll outputs).toVector,
+        ]
+      else failure
+    | _ => failure
+  -- Carry (true flavor) with a constant false decider
+  | .async (.merge .popLeft 1) inputs outputs =>
+    .assume (inputs.length = 3 ∧ outputs.length = 1) λ h => do
+    let decider := inputs[0]'(by omega)
+    let inputL := inputs[1]'(by omega)
+    let inputR := inputs[2]'(by omega)
+    let output := outputs[0]'(by omega)
+    let val ← .checkFromConst decider
+    if let some val := InterpConsts.toBool val then
+      if ¬val then
+        -- The right input is never consumed
+        return [
+          .forward #v[inputL] #v[output],
+          .sink #v[decider],
+          .sink #v[inputR],
+        ]
+    failure
+  -- Carry (false flavor) with a constant true decider
+  | .async (.merge .popRight 1) inputs outputs =>
+    .assume (inputs.length = 3 ∧ outputs.length = 1) λ h => do
+    let decider := inputs[0]'(by omega)
+    let inputL := inputs[1]'(by omega)
+    let inputR := inputs[2]'(by omega)
+    let output := outputs[0]'(by omega)
+    let val ← .checkFromConst decider
+    if let some val := InterpConsts.toBool val then
+      if val then
+        -- The left input is never consumed
+        return [
+          .forward #v[inputR] #v[output],
+          .sink #v[decider],
+          .sink #v[inputL],
+        ]
+    failure
   -- TODO: these rewrites might be a bit risky and may change deadlock behavior
   | .async (.merge .decider 1) inputs outputs =>
     .assume (inputs.length = 3 ∧ outputs.length = 1) λ h => do

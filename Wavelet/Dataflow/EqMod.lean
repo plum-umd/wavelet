@@ -42,7 +42,7 @@ def AsyncOp.EqMod
   | forwardc n₁ m₁ consts₁, forwardc n₂ m₂ consts₂ =>
       n₁ = n₂ ∧ m₁ = m₂ ∧ List.Forall₂ EqV consts₁.toList consts₂.toList
   | sink n₁, sink n₂ => n₁ = n₂
-  | inact, inact => True
+  | inact n₁, inact n₂ => n₁ = n₂
   | _, _ => False
 
 def AtomicProc.EqMod

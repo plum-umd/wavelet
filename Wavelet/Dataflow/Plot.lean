@@ -66,15 +66,15 @@ def AtomicProc.dotAttrs [Arity Op] [DotName Op] [DotName V] : AtomicProc Op χ V
   | .async (AsyncOp.fork _) .. =>
     s!"shape=point"
   | .async (AsyncOp.order _) .. =>
-    s!"label=\"O\" shape=square fixedsize=true height=0.5 width=0.5 style=filled fillcolor=lightgrey"
+    s!"label=\"\" shape=circle fixedsize=true height=0.2 width=0.2"
   | .async (AsyncOp.const v _) .. =>
     s!"label={DotName.dotName v} shape=square fixedsize=true height=0.27 width=0.27"
   | .async (AsyncOp.forwardc _ _ _) .. =>
     s!"label=\"idc\" shape=square fixedsize=true height=0.5 width=0.5 style=filled fillcolor=lightgrey"
   | .async (AsyncOp.sink _) .. =>
-    s!"label=\"⊥\" shape=square fixedsize=true height=0.5 width=0.5 style=filled fillcolor=lightgrey"
-  | .async AsyncOp.inact .. =>
-    s!"label=\"⊥\" shape=square fixedsize=true height=0.5 width=0.5 style=filled fillcolor=lightgrey"
+    s!"label=\"⊥\" shape=plaintext"
+  | .async (AsyncOp.inact _) .. =>
+    s!"label=\"⊤\" shape=plaintext"
 
 /-- Generates the port name for a particular input index. -/
 def Proc.plot.inputPortName

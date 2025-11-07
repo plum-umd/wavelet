@@ -86,6 +86,19 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     let proc ← applyRewrites "operator selection and optimization"
       (naryLowering <|> deadCodeElim <|> RipTide.operatorSel) proc
 
+    let numNonTrivial :=
+      proc.atoms
+      |>.filter (λ
+        | .async (AsyncOp.fork ..) ..
+        | .async (AsyncOp.forward ..) ..
+        | .async (AsyncOp.forwardc ..) ..
+        | .async (AsyncOp.inact ..) ..
+        | .async (AsyncOp.const ..) ..
+        | .async (AsyncOp.sink ..) .. => true
+        | _ => false)
+      |>.length
+    trace s!"non-trivial operators: {numNonTrivial}"
+
     match format with
     | .dot =>
       -- Dump graph as DOT

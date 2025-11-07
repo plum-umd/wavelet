@@ -62,7 +62,11 @@ def sink [Arity Op]
     let _ : NeZero n := NeZero.mk h
     .async (.sink n) inputs.toList #v[].toList
   else
-    .async .inact [] []
+    .async (.inact 0) [] []
+
+def inact [Arity Op]
+  (outputs : Vector χ n) : AtomicProc Op χ V
+  := .async (.inact n) [] outputs.toList
 
 end AtomicProc
 

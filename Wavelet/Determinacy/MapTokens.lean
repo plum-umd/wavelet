@@ -42,7 +42,7 @@ def AsyncOp.mapValues
   | const c n => const (f c) n
   | forwardc n m consts => forwardc n m (consts.map f)
   | sink n => sink n
-  | inact => inact
+  | inact n => inact n
 
 def AtomicProc.mapTokens
   [Arity Op]

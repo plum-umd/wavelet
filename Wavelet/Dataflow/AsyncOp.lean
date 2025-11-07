@@ -39,7 +39,7 @@ inductive AsyncOp V where
   -- to the last `m` outputs.
   | forwardc (n m : Nat) (consts : Vector V m) [NeZero n] : AsyncOp V
   | sink (n : Nat) [NeZero n] : AsyncOp V
-  | inact : AsyncOp V
+  | inact (n : Nat) : AsyncOp V
 
 /-- Input arity of an async operator. -/
 def AsyncOp.ι : AsyncOp V → Nat
@@ -52,7 +52,7 @@ def AsyncOp.ι : AsyncOp V → Nat
   | const _ _ => 1
   | forwardc n _ _ => n
   | sink n => n
-  | inact => 0
+  | inact _ => 0
 
 /-- Output arity of an async operator. -/
 def AsyncOp.ω : AsyncOp V → Nat
@@ -65,7 +65,7 @@ def AsyncOp.ω : AsyncOp V → Nat
   | const _ n => n
   | forwardc n m _ => n + m
   | sink _ => 0
-  | inact => 0
+  | inact n => n
 
 namespace AsyncOp
 
