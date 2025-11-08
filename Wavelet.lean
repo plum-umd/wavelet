@@ -4,6 +4,5 @@ import Wavelet.Dataflow
 import Wavelet.Data
 import Wavelet.Compile
 import Wavelet.Determinacy
-import Wavelet.PermType
 import Wavelet.Frontend
 import Wavelet.HighLevel

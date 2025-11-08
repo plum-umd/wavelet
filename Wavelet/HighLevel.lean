@@ -2,7 +2,6 @@ import Wavelet.Determinacy
 import Wavelet.Seq
 import Wavelet.Dataflow
 import Wavelet.Compile
-import Wavelet.PermType
 
 /-! Some high-level theorems and plans. -/
 
@@ -14,7 +13,7 @@ open Semantics Determinacy Seq Dataflow Compile
 with a specific operator interpretation. -/
 abbrev Seq.Prog.semanticsᵢ
   {Op : Type u₁} {χ : Type u₂} {V : Type u₃}
-  [Arity Op] [DecidableEq χ] [InterpConsts V]
+  [Arity Op] [PCM T] [DecidableEq χ] [InterpConsts V]
   [opInterp : OpInterp.{_, _, w} Op V]
   {sigs : Sigs k}
   {opSpec : Determinacy.OpSpec Op V T}
@@ -22,7 +21,7 @@ abbrev Seq.Prog.semanticsᵢ
   (prog : ProgWithSpec opSpec progSpec χ)
   (i : Fin k) :
     Semantics.{_, _, max u₁ u₂ u₃ w} Semantics.Empty V (sigs i).ι (sigs i).ω
-  := ((prog.semantics i).guard (opSpec.TrivGuard (progSpec i))).interpret opInterp
+  := ((prog.semantics i).guard (opSpec.Guard (progSpec i))).interpret opInterp
 
 /-- Final semantics of a dataflow program when interpreted
 with a specific operator interpretation. -/
@@ -44,17 +43,15 @@ theorem compile_forward_sim_guarded
   {opSpec : OpSpec Op V T}
   {progSpec : ProgSpec V T sigs}
   (prog : ProgWithSpec opSpec progSpec χ)
-  (hwt : ProgWithSpec.WellPermTyped progSpec prog)
   (haff₁ : ∀ i, (prog i).AffineVar)
   (haff₂ : prog.AffineInrOp)
   (i : Fin k) :
-    (prog.semantics i).guard (opSpec.TrivGuard (progSpec i))
+    (prog.semantics i).guard (opSpec.Guard (progSpec i))
       ≲ᵣ[PreservesInit] (compileProg prog i).semantics.guard (opSpec.Guard (progSpec i))
   := by
-  apply IORestrictedSimilaritySt.trans_preserves_init
-  · exact sim_wpt_prog prog hwt i
-  · apply sim_guard
-    apply sim_compile_prog_preserves_init prog i haff₁ haff₂
+  -- apply IORestrictedSimilaritySt.trans_preserves_init
+  apply sim_guard
+  apply sim_compile_prog_preserves_init prog i haff₁ haff₂
 
 theorem sim_guarded_unguarded
   [Arity Op] [PCM T]
@@ -79,19 +76,18 @@ theorem compile_forward_sim
   {opSpec : OpSpec Op V T}
   {progSpec : ProgSpec V T sigs}
   (prog : ProgWithSpec opSpec progSpec χ)
-  (hwt : ProgWithSpec.WellPermTyped progSpec prog)
   (haff₁ : ∀ i, (prog i).AffineVar)
   (haff₂ : prog.AffineInrOp)
   (i : Fin k) :
-    (prog.semantics i).guard (opSpec.TrivGuard (progSpec i))
+    (prog.semantics i).guard (opSpec.Guard (progSpec i))
       ≲ᵣ (compileProg prog i).semantics.guard (opSpec.TrivGuard (progSpec i))
   := by
   apply IORestrictedSimilarity.trans
-  · apply (compile_forward_sim_guarded prog hwt haff₁ haff₂ i).weaken (by simp)
+  · apply (compile_forward_sim_guarded prog haff₁ haff₂ i).weaken (by simp)
   · apply sim_guarded_unguarded
 
 private theorem prog_semanticsᵢ_star_to_semantics_star
-  [Arity Op]
+  [Arity Op] [PCM T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp.{_, _, w} Op V]
@@ -112,7 +108,7 @@ private theorem prog_semanticsᵢ_star_to_semantics_star
 
 /-- After an output step, the program configuration becomes the initial configuration. -/
 private theorem prog_semanticsᵢ_output_init
-  [Arity Op]
+  [Arity Op] [PCM T]
   [DecidableEq χ]
   [InterpConsts V]
   [opInterp : OpInterp.{_, _, w} Op V]
@@ -153,7 +149,6 @@ theorem compile_strong_norm
   (hnb : opInterp.NonBlocking)
   -- Program with well-formedness and typing properties
   (prog : ProgWithSpec opSpec progSpec χ)
-  (hwt : ProgWithSpec.WellPermTyped progSpec prog)
   (haff₁ : ∀ (i : Fin k), (prog i).AffineVar)
   (haff₂ : prog.AffineInrOp)
   (i : Fin k)
@@ -210,7 +205,7 @@ theorem compile_strong_norm
   After some more manipulations, we can show the result of this theorem.
   -/
   subst hcomp
-  have hsim₁ := compile_forward_sim_guarded prog hwt haff₁ haff₂ i
+  have hsim₁ := compile_forward_sim_guarded prog haff₁ haff₂ i
   replace hsim₁ := sim_interp hsim₁
   -- Carry the first input step over
   have ⟨s''', hinputs'', hsim_s'''⟩ := hsim₁.sim_step _ _ _ _ hsim₁.sim_init hinputs
