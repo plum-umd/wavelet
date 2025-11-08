@@ -458,7 +458,7 @@ impl Program {
     /// Array references (both shared and unique) are removed from parameter lists
     /// and argument lists, as they are assumed to be globally available.
     pub fn eliminate_array_params(&mut self) {
-        let mut fn_array_indices: std::collections::HashMap<String, Vec<usize>> = 
+        let mut fn_array_indices: std::collections::HashMap<String, Vec<usize>> =
             std::collections::HashMap::new();
 
         // collect array parameter indices for all functions
@@ -521,7 +521,7 @@ impl Expr {
         if let Tail::TailCall { func, args } = &self.tail {
             if func != current_fn {
                 let ret_var = self.fresh_var("_tail_ret");
-                
+
                 // TailCall -> LetCall + RetVar
                 let call_stmt = Stmt::LetCall {
                     vars: vec![ret_var.clone()],
@@ -529,7 +529,7 @@ impl Expr {
                     args: args.clone(),
                     fence: false,
                 };
-                
+
                 self.stmts.push(call_stmt);
                 self.tail = Tail::RetVar(ret_var);
             }
@@ -539,15 +539,15 @@ impl Expr {
     fn fresh_var(&self, base: &str) -> Var {
         let mut used_vars = std::collections::HashSet::new();
         self.collect_vars(&mut used_vars);
-        
+
         let mut candidate = Var(base.to_string());
         let mut counter = 0;
-        
+
         while used_vars.contains(&candidate) {
             counter += 1;
             candidate = Var(format!("{}_{}", base, counter));
         }
-        
+
         candidate
     }
 
@@ -570,8 +570,7 @@ impl Expr {
 }
 
 impl Stmt {
-    fn desugar_tail_calls(&mut self, _current_fn: &FnName) {
-    }
+    fn desugar_tail_calls(&mut self, _current_fn: &FnName) {}
 
     fn collect_vars(&self, vars: &mut std::collections::HashSet<Var>) {
         match self {
@@ -620,8 +619,7 @@ impl Tail {
                 then_e.desugar_tail_calls(current_fn);
                 else_e.desugar_tail_calls(current_fn);
             }
-            Tail::RetVar(_) | Tail::TailCall { .. } => {
-            }
+            Tail::RetVar(_) | Tail::TailCall { .. } => {}
         }
     }
 
@@ -689,8 +687,7 @@ impl Op {
                 vars.insert(index.clone());
                 vars.insert(value.clone());
             }
-            _ => {
-            }
+            _ => {}
         }
     }
 }
@@ -710,7 +707,7 @@ mod tests {
                 args: vec![Var("x".into()), Var("y".into())],
             },
         );
-        
+
         let mut foo_def = FnDef {
             name: FnName("foo".into()),
             params: vec![
@@ -721,22 +718,24 @@ mod tests {
             returns: Ty::Int(Signedness::Signed),
             body: foo_body,
         };
-        
+
         // Desugar
         foo_def.desugar_tail_calls();
-        
+
         // Check that the tail call was transformed
         assert_eq!(foo_def.body.stmts.len(), 1);
-        
+
         match &foo_def.body.stmts[0] {
-            Stmt::LetCall { vars, func, args, .. } => {
+            Stmt::LetCall {
+                vars, func, args, ..
+            } => {
                 assert_eq!(vars.len(), 1);
                 assert_eq!(func.0, "bar");
                 assert_eq!(args.len(), 2);
             }
             _ => panic!("Expected LetCall statement"),
         }
-        
+
         match &foo_def.body.tail {
             Tail::RetVar(var) => {
                 assert!(var.0.starts_with("_tail_ret"));
@@ -756,7 +755,7 @@ mod tests {
                 args: vec![Var("n".into())],
             },
         );
-        
+
         let mut factorial_def = FnDef {
             name: FnName("factorial".into()),
             params: vec![(Var("n".into()), Ty::Int(Signedness::Signed))],
@@ -764,13 +763,13 @@ mod tests {
             returns: Ty::Int(Signedness::Signed),
             body: recursive_body,
         };
-        
+
         // Desugar
         factorial_def.desugar_tail_calls();
-        
+
         // Check that the recursive tail call was NOT transformed
         assert_eq!(factorial_def.body.stmts.len(), 0);
-        
+
         match &factorial_def.body.tail {
             Tail::TailCall { func, .. } => {
                 assert_eq!(func.0, "factorial");
@@ -789,7 +788,7 @@ mod tests {
                 args: vec![],
             },
         );
-        
+
         let else_branch = Expr::new(
             vec![],
             Tail::TailCall {
@@ -797,7 +796,7 @@ mod tests {
                 args: vec![],
             },
         );
-        
+
         let foo_body = Expr::new(
             vec![],
             Tail::IfElse {
@@ -806,7 +805,7 @@ mod tests {
                 else_e: Box::new(else_branch),
             },
         );
-        
+
         let mut foo_def = FnDef {
             name: FnName("foo".into()),
             params: vec![(Var("cond".into()), Ty::Bool)],
@@ -814,38 +813,36 @@ mod tests {
             returns: Ty::Unit,
             body: foo_body,
         };
-        
+
         // Desugar
         foo_def.desugar_tail_calls();
-        
+
         // Check that tail calls in both branches were transformed
         match &foo_def.body.tail {
             Tail::IfElse { then_e, else_e, .. } => {
                 assert_eq!(then_e.stmts.len(), 1);
                 assert_eq!(else_e.stmts.len(), 1);
-                
+
                 match (&then_e.tail, &else_e.tail) {
-                    (Tail::RetVar(_), Tail::RetVar(_)) => {},
+                    (Tail::RetVar(_), Tail::RetVar(_)) => {}
                     _ => panic!("Expected both branches to end with RetVar"),
                 }
             }
             _ => panic!("Expected IfElse tail"),
         }
     }
-    
+
     #[test]
     fn test_fresh_var_avoids_conflicts() {
         let expr = Expr::new(
-            vec![
-                Stmt::LetVal {
-                    var: Var("_tail_ret".into()),
-                    val: Val::Int(42),
-                    fence: false,
-                },
-            ],
+            vec![Stmt::LetVal {
+                var: Var("_tail_ret".into()),
+                val: Val::Int(42),
+                fence: false,
+            }],
             Tail::RetVar(Var("_tail_ret".into())),
         );
-        
+
         let fresh = expr.fresh_var("_tail_ret");
         assert_ne!(fresh.0, "_tail_ret");
         assert!(fresh.0.starts_with("_tail_ret_"));
@@ -893,5 +890,4 @@ mod tests {
             _ => panic!("Expected LetCall statement"),
         }
     }
-
 }

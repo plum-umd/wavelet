@@ -1,13 +1,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use smtlib_lowlevel::{
-    Driver, Storage,
-    ast::{CheckSatResponse, Command, GeneralResponse, SpecificSuccessResponse},
-    backend::z3_binary::Z3Binary,
-};
-
-use super::{Atom, Idx, Phi, SmtSolver};
+use super::{Atom, Idx, Phi, PhiSolver, SmtSolver};
 use crate::logic::cap::RegionModel;
 use crate::logic::region::Region;
 
@@ -92,40 +86,6 @@ impl RegionSetExpr {
             RegionSetExpr::Intersection(lhs, rhs) => {
                 lhs.collect_idx_vars(set);
                 rhs.collect_idx_vars(set);
-            }
-        }
-    }
-
-    /// Convert the set expression into a Boolean SMT predicate over the witness variable.
-    ///
-    /// Conceptually this produces a formula that is true exactly when `var` lies in the
-    /// represented set. The translation follows these cases:
-    fn encode(&self, var: &str) -> String {
-        match self {
-            RegionSetExpr::Empty => "false".into(),
-            RegionSetExpr::Interval { lo, hi } => format!(
-                "(and (<= {lo} {var}) (< {var} {hi}))",
-                lo = encode_idx(lo),
-                hi = encode_idx(hi),
-                var = var,
-            ),
-            RegionSetExpr::Union(items) => match items.as_slice() {
-                [] => "false".into(),
-                [single] => single.encode(var),
-                many => {
-                    let parts: Vec<String> = many.iter().map(|it| it.encode(var)).collect();
-                    format!("(or {})", parts.join(" "))
-                }
-            },
-            RegionSetExpr::Difference(lhs, rhs) => {
-                let left = lhs.encode(var);
-                let right = rhs.encode(var);
-                format!("(and {left} (not {right}))")
-            }
-            RegionSetExpr::Intersection(lhs, rhs) => {
-                let left = lhs.encode(var);
-                let right = rhs.encode(var);
-                format!("(and {left} {right})")
             }
         }
     }
@@ -346,9 +306,6 @@ pub fn check_subset(
     rhs: &RegionSetExpr,
     solver: &SmtSolver,
 ) -> bool {
-    let logging = solver.is_query_logging_enabled();
-    let mut log_trace = Vec::new();
-
     let mut int_vars = BTreeSet::new();
     let mut bool_vars = BTreeSet::new();
 
@@ -363,160 +320,83 @@ pub fn check_subset(
         .find(|var| bool_vars.contains(*var))
         .cloned()
     {
-        if logging {
-            log_trace.push(format!(
-                "; variable `{}` used as both int and bool; aborting set encodings",
+        if solver.is_query_logging_enabled() {
+            println!(
+                "; variable `{}` used as both int and bool; aborting set entailment",
                 conflict
-            ));
-            flush_trace(&log_trace);
+            );
         }
         return false;
     }
 
-    let witness_name = choose_witness_name(&int_vars);
+    let witness_name = choose_witness_name(&int_vars, &bool_vars);
+    let lhs_membership = region_membership_atom(lhs, &witness_name);
+    let rhs_membership = region_membership_atom(rhs, &witness_name);
 
-    let mut commands = Vec::new();
-    commands.push("(set-logic QF_NIA)".to_string());
-    if let Some(timeout) = solver.timeout_ms() {
-        commands.push(format!("(set-option :timeout {timeout})"));
-    }
-    for var in &int_vars {
-        commands.push(format!("(declare-const {var} Int)"));
-    }
-    for var in &bool_vars {
-        commands.push(format!("(declare-const {var} Bool)"));
-    }
-    commands.push(format!("(declare-const {witness_name} Int)"));
+    let mut extended_ctx = phi.clone();
+    extended_ctx.push(lhs_membership);
 
-    for atom in phi.iter() {
-        commands.push(format!("(assert {})", encode_atom(atom)));
-    }
+    solver.entails(&extended_ctx, &rhs_membership)
+}
 
-    commands.push(format!("(assert {})", lhs.encode(&witness_name)));
-    commands.push(format!("(assert (not {}))", rhs.encode(&witness_name)));
-    commands.push("(check-sat)".to_string());
-
-    let storage = Storage::new();
-    let backend = match Z3Binary::new(solver.z3_path()) {
-        Ok(backend) => backend,
-        Err(err) => {
-            if logging {
-                log_trace.push(format!("; failed to spawn z3 backend: {err}"));
-                flush_trace(&log_trace);
-            }
-            eprintln!("failed to initialise z3 backend: {err}");
-            return false;
+fn region_membership_atom(expr: &RegionSetExpr, witness: &str) -> Atom {
+    match expr {
+        RegionSetExpr::Empty => atom_false(),
+        RegionSetExpr::Interval { lo, hi } => {
+            let witness_idx = idx_var(witness);
+            let upper = witness_idx.clone();
+            mk_and(
+                Atom::Le(lo.clone(), witness_idx),
+                Atom::Lt(upper, hi.clone()),
+            )
         }
-    };
-
-    let mut driver = match Driver::new(&storage, backend) {
-        Ok(driver) => driver,
-        Err(err) => {
-            if logging {
-                log_trace.push(format!("; failed to construct SMT driver: {err}"));
-                flush_trace(&log_trace);
-            }
-            eprintln!("failed to construct SMT driver: {err}");
-            return false;
+        RegionSetExpr::Union(items) => {
+            let disjuncts: Vec<_> = items
+                .iter()
+                .map(|item| region_membership_atom(item, witness))
+                .collect();
+            disjunction(disjuncts)
         }
-    };
-
-    let mut result = None;
-    let last = commands.len().saturating_sub(1);
-
-    for (idx, text) in commands.iter().enumerate() {
-        if logging {
-            log_trace.push(text.clone());
-        }
-        let cmd = match Command::parse(&storage, text) {
-            Ok(cmd) => cmd,
-            Err(err) => {
-                if logging {
-                    log_trace.push(format!("; failed to parse command `{text}`: {err}"));
-                    flush_trace(&log_trace);
-                }
-                eprintln!("failed to parse SMT-LIB command `{text}`: {err}");
-                return false;
-            }
-        };
-
-        let response = match driver.exec(cmd) {
-            Ok(resp) => resp,
-            Err(err) => {
-                if logging {
-                    log_trace.push(format!("; solver error for `{text}`: {err}"));
-                    flush_trace(&log_trace);
-                }
-                eprintln!("solver failure while executing `{text}`: {err}");
-                return false;
-            }
-        };
-
-        if idx == last {
-            match response {
-                GeneralResponse::SpecificSuccessResponse(
-                    SpecificSuccessResponse::CheckSatResponse(outcome),
-                ) => {
-                    if logging {
-                        log_trace.push(format!("; result: {outcome:?}"));
-                        flush_trace(&log_trace);
-                    }
-                    result = Some(matches!(outcome, CheckSatResponse::Unsat));
-                }
-                GeneralResponse::SpecificSuccessResponse(_) => {
-                    if logging {
-                        log_trace.push("; unexpected solver response to check-sat".to_string());
-                        flush_trace(&log_trace);
-                    }
-                    eprintln!("unexpected solver response to check-sat");
-                    return false;
-                }
-                GeneralResponse::Success => {
-                    if logging {
-                        log_trace.push("; unexpected bare success for check-sat".to_string());
-                        flush_trace(&log_trace);
-                    }
-                    eprintln!("expected check-sat result, received bare success");
-                    return false;
-                }
-                GeneralResponse::Unsupported => {
-                    if logging {
-                        log_trace.push("; solver reported unsupported for check-sat".to_string());
-                        flush_trace(&log_trace);
-                    }
-                    eprintln!("solver reported unsupported for check-sat");
-                    return false;
-                }
-                GeneralResponse::Error(msg) => {
-                    if logging {
-                        log_trace.push(format!("; solver error: {msg}"));
-                        flush_trace(&log_trace);
-                    }
-                    eprintln!("solver reported error: {msg}");
-                    return false;
-                }
-            }
-        } else if !matches!(response, GeneralResponse::Success) {
-            let message = match response {
-                GeneralResponse::Unsupported => "solver reported unsupported",
-                GeneralResponse::Error(_) => "solver reported error",
-                GeneralResponse::SpecificSuccessResponse(_) => "unexpected solver payload",
-                GeneralResponse::Success => unreachable!(),
-            };
-            if logging {
-                log_trace.push(format!("; {message} while executing `{text}`"));
-                flush_trace(&log_trace);
-            }
-            if let GeneralResponse::Error(msg) = response {
-                eprintln!("solver error: {msg}");
-            } else {
-                eprintln!("{message} for command `{text}`");
-            }
-            return false;
-        }
+        RegionSetExpr::Difference(lhs, rhs) => mk_and(
+            region_membership_atom(lhs, witness),
+            mk_not(region_membership_atom(rhs, witness)),
+        ),
+        RegionSetExpr::Intersection(lhs, rhs) => mk_and(
+            region_membership_atom(lhs, witness),
+            region_membership_atom(rhs, witness),
+        ),
     }
+}
 
-    result.unwrap_or(false)
+fn disjunction(mut atoms: Vec<Atom>) -> Atom {
+    match atoms.len() {
+        0 => atom_false(),
+        1 => atoms.pop().unwrap(),
+        _ => atoms
+            .into_iter()
+            .reduce(|acc, next| mk_or(acc, next))
+            .unwrap(),
+    }
+}
+
+fn mk_and(lhs: Atom, rhs: Atom) -> Atom {
+    Atom::And(Box::new(lhs), Box::new(rhs))
+}
+
+fn mk_or(lhs: Atom, rhs: Atom) -> Atom {
+    Atom::Or(Box::new(lhs), Box::new(rhs))
+}
+
+fn mk_not(atom: Atom) -> Atom {
+    Atom::Not(Box::new(atom))
+}
+
+fn atom_false() -> Atom {
+    Atom::Lt(Idx::Const(0), Idx::Const(0))
+}
+
+fn idx_var(name: &str) -> Idx {
+    Idx::Var(name.to_string())
 }
 
 /// Determine whether two region expressions are equivalent under `phi`.
@@ -535,21 +415,25 @@ pub fn overlaps(phi: &Phi, lhs: &RegionSetExpr, rhs: &RegionSetExpr, solver: &Sm
     !check_subset(phi, &intersection, &RegionSetExpr::Empty, solver)
 }
 
-fn choose_witness_name(int_vars: &BTreeSet<String>) -> String {
+fn choose_witness_name(int_vars: &BTreeSet<String>, bool_vars: &BTreeSet<String>) -> String {
     let mut candidate = "__region_elem".to_string();
     let mut serial = 0usize;
-    while int_vars.contains(&candidate) {
+    while int_vars.contains(&candidate) || bool_vars.contains(&candidate) {
         serial += 1;
         candidate = format!("__region_elem{serial}");
     }
     candidate
 }
 
-fn collect_atom_vars(atom: &Atom, ints: &mut BTreeSet<String>, bools: &mut BTreeSet<String>) {
+pub fn collect_atom_vars(atom: &Atom, ints: &mut BTreeSet<String>, bools: &mut BTreeSet<String>) {
     match atom {
         Atom::Le(lhs, rhs) | Atom::Lt(lhs, rhs) | Atom::Eq(lhs, rhs) => {
             collect_idx_vars(lhs, ints);
             collect_idx_vars(rhs, ints);
+        }
+        Atom::RealLe(_, _) | Atom::RealLt(_, _) | Atom::RealEq(_, _) => {
+            // Real variables are collected separately in fracperms.rs
+            // They are not mixed with integer variables here
         }
         Atom::BoolVar(name) => {
             bools.insert(name.clone());
@@ -559,6 +443,46 @@ fn collect_atom_vars(atom: &Atom, ints: &mut BTreeSet<String>, bools: &mut BTree
             collect_atom_vars(rhs, ints, bools);
         }
         Atom::Not(inner) => collect_atom_vars(inner, ints, bools),
+    }
+}
+
+/// Collect variables from atoms, including real variables from RealExpr atoms.
+pub fn collect_all_vars(
+    atom: &Atom,
+    ints: &mut BTreeSet<String>,
+    bools: &mut BTreeSet<String>,
+    reals: &mut BTreeSet<String>,
+) {
+    match atom {
+        Atom::Le(lhs, rhs) | Atom::Lt(lhs, rhs) | Atom::Eq(lhs, rhs) => {
+            collect_idx_vars(lhs, ints);
+            collect_idx_vars(rhs, ints);
+        }
+        Atom::RealLe(lhs, rhs) | Atom::RealLt(lhs, rhs) | Atom::RealEq(lhs, rhs) => {
+            collect_real_vars(lhs, reals);
+            collect_real_vars(rhs, reals);
+        }
+        Atom::BoolVar(name) => {
+            bools.insert(name.clone());
+        }
+        Atom::And(lhs, rhs) | Atom::Or(lhs, rhs) | Atom::Implies(lhs, rhs) => {
+            collect_all_vars(lhs, ints, bools, reals);
+            collect_all_vars(rhs, ints, bools, reals);
+        }
+        Atom::Not(inner) => collect_all_vars(inner, ints, bools, reals),
+    }
+}
+
+fn collect_real_vars(expr: &super::solver::RealExpr, set: &mut BTreeSet<String>) {
+    match expr {
+        super::solver::RealExpr::Const(_, _) => {}
+        super::solver::RealExpr::Var(name) => {
+            set.insert(name.clone());
+        }
+        super::solver::RealExpr::Add(lhs, rhs) | super::solver::RealExpr::Sub(lhs, rhs) => {
+            collect_real_vars(lhs, set);
+            collect_real_vars(rhs, set);
+        }
     }
 }
 
@@ -572,35 +496,6 @@ fn collect_idx_vars(idx: &Idx, set: &mut BTreeSet<String>) {
             collect_idx_vars(lhs, set);
             collect_idx_vars(rhs, set);
         }
-    }
-}
-
-fn encode_idx(idx: &Idx) -> String {
-    match idx {
-        Idx::Const(n) => n.to_string(),
-        Idx::Var(name) => name.clone(),
-        Idx::Add(lhs, rhs) => format!("(+ {} {})", encode_idx(lhs), encode_idx(rhs)),
-        Idx::Sub(lhs, rhs) => format!("(- {} {})", encode_idx(lhs), encode_idx(rhs)),
-        Idx::Mul(lhs, rhs) => format!("(* {} {})", encode_idx(lhs), encode_idx(rhs)),
-    }
-}
-
-fn encode_atom(atom: &Atom) -> String {
-    match atom {
-        Atom::Le(lhs, rhs) => format!("(<= {} {})", encode_idx(lhs), encode_idx(rhs)),
-        Atom::Lt(lhs, rhs) => format!("(< {} {})", encode_idx(lhs), encode_idx(rhs)),
-        Atom::Eq(lhs, rhs) => format!("(= {} {})", encode_idx(lhs), encode_idx(rhs)),
-        Atom::BoolVar(name) => name.clone(),
-        Atom::And(lhs, rhs) => format!("(and {} {})", encode_atom(lhs), encode_atom(rhs)),
-        Atom::Or(lhs, rhs) => format!("(or {} {})", encode_atom(lhs), encode_atom(rhs)),
-        Atom::Implies(lhs, rhs) => format!("(=> {} {})", encode_atom(lhs), encode_atom(rhs)),
-        Atom::Not(inner) => format!("(not {})", encode_atom(inner)),
-    }
-}
-
-fn flush_trace(lines: &[String]) {
-    for line in lines {
-        println!("{line}");
     }
 }
 

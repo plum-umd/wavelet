@@ -10,7 +10,8 @@ use std::{
 };
 
 use smtlib::prelude::Sorted;
-use smtlib::{Bool, Int, SatResult, Solver, Storage, backend::z3_binary::Z3Binary};
+use smtlib::terms::IntoWithStorage;
+use smtlib::{Bool, Int, Real, SatResult, Solver, Storage, backend::z3_binary::Z3Binary};
 
 use smtlib::terms::StaticSorted;
 
@@ -40,16 +41,72 @@ impl Idx {
     }
 }
 
+/// A real-valued expression for fractional permissions and other
+/// real arithmetic. Similar to `Idx` but represents values in the
+/// SMT `Real` sort rather than `Int`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum RealExpr {
+    /// A rational constant, encoded as numerator/denominator pair.
+    Const(i64, i64),
+    /// A named real variable.
+    Var(String),
+    /// Sum of two real expressions.
+    Add(Box<RealExpr>, Box<RealExpr>),
+    /// Difference of two real expressions.
+    Sub(Box<RealExpr>, Box<RealExpr>),
+}
+
+impl RealExpr {
+    /// Create a rational constant from a numerator and denominator.
+    pub fn from_ratio(num: i64, den: i64) -> Self {
+        assert!(den != 0, "denominator must not be zero");
+        let (n, d) = if den < 0 { (-num, -den) } else { (num, den) };
+        let g = gcd_i64(n.abs(), d);
+        RealExpr::Const(n / g, d / g)
+    }
+
+    /// Create an integer constant (denominator = 1).
+    pub fn from_int(n: i64) -> Self {
+        RealExpr::Const(n, 1)
+    }
+
+    /// Construct the sum of two real expressions.
+    pub fn sum(a: RealExpr, b: RealExpr) -> Self {
+        RealExpr::Add(Box::new(a), Box::new(b))
+    }
+
+    /// Construct the difference of two real expressions.
+    pub fn diff(a: RealExpr, b: RealExpr) -> Self {
+        RealExpr::Sub(Box::new(a), Box::new(b))
+    }
+}
+
+/// Compute GCD for normalizing rational constants.
+fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
+    while b != 0 {
+        let r = a % b;
+        a = b;
+        b = r;
+    }
+    a.abs()
+}
+
 /// Logical atoms over index expressions. Only simple relational
 /// predicates are supported.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Atom {
-    /// `a <= b`
+    /// `a <= b` (integer comparison)
     Le(Idx, Idx),
-    /// `a < b`
+    /// `a < b` (integer comparison)
     Lt(Idx, Idx),
-    /// `a == b`
+    /// `a == b` (integer comparison)
     Eq(Idx, Idx),
+    /// `a <= b` (real comparison)
+    RealLe(RealExpr, RealExpr),
+    /// `a < b` (real comparison)
+    RealLt(RealExpr, RealExpr),
+    /// `a == b` (real comparison)
+    RealEq(RealExpr, RealExpr),
     /// Named boolean variable.
     BoolVar(String),
     /// Conjunction of two atoms.
@@ -134,10 +191,12 @@ impl SmtSolver {
         self.log_queries.store(enabled, Ordering::SeqCst);
     }
 
+    #[allow(dead_code)]
     pub(crate) fn z3_path(&self) -> &str {
         &self.z3_path
     }
 
+    #[allow(dead_code)]
     pub(crate) fn timeout_ms(&self) -> Option<u64> {
         self.timeout_ms
     }
@@ -265,10 +324,11 @@ impl PhiSolver for SmtSolver {
     }
 }
 
-struct Encoder<'st> {
+pub struct Encoder<'st> {
     storage: &'st Storage,
     int_vars: HashMap<String, Int<'st>>,
     bool_vars: HashMap<String, Bool<'st>>,
+    real_vars: HashMap<String, Real<'st>>,
 }
 
 impl<'st> Encoder<'st> {
@@ -277,6 +337,7 @@ impl<'st> Encoder<'st> {
             storage,
             int_vars: HashMap::new(),
             bool_vars: HashMap::new(),
+            real_vars: HashMap::new(),
         }
     }
 
@@ -305,6 +366,31 @@ impl<'st> Encoder<'st> {
         }
     }
 
+    fn encode_real(&mut self, expr: &RealExpr) -> Real<'st> {
+        match expr {
+            RealExpr::Const(n, d) => {
+                // Convert the rational to a Real value
+                // We compute the exact decimal value
+                let value = (*n as f64) / (*d as f64);
+                value.into_with_storage(self.storage)
+            }
+            RealExpr::Var(name) => *self
+                .real_vars
+                .entry(name.clone())
+                .or_insert_with(|| Real::new_const(self.storage, name).into()),
+            RealExpr::Add(lhs, rhs) => {
+                let l = self.encode_real(lhs);
+                let r = self.encode_real(rhs);
+                l + r
+            }
+            RealExpr::Sub(lhs, rhs) => {
+                let l = self.encode_real(lhs);
+                let r = self.encode_real(rhs);
+                l - r
+            }
+        }
+    }
+
     fn encode_bool_var(&mut self, name: &str) -> Bool<'st> {
         *self
             .bool_vars
@@ -327,6 +413,21 @@ impl<'st> Encoder<'st> {
             Atom::Eq(lhs, rhs) => {
                 let l = self.encode_idx(lhs);
                 let r = self.encode_idx(rhs);
+                l._eq(r)
+            }
+            Atom::RealLe(lhs, rhs) => {
+                let l = self.encode_real(lhs);
+                let r = self.encode_real(rhs);
+                l.le(r)
+            }
+            Atom::RealLt(lhs, rhs) => {
+                let l = self.encode_real(lhs);
+                let r = self.encode_real(rhs);
+                l.lt(r)
+            }
+            Atom::RealEq(lhs, rhs) => {
+                let l = self.encode_real(lhs);
+                let r = self.encode_real(rhs);
                 l._eq(r)
             }
             Atom::BoolVar(name) => self.encode_bool_var(name),

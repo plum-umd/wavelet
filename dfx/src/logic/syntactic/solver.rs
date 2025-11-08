@@ -68,6 +68,10 @@ impl BoolClosure {
                 _ => false,
             },
             Atom::Le(_, _) | Atom::Lt(_, _) | Atom::Eq(_, _) => self.record_arithmetic(atom),
+            Atom::RealLe(_, _) | Atom::RealLt(_, _) | Atom::RealEq(_, _) => {
+                // Real atoms are not supported in the syntactic solver
+                false
+            }
         }
     }
 

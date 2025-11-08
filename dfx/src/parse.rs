@@ -883,7 +883,9 @@ fn parse_expr_stmt(
             let var_name = extract_var_from_expr(&assign_expr.left, ctx)?;
 
             // Check if right side is an operation
-            if let Some(stmt) = try_parse_as_op(var_name.clone(), &assign_expr.right, array_lens, ctx)? {
+            if let Some(stmt) =
+                try_parse_as_op(var_name.clone(), &assign_expr.right, array_lens, ctx)?
+            {
                 return Ok(stmt);
             }
 

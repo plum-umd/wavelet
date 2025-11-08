@@ -1,4 +1,5 @@
 pub mod affine;
+pub mod fracperms;
 pub mod ir;
 pub mod json;
 pub mod lower;

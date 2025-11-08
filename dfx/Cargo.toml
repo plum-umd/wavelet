@@ -20,3 +20,6 @@ clap = { version = "4.5", features = ["derive"] }
 [lib]
 name = "dfx"
 path = "src/lib.rs"
+
+[patch.crates-io]
+smtlib = { path = "vendor/smtlib" }

@@ -1,0 +1,37 @@
+[package]
+name = "smtlib"
+version.workspace = true
+edition = "2021"
+description = "A high-level API for interacting with SMT solvers"
+homepage = "https://github.com/oeb25/smtlib-rs/tree/main/smtlib"
+license = "MIT/Apache-2.0"
+authors = ["Oliver Bøving <oliver@bvng.dk>"]
+readme = "README.md"
+repository = "https://github.com/oeb25/smtlib-rs"
+documentation = "https://docs.rs/smtlib"
+
+[features]
+default = []
+serde = ["dep:serde", "smtlib-lowlevel/serde"]
+z3-static = ["smtlib-lowlevel/z3-static"]
+const-bit-vec = []
+tokio = ["smtlib-lowlevel/tokio"]
+
+[dependencies]
+itertools.workspace = true
+miette.workspace = true
+smtlib-lowlevel.workspace = true
+serde = { workspace = true, optional = true }
+thiserror.workspace = true
+indexmap = "2.2.6"
+
+[dev-dependencies]
+futures = "0.3.29"
+insta.workspace = true
+miette = { workspace = true, features = ["fancy"] }
+smtlib = { path = ".", features = ["serde", "tokio"] }
+tokio = { workspace = true, features = ["full"] }
+tokio-test = "0.4.4"
+
+[package.metadata.docs.rs]
+features = ["serde", "const-bit-vec", "tokio"]

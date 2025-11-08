@@ -177,7 +177,7 @@ impl FunctionLowerer {
         });
 
         // dummy zero token can be dropped
-        // ctx.garb.push(ghost_out); 
+        // ctx.garb.push(ghost_out);
         if fenced {
             ctx.move_restore_to_sync();
         }
@@ -233,7 +233,7 @@ impl FunctionLowerer {
                     ghost_out: ghost_out.clone(),
                 });
                 // dummy zero token can be dropped
-                // ctx.garb.push(ghost_out); 
+                // ctx.garb.push(ghost_out);
             }
         }
         if fenced {

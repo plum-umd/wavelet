@@ -76,6 +76,10 @@ fn render_atom(atom: &Atom) -> String {
         Atom::Le(a, b) => format!("{} <= {}", render_idx(a), render_idx(b)),
         Atom::Lt(a, b) => format!("{} < {}", render_idx(a), render_idx(b)),
         Atom::Eq(a, b) => format!("{} == {}", render_idx(a), render_idx(b)),
+        Atom::RealLe(_, _) | Atom::RealLt(_, _) | Atom::RealEq(_, _) => {
+            // Real atoms are not expected in this context
+            panic!("Real atoms are not supported in render_atom")
+        }
         Atom::BoolVar(name) => name.clone(),
         Atom::And(lhs, rhs) => format!("({}) && ({})", render_atom(lhs), render_atom(rhs)),
         Atom::Or(lhs, rhs) => format!("({}) || ({})", render_atom(lhs), render_atom(rhs)),
