@@ -1,7 +1,5 @@
-use std::collections::BTreeSet;
-
 use crate::logic::semantic::PhiSolver;
-use crate::logic::semantic::solver::{Atom,  Phi, RealExpr, SmtSolver};
+use crate::logic::semantic::solver::{Atom, Phi, RealExpr, SmtSolver};
 
 /// A symbolic representation of a fractional value.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,7 +34,7 @@ impl FractionExpr {
     pub fn from_int(n: i64) -> Self {
         FractionExpr::from_ratio(n, 1)
     }
-        
+
     /// Convert this FractionExpr to a RealExpr for use with the solver's Encoder.
     pub fn to_real_expr(&self) -> RealExpr {
         match self {

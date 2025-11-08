@@ -149,6 +149,7 @@ impl<R: RegionModel> fmt::Display for Delta<R> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CapPattern {
     pub array: String,
+    pub len: crate::ir::ArrayLen,
     pub uniq: Option<Region>,
     pub shrd: Option<Region>,
 }

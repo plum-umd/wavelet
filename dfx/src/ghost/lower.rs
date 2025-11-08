@@ -32,6 +32,7 @@ fn lower_fn(fn_def: &FnDef) -> GhostFnDef {
         name: fn_def.name.clone(),
         params: fn_def.params.clone(),
         ghost_params,
+        caps: fn_def.caps.clone(), // Preserve capability patterns
         returns: fn_def.returns.clone(),
         body,
     }

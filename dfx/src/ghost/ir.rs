@@ -91,6 +91,7 @@ pub struct GhostFnDef {
     pub name: FnName,
     pub params: Vec<(Var, Ty)>,
     pub ghost_params: Vec<GhostVar>,
+    pub caps: Vec<crate::logic::cap::CapPattern>,
     pub returns: Ty,
     pub body: GhostExpr,
 }

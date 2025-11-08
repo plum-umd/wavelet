@@ -22,16 +22,10 @@ fn entails_infers_integer_equalities() {
 
     let mut ctx = Phi::new();
     ctx.push(Atom::Eq(idx_var("x"), idx_const(4)));
-    ctx.push(Atom::Eq(
-        idx_var("y"),
-        idx_add(idx_var("x"), idx_const(1)),
-    ));
+    ctx.push(Atom::Eq(idx_var("y"), idx_add(idx_var("x"), idx_const(1))));
 
     assert!(solver.entails(&ctx, &Atom::Eq(idx_var("y"), idx_const(5))));
-    assert!(!solver.entails(
-        &ctx,
-        &Atom::Lt(idx_var("y"), idx_const(5)),
-    ));
+    assert!(!solver.entails(&ctx, &Atom::Lt(idx_var("y"), idx_const(5)),));
 }
 
 #[test]
@@ -47,17 +41,11 @@ fn entails_handles_real_arithmetic() {
 
     assert!(solver.entails(
         &ctx,
-        &Atom::RealEq(
-            real_var("c"),
-            RealExpr::sum(real_var("a"), real_var("a")),
-        ),
+        &Atom::RealEq(real_var("c"), RealExpr::sum(real_var("a"), real_var("a")),),
     ));
     assert!(!solver.entails(
         &ctx,
-        &Atom::RealLt(
-            real_var("c"),
-            RealExpr::sum(real_var("a"), real_var("a")),
-        ),
+        &Atom::RealLt(real_var("c"), RealExpr::sum(real_var("a"), real_var("a")),),
     ));
 }
 
@@ -75,8 +63,5 @@ fn entails_reasoning_over_boolean_connectives() {
     ));
 
     assert!(solver.entails(&ctx, &Atom::BoolVar("q".to_string())));
-    assert!(!solver.entails(
-        &ctx,
-        &Atom::Not(Box::new(Atom::BoolVar("q".to_string()))),
-    ));
+    assert!(!solver.entails(&ctx, &Atom::Not(Box::new(Atom::BoolVar("q".to_string()))),));
 }

@@ -382,21 +382,28 @@ fn parse_array_length(
 }
 
 /// Convert capability annotation to CapPattern
-fn cap_annotation_to_pattern(ann: &CapAnnotation) -> CapPattern {
+fn cap_annotation_to_pattern(
+    ann: &CapAnnotation,
+    array_lens: &HashMap<String, ArrayLen>,
+) -> Result<CapPattern, ParseError> {
     let region = Region::from_bounded(ann.region.start.to_idx(), ann.region.end.to_idx());
+    let len = lookup_array_len(array_lens, &ann.array)?;
 
-    match ann.perm {
+    let cap_pattern = match ann.perm {
         Permission::Shrd => CapPattern {
             array: ann.array.clone(),
+            len,
             uniq: None,
             shrd: Some(region),
         },
         Permission::Uniq => CapPattern {
             array: ann.array.clone(),
+            len,
             uniq: Some(region),
             shrd: None,
         },
-    }
+    };
+    Ok(cap_pattern)
 }
 
 /// Parse a function definition and convert to IR.
@@ -458,18 +465,18 @@ pub fn parse_fn_def(input: &str) -> Result<FnDef, ParseError> {
         syn::ReturnType::Type(_, ty) => convert_type(ty, &const_generics)?,
     };
 
-    // Convert capability annotations to patterns
-    let caps = cap_annotations
-        .iter()
-        .map(cap_annotation_to_pattern)
-        .collect();
-
-    // Collect array variable names for tail call reordering
+    // Collect array variable names and their lengths for tail call reordering
     let mut array_lens: HashMap<String, ArrayLen> = HashMap::new();
     for (var, ty) in &params {
         if let ir::Ty::RefShrd { len, .. } | ir::Ty::RefUniq { len, .. } = ty {
             array_lens.insert(var.0.clone(), len.clone());
         }
+    }
+
+    // Convert capability annotations to patterns
+    let mut caps = Vec::new();
+    for ann in &cap_annotations {
+        caps.push(cap_annotation_to_pattern(ann, &array_lens)?);
     }
 
     // Parse body with const generics and array metadata
