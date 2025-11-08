@@ -31,7 +31,9 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     | "json" => pure OutputFormat.json
     | "dot"  => pure OutputFormat.dot
     | fmt    => throw <| IO.userError s!"unknown output format: {fmt}"
-  let permOut := p.hasFlag "perm-out"
+  let enablePermOut := p.hasFlag "perm-out"
+  let enableStats := p.hasFlag "stats"
+  let omitForks := p.hasFlag "omit-forks"
   let writeOutput (content : String) : IO Unit :=
     match outputPath? with
     | some path => IO.FS.writeFile path content
@@ -73,9 +75,9 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     let P χ := Proc
       (RipTide.SyncOp String) χ RipTide.Value
       (prog.sigs last).ι
-      (if ¬ permOut then (prog.sigs last).ω - 1 else (prog.sigs last).ω)
+      (if ¬ enablePermOut then (prog.sigs last).ω - 1 else (prog.sigs last).ω)
     let proc : P Nat :=
-      if h : ¬ permOut then
+      if h : ¬ enablePermOut then
         -- If we don't need output permission from the entire graph,
         -- the last output (which assumed to be a ghost permission output)
         -- can be replaced with a sink to enable more optimizations.
@@ -89,9 +91,10 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
       (naryLowering <|> deadCodeElim <|> RipTide.operatorSel) proc
     trace s!"{numRws} rewrites. graph size: {proc.atoms.length} ops"
 
-    trace "rewrite rule stats:"
-    for (rwName, count) in stats.toList do
-      trace s!"  {rwName}: {count}"
+    if enableStats then
+      trace "rewrite rule stats:"
+      for (rwName, count) in stats.toList do
+        trace s!"  {rwName}: {count}"
 
     let numNonTrivial :=
       proc.atoms
@@ -109,7 +112,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     match format with
     | .dot =>
       -- Dump graph as DOT
-      let plot ← proc.plot.run.unwrapIO "failed to generate DOT plot"
+      let plot ← (proc.plot (omitForks := omitForks)).run.unwrapIO "failed to generate DOT plot"
       writeOutput plot
     | .json =>
       -- Dump graph as JSON
@@ -126,12 +129,14 @@ def compileCmd := `[Cli|
     "Wavelet compiler (Lean backend)"
 
     FLAGS:
-      o, output : String; "Path to output final dataflow graph in JSON (Default: stdout)"
-      f, format : String; "Output format [json|dot]"
-      "perm-out"; "Enable permission output which might increase graph size"
+      o, output    : String ; "Path to output final dataflow graph in JSON (Default: stdout)"
+      f, format    : String ; "Output format [json|dot]"
+      "perm-out"            ; "Enable permission output which might increase graph size"
+      stats                 ; "Print various statistics"
+      "omit-forks"          ; "Omit fork operators in the DOT graph"
 
     ARGS:
-      input : String; "Input sequential program in JSON"
+      input        : String ; "Input sequential program in JSON"
 
     EXTENSIONS:
       defaultValues! #[("format", "json")]

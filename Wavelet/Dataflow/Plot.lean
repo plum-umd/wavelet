@@ -36,10 +36,49 @@ def PlotM.run (plot : PlotM Unit) : Except String String := do
   let ((_, cmds), _) ← (WriterT.run plot).run PltoState.init
   return String.intercalate "\n" cmds
 
-/-- Find sender(s) of a channel name. -/
+/-- Find sender(s) of a channel name. The return value is a tuple (atom idx, output port idx, atom). -/
 def Proc.sendersOf [Arity Op] [DecidableEq χ]
-  (proc : Proc Op χ V m n) (chan : χ) : List (Nat × AtomicProc Op χ V) :=
-  (proc.atoms.mapIdx (·, ·)).filter λ (_, atom) => chan ∈ atom.outputs
+  (proc : Proc Op χ V m n) (chan : χ) : List (Nat × Nat × AtomicProc Op χ V) := do
+  let (idx, ap) ← proc.atoms.mapIdx (·, ·)
+  let (port, chan') ← ap.outputs.mapIdx (·, ·)
+  if chan = chan' then
+    return (idx, port, ap)
+  else failure
+
+/-- Similar to `sendersOf`, but will keep tracing if the sender is a fork. -/
+partial def Proc.sendersOfModFork [Arity Op] [DecidableEq χ] [Repr χ]
+  (proc : Proc Op χ V m n) (chan : χ) (history : List Nat := []) : List (Nat × Nat × AtomicProc Op χ V) := do
+  let (idx, port, ap) ← proc.sendersOf chan
+  match ap with
+  | .async (.fork _) inputs _ =>
+    if idx ∉ history then
+      let input ← inputs
+      proc.sendersOfModFork input (idx :: history)
+    else failure
+  | _ =>
+    return (idx, port, ap)
+
+/-- Find input indices that correspond to the given channel. -/
+def Proc.getsInputs [Arity Op] [DecidableEq χ] [Repr χ]
+  (proc : Proc Op χ V m n) (chan : χ) : List Nat := do
+  let (idx, chan') ← proc.inputs.toList.mapIdx (·, ·)
+  if chan = chan' then
+    return idx
+  else failure
+
+/-- Similar to `getsInputs` but modulo any fork. -/
+partial def Proc.getsInputsModFork [Arity Op] [DecidableEq χ] [Repr χ]
+  (proc : Proc Op χ V m n) (chan : χ) (history : List Nat := []) : List Nat :=
+  proc.getsInputs chan <|>
+  (do
+    let (idx, _, ap) ← proc.sendersOf chan
+    match ap with
+    | .async (.fork _) inputs _ =>
+      if idx ∉ history then
+        let input ← inputs
+        proc.getsInputsModFork input (idx :: history)
+      else failure
+    | _ => failure)
 
 /-- Find receiver(s) of a channel name. -/
 def Proc.receiversOf [Arity Op] [DecidableEq χ]
@@ -118,7 +157,8 @@ def Proc.plot.outputPortName
 def Proc.plot
   [Arity Op] [DotName Op] [DotName V] [Repr χ]
   [DecidableEq χ]
-  (proc : Proc Op χ V m n) : PlotM Unit := do
+  (proc : Proc Op χ V m n)
+  (omitForks : Bool := false) : PlotM Unit := do
   .startBlock "digraph G"
   .cmd r#"graph [fontname="courier"]"#
   .cmd r#"node [fontname="courier"]"#
@@ -133,29 +173,41 @@ def Proc.plot
 
   -- Emit all nodes
   for (i, atom) in proc.atoms.mapIdx (·, ·) do
+    if omitForks then
+      match atom with
+      | .async (.fork _) .. => continue
+      | _ => pure ()
     PlotM.cmd s!"a{i} [{atom.dotAttrs}]"
 
   -- Iterate through all atoms and draw edges
   for (idx₁, atom) in proc.atoms.mapIdx (·, ·) do
+    if omitForks then
+      match atom with
+      | .async (.fork _) .. => continue
+      | _ => pure ()
+
     -- Draw edges to input ports
     for (inPort₁, chan) in atom.inputs.mapIdx (·, ·) do
       let headPort := plot.inputPortName atom inPort₁
 
-      let senders := proc.sendersOf chan
-      for (idx₂, sender) in senders do
-        for (outPort₂, chan') in sender.outputs.mapIdx (·, ·) do
-          if chan = chan' then
-            -- Draw an edge from (idx₂, outPort₂) to (idx₁, inPort₁)
-            let tailPort := plot.outputPortName sender outPort₂
-            PlotM.cmd s!"a{idx₂} -> a{idx₁} [arrowsize=0.4 headport={headPort} tailport={tailPort}]"
+      let senders :=
+        if omitForks then proc.sendersOfModFork chan
+        else proc.sendersOf chan
+      let inputs :=
+        if omitForks then proc.getsInputsModFork chan
+        else proc.getsInputs chan
+
+      for (idx₂, outPort₂, sender) in senders do
+        -- Draw an edge from (idx₂, outPort₂) to (idx₁, inPort₁)
+        let tailPort := plot.outputPortName sender outPort₂
+        PlotM.cmd s!"a{idx₂} -> a{idx₁} [arrowsize=0.4 headport={headPort} tailport={tailPort}]"
 
       -- Also draw edges from process inputs
-      if chan ∈ proc.inputs then
-        for inputIdx in List.finRange m do
-          if chan = proc.inputs[inputIdx] then
-            -- Draw an edge from inputIdx to (idx₁, inPort₁)
-            PlotM.cmd s!"i{inputIdx} -> a{idx₁} [arrowsize=0.4 tailport=s headport={headPort}]"
-      else if senders.isEmpty then
+      for inputIdx in inputs do
+        -- Draw an edge from inputIdx to (idx₁, inPort₁)
+        PlotM.cmd s!"i{inputIdx} -> a{idx₁} [arrowsize=0.4 tailport=s headport={headPort}]"
+
+      if senders.isEmpty ∧ inputs.isEmpty then
         -- Special annotation for dangling inputs
         PlotM.cmd s!"c{idx₁}i{inPort₁} [label=\"?\" shape=plaintext]"
         PlotM.cmd s!"c{idx₁}i{inPort₁} -> a{idx₁} [arrowsize=0.4 headport={headPort}]"
@@ -164,26 +216,16 @@ def Proc.plot
     for (outPort₁, chan) in atom.outputs.mapIdx (·, ·) do
       let tailPort := plot.outputPortName atom outPort₁
 
-      let receivers := proc.receiversOf chan
-
-      -- No need to draw edges to the receivers, since they should have been added already
-      -- for (idx₂, receiver) in receivers do
-      --   for (inPort₂, chan') in receiver.inputs.mapIdx (·, ·) do
-      --     if chan = chan' then
-      --       -- Draw an edge from (idx₁, outPort₁) to (idx₂, inPort₂)
-      --       let headPort := plot.inputPortName receiver inPort₂
-      --       PlotM.cmd s!"a{idx₁} -> a{idx₂} [arrowsize=0.4 headport={headPort} tailport={tailPort}]"
-
       -- Also draw edges to process outputs
       if chan ∈ proc.outputs then
         for outputIdx in List.finRange n do
           if chan = proc.outputs[outputIdx] then
             -- Draw an edge from (idx₁, outPort₁) to outputIdx
             PlotM.cmd s!"a{idx₁} -> o{outputIdx} [arrowsize=0.4 headport=n tailport={tailPort}]"
-      else if receivers.isEmpty then
+      else if (proc.receiversOf chan).isEmpty then
         -- Special annotation for dangling outputs
         PlotM.cmd s!"c{idx₁}o{outPort₁} [label=\"?\" shape=plaintext]"
-        PlotM.cmd s!"c{idx₁}o{outPort₁} -> a{idx₁} [arrowsize=0.4 tailPort={tailPort}]"
+        PlotM.cmd s!"a{idx₁} -> c{idx₁}o{outPort₁} [arrowsize=0.4 tailPort={tailPort}]"
 
   .endBlock
 

@@ -56,6 +56,57 @@ and the rewritten atoms. -/
 abbrev Rewrite Op χ V [Arity Op] [DecidableEq χ] [Hashable χ] :=
   RewriteM Op χ V (String × AtomicProcs Op (RewriteName χ) V)
 
+/-- For debugging purposes. -/
+def allRewriteNames : List String := [
+    "n-ary-switch",
+    "n-ary-merge",
+    "n-ary-steer",
+    "n-ary-const",
+    "n-ary-forwardc",
+    "n-ary-forward",
+    "n-ary-sink",
+    "inact-0",
+
+    "fold-forward-aop-receiver",
+    "fold-forward-aop-sender",
+    "fold-forward-op-receiver",
+    "fold-forward-op-sender",
+    "switch-sink-left",
+    "switch-sink-right",
+    "steer-const-true",
+    "steer-const-false",
+    "steer-sink",
+    "steer-steer",
+    "steer-order-steer",
+    "par-steer-steer",
+    "steer-fork-steer",
+    "const-steer",
+    "fork-0",
+    "fork-1",
+    "fork-sink",
+    "fork-fork",
+    "order-1",
+    "order-order",
+    "order-sync-path",
+    "order-sink",
+    "order-const",
+    "order-const-head",
+    "const-sink",
+    "inact-sink",
+    "carry-fork-steer-to-inv-left",
+    "carry-fork-steer-to-inv-right",
+    "carry-steer-cycle-to-sink",
+    "carry-order-steer-cycle-to-sink",
+    "carry-false",
+    "carry-true",
+    "merge-sink",
+    "merge-steer-true",
+    "merge-steer-false",
+    "merge-dedup",
+    "merge-same-const",
+    "merge-true-false-const",
+  ]
+
 def Rewrite.apply [Arity Op] [DecidableEq χ] [Hashable χ]
   (rw : Rewrite Op χ V)
   (proc : Proc Op (RewriteName χ) V m n) :
@@ -90,8 +141,10 @@ partial def Rewrite.applyUntilFailNat
   [Arity Op] [DecidableEq χ]
   (rw : Rewrite Op Nat V)
   (proc : Proc Op χ V m n) : Nat × Std.HashMap String Nat × Proc Op Nat V m n :=
-    loop 0 proc.renameChans Std.HashMap.emptyWithCapacity
+    loop 0 proc.renameChans initStats
   where
+    initStats := allRewriteNames.foldl (λ m name => m.insert name 0)
+      (Std.HashMap.emptyWithCapacity allRewriteNames.length)
     loop numRewrites proc stats :=
       match rw.apply (proc.mapChans .base) with
       | some (rwName, proc') =>
@@ -244,7 +297,8 @@ partial def RewriteM.checkSyncPathTo
       | _ => failure
 
 /-- Lowers n-ary async operators to unary operators. -/
-def naryLowering [Arity Op] [DecidableEq χ] [Hashable χ] :
+def naryLowering
+  [Arity Op] [DecidableEq χ] [Hashable χ] :
     Rewrite Op χ V :=
   .choose λ
   | .async (AsyncOp.switch k) (decider :: inputs) outputs =>
@@ -316,7 +370,9 @@ def naryLowering [Arity Op] [DecidableEq χ] [Hashable χ] :
   | _ => failure
 
 /-- Optimizing combinations of various operators. -/
-def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
+def deadCodeElim
+  [Arity Op] [DecidableEq χ] [Hashable χ]
+  [InterpConsts V] [DecidableEq V] :
     Rewrite Op χ V :=
   .choose λ
   -- Forwards can be folded into either the sender or the receiver
@@ -328,15 +384,15 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
     .chooseWithNames [input, output] λ
     | .async aop inputs' outputs' => do
       if output ∈ inputs' then
-        return .mk "fold-forward" [.async aop (inputs'.replace output input) outputs']
+        return .mk "fold-forward-aop-receiver" [.async aop (inputs'.replace output input) outputs']
       else if input ∈ outputs' then
-        return .mk "fold-forward" [.async aop inputs' (outputs'.replace input output)]
+        return .mk "fold-forward-aop-sender" [.async aop inputs' (outputs'.replace input output)]
       else failure
     | .op op inputs' outputs' => do
       if output ∈ inputs' then
-        return .mk "fold-forward" [.op op (inputs'.replace output input) outputs']
+        return .mk "fold-forward-op-receiver" [.op op (inputs'.replace output input) outputs']
       else if input ∈ outputs' then
-        return .mk "fold-forward" [.op op inputs' (outputs'.replace input output)]
+        return .mk "fold-forward-op-sender" [.op op inputs' (outputs'.replace input output)]
       else failure
   | .async (.switch 1) inputs outputs =>
     .assume (inputs.length = 2 ∧ outputs.length = 2) λ h => do
@@ -350,9 +406,9 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
       .assume (inputs'.length = 1 ∧ outputs'.length = 0) λ h => do
       let sink := inputs'[0]'(by omega)
       if output₁ = sink then
-        return .mk "switch-sink" [.steer false decider #v[input] #v[output₂]]
+        return .mk "switch-sink-left" [.steer false decider #v[input] #v[output₂]]
       else if output₂ = sink then
-        return .mk "switch-sink" [.steer true decider #v[input] #v[output₁]]
+        return .mk "switch-sink-right" [.steer true decider #v[input] #v[output₁]]
       else failure
     | _ => failure
   | .async (.steer flavor 1) inputs outputs =>
@@ -550,6 +606,23 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
           .sink (inputs'.erase output).toVector,
         ]
       else failure
+    -- Waiting on a constant is the same as waiting for its activation signal
+    | .async (.const v 1) inputs' outputs' =>
+      .assume (inputs'.length = 1 ∧ outputs'.length = 1) λ h => do
+      let act := inputs'[0]'(by omega)
+      let output' := outputs'[0]'(by omega)
+      if output' ∈ inputs ∧ output' ≠ inputs[0] then
+        let : NeZero (inputs.erase output' ++ [act]).length := by constructor; simp
+        return .mk "order-const" [
+          .order (inputs.erase output' ++ [act]).toVector output,
+        ]
+      else if output' = inputs[0] then
+        let : NeZero (act :: inputs.tail).length := by constructor; simp
+        return .mk "order-const-head" [
+          .order (act :: inputs.tail).toVector output',
+          .const v output' #v[output],
+        ]
+      else failure
     | _ => failure
   -- Constant with a sink output can be rewritten to a sink
   | .async (.const v 1) inputs outputs =>
@@ -612,12 +685,12 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
             .assumeFromSameFork decider decider''
             if output'' = inputR then
               if input'' = output₁' then
-                return .mk "carry-fork-steer-to-inv" [
+                return .mk "carry-fork-steer-to-inv-left" [
                   .inv true none decider inputL output₂',
                   .sink #v[decider''],
                 ]
               else if input'' = output₂' then
-                return .mk "carry-fork-steer-to-inv" [
+                return .mk "carry-fork-steer-to-inv-right" [
                   .inv true none decider inputL output₁',
                   .sink #v[decider''],
                 ]
@@ -687,7 +760,6 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
           .sink #v[inputL],
         ]
     failure
-  -- TODO: these rewrites might be a bit risky and may change deadlock behavior
   | .async (.merge .decider 1) inputs outputs =>
     .assume (inputs.length = 3 ∧ outputs.length = 1) λ h => do
     let decider := inputs[0]'(by omega)
@@ -730,23 +802,53 @@ def deadCodeElim [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] :
             .sink #v[inputR],
           ]
       else failure
-    -- Merge in the decider state with a constant false LHS and constant true RHS
-    -- can be rewritten to a forward from the decider
+    -- Two merges with the same left/right/decider channels from the same fork
+    -- can be merged. TODO: make this a more general dedup rewrite rule.
+    | .async (.fork n) inputs₀ outputs₀ =>
+      -- Finding an intermediate fork first to make this more efficient
+      -- (without quadratic cost)
+      .chooseWithNames (inputs₀ ++ outputs₀) λ
+      | .async (.merge .decider 1) inputs' outputs' =>
+        .assume (inputs'.length = 3 ∧ outputs'.length = 1) λ h => do
+        let decider' := inputs'[0]'(by omega)
+        let inputL' := inputs'[1]'(by omega)
+        let inputR' := inputs'[2]'(by omega)
+        let output' := outputs'[0]'(by omega)
+        .assumeFromSameFork decider decider'
+        .assumeFromSameFork inputL inputL'
+        .assumeFromSameFork inputR inputR'
+        return .mk "merge-dedup" [
+          .async (.fork n) inputs₀ outputs₀,
+          .merge decider #v[inputL] #v[inputR] #v[.rename 0 output],
+          .fork (.rename 0 output) #v[output, output'],
+          .sink #v[decider', inputL', inputR'],
+        ]
+      | _ => failure
+    -- Merging constants
     | .async (.const v₁ 1) inputs₁ outputs₁ =>
+      .assume (inputs₁.length = 1 ∧ outputs₁.length = 1) λ h => do
+      let input₁ := inputs₁[0]'(by omega)
+      let outputs₁ := outputs₁[0]'(by omega)
       .chooseWithNames (inputs ++ outputs) λ
       | .async (.const v₂ 1) inputs₂ outputs₂ =>
-        .assume (inputs₁.length = 1 ∧ outputs₁.length = 1 ∧
-          inputs₂.length = 1 ∧ outputs₂.length = 1) λ h => do
-        let outputs₁ := outputs₁[0]'(by omega)
+        .assume (inputs₂.length = 1 ∧ outputs₂.length = 1) λ h => do
+        let input₂ := inputs₂[0]'(by omega)
         let outputs₂ := outputs₂[0]'(by omega)
-        if inputL = outputs₁ ∧ inputR = outputs₂ ∧
-          InterpConsts.toBool v₁ = some false ∧
-          InterpConsts.toBool v₂ = some true then
-          return .mk "merge-true-false-const" [
-            .forward #v[decider] #v[output],
-            .sink #v[inputs₁[0]'(by omega)],
-            .sink #v[inputs₂[0]'(by omega)],
-          ]
+        if inputL = outputs₁ ∧ inputR = outputs₂ then
+          if v₁ = v₂ then
+            -- Merging the same constant: push the constant to merge output
+            return .mk "merge-same-const" [
+              .merge decider #v[input₁] #v[input₂] #v[.rename 0 output],
+              .const v₁ (.rename 0 output) #v[output],
+            ]
+          else  if InterpConsts.toBool v₁ = some false ∧
+            InterpConsts.toBool v₂ = some true then
+            return .mk "merge-true-false-const" [
+              .forward #v[decider] #v[output],
+              .sink #v[inputs₁[0]'(by omega)],
+              .sink #v[inputs₂[0]'(by omega)],
+            ]
+          else failure
         else failure
       | _ => failure
     | _ => failure
