@@ -56,8 +56,11 @@ impl PermCtx {
         self.sync.clone()
     }
 
-    fn garb_inputs(&self) -> Vec<GhostVar> {
-        self.garb.clone()
+    fn clear_and_get_garb(&mut self) -> Vec<GhostVar> {
+        let garb = self.garb.clone();
+        // clear garb
+        self.garb.clear();
+        garb
     }
 
     fn all_inputs(&self) -> Vec<GhostVar> {
@@ -130,7 +133,7 @@ impl FunctionLowerer {
                 ctx.garb.push(left_perm);
                 ctx.move_restore_to_garb();
 
-                let (left_perm, _) = self.join_split(builder, ctx.garb_inputs());
+                let (left_perm, _) = self.join_split(builder, ctx.clear_and_get_garb());
 
                 GhostTail::TailCall {
                     func: func.clone(),
@@ -248,9 +251,13 @@ impl FunctionLowerer {
     ) {
         let (need_perm, _) = self.split_sync(builder, ctx);
 
-        let inputs = ctx.garb_inputs();
+        // a non-tail call might need to GC some of the pending tokens
+        // so we "borrow" them into garb first
+        ctx.move_restore_to_garb();
+        let inputs = ctx.clear_and_get_garb();
         let (left_perm, right_perm) = self.join_split(builder, inputs);
-        ctx.garb = vec![right_perm.clone()];
+        // then we "return" the left over garbage tokens back to the pending context
+        ctx.restore = vec![right_perm.clone()];
 
         let ret_perm = self.fresh();
         builder.push(GhostStmt::Call {
