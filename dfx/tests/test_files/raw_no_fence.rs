@@ -1,5 +1,5 @@
 #[cap(A: uniq @ j-1..N)]
-fn raw<const N: usize>(j: usize, A: &mut [i32; N]) {
+fn raw_bad<const N: usize>(j: usize, A: &mut [i32; N]) {
     let one = 1;
     let cond_hi = j < N;
     let cond_lo = one <= j;
@@ -9,7 +9,7 @@ fn raw<const N: usize>(j: usize, A: &mut [i32; N]) {
         let v = A[jm1];
         A[j] = v;
         let k = j + one;
-        raw::<N>(k, A)
+        raw_bad::<N>(k, A)
     } else {
         ()
     }
