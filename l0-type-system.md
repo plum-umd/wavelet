@@ -694,7 +694,7 @@ def c₁ ≤ c₂ := c₁.shrd ⊆ (c₂.shrd ∪ c₂.uniq) ∧ c₁.uniq ⊆ c
 def c₁ \ c₂ :=
   if c₂ ≤ c₁ then
     some
-      { shrd := c₁.shrd,
+      { shrd := c₁.shrd ∪ c₂.shrd,
         uniq := c₁.uniq \ (c₂.shrd ∪ c₂.uniq),
       }
   else
@@ -1213,6 +1213,526 @@ def increment(i: u32, A: uniq@{i..32}||shrd@{}) -> unit =
   }
 ```
 
+```python
+decl A: [u32; 32]
+
+# eager join-split
+def increment(i: u32, p0: 1.0@A{i..32}) -> unit =
+  let p1, p2 = jnsplt([p0]); # p1: 0.0@_{} , p2: 1.0@A{i..32}
+  let c, p3 = lt(i, 32, p1); # p2: 1.0@A{i..32}, p3: 0.0@_{}
+  if c {
+    let p4, p5 = jnsplt([p2, p3]); # p4: 0.5@A{i}, p5: 1.0@A{i+1..32} || 0.5@A{i}
+    let val, p6 = load(i, A, p4); # p5: 1.0@A{i+1..32} || 0.5@A{i}, p6: 0.5@A{i}
+    let p7, p8 = jnsplt([p5, p6]); # p7: 1.0@A{i}, p8: 1.0@A{i+1..32}
+    let _, p9 = store(i, A, val + 1, p7); # p8: 1.0@A{i+1..32}, p9: 1.0@A{i}
+    let p10, p11 = jnsplt([p8, p9]); # p10: 0.0@_{}, p11: 1.0@A{i..32}
+    let j, p12 = add(i, 1, p10); # p11: 1.0@A{i..32}, p12: 0.0@_{}
+    let p13, p14 = jnsplt([p11, p12]); # p13: 1.0@A{j..32}, p14: 1.0@A{i}
+    increment(j, A, p13)
+  } else {
+    ()
+  }
+
+# smart join-split
+def increment(i: u32, p0: 1.0@A{i..32}) -> unit =
+  let p1, p2 = jnsplt([]); # p0: 1.0@A{i..32}, p1: 0.0@_{} , p2: 0.0@_{}
+  let c, p3 = lt(i, 32, p1); # p0: 1.0@A{i..32}, p2: 0.0@_{}, p3: 0.0@_{}
+  if c {
+    let p4, p5 = jnsplt([p0]); # p2: 0.0@_{}, p3: 0.0@_{}, p4: 0.5@A{i}, p5: 1.0@A{i+1..32} || 0.5@A{i}
+    let val, p6 = load(i, A, p4); # p2: 0.0@_{}, p3: 0.0@_{}, p5: 1.0@A{i+1..32} || 0.5@A{i}, p6: 0.5@A{i}
+    let p7, p8 = jnsplt([p5, p6]); # p2: 0.0@_{}, p3: 0.0@_{}, p7: 1.0@A{i}, p8: 1.0@A{i+1..32}
+    let _, p9 = store(i, A, val + 1, p7); # p2: 0.0@_{}, p3: 0.0@_{}, p8: 1.0@A{i+1..32}, p9: 1.0@A{i}
+    let p10, p11 = jnsplt([]); # p2: 0.0@_{}, p3: 0.0@_{}, p8: 1.0@A{i+1..32}, p9: 1.0@A{i}, p10: 0.0@_{}, p11: 0.0@A{}
+    let j, p12 = add(i, 1, p10); # p2: 0.0@_{}, p3: 0.0@_{}, p8: 1.0@A{i+1..32}, p9: 1.0@A{i}, p11: 0.0@A{}, p12: 0.0@_{}
+    let p13, p14 = jnsplt([]); # p2: 0.0@_{}, p3: 0.0@_{}, p8: 1.0@A{i+1..32}, p9: 1.0@A{i}, p11: 0.0@A{}, p12: 0.0@_{}, p13: 0.0@_{}, p14: 0.0@_{}
+    increment(j, A, p8)
+  } else {
+    ()
+  }
+```
+
+```rust
+fn nn_relu_aux<const N: usize>(src: &[u32; N], dest: &mut [u32; N], i: usize) {
+    if i == N {
+        ()
+    } else {
+      let w = src[i];
+      if w < 0 {
+          dest[i] = 0;
+          nn_relu_aux(src, dest, i + 1)
+      } else {
+          dest[i] = w;
+          nn_relu_aux(src, dest, i + 1)
+      }
+    }
+}
+
+fn nn_relu<const N: usize>(src: &[u32; N], dest: &mut [u32; N]) {
+    nn_relu_aux(src, dest, 0)
+}
+```
+
+```rust
+fn row_dot<const RC: usize, const C: usize>(
+    weight: &[i16; RC],
+    base: usize,
+    src: &[i16; C],
+    j: usize,
+    acc: i32,
+) -> i32 {
+    if j == C {
+        acc
+    } else {
+        let s = src[j] as i32;
+        let f = weight[base + j] as i32;
+        row_dot::<RC, C>(weight, base, src, j + 1, acc + s * f) // tail call
+    }
+}
+fn clamp_i16(w: i32) -> i32 {
+  if w < i16::MIN as i32 {
+    i16::MIN as i32
+  } else {
+    if w > i16::MAX as i32 {
+      i16::MAX as i32
+    } else {
+      w
+    }
+  }
+}
+fn rec_rows<const R: usize, const C: usize>(
+    weight: &[i16; R * C],
+    src: &[i16; C],
+    dest: &mut [i16; R],
+    i: usize,
+    shift: u32,
+) {
+    if i == R {
+        ()
+    } else {
+      let base = i * C;
+      let mut w = row_dot::<{ R * C }, C>(weight, base, src, 0, 0);
+  
+      // arithmetic right shift, then clamp to i16 range
+      w >>= shift as i32;
+      w = clamp_i16(w);
+  
+      dest[i] = w as i16;
+      rec_rows::<R, C>(weight, src, dest, i + 1, shift) // tail call
+    }
+}
+
+fn nn_fc<const R: usize, const C: usize>(
+    weight: &[i16; R * C], // row-major, R rows × C cols
+    src: &[i16; C],
+    dest: &mut [i16; R],
+    shift: u32,
+) {
+    rec_rows::<R, C>(weight, src, dest, 0, shift);
+}
+```
+
+```rust
+fn dmv<const M: usize, const N: usize>(
+    a: &[u32; M * N],
+    x: &[u32; N],
+    y: &mut [u32; M],
+) {
+    mv_mul::<M, N>(0, a, x, y);
+}
+
+fn mv_mul<const M: usize, const N: usize>(
+    idx: usize,
+    a: &[u32; M * N],
+    x: &[u32; N],
+    y: &mut [u32; M],
+) {
+    if idx < M {
+        let dot_product = cal_dot_product::<M, N>(0, idx, a, x, 0);
+        y[idx] = dot_product;
+        mv_mul(idx + 1, a, x, y);
+    }
+}
+
+fn cal_dot_product<const M: usize, const N: usize>(
+    j: usize,
+    i: usize,
+    a: &[u32; M * N],
+    x: &[u32; N],
+    acc: u32,
+) -> u32 {
+    if j < N {
+        let index = i * N + j;
+        cal_dot_product(j + 1, i, a, x, acc + a[index] * x[j])
+    } else {
+        acc
+    }
+}
+```
+
+Sum elements of an array from `i` to `N`:
+
+```rust
+// `A: &[u32; N]@{i..N} ` represents read-only (shared) permission for `A` from `i` (inclusive) to `N` (exclusive)
+fn sum<const N: usize>(i: u32, A: &[u32; N]@{i..N}, a: u32) -> u32 =
+  let c = i < N; // Δ: A |-> shrd@{i..N}
+  if c {
+    let val = load(i, A);  // `load(i, A)` needs `A |-> shrd@{i}`
+												   // Δ: A |-> shrd@{i..N} (doesn't change as `A |-> shrd@{i..N} \ A |-> shrd@{i}` remains `A |-> shrd@{i..N}`)
+    let j = i + 1;
+    sum(j, A, val + a) // 1. substitution in fun sig: `A |-> shrd@{i..N}[j/i] = A |-> shrd@{j..N}`
+                      // 2. current Δ: A |-> shrd@{i..N}
+                      // Φ ⊨ A |-> shrd@{j..N} ≤ Δ (according to some concrete program logic that proves this, i.e. j > i)
+  } else {
+    a
+  }
+```
+
+Zero out an array from `i` to `N`:
+
+```rust
+// `f` needs a _unique_ and _spatial_ permission of `i..N` for the arrary A
+fn f<const N: usize>(i: u32, A: &mut [u32; N]@{i..N} ) =
+  let c = i < N; // Δ: A |-> uniq@{i..N}
+  if c {
+    let _ = store(i, A, 0); // `store(i, A, x)` needs `A |-> uniq@{i}`
+                            // After store, we have `A |-> uniq@{i..N} \ A |-> uniq@{i} = A |-> uniq@{i+1..N}`
+                            // Δ: A |-> uniq@{i+1..N}
+    let j = i + 1;
+    f(j, A) // 1. substitution in fun sig: `A |-> uniq@{i..N}[j/i] = A |-> uniq@{j..N}`
+           // 2. current Δ: A |-> uniq@{i+1..N}
+           // Φ ⊨ A |-> uniq@{j..N} ≤ Δ
+  } else {
+    ()
+  }
+```
+
+Copy array elements from array A to array B (explicit data dependency):
+
+```rust
+// type system tells us that `A` and `B` won't alias
+fn copy_array<const N: usize>(i: u32,
+                A: &[u32; N]@{i..N},
+                B: &mut [u32; N]@{i..N}) =
+  let c = i < N; // Δ: A |-> shrd@{i..N}, B |-> uniq@{i..N}
+  if c {
+    let val = load(i, A); // `load(i, A)` needs `A |-> shrd@{i}`
+                // After load, we have `A |-> shrd@{i..N} \ shrd@{i} = shrd@{i..N}` (shared permissions don't change)
+                // Δ: A |-> shrd@{i..N}, B |-> uniq@{i..N}
+    let _ = store(i, B, val); // `store(i, B, val)` needs `B |-> uniq@{i}`
+                  // After store, we have `B |-> uniq@{i..N} \ uniq@{i} = uniq@{i+1..N}`
+                  // Δ: A |-> shrd@{i..N}, B |-> uniq@{i+1..N}
+    let j = i + 1;
+    copy_array(j, A, B) // 1. substitution in fun sig: `A |-> shrd@{i..N}[j/i] = shrd@{j..N}`, `B |-> uniq@{i..N}[j/i] = uniq@{j..N}`
+              // 2. current Δ: A |-> shrd@{i..N}, B |-> uniq@{i+1..N}
+              // Φ ⊨ A |-> shrd@{j..N}, B |-> uniq@{j..N} ≤ Δ
+  } else {
+    ()
+  }
+```
+
+Add `1` to each element of array from `i` to `N`
+
+```rust
+fn increment<const N: usize>(i: u32, A: &mut [u32; N]@{i..N}) =
+  let c = i < N; // Δ: A |-> uniq@{i..N}
+  if c {
+    let val = load(i, A); // `load(i, A)` needs `A |-> shrd@{i}`
+                          // After load, we have `A |-> uniq@{i..N} \ A |-> shrd@{i} = A |-> uniq@{i+1..N}||shrd@{i}`
+                          // Δ: A |-> uniq@{i+1..N}||shrd@{i}
+                          // And `store(i, A, val + 1)` needs `A |-> uniq@{i}`
+                          // But we only have `A |-> uniq@{i+1..N}||shrd@{i}`
+                          // Hence, the programmer needs to insert a "fence" here
+                          // effectively not doing the `\` operation above, i.e., we keep
+                          // Δ: A |-> uniq@{i..N}
+    ---
+    let _ = store(i, A, val + 1); // After store, we have `A |-> uniq@{i..N} \ A |-> uniq@{i} = A |-> uniq@{i+1..N}`
+                            // Δ: A |-> uniq@{i+1..N}
+    let j = i + 1;
+    increment(j, A) // 1. substitution in fun sig: `A |-> uniq@{i..N}[j/i] = A |-> uniq@{j..N}`
+                    // 2. current Δ: A |-> uniq@{i+1..N}
+                    // Φ ⊨ A |-> uniq@{j..N} ≤ Δ
+  } else {
+    ()
+  }
+```
+
+read-after-write (RAW)
+
+```rust
+// for (j = 1; j < n; j++)
+//     S1: a[j] = a[j-1];
+// requires: j > 0
+fn raw<const N: usize>(j: u32, A: &mut [u32; N]@{j-1..N}) =
+  let c = j < N; // Δ: A |-> uniq@{j-1..N}
+  if c {
+    let v = load(j-1, A); // `load(j-1, A)` needs `A |-> shrd@{j-1}`
+                          // After load, we have `A |-> uniq@{j-1..N} \ A |-> shrd@{j-1}`
+                          // `= A |-> uniq@{j..N}||shrd@{j-1}`
+                          // Δ: A |-> uniq@{j..N}||shrd@{j-1}
+    let _ = store(j, A, v); // `store(j, A, v)` needs `A |-> uniq@{j}`
+                            // After store, we have `A |-> uniq@{j..N}||shrd@{j-1} \ A |-> uniq@{j}`
+                            // `= A |-> uniq@{j+1..N}||shrd@{j-1}`
+                            // Δ: A |-> uniq@{j+1..N}||shrd@{j-1}
+                            // But recursive call needs `A |-> uniq@{j..N}`
+                            // We insert a "fence" here
+    ---
+                            // s.t. store does not consume the cap and we have Δ: A |-> uniq@{j..N}||shrd@{j-1}
+    let k = j + 1;
+    raw(k, A) // 1. substitution in fun sig: `A |-> uniq@{j-1..N}[k/j] = A |-> uniq@{k-1..N}`
+              // 2. current Δ: A |-> uniq@{j..N}||shrd@{j-1}
+              // Φ ⊨ A |-> uniq@{k-1..N} ≤ Δ
+  } else {
+    ()
+  }
+```
+
+ write-after-read (WAR)
+
+```rust
+// for (j = 0; j < n; j++)
+//     S1: b[j] = b[j+1];
+// requires: j < N-1
+fn war<const N: usize>(j: u32, B: &mut [u32; N]@{j..N}) =
+  let c = j < N-1; // Δ: B |-> uniq@{j..N}
+  if c {
+    let v = load(j+1, B);  // `load(j+1, B)` needs `B |-> shrd@{j+1}`
+                           // After load, we have `B |-> uniq@{j..N} \ B |-> shrd@{j+1}`
+                           // `= B |-> uniq@{j, j+2..N}||shrd@{j+1}`
+                           // Δ: B |-> uniq@{j, j+2..N}||shrd@{j+1}
+    ---
+    let _ = store(j, B, v); // `store(j, B, v)` needs `B |-> uniq@{j}`
+                            // After store, we have `B |-> uniq@{j, j+2..N}||shrd@{j+1} \ B |-> uniq@{j}`
+                            // `= B |-> uniq@{j+2..N}||shrd@{j+1}`
+                            // Δ: B |-> uniq@{j+2..N}||shrd@{j+1}
+                            // But recursive call needs `B |-> uniq@{j+1..N}`
+                            // We insert a "fence" above (after load)
+                            // s.t. load does not consume the cap and we have Δ: B |-> uniq@{j+1..N}
+    let k = j + 1;
+    war(k, B) // 1. substitution in fun sig: `B |-> uniq@{j..N}[k/j] = B |-> uniq@{k..N}`
+              // 2. current Δ: B |-> uniq@{j+1..N}
+              // Φ ⊨ B |-> uniq@{k..N} ≤ Δ
+  } else {
+    ()
+  }
+```
+
+write-after-write (WAW)
+
+```rust
+// for (j = 0; j < n; j++) {
+//     S1: c[j] = j;
+//     S2: c[j+1] = 5;
+// }
+// requires: j < N-1
+fn waw<const N: usize>(j: u32, C: &mut [u32; N]@{j..N}) =
+  let c = j < N-1; // Δ: C |-> uniq@{j..N}
+  if c {
+    let _ = store(j, C, j);   // `store(j, C, j)` needs `C |-> uniq@{j}`
+                              // After store, we have `C |-> uniq@{j..N} \ C |-> uniq@{j}`
+                              // `= C |-> uniq@{j+1..N}`
+                              // Δ: C |-> uniq@{j+1..N}
+    let _ = store(j+1, C, 5); // `store(j+1, C, 5)` needs `C |-> uniq@{j+1}`
+                              // After store, we have `C |-> uniq@{j+1..N} \ C |-> uniq@{j+1}`
+                              // `= C |-> uniq@{j+2..N}`
+                              // Δ: C |-> uniq@{j+2..N}
+                              // But recursive call needs `C |-> uniq@{j+1..N}`
+                              // We insert a "fence" here
+    ---
+                              // s.t. store does not consume the cap and we have Δ: C |-> uniq@{j+1..N}
+    let k = j + 1;
+    waw(k, C) // 1. substitution in fun sig: `C |-> uniq@{j..N}[k/j] = C |-> uniq@{k..N}`
+              // 2. current Δ: C |-> uniq@{j+1..N}
+              // Φ ⊨ C |-> uniq@{k..N} ≤ Δ
+  } else {
+    ()
+  }
+```
+
+```rust
+// Apply ReLU activation function to each element of array from `i` to `N`
+// ReLU(x) = max(0, x)
+fn nn_relu_aux<const N: usize>(i: usize, src: &[u32; N]@{i..N}, dest: &mut [u32; N]@{i..N}) {
+  let c = i < N; // Δ: src |-> shrd@{i..N}, dest |-> uniq@{i..N}
+  if c {
+    let w = load(i, src); // `load(i, src)` needs `src |-> shrd@{i}`
+                // After load, we have `src |-> shrd@{i..N} \ src |-> shrd@{i} = src |-> shrd@{i..N}` (shared permissions don't change)
+                // Δ: src |-> shrd@{i..N}, dest |-> uniq@{i..N}
+    let c2 = w < 0;
+    if c2 {
+      let _ = store(i, dest, 0); // `store(i, dest, 0)` needs `dest |-> uniq@{i}`
+                     // After store, we have `dest |-> uniq@{i..N} \ dest |-> uniq@{i} = dest |-> uniq@{i+1..N}`
+                     // Δ: src |-> shrd@{i..N}, dest |-> uniq@{i+1..N}
+      let j = i + 1;
+      nn_relu_aux(j, src, dest) // 1. substitution in fun sig: `src |-> shrd@{i..N}[j/i] = src |-> shrd@{j..N}`, `dest |-> uniq@{i..N}[j/i] = dest |-> uniq@{j..N}`
+                    // 2. current Δ: src |-> shrd@{i..N}, dest |-> uniq@{i+1..N}
+                    // Φ ⊨ src |-> shrd@{j..N}, dest |-> uniq@{j..N} ≤ Δ
+    } else {
+      let _ = store(i, dest, w); // `store(i, dest, w)` needs `dest |-> uniq@{i}`
+                     // After store, we have `dest |-> uniq@{i..N} \ dest |-> uniq@{i} = dest |-> uniq@{i+1..N}`
+                     // Δ: src |-> shrd@{i..N}, dest |-> uniq@{i+1..N}
+      let j = i + 1;
+      nn_relu_aux(j, src, dest) // 1. substitution in fun sig: `src |-> shrd@{i..N}[j/i] = src |-> shrd@{j..N}`, `dest |-> uniq@{i..N}[j/i] = dest |-> uniq@{j..N}`
+                    // 2. current Δ: src |-> shrd@{i..N}, dest |-> uniq@{i+1..N}
+                    // Φ ⊨ src |-> shrd@{j..N}, dest |-> uniq@{j..N} ≤ Δ
+    }
+  } else {
+    ()
+  }
+}
+
+fn nn_relu<const N: usize>(src: &[u32; N]@{0..N}, dest: &mut [u32; N]@{0..N}) {
+  nn_relu_aux(0, src, dest)
+}
+```
+
+```rust
+// Compute dot product of a row of weight matrix with source vector
+// weight[base..base+C] · src[0..C]
+fn row_dot<const RC: usize, const C: usize>(
+  base: usize,
+  j: usize,
+  weight: &[i16; RC]@{base..base+C},
+  src: &[i16; C]@{j..C},
+  acc: i32,
+) -> i32 {
+  let c = j == C; // Δ: weight |-> shrd@{base..base+C}, src |-> shrd@{j..C}
+  if c {
+    acc
+  } else {
+    let s_val = load(j, src); // `load(j, src)` needs `src |-> shrd@{j}`
+                  // After load, we have `src |-> shrd@{j..C} \ src |-> shrd@{j} = src |-> shrd@{j..C}` (shared permissions don't change)
+                  // Δ: weight |-> shrd@{base..base+C}, src |-> shrd@{j..C}
+    let s = s_val as i32;
+    let f_val = load(base + j, weight); // `load(base + j, weight)` needs `weight |-> shrd@{base+j}`
+                      // After load, we have `weight |-> shrd@{base..base+C} \ weight |-> shrd@{base+j} = weight |-> shrd@{base..base+C}` (shared permissions don't change)
+                      // Δ: weight |-> shrd@{base..base+C}, src |-> shrd@{j..C}
+    let f = f_val as i32;
+    let k = j + 1;
+    row_dot::<RC, C>(base, k, weight, src, acc + s * f) // 1. substitution in fun sig: `weight |-> shrd@{base..base+C}` (unchanged), `src |-> shrd@{j..C}[k/j] = src |-> shrd@{k..C}`
+                              // 2. current Δ: weight |-> shrd@{base..base+C}, src |-> shrd@{j..C}
+                              // Φ ⊨ weight |-> shrd@{base..base+C}, src |-> shrd@{k..C} ≤ Δ
+  }
+}
+
+fn clamp_i16(w: i32) -> i32 {
+  let c1 = w < i16::MIN as i32;
+  if c1 {
+  i16::MIN as i32
+  } else {
+  let c2 = w > i16::MAX as i32;
+  if c2 {
+    i16::MAX as i32
+  } else {
+    w
+  }
+  }
+}
+
+// Process rows from i to R
+fn rec_rows<const R: usize, const C: usize>(
+  i: usize,
+  weight: &[i16; R * C]@{i*C..R*C},
+  src: &[i16; C]@{0..C},
+  dest: &mut [i16; R]@{i..R},
+  shift: u32,
+) {
+  let c = i == R; // Δ: weight |-> shrd@{i*C..R*C}, src |-> shrd@{0..C}, dest |-> uniq@{i..R}
+  if c {
+    ()
+  } else {
+    let base = i * C;
+    let w = row_dot::<{ R * C }, C>(base, 0, weight, src, 0); // after substitution, `row_dot` needs `weight |-> shrd@{base..base+C}`, `src |-> shrd@{0..C}`
+                                   // After row_dot, we have `weight |-> shrd@{i*C..R*C}`, `src |-> shrd@{0..C}` (shared permissions don't change)
+                                   // Δ: weight |-> shrd@{i*C..R*C}, src |-> shrd@{0..C}, dest |-> uniq@{i..R}
+
+    // arithmetic right shift, then clamp to i16 range
+    let w_shifted = w >> shift as i32;
+    let w_clamped = clamp_i16(w_shifted);
+
+    let _ = store(i, dest, w_clamped as i16); // `store(i, dest, w_clamped as i16)` needs `dest |-> uniq@{i}`
+                           // After store, we have `dest |-> uniq@{i..R} \ dest |-> uniq@{i} = dest |-> uniq@{i+1..R}`
+                           // Δ: weight |-> shrd@{i*C..R*C}, src |-> shrd@{0..C}, dest |-> uniq@{i+1..R}
+    let k = i + 1;
+    rec_rows::<R, C>(k, weight, src, dest, shift) // 1. substitution in fun sig: `weight |-> shrd@{i*C..R*C}[k/i] = weight |-> shrd@{k*C..R*C}`, `src |-> shrd@{0..C}` (unchanged), `dest |-> uniq@{i..R}[k/i] = dest |-> uniq@{k..R}`
+                            // 2. current Δ: weight |-> shrd@{i*C..R*C}, src |-> shrd@{0..C}, dest |-> uniq@{i+1..R}
+                            // Φ ⊨ weight |-> shrd@{k*C..R*C}, src |-> shrd@{0..C}, dest |-> uniq@{k..R} ≤ Δ
+  }
+}
+
+// Fully connected layer: dest = weight × src (with shift and clamp)
+fn nn_fc<const R: usize, const C: usize>(
+  weight: &[i16; R * C]@{0..R*C}, // row-major, R rows × C cols
+  src: &[i16; C]@{0..C},
+  dest: &mut [i16; R]@{0..R},
+  shift: u32,
+) {
+  rec_rows::<R, C>(0, weight, src, dest, shift);
+}
+```
+
+```rust
+// Dense matrix-vector multiplication: y = A × x
+// A is M×N matrix (row-major), x is N-vector, y is M-vector
+fn dmv<const M: usize, const N: usize>(
+  a: &[u32; M * N]@{0..M*N},
+  x: &[u32; N]@{0..N},
+  y: &mut [u32; M]@{0..M},
+) {
+  mv_mul::<M, N>(0, a, x, y);
+}
+
+// Process rows from idx to M
+fn mv_mul<const M: usize, const N: usize>(
+  idx: usize,
+  a: &[u32; M * N]@{idx*N..M*N},
+  x: &[u32; N]@{0..N},
+  y: &mut [u32; M]@{idx..M},
+) {
+  let c = idx < M; // Δ: a |-> shrd@{idx*N..M*N}, x |-> shrd@{0..N}, y |-> uniq@{idx..M}
+  if c {
+    let dot_product = cal_dot_product::<M, N>(0, idx, a, x, 0); // after substitution, `cal_dot_product` needs `a |-> shrd@{idx*N..idx*N+N}`, `x |-> shrd@{0..N}`
+                                    // After cal_dot_product, we have `a |-> shrd@{idx*N..M*N}`, `x |-> shrd@{0..N}` (shared permissions don't change)
+                                    // Δ: a |-> shrd@{idx*N..M*N}, x |-> shrd@{0..N}, y |-> uniq@{idx..M}
+    let _ = store(idx, y, dot_product); // `store(idx, y, dot_product)` needs `y |-> uniq@{idx}`
+                       // After store, we have `y |-> uniq@{idx..M} \ y |-> uniq@{idx} = y |-> uniq@{idx+1..M}`
+                       // Δ: a |-> shrd@{idx*N..M*N}, x |-> shrd@{0..N}, y |-> uniq@{idx+1..M}
+    let k = idx + 1;
+    mv_mul::<M, N>(k, a, x, y); // 1. substitution in fun sig: `a |-> shrd@{idx*N..M*N}[k/idx] = a |-> shrd@{k*N..M*N}`, `x |-> shrd@{0..N}` (unchanged), `y |-> uniq@{idx..M}[k/idx] = y |-> uniq@{k..M}`
+                   // 2. current Δ: a |-> shrd@{idx*N..M*N}, x |-> shrd@{0..N}, y |-> uniq@{idx+1..M}
+                   // Φ ⊨ a |-> shrd@{k*N..M*N}, x |-> shrd@{0..N}, y |-> uniq@{k..M} ≤ Δ
+  } else {
+    ()
+  }
+}
+
+// Compute dot product of row i with vector x: a[i*N..(i+1)*N] · x[0..N]
+fn cal_dot_product<const M: usize, const N: usize>(
+  j: usize,
+  i: usize,
+  a: &[u32; M * N]@{i*N..i*N+N},
+  x: &[u32; N]@{j..N},
+  acc: u32,
+) -> u32 {
+  let c = j < N; // Δ: a |-> shrd@{i*N..i*N+N}, x |-> shrd@{j..N}
+  if c {
+    let index = i * N + j;
+    let a_val = load(index, a); // `load(index, a)` needs `a |-> shrd@{i*N+j}`
+                   // After load, we have `a |-> shrd@{i*N..i*N+N} \ a |-> shrd@{i*N+j} = a |-> shrd@{i*N..i*N+N}` (shared permissions don't change)
+                   // Δ: a |-> shrd@{i*N..i*N+N}, x |-> shrd@{j..N}
+    let x_val = load(j, x); // `load(j, x)` needs `x |-> shrd@{j}`
+                 // After load, we have `x |-> shrd@{j..N} \ x |-> shrd@{j} = x |-> shrd@{j..N}` (shared permissions don't change)
+                 // Δ: a |-> shrd@{i*N..i*N+N}, x |-> shrd@{j..N}
+    let k = j + 1;
+    cal_dot_product::<M, N>(k, i, a, x, acc + a_val * x_val) // 1. substitution in fun sig: `a |-> shrd@{i*N..i*N+N}` (unchanged), `x |-> shrd@{j..N}[k/j] = x |-> shrd@{k..N}`
+                                   // 2. current Δ: a |-> shrd@{i*N..i*N+N}, x |-> shrd@{j..N}
+                                   // Φ ⊨ a |-> shrd@{i*N..i*N+N}, x |-> shrd@{k..N} ≤ Δ
+  } else {
+    acc
+  }
+}
+```
+
+
 **Typing derivation for the function body**
 
 $$
@@ -1570,3 +2090,127 @@ $$
   \;\to\; (\Pi, E_{cont}, \sigma_{ret}[\vec{y} \mapsto \vec{v}_{ret}], S, \delta_{ret}, K_{rest})
 }
 $$
+
+## Type Soundness
+
+$$
+\frac{
+  \begin{gather*}
+  \text{op} : \vec{\tau_i} \to \vec{\tau_o} \\
+  \text{deps} = \{\text{producer of } x \mid x \in \vec{x}\} \\
+  \text{id} = \text{fresh}() \\
+  \text{ROB}' = \text{ROB} \cup \{(\text{id}, \text{op}(\vec{x}), \text{deps}, \vec{y}, \text{Ready})\}
+  \end{gather*}
+}{
+  (\Pi, \texttt{let } \vec{y} = \texttt{op}(\vec{x}); E, \text{ROB}, \sigma, S, \delta_c, \delta_s, K) \\
+  \quad\to_{\text{issue}} (\Pi, E, \text{ROB}', \sigma[\vec{y} \mapsto \text{pending}(\text{id})], S, \delta_c, \delta_s, K)
+}
+$$
+
+$$
+\frac{
+  \begin{gather*}
+  \text{deps} = \{\text{producer of } i\} \\
+  \text{id} = \text{fresh}() \\
+  \text{ROB}' = \text{ROB} \cup \{(\text{id}, \text{load}(A, i), \text{deps}, y, \text{Ready})\}
+  \end{gather*}
+}{
+  (\Pi, \texttt{let } y = \texttt{load}(A, i); E, \text{ROB}, \sigma, S, \delta_c, \delta_s, K) \\
+  \quad\to_{\text{issue}} (\Pi, E, \text{ROB}', \sigma[y \mapsto \text{pending}(\text{id})], S, \delta_c, \delta_s, K)
+}
+$$
+
+$$
+\frac{
+  \begin{gather*}
+  \text{deps} = \{\text{producer of } i\} \cup \{\text{producer of } v\} \\
+  \text{id} = \text{fresh}() \\
+  \text{ROB}' = \text{ROB} \cup \{(\text{id}, \text{store}(A, i, v), \text{deps}, \_, \text{Ready})\}
+  \end{gather*}
+}{
+  (\Pi, \texttt{let } \_ = \texttt{store}(A, i, v); E, \text{ROB}, \sigma, S, \delta_c, \delta_s, K) \\
+  \quad\to_{\text{issue}} (\Pi, E, \text{ROB}', \sigma, S, \delta_c, \delta_s, K)
+}
+$$
+
+$$
+\frac{
+  \text{ROB} = \emptyset
+}{
+  (\Pi, \texttt{let } y = \texttt{op}(x) \text{ ---} E, \emptyset, \sigma, S, \delta_c, \delta_s, K) \\
+  \quad\to_{\text{issue}} (\Pi, \texttt{let } y = \texttt{op}(x); E, \emptyset, \sigma, S, \delta_c, \emptyset, K)
+}
+$$
+
+(Note: $\delta_s$ is cleared after fence; operations after fence start fresh)
+
+$$
+\frac{
+  \begin{gather*}
+  (\text{id}, \text{op}(\vec{x}), \text{deps}, \vec{y}, \text{Ready}) \in \text{ROB} \\
+  \forall d \in \text{deps}.\; d \text{ is completed} \\
+  \sigma(\vec{x}) = \vec{v_i} \text{ (resolve pending values)} \\
+  \text{op}(\vec{v_i}) = \vec{v_o} \\
+  \text{ROB}' = \text{ROB}[\text{id} \mapsto (\text{id}, \text{op}(\vec{x}), \text{deps}, \vec{y}, \text{Completed})] \\
+  \sigma' = \sigma[\vec{y} \mapsto \vec{v_o}]
+  \end{gather*}
+}{
+  (\Pi, E, \text{ROB}, \sigma, S, \delta_c, \delta_s, K) \\
+  \quad\to_{\text{exec}} (\Pi, E, \text{ROB}', \sigma', S, \delta_c, \delta_s, K)
+}
+$$
+
+$$
+\frac{
+  \begin{gather*}
+  (\text{id}, \text{load}(A, i), \text{deps}, y, \text{Ready}) \in \text{ROB} \\
+  \forall d \in \text{deps}.\; d \text{ is completed} \\
+  \sigma(i) = n \quad 0 \leq n < N \quad S(A)[n] = v \\
+  \delta_c(A) = \mathsf{wt@}R_c \Vert \mathsf{rd@}R'_c \\
+  \delta_s(A) = \mathsf{wt@}R_s \Vert \mathsf{rd@}R'_s \\
+  n \notin R_c \cup R_s \quad \text{(no write conflict)} \\
+  \delta'_s = \delta_s[A \mapsto \mathsf{wt@}R_s \Vert \mathsf{rd@}(R'_s \cup \{n\})] \\
+  \text{ROB}' = \text{ROB}[\text{id} \mapsto (\text{id}, \text{load}(A, i), \text{deps}, y, \text{Completed})] \\
+  \sigma' = \sigma[y \mapsto v]
+  \end{gather*}
+}{
+  (\Pi, E, \text{ROB}, \sigma, S, \delta_c, \delta_s, K) \\
+  \quad\to_{\text{exec}} (\Pi, E, \text{ROB}', \sigma', S, \delta_c, \delta'_s, K)
+}
+$$
+
+$$
+\frac{
+  \begin{gather*}
+  (\text{id}, \text{store}(A, i, v), \text{deps}, \_, \text{Ready}) \in \text{ROB} \\
+  \forall d \in \text{deps}.\; d \text{ is completed} \\
+  \sigma(i) = n \quad 0 \leq n < N \quad \sigma(v) = a'_n \\
+  \delta_c(A) = \mathsf{wt@}R_c \Vert \mathsf{rd@}R'_c \\
+  \delta_s(A) = \mathsf{wt@}R_s \Vert \mathsf{rd@}R'_s \\
+  n \notin (R_c \cup R_s \cup R'_c \cup R'_s) \quad \text{(no conflict)} \\
+  S' = S[A[n] \mapsto a'_n] \\
+  \delta'_s = \delta_s[A \mapsto \mathsf{wt@}(R_s \cup \{n\}) \Vert \mathsf{rd@}R'_s] \\
+  \text{ROB}' = \text{ROB}[\text{id} \mapsto (\text{id}, \text{store}(A, i, v), \text{deps}, \_, \text{Completed})]
+  \end{gather*}
+}{
+  (\Pi, E, \text{ROB}, \sigma, S, \delta_c, \delta_s, K) \\
+  \quad\to_{\text{exec}} (\Pi, E, \text{ROB}', \sigma, S', \delta_c, \delta'_s, K)
+}
+$$
+
+$$
+\frac{
+  \begin{gather*}
+  \text{IStream} = \texttt{let } y = \texttt{op}(x) \text{ ---} E \\
+  \forall (\text{id}, \_, \_, \_, s) \in \text{ROB}.\; s = \text{Completed} \\
+  \delta'_c = \delta_c \cdot \delta_s \quad \text{(merge speculative into committed)} \\
+  \text{Valid}(\delta'_c) \quad \text{(check no conflicts)}
+  \end{gather*}
+}{
+  (\Pi, \text{IStream}, \text{ROB}, \sigma, S, \delta_c, \delta_s, K) \\
+  \quad\to_{\text{commit}} (\Pi, \text{IStream}, \emptyset, \sigma, S, \delta'_c, \emptyset, K)
+}
+$$
+
+(Now can proceed to issue the fenced operation)
+

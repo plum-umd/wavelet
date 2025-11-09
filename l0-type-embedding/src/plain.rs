@@ -131,7 +131,7 @@ fn increment<const N: usize>(i: usize, A: &mut [u32; N], Tracked(A_cap): Tracked
         let x = par_load_unique(i, A, Tracked(A_cap));
         fence::<N>(Tracked(A_cap), Ghost(*old(A_cap)));  // mimic fence here
         let x_add_1 = x.wrapping_add(1);
-        let _ = par_store(i, A, x_add_1, Tracked(A_cap));
+        let _ = par_store(i, A, x_add_1, Tracked(A_cap));   
         increment(i + 1, A, Tracked(A_cap));
     } else {
         ()

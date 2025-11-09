@@ -1,0 +1,852 @@
+//! Parser for annotated Rust programs.
+//!
+//! This module parses Rust function definitions with capability annotations
+//! and elaborates them to our IR. The syntax supports:
+//!
+//! - Region annotations: `#[cap(A: shrd @ i..N)]` or `#[cap(A: uniq @ i..N)]`
+//! - Fence markers: `fence!();` between statements
+//! - Const generics for array sizes: `const N: usize`
+//!
+//! Example:
+//! ```ignore
+//! #[cap(A: shrd @ i..N)]
+//! fn sum<const N: usize>(i: usize, a: i32, A: &[i32; N]) -> i32 {
+//!     let c = i < N;
+//!     if c {
+//!         let val = A[i];
+//!         let j = i + 1;
+//!         let new_a = a + val;
+//!         sum::<N>(j, new_a, A)
+//!     } else {
+//!         a
+//!     }
+//! }
+//! ```
+
+use syn::{self, Attribute, Expr, FnArg, ItemFn, Pat, Stmt, Type};
+
+use crate::logic::syntactic::cap::CapPattern;
+use crate::ir::{self, FnDef, FnName, Op, Tail, Var};
+use crate::logic::syntactic::phi::Idx;
+use crate::logic::syntactic::region::Region;
+
+/// Parse error for the frontend.
+#[derive(Debug)]
+pub struct ParseError {
+    pub message: String,
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Parse error: {}", self.message)
+    }
+}
+
+impl std::error::Error for ParseError {}
+
+impl From<syn::Error> for ParseError {
+    fn from(e: syn::Error) -> Self {
+        ParseError {
+            message: e.to_string(),
+        }
+    }
+}
+
+/// Capability annotation: `#[cap(A: shrd @ i..N)]`
+#[derive(Debug, Clone)]
+struct CapAnnotation {
+    array: String,
+    perm: Permission,
+    region: RangeExpr,
+}
+
+#[derive(Debug, Clone)]
+enum Permission {
+    Shrd,
+    Uniq,
+}
+
+/// Range expression: `i..N` or `i..N+1`
+#[derive(Debug, Clone)]
+struct RangeExpr {
+    start: IndexExpr,
+    end: IndexExpr,
+}
+
+/// Index expression: variable or constant or arithmetic
+#[derive(Debug, Clone)]
+enum IndexExpr {
+    Var(String),
+    Const(i64),
+    Add(Box<IndexExpr>, Box<IndexExpr>),
+    Sub(Box<IndexExpr>, Box<IndexExpr>),
+}
+
+impl IndexExpr {
+    fn to_idx(&self) -> Idx {
+        match self {
+            IndexExpr::Var(v) => Idx::Var(v.clone()),
+            IndexExpr::Const(n) => Idx::Const(*n),
+            IndexExpr::Add(a, b) => Idx::Add(Box::new(a.to_idx()), Box::new(b.to_idx())),
+            IndexExpr::Sub(a, b) => Idx::Sub(Box::new(a.to_idx()), Box::new(b.to_idx())),
+        }
+    }
+}
+
+/// Parse a capability annotation from attribute.
+/// Returns multiple annotations if comma-separated.
+fn parse_cap_annotations(attr: &Attribute) -> Result<Vec<CapAnnotation>, ParseError> {
+    // Expected format: #[cap(A: shrd @ i..N)] or #[cap(A: shrd @ i..N, B: uniq @ 0..M)]
+    let meta = &attr.meta;
+
+    // For simplicity, parse the token stream manually
+    let tokens = quote::quote! { #meta }.to_string();
+
+    // Very basic parsing - in production this should use syn's meta parsing
+    // Format: cap ( A : shrd @ i .. N )
+    if !tokens.starts_with("cap") {
+        return Err(ParseError {
+            message: "Expected cap attribute".to_string(),
+        });
+    }
+
+    // Extract content between parentheses
+    let content = tokens
+        .strip_prefix("cap")
+        .and_then(|s| s.trim().strip_prefix('('))
+        .and_then(|s| s.strip_suffix(')'))
+        .ok_or_else(|| ParseError {
+            message: "Invalid cap annotation format".to_string(),
+        })?;
+
+    // Split by ',' to handle multiple annotations
+    let mut annotations = Vec::new();
+    for part in content.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+
+        // Split by ':'
+        let parts: Vec<&str> = part.splitn(2, ':').collect();
+        if parts.len() != 2 {
+            return Err(ParseError {
+                message: format!("Expected 'array: permission @ range', got: {}", part),
+            });
+        }
+
+        let array = parts[0].trim().to_string();
+
+        // Split by '@'
+        let rest_parts: Vec<&str> = parts[1].splitn(2, '@').collect();
+        if rest_parts.len() != 2 {
+            return Err(ParseError {
+                message: format!("Expected 'permission @ range', got: {}", parts[1]),
+            });
+        }
+
+        let perm_str = rest_parts[0].trim();
+        let perm = match perm_str {
+            "shrd" => Permission::Shrd,
+            "uniq" => Permission::Uniq,
+            _ => {
+                return Err(ParseError {
+                    message: format!("Unknown permission: {}", perm_str),
+                });
+            }
+        };
+
+        let range_str = rest_parts[1].trim();
+        let region = parse_range_expr(range_str)?;
+
+        annotations.push(CapAnnotation {
+            array,
+            perm,
+            region,
+        });
+    }
+
+    Ok(annotations)
+}
+
+/// Parse range expression like "i..N" or "0..N"
+fn parse_range_expr(s: &str) -> Result<RangeExpr, ParseError> {
+    let parts: Vec<&str> = s.split("..").collect();
+    if parts.len() != 2 {
+        return Err(ParseError {
+            message: format!("Invalid range: {}", s),
+        });
+    }
+
+    let start = parse_index_expr(parts[0].trim())?;
+    let end = parse_index_expr(parts[1].trim())?;
+
+    Ok(RangeExpr { start, end })
+}
+
+/// Parse index expression like "i", "10", "i+1", "N-1"
+fn parse_index_expr(s: &str) -> Result<IndexExpr, ParseError> {
+    // Try to parse as integer
+    if let Ok(n) = s.parse::<i64>() {
+        return Ok(IndexExpr::Const(n));
+    }
+
+    // Try to parse as variable
+    if s.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return Ok(IndexExpr::Var(s.to_string()));
+    }
+
+    // Try to parse as addition
+    if let Some(pos) = s.find('+') {
+        let left = parse_index_expr(s[..pos].trim())?;
+        let right = parse_index_expr(s[pos + 1..].trim())?;
+        return Ok(IndexExpr::Add(Box::new(left), Box::new(right)));
+    }
+
+    // Try to parse as subtraction
+    if let Some(pos) = s.rfind('-') {
+        // Make sure it's not a negative number
+        if pos > 0 {
+            let left = parse_index_expr(s[..pos].trim())?;
+            let right = parse_index_expr(s[pos + 1..].trim())?;
+            return Ok(IndexExpr::Sub(Box::new(left), Box::new(right)));
+        }
+    }
+
+    Err(ParseError {
+        message: format!("Cannot parse index expression: {}", s),
+    })
+}
+
+/// Convert capability annotation to CapPattern
+fn cap_annotation_to_pattern(ann: &CapAnnotation) -> CapPattern {
+    let region = Region::from_bounded(ann.region.start.to_idx(), ann.region.end.to_idx());
+
+    match ann.perm {
+        Permission::Shrd => CapPattern {
+            array: ann.array.clone(),
+            uniq: None,
+            shrd: Some(region),
+        },
+        Permission::Uniq => CapPattern {
+            array: ann.array.clone(),
+            uniq: Some(region),
+            shrd: None,
+        },
+    }
+}
+
+/// Parse a function definition and convert to IR.
+pub fn parse_fn_def(input: &str) -> Result<FnDef, ParseError> {
+    let item_fn: ItemFn = syn::parse_str(input)?;
+
+    // Extract capability annotations
+    let mut cap_annotations = Vec::new();
+    for attr in &item_fn.attrs {
+        if attr.path().is_ident("cap") {
+            cap_annotations.extend(parse_cap_annotations(attr)?);
+        }
+    }
+
+    // Extract function name
+    let fn_name = FnName(item_fn.sig.ident.to_string());
+
+    // Extract const generics for array sizes
+    let mut const_generics = std::collections::HashMap::new();
+    let mut const_generic_names = Vec::new();
+    for param in &item_fn.sig.generics.params {
+        if let syn::GenericParam::Const(c) = param {
+            // Use a placeholder size of 10 for all const generics
+            // The actual value doesn't matter for type checking, as we use symbolic reasoning
+            let name = c.ident.to_string();
+            const_generics.insert(name.clone(), 10_usize);
+            const_generic_names.push(name);
+        }
+    }
+
+    // Extract parameters - separate scalars and arrays
+    let mut scalar_params = Vec::new();
+    let mut array_params = Vec::new();
+
+    for input in &item_fn.sig.inputs {
+        if let FnArg::Typed(pat_type) = input {
+            let var_name = extract_var_name(&pat_type.pat)?;
+            let ty = convert_type(&pat_type.ty, &const_generics)?;
+            if matches!(ty, ir::Ty::RefShrd { .. } | ir::Ty::RefUniq { .. }) {
+                array_params.push((Var(var_name), ty));
+            } else {
+                scalar_params.push((Var(var_name), ty));
+            }
+        }
+    }
+
+    // Add const generics as scalar parameters (needed for comparisons like i < N)
+    for name in const_generic_names {
+        scalar_params.push((Var(name), ir::Ty::Int));
+    }
+
+    // Combine: scalars first, then arrays (required by type checker)
+    let mut params = scalar_params;
+    params.extend(array_params);
+
+    // Extract return type
+    let return_ty = match &item_fn.sig.output {
+        syn::ReturnType::Default => ir::Ty::Unit,
+        syn::ReturnType::Type(_, ty) => convert_type(ty, &const_generics)?,
+    };
+
+    // Convert capability annotations to patterns
+    let caps = cap_annotations
+        .iter()
+        .map(cap_annotation_to_pattern)
+        .collect();
+
+    // Collect array variable names for tail call reordering
+    let array_vars: std::collections::HashSet<String> = params
+        .iter()
+        .filter(|(_, ty)| matches!(ty, ir::Ty::RefShrd { .. } | ir::Ty::RefUniq { .. }))
+        .map(|(var, _)| var.0.clone())
+        .collect();
+
+    // Parse body with const generics and array vars
+    let body = parse_block(&item_fn.block, &const_generics, &array_vars)?;
+
+    Ok(FnDef {
+        name: fn_name,
+        params,
+        caps,
+        returns: return_ty,
+        body,
+    })
+}
+
+/// Extract variable name from pattern
+fn extract_var_name(pat: &Pat) -> Result<String, ParseError> {
+    match pat {
+        Pat::Ident(pat_ident) => Ok(pat_ident.ident.to_string()),
+        _ => Err(ParseError {
+            message: "Expected simple variable pattern".to_string(),
+        }),
+    }
+}
+
+/// Convert syn Type to our IR Type
+fn convert_type(
+    ty: &Type,
+    const_generics: &std::collections::HashMap<String, usize>,
+) -> Result<ir::Ty, ParseError> {
+    match ty {
+        Type::Path(type_path) => {
+            let ident = &type_path.path.segments.last().unwrap().ident;
+            match ident.to_string().as_str() {
+                "u32" | "i32" | "usize" | "isize" => Ok(ir::Ty::Int),
+                "bool" => Ok(ir::Ty::Bool),
+                _ => Err(ParseError {
+                    message: format!("Unknown type: {}", ident),
+                }),
+            }
+        }
+        Type::Reference(type_ref) => {
+            // &[T; N] or &mut [T; N]
+            let is_mut = type_ref.mutability.is_some();
+
+            if let Type::Array(arr) = &*type_ref.elem {
+                let elem_ty = convert_type(&arr.elem, const_generics)?;
+
+                // Extract length
+                let len = match &arr.len {
+                    Expr::Lit(expr_lit) => {
+                        if let syn::Lit::Int(lit_int) = &expr_lit.lit {
+                            lit_int.base10_parse::<usize>().map_err(|_| ParseError {
+                                message: "Invalid array length".to_string(),
+                            })?
+                        } else {
+                            return Err(ParseError {
+                                message: "Expected integer literal for array length".to_string(),
+                            });
+                        }
+                    }
+                    Expr::Path(expr_path) => {
+                        let ident = &expr_path.path.segments.last().unwrap().ident;
+                        *const_generics.get(&ident.to_string()).unwrap_or(&10)
+                    }
+                    _ => {
+                        return Err(ParseError {
+                            message: "Unsupported array length expression".to_string(),
+                        });
+                    }
+                };
+
+                if is_mut {
+                    Ok(ir::Ty::RefUniq {
+                        elem: Box::new(elem_ty),
+                        len,
+                    })
+                } else {
+                    Ok(ir::Ty::RefShrd {
+                        elem: Box::new(elem_ty),
+                        len,
+                    })
+                }
+            } else {
+                Err(ParseError {
+                    message: "Expected array type in reference".to_string(),
+                })
+            }
+        }
+        Type::Tuple(type_tuple) => {
+            if type_tuple.elems.is_empty() {
+                Ok(ir::Ty::Unit)
+            } else {
+                Err(ParseError {
+                    message: "Tuple types not supported".to_string(),
+                })
+            }
+        }
+        _ => Err(ParseError {
+            message: "Unsupported type".to_string(),
+        }),
+    }
+}
+
+/// Parse a block into an Expr
+fn parse_block(
+    block: &syn::Block,
+    const_generics: &std::collections::HashMap<String, usize>,
+    array_vars: &std::collections::HashSet<String>,
+) -> Result<ir::Expr, ParseError> {
+    let mut stmts = Vec::new();
+    let mut tail = None;
+
+    for (i, stmt) in block.stmts.iter().enumerate() {
+        let is_last = i == block.stmts.len() - 1;
+
+        match stmt {
+            Stmt::Local(local) => {
+                // let binding
+                let ir_stmt = parse_local(local)?;
+                stmts.push(ir_stmt);
+            }
+            Stmt::Macro(macro_stmt) => {
+                // Check if it's a fence macro
+                if let Some(ident) = macro_stmt.mac.path.get_ident() {
+                    if ident == "fence" {
+                        // Mark the previous statement as fenced
+                        if let Some(last_stmt) = stmts.last_mut() {
+                            mark_stmt_as_fenced(last_stmt);
+                        }
+                    } else {
+                        return Err(ParseError {
+                            message: format!("Unsupported macro: {}", ident),
+                        });
+                    }
+                } else {
+                    return Err(ParseError {
+                        message: "Unsupported macro".to_string(),
+                    });
+                }
+            }
+            Stmt::Expr(expr, semi) => {
+                // Expression with or without semicolon
+                if is_fence_marker(expr) {
+                    // fence!(); - mark the previous statement as fenced
+                    if let Some(last_stmt) = stmts.last_mut() {
+                        mark_stmt_as_fenced(last_stmt);
+                    }
+                } else if semi.is_some() {
+                    // Expression with semicolon - regular statement
+                    let ir_stmt = parse_expr_stmt(expr)?;
+                    stmts.push(ir_stmt);
+                } else {
+                    // Expression without semicolon - this is the tail (if last)
+                    if is_last {
+                        // Check if it's unit ()
+                        if matches!(expr, Expr::Tuple(t) if t.elems.is_empty()) {
+                            // Don't set tail, let the default unit handling below kick in
+                        } else {
+                            tail = Some(parse_tail_expr(expr, const_generics, array_vars)?);
+                        }
+                    } else {
+                        let ir_stmt = parse_expr_stmt(expr)?;
+                        stmts.push(ir_stmt);
+                    }
+                }
+            }
+            _ => {
+                return Err(ParseError {
+                    message: "Unsupported statement type".to_string(),
+                });
+            }
+        }
+    }
+
+    let tail = if let Some(t) = tail {
+        t
+    } else {
+        // No explicit tail - bind unit and return it
+        let unit_var = Var("_unit_ret".to_string());
+        stmts.push(ir::Stmt::LetVal {
+            var: unit_var.clone(),
+            val: ir::Val::Unit,
+        });
+        Tail::RetVar(unit_var)
+    };
+
+    Ok(ir::Expr { stmts, tail })
+}
+
+/// Check if expression is fence!()
+fn is_fence_marker(expr: &Expr) -> bool {
+    if let Expr::Macro(expr_macro) = expr {
+        if let Some(ident) = expr_macro.mac.path.get_ident() {
+            return ident == "fence";
+        }
+    }
+    false
+}
+
+/// Mark a statement as fenced
+fn mark_stmt_as_fenced(stmt: &mut ir::Stmt) {
+    match stmt {
+        ir::Stmt::LetOp { op, .. } => match op {
+            Op::Load { fence, .. } => *fence = true,
+            Op::Store { fence, .. } => *fence = true,
+            _ => {}
+        },
+        ir::Stmt::LetCall { fence, .. } => *fence = true,
+        _ => {}
+    }
+}
+
+/// Parse a local statement (let binding)
+fn parse_local(local: &syn::Local) -> Result<ir::Stmt, ParseError> {
+    let var_name = extract_var_name(&local.pat)?;
+
+    if let Some(init) = &local.init {
+        let expr = &init.expr;
+
+        // Check what kind of expression this is
+        if let Some(op_stmt) = try_parse_as_op(var_name.clone(), expr)? {
+            return Ok(op_stmt);
+        }
+
+        // Otherwise, it's a simple value binding
+        if let Some(val) = try_parse_as_val(expr)? {
+            return Ok(ir::Stmt::LetVal {
+                var: Var(var_name),
+                val,
+            });
+        }
+    }
+
+    Err(ParseError {
+        message: format!("Cannot parse local binding: {}", var_name),
+    })
+}
+
+/// Try to parse expression as an operation
+fn try_parse_as_op(result_var: String, expr: &Expr) -> Result<Option<ir::Stmt>, ParseError> {
+    match expr {
+        Expr::Binary(bin_expr) => {
+            let left = extract_var_from_expr(&bin_expr.left)?;
+            let right = extract_var_from_expr(&bin_expr.right)?;
+
+            let op = match bin_expr.op {
+                syn::BinOp::Add(_) => Op::Add,
+                syn::BinOp::Sub(_) => Op::Sub,
+                syn::BinOp::Mul(_) => Op::Mul,
+                syn::BinOp::Div(_) => Op::Div,
+                syn::BinOp::Lt(_) => Op::LessThan,
+                syn::BinOp::Le(_) => Op::LessEqual,
+                syn::BinOp::Eq(_) => Op::Equal,
+                syn::BinOp::And(_) => Op::And,
+                syn::BinOp::Or(_) => Op::Or,
+                _ => {
+                    return Ok(None);
+                }
+            };
+
+            Ok(Some(ir::Stmt::LetOp {
+                vars: vec![Var(left), Var(right), Var(result_var)],
+                op,
+            }))
+        }
+        Expr::Index(index_expr) => {
+            // Array indexing: A[i] becomes load(A, i)
+            let array = extract_var_from_expr(&index_expr.expr)?;
+            let index = extract_var_from_expr(&index_expr.index)?;
+
+            // We need to know the array length - for now use a placeholder
+            // In a real implementation, we'd track this from the type context
+            let len = 10; // TODO: get from type context
+
+            Ok(Some(ir::Stmt::LetOp {
+                vars: vec![Var(result_var)],
+                op: Op::Load {
+                    array: Var(array),
+                    index: Var(index),
+                    len,
+                    fence: false,
+                },
+            }))
+        }
+        Expr::Call(call_expr) => {
+            // Function call
+            let func_name = extract_func_name(&call_expr.func)?;
+            let args: Vec<Var> = call_expr
+                .args
+                .iter()
+                .map(|arg| Ok(Var(extract_var_from_expr(arg)?)))
+                .collect::<Result<Vec<_>, ParseError>>()?;
+
+            Ok(Some(ir::Stmt::LetCall {
+                vars: vec![Var(result_var)],
+                func: FnName(func_name),
+                args,
+                fence: false,
+            }))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Try to parse expression as a literal value
+fn try_parse_as_val(expr: &Expr) -> Result<Option<ir::Val>, ParseError> {
+    match expr {
+        Expr::Lit(expr_lit) => match &expr_lit.lit {
+            syn::Lit::Int(lit_int) => {
+                let n = lit_int.base10_parse::<i64>().map_err(|_| ParseError {
+                    message: "Invalid integer literal".to_string(),
+                })?;
+                Ok(Some(ir::Val::Int(n)))
+            }
+            syn::Lit::Bool(lit_bool) => Ok(Some(ir::Val::Bool(lit_bool.value))),
+            _ => Ok(None),
+        },
+        Expr::Tuple(tuple_expr) => {
+            if tuple_expr.elems.is_empty() {
+                Ok(Some(ir::Val::Unit))
+            } else {
+                Ok(None)
+            }
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Parse expression as statement (e.g., assignments)
+fn parse_expr_stmt(expr: &Expr) -> Result<ir::Stmt, ParseError> {
+    // Check for array assignment: A[i] = val
+    if let Expr::Assign(assign_expr) = expr {
+        if let Expr::Index(index_expr) = &*assign_expr.left {
+            let array = extract_var_from_expr(&index_expr.expr)?;
+            let index = extract_var_from_expr(&index_expr.index)?;
+
+            // Check if right side is a literal - if so, we need to handle it specially
+            // For now, just require it to be a variable
+            let value = match &*assign_expr.right {
+                Expr::Lit(_) => {
+                    return Err(ParseError {
+                        message: "Array assignment requires value to be bound to a variable first. Use 'let tmp = 0; A[i] = tmp;' instead of 'A[i] = 0;'".to_string(),
+                    });
+                }
+                _ => extract_var_from_expr(&assign_expr.right)?,
+            };
+
+            let len = 10; // TODO: get from type context
+
+            return Ok(ir::Stmt::LetOp {
+                vars: vec![],
+                op: Op::Store {
+                    array: Var(array),
+                    index: Var(index),
+                    value: Var(value),
+                    len,
+                    fence: false,
+                },
+            });
+        }
+        // Regular variable assignment: x = expr
+        if let Expr::Path(_) = &*assign_expr.left {
+            let var_name = extract_var_from_expr(&assign_expr.left)?;
+
+            // Check if right side is an operation
+            if let Some(stmt) = try_parse_as_op(var_name.clone(), &assign_expr.right)? {
+                return Ok(stmt);
+            }
+
+            // Otherwise try as value
+            if let Some(val) = try_parse_as_val(&assign_expr.right)? {
+                return Ok(ir::Stmt::LetVal {
+                    var: Var(var_name),
+                    val,
+                });
+            }
+        }
+    }
+
+    // Check for while loops - desugar to recursive functions
+    // For now, reject them as they need special handling
+    if let Expr::While(_) = expr {
+        return Err(ParseError {
+            message: "While loops not yet supported - use recursive functions instead".to_string(),
+        });
+    }
+
+    Err(ParseError {
+        message: format!("Cannot parse expression as statement: {:?}", expr),
+    })
+}
+
+/// Parse tail expression (if, return, tail call)
+fn parse_tail_expr(
+    expr: &Expr,
+    const_generics: &std::collections::HashMap<String, usize>,
+    array_vars: &std::collections::HashSet<String>,
+) -> Result<Tail, ParseError> {
+    match expr {
+        Expr::If(if_expr) => {
+            let cond = extract_var_from_expr(&if_expr.cond)?;
+            let then_branch = parse_block(&if_expr.then_branch, const_generics, array_vars)?;
+
+            let else_branch = if let Some((_, else_expr)) = &if_expr.else_branch {
+                if let Expr::Block(block_expr) = &**else_expr {
+                    parse_block(&block_expr.block, const_generics, array_vars)?
+                } else {
+                    return Err(ParseError {
+                        message: "Expected block in else branch".to_string(),
+                    });
+                }
+            } else {
+                return Err(ParseError {
+                    message: "If expression must have else branch".to_string(),
+                });
+            };
+
+            Ok(Tail::IfElse {
+                cond: Var(cond),
+                then_e: Box::new(then_branch),
+                else_e: Box::new(else_branch),
+            })
+        }
+        Expr::Call(call_expr) => {
+            // Tail call - extract function name and handle turbofish generics
+            let (func_name, generic_args) = extract_func_name_and_generics(&call_expr.func)?;
+
+            // Collect regular arguments, separating scalars from arrays
+            let mut scalar_args: Vec<Var> = Vec::new();
+            let mut array_args: Vec<Var> = Vec::new();
+
+            for arg in &call_expr.args {
+                let var_name = extract_var_from_expr(arg)?;
+
+                // Check if this variable is an array using the array_vars set
+                if array_vars.contains(&var_name) {
+                    array_args.push(Var(var_name));
+                } else {
+                    scalar_args.push(Var(var_name));
+                }
+            }
+
+            // Build final args: scalars + generics + arrays
+            let mut args = scalar_args;
+            args.extend(generic_args.into_iter().map(Var));
+            args.extend(array_args);
+
+            Ok(Tail::TailCall {
+                func: FnName(func_name),
+                args,
+            })
+        }
+        Expr::Tuple(tuple_expr) if tuple_expr.elems.is_empty() => {
+            // Unit type () - should not happen since we handle empty tail in parse_block
+            // But if it does, just return a dummy variable
+            Ok(Tail::RetVar(Var("_unit_literal".to_string())))
+        }
+        Expr::Path(_) | Expr::Lit(_) => {
+            // Return variable or literal
+            let var_name = extract_var_from_expr(expr)?;
+            Ok(Tail::RetVar(Var(var_name)))
+        }
+        _ => Err(ParseError {
+            message: format!("Unsupported tail expression: {:?}", expr),
+        }),
+    }
+}
+
+/// Extract variable name from expression
+fn extract_var_from_expr(expr: &Expr) -> Result<String, ParseError> {
+    match expr {
+        Expr::Path(expr_path) => {
+            let ident = &expr_path.path.segments.last().unwrap().ident;
+            Ok(ident.to_string())
+        }
+        Expr::Lit(expr_lit) => {
+            // For literals, we need to create a temporary variable
+            // In practice, the caller should handle this
+            match &expr_lit.lit {
+                syn::Lit::Int(lit_int) => Ok(format!("_lit_{}", lit_int.base10_digits())),
+                syn::Lit::Bool(lit_bool) => Ok(format!("_lit_{}", lit_bool.value)),
+                _ => Err(ParseError {
+                    message: "Unsupported literal in expression".to_string(),
+                }),
+            }
+        }
+        Expr::Paren(paren_expr) => extract_var_from_expr(&paren_expr.expr),
+        _ => Err(ParseError {
+            message: format!("Expected variable, got: {:?}", expr),
+        }),
+    }
+}
+
+/// Extract function name from call expression
+fn extract_func_name(expr: &Expr) -> Result<String, ParseError> {
+    match expr {
+        Expr::Path(expr_path) => {
+            // Handle both `func` and `func::<T>` (turbofish)
+            let ident = &expr_path.path.segments.last().unwrap().ident;
+            Ok(ident.to_string())
+        }
+        _ => Err(ParseError {
+            message: "Expected function name".to_string(),
+        }),
+    }
+}
+
+/// Extract function name and generic arguments from call expression
+/// Returns (function_name, generic_args_as_var_names)
+fn extract_func_name_and_generics(expr: &Expr) -> Result<(String, Vec<String>), ParseError> {
+    match expr {
+        Expr::Path(expr_path) => {
+            let last_segment = expr_path.path.segments.last().unwrap();
+            let func_name = last_segment.ident.to_string();
+
+            // Check for generic arguments (turbofish syntax: func::<T>)
+            let generic_args = if let syn::PathArguments::AngleBracketed(ref angle_args) =
+                last_segment.arguments
+            {
+                angle_args
+                    .args
+                    .iter()
+                    .filter_map(|arg| {
+                        // We only care about const generics like N
+                        // These appear as types in the turbofish but are runtime values
+                        match arg {
+                            syn::GenericArgument::Type(syn::Type::Path(type_path)) => {
+                                Some(type_path.path.segments.last().unwrap().ident.to_string())
+                            }
+                            _ => None,
+                        }
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
+            Ok((func_name, generic_args))
+        }
+        _ => Err(ParseError {
+            message: "Expected function name".to_string(),
+        }),
+    }
+}
