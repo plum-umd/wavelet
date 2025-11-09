@@ -1328,7 +1328,7 @@ If we have a function definition $\texttt{def } f(\vec{x} : \vec{\tau}_i, \; \ov
    is
 
 $$
-(\Pi, E, [\vec{x} \mapsto \vec{v_i}], \vec{A} \mapsto [...], \overrightarrow{A \mapsto \mathsf{uniq@}\varnothing \Vert \mathsf{shrd@}\varnothing})
+(\Pi, E, [\vec{x} \mapsto \vec{v_i}], \vec{A} \mapsto [...], \overrightarrow{A \mapsto \mathsf{wt@}\varnothing \Vert \mathsf{rd@}\varnothing})
 $$  
 
 ### Small-step Operational Semantics
@@ -1365,10 +1365,10 @@ $$
 \frac{
   \begin{gather*}
   \sigma(i) = n \quad S(A) = [a_0, \ldots, a_{N-1}] \quad a_n = v \quad
-  \delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad
+  \delta(A) = \mathsf{wt@}R \Vert \mathsf{rd@}R' \quad
   0 \leq n < N \quad n \notin R
   \\
-  \delta' = \delta[A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \cup \{n\}]
+  \delta' = \delta[A \mapsto \mathsf{wt@}R \Vert \mathsf{rd@}R' \cup \{n\}]
   \end{gather*}
 }{
   (\Pi, \texttt{let } y \texttt{ = } \texttt{load}(A, i); \; E, \sigma, S, \delta)
@@ -1382,10 +1382,10 @@ $$
 \frac{
   \begin{gather*}
   \sigma(i) = n \quad \sigma(v) = a_n' \quad S(A) = [a_0, \ldots, a_{N-1}] \quad
-  \delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad
+  \delta(A) = \mathsf{wt@}R \Vert \mathsf{rd@}R' \quad
   0 \leq n < N \quad n \notin R \cup R' \\
   S' = S[A \mapsto [a_0, \ldots, a_{n-1}, a_n', a_{n+1}, \ldots, a_{N-1}]] \\
-  \delta' = \delta[A \mapsto \mathsf{uniq@}R \cup \{n\} \Vert \mathsf{shrd@}R']
+  \delta' = \delta[A \mapsto \mathsf{wt@}R \cup \{n\} \Vert \mathsf{rd@}R']
   \end{gather*}
 }{
   (\Pi, \texttt{let } \_ \texttt{ = } \texttt{store}(A, i, v); \; E, \sigma, S, \delta)
@@ -1399,7 +1399,7 @@ $$
 \frac{
   \begin{gather*}
   \sigma(i) = n \quad S(A) = [a_0, \ldots, a_{N-1}] \quad a_n = v \quad
-  \delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad
+  \delta(A) = \mathsf{wt@}R \Vert \mathsf{rd@}R' \quad
   0 \leq n < N \quad n \notin R
   \end{gather*}
 }{
@@ -1414,7 +1414,7 @@ $$
 \frac{
   \begin{gather*}
   \sigma(i) = n \quad \sigma(v) = a_n' \quad S(A) = [a_0, \ldots, a_{N-1}] \quad
-  \delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad
+  \delta(A) = \mathsf{wt@}R \Vert \mathsf{rd@}R' \quad
   0 \leq n < N \quad n \notin R \cup R' \\
   S' = S[A \mapsto [a_0, \ldots, a_{n-1}, a_n', a_{n+1}, \ldots, a_{N-1}]]
   \end{gather*}
