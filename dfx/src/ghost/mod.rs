@@ -1,6 +1,7 @@
+pub mod affine;
 pub mod ir;
-pub mod lower;
 pub mod json;
+pub mod lower;
 pub mod pcm;
 pub mod permission;
 

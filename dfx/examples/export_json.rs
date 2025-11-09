@@ -1,6 +1,6 @@
-use dfx::parse::parse_program;
-use dfx::ghost::lower::synthesize_ghost_program;
 use dfx::ghost::json::export_program_json;
+use dfx::ghost::lower::synthesize_ghost_program;
+use dfx::parse::parse_program;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Example program: sum an array (from test files)
@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nLowering to ghost IR...");
     let ghost_program = synthesize_ghost_program(&program);
-    
+
     println!("Ghost IR:");
     for def in &ghost_program.defs {
         println!("{}", def);
@@ -21,14 +21,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n\nExporting to JSON...");
     let json = export_program_json(&ghost_program)?;
-    
+
     println!("JSON output:");
     println!("{}", json);
 
     // Verify the JSON is valid and parseable
     let parsed: serde_json::Value = serde_json::from_str(&json)?;
     println!("\n✓ JSON is valid");
-    println!("✓ Contains {} function(s)", parsed["fns"].as_array().unwrap().len());
+    println!(
+        "✓ Contains {} function(s)",
+        parsed["fns"].as_array().unwrap().len()
+    );
 
     Ok(())
 }

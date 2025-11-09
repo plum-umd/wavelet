@@ -136,7 +136,13 @@ impl FunctionLowerer {
         }
     }
 
-    fn lower_const(&mut self, var: &Var, val: &Val, builder: &mut Vec<GhostStmt>, ctx: &mut PermCtx) {
+    fn lower_const(
+        &mut self,
+        var: &Var,
+        val: &Val,
+        builder: &mut Vec<GhostStmt>,
+        ctx: &mut PermCtx,
+    ) {
         let (ghost_in, _) = self.split_sync(builder, ctx);
         let ghost_out = self.fresh();
         builder.push(GhostStmt::Const {
@@ -467,25 +473,34 @@ mod tests {
         // Verify it's valid JSON
         let parsed: serde_json::Value = serde_json::from_str(&json).expect("should be valid JSON");
         assert!(parsed.get("fns").is_some(), "should have fns field");
-        
+
         let fns = parsed["fns"].as_array().expect("fns should be an array");
         assert_eq!(fns.len(), 1, "should have exactly one function");
-        
+
         let sum_fn = &fns[0];
         assert_eq!(sum_fn["name"], "sum");
         assert_eq!(sum_fn["outputs"], 2, "sum should have 2 outputs");
-        
-        let params = sum_fn["params"].as_array().expect("params should be an array");
-        assert_eq!(params.len(), 6, "sum should have 6 parameters (4 regular + 2 ghost)");
+
+        let params = sum_fn["params"]
+            .as_array()
+            .expect("params should be an array");
+        assert_eq!(
+            params.len(),
+            6,
+            "sum should have 6 parameters (4 regular + 2 ghost)"
+        );
         assert_eq!(params[0], "i");
         assert_eq!(params[1], "a");
         assert_eq!(params[2], "N");
         assert_eq!(params[3], "A");
         assert_eq!(params[4], "p0");
         assert_eq!(params[5], "p_lft");
-        
+
         // Verify body structure
-        assert!(sum_fn["body"].get("op").is_some(), "body should be an op expression");
+        assert!(
+            sum_fn["body"].get("op").is_some(),
+            "body should be an op expression"
+        );
     }
 
     #[test]
@@ -499,11 +514,14 @@ mod tests {
         );
 
         let json = export_program_json(&ghost).expect("should serialize to JSON");
-        println!("Exported zero_out JSON (first 500 chars):\n{}", &json.chars().take(500).collect::<String>());
+        println!(
+            "Exported zero_out JSON (first 500 chars):\n{}",
+            &json.chars().take(500).collect::<String>()
+        );
 
         // Verify it's valid JSON
         let _parsed: serde_json::Value = serde_json::from_str(&json).expect("should be valid JSON");
-        
+
         // Check that we have const and store operations in the JSON
         let json_str = json.to_lowercase();
         assert!(json_str.contains("const"), "should contain const operation");

@@ -1,8 +1,9 @@
+use crate::Val;
+use crate::ghost::affine;
 use crate::ghost::ir::{GhostExpr, GhostFnDef, GhostProgram, GhostStmt, GhostTail};
 use crate::ir::Op;
-use crate::Val;
-use serde::ser::{SerializeMap, Serializer};
 use serde::Serialize;
+use serde::ser::{SerializeMap, Serializer};
 use serde_json::{self, Value};
 use std::fmt;
 
@@ -36,6 +37,7 @@ impl From<serde_json::Error> for ExportError {
 /// that is intended to match the Lean `RawProg` schema.
 pub fn export_program_json(prog: &GhostProgram) -> Result<String, ExportError> {
     let raw = RawProg::try_from(prog)?;
+    let raw = affine::enforce_affine(raw);
     serde_json::to_string_pretty(&raw).map_err(ExportError::from)
 }
 
@@ -87,8 +89,7 @@ impl TryFrom<&GhostFnDef> for RawFn {
 
 fn serialize_body(expr: &GhostExpr) -> Result<RawExpr, ExportError> {
     let tail = serialize_tail(&expr.tail)?;
-    expr
-        .stmts
+    expr.stmts
         .iter()
         .rev()
         .try_fold(tail, |acc, stmt| wrap_stmt(stmt, acc))
@@ -96,8 +97,15 @@ fn serialize_body(expr: &GhostExpr) -> Result<RawExpr, ExportError> {
 
 fn serialize_tail(tail: &GhostTail) -> Result<RawExpr, ExportError> {
     match tail {
-        GhostTail::Return { value, perm } => Ok(RawExpr::Ret(vec![value.0.clone(), perm.0.clone()])),
-        GhostTail::TailCall { func: _, args, ghost_need, ghost_left } => {
+        GhostTail::Return { value, perm } => {
+            Ok(RawExpr::Ret(vec![value.0.clone(), perm.0.clone()]))
+        }
+        GhostTail::TailCall {
+            func: _,
+            args,
+            ghost_need,
+            ghost_left,
+        } => {
             let mut tail_args = args.iter().map(|v| v.0.clone()).collect::<Vec<_>>();
             tail_args.push(ghost_need.0.clone());
             tail_args.push(ghost_left.0.clone());
@@ -141,10 +149,21 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
                 cont: Box::new(cont),
             })
         }
-        GhostStmt::Const { value, output, ghost_in, ghost_out } => {
+        GhostStmt::Const {
+            value,
+            output,
+            ghost_in,
+            ghost_out,
+        } => {
             let val = match value {
                 Val::Int(i) => *i as i64,
-                Val::Bool(b) => if *b { 1 } else { 0 },
+                Val::Bool(b) => {
+                    if *b {
+                        1
+                    } else {
+                        0
+                    }
+                }
                 Val::Unit => 0,
             };
             let op = WithCall::Op(WithSpec::Spec {
@@ -160,10 +179,18 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
                 cont: Box::new(cont),
             })
         }
-        GhostStmt::Load { output, array, index, ghost_in, ghost_out } => {
+        GhostStmt::Load {
+            output,
+            array,
+            index,
+            ghost_in,
+            ghost_out,
+        } => {
             let op = WithCall::Op(WithSpec::Spec {
                 ghost: true,
-                op: SyncOp::Load { loc: array.0.clone() },
+                op: SyncOp::Load {
+                    loc: array.0.clone(),
+                },
             });
             let args = vec![index.0.clone(), ghost_in.0.clone()];
             let outputs = vec![output.0.clone(), ghost_out.0.clone()];
@@ -174,10 +201,18 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
                 cont: Box::new(cont),
             })
         }
-        GhostStmt::Store { array, index, value, ghost_in, ghost_out } => {
+        GhostStmt::Store {
+            array,
+            index,
+            value,
+            ghost_in,
+            ghost_out,
+        } => {
             let op = WithCall::Op(WithSpec::Spec {
                 ghost: true,
-                op: SyncOp::Store { loc: array.0.clone() },
+                op: SyncOp::Store {
+                    loc: array.0.clone(),
+                },
             });
             let args = vec![index.0.clone(), value.0.clone(), ghost_in.0.clone()];
             let outputs = vec![ghost_out.0.clone()];
@@ -188,7 +223,11 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
                 cont: Box::new(cont),
             })
         }
-        GhostStmt::JoinSplit { left, right, inputs } => {
+        GhostStmt::JoinSplit {
+            left,
+            right,
+            inputs,
+        } => {
             let toks = inputs.len();
             let deps = 0; // No value dependencies for join/split
             let op = WithCall::Op(WithSpec::Join { toks, deps });
@@ -201,7 +240,14 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
                 cont: Box::new(cont),
             })
         }
-        GhostStmt::Call { outputs, func, args, ghost_need, ghost_left, ghost_ret } => {
+        GhostStmt::Call {
+            outputs,
+            func,
+            args,
+            ghost_need,
+            ghost_left,
+            ghost_ret,
+        } => {
             let op = WithCall::Call(func.0.clone());
             let mut call_args: Vec<String> = args.iter().map(|v| v.0.clone()).collect();
             call_args.push(ghost_need.0.clone());
@@ -408,6 +454,8 @@ fn map_sync_op(op: &Op) -> Result<SyncOp, ExportError> {
         Op::Shr => Ok(SyncOp::Ashr),
         Op::Equal => Ok(SyncOp::Eq),
         Op::LessThan => Ok(SyncOp::Lt),
-        _ => Err(ExportError::Unsupported("pure operation not yet supported for serialization")),
+        _ => Err(ExportError::Unsupported(
+            "pure operation not yet supported for serialization",
+        )),
     }
 }

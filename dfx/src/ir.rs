@@ -292,7 +292,12 @@ impl std::fmt::Display for Stmt {
                 }
                 write!(f, " = {};", op)
             }
-            Stmt::LetCall { vars, func, args, fence } => {
+            Stmt::LetCall {
+                vars,
+                func,
+                args,
+                fence,
+            } => {
                 write!(f, "let ")?;
                 for (i, var) in vars.iter().enumerate() {
                     if i > 0 {
@@ -317,7 +322,11 @@ impl std::fmt::Display for Tail {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Tail::RetVar(var) => write!(f, "return {};", var),
-            Tail::IfElse { cond, then_e, else_e } => {
+            Tail::IfElse {
+                cond,
+                then_e,
+                else_e,
+            } => {
                 writeln!(f, "if {} {{", cond)?;
                 write!(f, "{}", then_e)?;
                 writeln!(f, "}} else {{")?;
@@ -356,11 +365,37 @@ impl std::fmt::Display for Op {
             Op::LessEqual => write!(f, "<="),
             Op::Equal => write!(f, "=="),
             Op::Cast => write!(f, "cast"),
-            Op::Load { array, index, len, fence } => {
-                write!(f, "{}{}[{}:{}]", if *fence { "@" } else { "" }, array, index, len.display())
+            Op::Load {
+                array,
+                index,
+                len,
+                fence,
+            } => {
+                write!(
+                    f,
+                    "{}{}[{}:{}]",
+                    if *fence { "@" } else { "" },
+                    array,
+                    index,
+                    len.display()
+                )
             }
-            Op::Store { array, index, value, len, fence } => {
-                write!(f, "{}{}[{}:{}] = {}", if *fence { "@" } else { "" }, array, index, len.display(), value)
+            Op::Store {
+                array,
+                index,
+                value,
+                len,
+                fence,
+            } => {
+                write!(
+                    f,
+                    "{}{}[{}:{}] = {}",
+                    if *fence { "@" } else { "" },
+                    array,
+                    index,
+                    len.display(),
+                    value
+                )
             }
         }
     }
