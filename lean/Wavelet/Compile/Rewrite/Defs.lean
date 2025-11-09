@@ -790,15 +790,15 @@ def deadCodeElim
         if flavor then
           return .mk "merge-steer-true" [
             -- Pass RHS (true side) through and sink LHS (false side)
-            .steer true decider #v[inputR] #v[output'],
-            .sink #v[decider'],
+            .steer true decider #v[decider'] #v[.rename 0 decider'],
+            .steer true (.rename 0 decider') #v[inputR] #v[output'],
             .sink #v[inputL],
           ]
         else
           return .mk "merge-steer-false" [
             -- Pass LHS (false side) through and sink RHS (true side)
-            .steer false decider #v[inputL] #v[output'],
-            .sink #v[decider'],
+            .steer false decider #v[decider'] #v[.rename 0 decider'],
+            .steer false (.rename 0 decider') #v[inputL] #v[output'],
             .sink #v[inputR],
           ]
       else failure
