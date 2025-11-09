@@ -56,7 +56,6 @@ def varsToChans
       else if (false, v) ∈ gs.pathConds then
         [InterpConsts.fromBool false]
       else []
-    | .final_dest _ => []
     | _ => []
 
 @[grind]
