@@ -223,7 +223,7 @@ impl OpNode {
     fn fork(source: String, outputs: Vec<String>) -> Self {
         let op = WithCall::Op(WithSpec::Spec {
             ghost: false,
-            op: SyncOp::Fork { n: outputs.len() },
+            op: SyncOp::Copy { n: outputs.len() },
         });
         Self {
             op,
@@ -258,7 +258,7 @@ impl NameGenerator {
             .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
             .collect();
         let counter = self.counters.entry(sanitized.clone()).or_insert(0);
-        let name = format!("{}_fork{}", sanitized, *counter);
+        let name = format!("{}_copy{}", sanitized, *counter);
         *counter += 1;
         name
     }
@@ -320,7 +320,7 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn inserts_fork_for_duplicate_arguments() {
+    fn inserts_copy_for_duplicate_arguments() {
         let body = RawExpr::Op {
             op: WithCall::Op(WithSpec::Spec {
                 ghost: false,
@@ -352,12 +352,12 @@ mod tests {
             } => {
                 match op {
                     WithCall::Op(WithSpec::Spec {
-                        op: SyncOp::Fork { n },
+                        op: SyncOp::Copy { n },
                         ..
                     }) => {
                         assert_eq!(*n, 2);
                         assert_eq!(args, &["x".to_string()]);
-                        assert_eq!(rets, &["x_fork0".to_string(), "x_fork1".to_string()]);
+                        assert_eq!(rets, &["x_copy0".to_string(), "x_copy1".to_string()]);
                     }
                     other => panic!("expected fork, found {other:?}"),
                 }
@@ -366,7 +366,7 @@ mod tests {
                     RawExpr::Op { args, .. } => {
                         assert_eq!(args.len(), 2);
                         assert_ne!(args[0], args[1]);
-                        assert!(args.iter().all(|a| a.starts_with("x_fork")));
+                        assert!(args.iter().all(|a| a.starts_with("x_copy")));
                     }
                     other => panic!("expected add op after fork, found {other:?}"),
                 }
@@ -403,19 +403,19 @@ mod tests {
         let expr = affinizer.transform_expr(body);
 
         let mut seen = HashMap::new();
-        collect_forks(&expr, &mut seen);
+        collect_copys(&expr, &mut seen);
 
         assert_eq!(
             seen.get("a"),
-            Some(&vec!["a_fork0".into(), "a_fork1".into()])
+            Some(&vec!["a_copy0".into(), "a_copy1".into()])
         );
         assert_eq!(
             seen.get("b"),
-            Some(&vec!["b_fork0".into(), "b_fork1".into()])
+            Some(&vec!["b_copy0".into(), "b_copy1".into()])
         );
     }
 
-    fn collect_forks(expr: &RawExpr, map: &mut HashMap<String, Vec<String>>) {
+    fn collect_copys(expr: &RawExpr, map: &mut HashMap<String, Vec<String>>) {
         match expr {
             RawExpr::Ret(_) | RawExpr::Tail(_) => {}
             RawExpr::Op {
@@ -425,17 +425,17 @@ mod tests {
                 cont,
             } => {
                 if let WithCall::Op(WithSpec::Spec {
-                    op: SyncOp::Fork { .. },
+                    op: SyncOp::Copy { .. },
                     ..
                 }) = op
                 {
                     map.insert(args[0].clone(), rets.clone());
                 }
-                collect_forks(cont, map);
+                collect_copys(cont, map);
             }
             RawExpr::Br { left, right, .. } => {
-                collect_forks(left, map);
-                collect_forks(right, map);
+                collect_copys(left, map);
+                collect_copys(right, map);
             }
         }
     }
@@ -448,13 +448,13 @@ mod tests {
         let raw = RawProg::try_from(&ghost).expect("ghost to raw conversion should succeed");
         let affine = enforce_affine(raw);
 
-        let mut total_forks = 0;
+        let mut total_copys = 0;
         for func in &affine.fns {
             let counts = var_usage(&func.body);
             assert!(counts.values().all(|&count| count <= 1));
-            total_forks += count_forks(&func.body);
+            total_copys += count_copys(&func.body);
         }
-        assert!(total_forks > 0, "expected at least one fork to be inserted");
+        assert!(total_copys > 0, "expected at least one fork to be inserted");
     }
 
     #[test]
@@ -537,20 +537,20 @@ mod tests {
         }
     }
 
-    fn count_forks(expr: &RawExpr) -> usize {
+    fn count_copys(expr: &RawExpr) -> usize {
         match expr {
             RawExpr::Ret(_) | RawExpr::Tail(_) => 0,
             RawExpr::Op { op, cont, .. } => {
                 let here = matches!(
                     op,
                     WithCall::Op(WithSpec::Spec {
-                        op: SyncOp::Fork { .. },
+                        op: SyncOp::Copy { .. },
                         ..
                     })
                 ) as usize;
-                here + count_forks(cont)
+                here + count_copys(cont)
             }
-            RawExpr::Br { left, right, .. } => count_forks(left) + count_forks(right),
+            RawExpr::Br { left, right, .. } => count_copys(left) + count_copys(right),
         }
     }
 }

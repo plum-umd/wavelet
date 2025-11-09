@@ -19,7 +19,7 @@
           {
             "op": {
               "op": {
-                "fork": 4
+                "copy": 2
               }
             }
           },
@@ -27,17 +27,17 @@
             "j"
           ],
           [
-            "j_fork0",
-            "j_fork1",
-            "j_fork2",
-            "j_fork3"
+            "j_copy0",
+            "j_copy1",
+            "j_copy2",
+            "j_copy3"
           ],
           {
             "op": [
               {
                 "op": {
                   "op": {
-                    "fork": 3
+                    "copy": 1
                   }
                 }
               },
@@ -45,9 +45,9 @@
                 "C"
               ],
               [
-                "C_fork0",
-                "C_fork1",
-                "C_fork2"
+                "C_copy0",
+                "C_copy1",
+                "C_copy2"
               ],
               {
                 "op": [
@@ -57,8 +57,8 @@
                     }
                   },
                   [
-                    "j_fork0",
-                    "C_fork0"
+                    "j_copy0",
+                    "C_copy0"
                   ],
                   [
                     "cond",
@@ -72,7 +72,7 @@
                           {
                             "op": {
                               "op": {
-                                "fork": 2
+                                "copy": 0
                               }
                             }
                           },
@@ -80,8 +80,8 @@
                             "i"
                           ],
                           [
-                            "i_fork0",
-                            "i_fork1"
+                            "i_copy0",
+                            "i_copy1"
                           ],
                           {
                             "op": [
@@ -91,8 +91,8 @@
                                 }
                               },
                               [
-                                "i_fork0",
-                                "C_fork1"
+                                "i_copy0",
+                                "C_copy1"
                               ],
                               [
                                 "base",
@@ -107,7 +107,7 @@
                                   },
                                   [
                                     "base",
-                                    "j_fork1"
+                                    "j_copy1"
                                   ],
                                   [
                                     "idx",
@@ -140,7 +140,7 @@
                                             }
                                           },
                                           [
-                                            "j_fork2",
+                                            "j_copy2",
                                             "p4"
                                           ],
                                           [
@@ -252,7 +252,7 @@
                                                                         }
                                                                       },
                                                                       [
-                                                                        "j_fork3",
+                                                                        "j_copy3",
                                                                         "one"
                                                                       ],
                                                                       [
@@ -298,11 +298,11 @@
                                                                               ],
                                                                               {
                                                                                 "tail": [
-                                                                                  "i_fork1",
+                                                                                  "i_copy1",
                                                                                   "next",
                                                                                   "new_acc",
                                                                                   "R",
-                                                                                  "C_fork2",
+                                                                                  "C_copy2",
                                                                                   "weight",
                                                                                   "src",
                                                                                   "p16",
@@ -414,7 +414,7 @@
                   {
                     "op": {
                       "op": {
-                        "fork": 3
+                        "copy": 1
                       }
                     }
                   },
@@ -422,16 +422,16 @@
                     "w"
                   ],
                   [
-                    "w_fork0",
-                    "w_fork1",
-                    "w_fork2"
+                    "w_copy0",
+                    "w_copy1",
+                    "w_copy2"
                   ],
                   {
                     "op": [
                       {
                         "op": {
                           "op": {
-                            "fork": 2
+                            "copy": 0
                           }
                         }
                       },
@@ -439,8 +439,8 @@
                         "min"
                       ],
                       [
-                        "min_fork0",
-                        "min_fork1"
+                        "min_copy0",
+                        "min_copy1"
                       ],
                       {
                         "op": [
@@ -450,8 +450,8 @@
                             }
                           },
                           [
-                            "w_fork0",
-                            "min_fork0"
+                            "w_copy0",
+                            "min_copy0"
                           ],
                           [
                             "below",
@@ -479,7 +479,7 @@
                                   ],
                                   {
                                     "ret": [
-                                      "min_fork1",
+                                      "min_copy1",
                                       "p5"
                                     ]
                                   }
@@ -523,7 +523,7 @@
                                           {
                                             "op": {
                                               "op": {
-                                                "fork": 2
+                                                "copy": 0
                                               }
                                             }
                                           },
@@ -531,8 +531,8 @@
                                             "max"
                                           ],
                                           [
-                                            "max_fork0",
-                                            "max_fork1"
+                                            "max_copy0",
+                                            "max_copy1"
                                           ],
                                           {
                                             "op": [
@@ -542,8 +542,8 @@
                                                 }
                                               },
                                               [
-                                                "max_fork0",
-                                                "w_fork1"
+                                                "max_copy0",
+                                                "w_copy1"
                                               ],
                                               [
                                                 "above",
@@ -571,7 +571,7 @@
                                                       ],
                                                       {
                                                         "ret": [
-                                                          "max_fork1",
+                                                          "max_copy1",
                                                           "p11"
                                                         ]
                                                       }
@@ -596,7 +596,7 @@
                                                       ],
                                                       {
                                                         "ret": [
-                                                          "w_fork2",
+                                                          "w_copy2",
                                                           "p13"
                                                         ]
                                                       }
@@ -644,7 +644,7 @@
           {
             "op": {
               "op": {
-                "fork": 4
+                "copy": 2
               }
             }
           },
@@ -652,17 +652,17 @@
             "i"
           ],
           [
-            "i_fork2",
-            "i_fork3",
-            "i_fork4",
-            "i_fork5"
+            "i_copy2",
+            "i_copy3",
+            "i_copy4",
+            "i_copy5"
           ],
           {
             "op": [
               {
                 "op": {
                   "op": {
-                    "fork": 3
+                    "copy": 1
                   }
                 }
               },
@@ -670,9 +670,9 @@
                 "R"
               ],
               [
-                "R_fork0",
-                "R_fork1",
-                "R_fork2"
+                "R_copy0",
+                "R_copy1",
+                "R_copy2"
               ],
               {
                 "op": [
@@ -682,8 +682,8 @@
                     }
                   },
                   [
-                    "i_fork2",
-                    "R_fork0"
+                    "i_copy2",
+                    "R_copy0"
                   ],
                   [
                     "cond",
@@ -731,7 +731,7 @@
                                   {
                                     "op": {
                                       "op": {
-                                        "fork": 2
+                                        "copy": 0
                                       }
                                     }
                                   },
@@ -739,15 +739,15 @@
                                     "C"
                                   ],
                                   [
-                                    "C_fork3",
-                                    "C_fork4"
+                                    "C_copy3",
+                                    "C_copy4"
                                   ],
                                   {
                                     "op": [
                                       {
                                         "op": {
                                           "op": {
-                                            "fork": 2
+                                            "copy": 0
                                           }
                                         }
                                       },
@@ -755,15 +755,15 @@
                                         "weight"
                                       ],
                                       [
-                                        "weight_fork0",
-                                        "weight_fork1"
+                                        "weight_copy0",
+                                        "weight_copy1"
                                       ],
                                       {
                                         "op": [
                                           {
                                             "op": {
                                               "op": {
-                                                "fork": 2
+                                                "copy": 0
                                               }
                                             }
                                           },
@@ -771,8 +771,8 @@
                                             "src"
                                           ],
                                           [
-                                            "src_fork0",
-                                            "src_fork1"
+                                            "src_copy0",
+                                            "src_copy1"
                                           ],
                                           {
                                             "op": [
@@ -780,13 +780,13 @@
                                                 "call": "row_dot"
                                               },
                                               [
-                                                "i_fork3",
+                                                "i_copy3",
                                                 "_lit_0_0",
                                                 "_lit_0_1",
-                                                "R_fork1",
-                                                "C_fork3",
-                                                "weight_fork0",
-                                                "src_fork0",
+                                                "R_copy1",
+                                                "C_copy3",
+                                                "weight_copy0",
+                                                "src_copy0",
                                                 "p2",
                                                 "p4"
                                               ],
@@ -799,7 +799,7 @@
                                                   {
                                                     "op": {
                                                       "op": {
-                                                        "fork": 2
+                                                        "copy": 0
                                                       }
                                                     }
                                                   },
@@ -807,8 +807,8 @@
                                                     "shift"
                                                   ],
                                                   [
-                                                    "shift_fork0",
-                                                    "shift_fork1"
+                                                    "shift_copy0",
+                                                    "shift_copy1"
                                                   ],
                                                   {
                                                     "op": [
@@ -819,7 +819,7 @@
                                                       },
                                                       [
                                                         "dot",
-                                                        "shift_fork0"
+                                                        "shift_copy0"
                                                       ],
                                                       [
                                                         "shifted",
@@ -900,11 +900,12 @@
                                                                             }
                                                                           },
                                                                           [
-                                                                            "i_fork4",
+                                                                            "i_copy4",
                                                                             "clamped",
                                                                             "p13"
                                                                           ],
                                                                           [
+                                                                            "__store_dummy",
                                                                             "p15"
                                                                           ],
                                                                           {
@@ -948,7 +949,7 @@
                                                                                         }
                                                                                       },
                                                                                       [
-                                                                                        "i_fork5",
+                                                                                        "i_copy5",
                                                                                         "one"
                                                                                       ],
                                                                                       [
@@ -996,11 +997,11 @@
                                                                                               {
                                                                                                 "tail": [
                                                                                                   "next",
-                                                                                                  "shift_fork1",
-                                                                                                  "R_fork2",
-                                                                                                  "C_fork4",
-                                                                                                  "weight_fork1",
-                                                                                                  "src_fork1",
+                                                                                                  "shift_copy1",
+                                                                                                  "R_copy2",
+                                                                                                  "C_copy4",
+                                                                                                  "weight_copy1",
+                                                                                                  "src_copy1",
                                                                                                   "dest",
                                                                                                   "p20",
                                                                                                   "p22"

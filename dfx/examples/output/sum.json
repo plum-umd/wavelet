@@ -16,7 +16,7 @@
           {
             "op": {
               "op": {
-                "fork": 3
+                "copy": 1
               }
             }
           },
@@ -24,16 +24,16 @@
             "i"
           ],
           [
-            "i_fork0",
-            "i_fork1",
-            "i_fork2"
+            "i_copy0",
+            "i_copy1",
+            "i_copy2"
           ],
           {
             "op": [
               {
                 "op": {
                   "op": {
-                    "fork": 2
+                    "copy": 0
                   }
                 }
               },
@@ -41,8 +41,8 @@
                 "N"
               ],
               [
-                "N_fork0",
-                "N_fork1"
+                "N_copy0",
+                "N_copy1"
               ],
               {
                 "op": [
@@ -52,8 +52,8 @@
                     }
                   },
                   [
-                    "i_fork0",
-                    "N_fork0"
+                    "i_copy0",
+                    "N_copy0"
                   ],
                   [
                     "c",
@@ -89,7 +89,7 @@
                                 }
                               },
                               [
-                                "i_fork1",
+                                "i_copy1",
                                 "p2"
                               ],
                               [
@@ -137,7 +137,7 @@
                                             }
                                           },
                                           [
-                                            "i_fork2",
+                                            "i_copy2",
                                             "one"
                                           ],
                                           [
@@ -199,7 +199,7 @@
                                                         "tail": [
                                                           "j",
                                                           "new_a",
-                                                          "N_fork1",
+                                                          "N_copy1",
                                                           "A",
                                                           "p10",
                                                           "p12"

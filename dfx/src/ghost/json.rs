@@ -215,7 +215,8 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
                 },
             });
             let args = vec![index.0.clone(), value.0.clone(), ghost_in.0.clone()];
-            let outputs = vec![ghost_out.0.clone()];
+            let dummy_output = "__store_dummy".to_string(); // store now outputs a dummy value
+            let outputs = vec![dummy_output, ghost_out.0.clone()];
             Ok(RawExpr::Op {
                 op,
                 args,
@@ -401,7 +402,7 @@ pub enum SyncOp {
     Store { loc: String },
     Sel,
     Const { value: i64 },
-    Fork { n: usize },
+    Copy { n: usize },
 }
 
 impl Serialize for SyncOp {
@@ -425,9 +426,9 @@ impl Serialize for SyncOp {
                 map.serialize_entry("const", value)?;
                 map.end()
             }
-            SyncOp::Fork { n } => {
+            SyncOp::Copy { n } => {
                 let mut map = serializer.serialize_map(Some(1))?;
-                map.serialize_entry("fork", n)?;
+                map.serialize_entry("copy", &(n - 2))?;
                 map.end()
             }
             SyncOp::Load { loc } => {

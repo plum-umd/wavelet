@@ -15,7 +15,7 @@
           {
             "op": {
               "op": {
-                "fork": 4
+                "copy": 2
               }
             }
           },
@@ -23,17 +23,17 @@
             "i"
           ],
           [
-            "i_fork0",
-            "i_fork1",
-            "i_fork2",
-            "i_fork3"
+            "i_copy0",
+            "i_copy1",
+            "i_copy2",
+            "i_copy3"
           ],
           {
             "op": [
               {
                 "op": {
                   "op": {
-                    "fork": 2
+                    "copy": 0
                   }
                 }
               },
@@ -41,8 +41,8 @@
                 "N"
               ],
               [
-                "N_fork0",
-                "N_fork1"
+                "N_copy0",
+                "N_copy1"
               ],
               {
                 "op": [
@@ -52,8 +52,8 @@
                     }
                   },
                   [
-                    "i_fork0",
-                    "N_fork0"
+                    "i_copy0",
+                    "N_copy0"
                   ],
                   [
                     "c",
@@ -89,7 +89,7 @@
                                 }
                               },
                               [
-                                "i_fork1",
+                                "i_copy1",
                                 "p2"
                               ],
                               [
@@ -134,7 +134,7 @@
                                           {
                                             "op": {
                                               "op": {
-                                                "fork": 2
+                                                "copy": 0
                                               }
                                             }
                                           },
@@ -142,8 +142,8 @@
                                             "one"
                                           ],
                                           [
-                                            "one_fork0",
-                                            "one_fork1"
+                                            "one_copy0",
+                                            "one_copy1"
                                           ],
                                           {
                                             "op": [
@@ -154,7 +154,7 @@
                                               },
                                               [
                                                 "v",
-                                                "one_fork0"
+                                                "one_copy0"
                                               ],
                                               [
                                                 "new_v",
@@ -188,11 +188,12 @@
                                                         }
                                                       },
                                                       [
-                                                        "i_fork2",
+                                                        "i_copy2",
                                                         "new_v",
                                                         "p9"
                                                       ],
                                                       [
+                                                        "__store_dummy",
                                                         "p11"
                                                       ],
                                                       {
@@ -203,8 +204,8 @@
                                                             }
                                                           },
                                                           [
-                                                            "i_fork3",
-                                                            "one_fork1"
+                                                            "i_copy3",
+                                                            "one_copy1"
                                                           ],
                                                           [
                                                             "j",
@@ -249,7 +250,7 @@
                                                                   {
                                                                     "tail": [
                                                                       "j",
-                                                                      "N_fork1",
+                                                                      "N_copy1",
                                                                       "A",
                                                                       "p13",
                                                                       "p15"
