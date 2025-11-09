@@ -493,38 +493,49 @@ How about separating the ctx into persistent (read, shared) and affine (write, e
 $$
 \begin{aligned}
 \text{int} ::= & \;\; \texttt{u8} \mid \texttt{u16} \mid \texttt{u32} \mid \dots \\
-\tau ::= & \;\; \texttt{int} \mid \texttt{bool} \mid \texttt{unit} \mid
-[\texttt{int}; \texttt{ N}] \mid \mathsf{\&}\{R\}[\texttt{int}; \texttt{ N}]
-\mid \mathsf{\&uniq}\{R\}[\texttt{int}; \texttt{ N}] \\
-R ::= & \;\; \epsilon \mid i \mid i..i \mid R, \; R \\
-i ::= & \;\; n \mid x \mid i + i \mid i - i \mid n * i \\
-n ::= & \;\; 0, 1, 2, \ldots \\
+\tau ::= & \;\; \texttt{int} \mid \texttt{bool} \mid \texttt{unit} \\
 \end{aligned}
 $$
+<!-- R ::= & \;\; \epsilon \mid i \mid i..i \mid R, \; R \\
+i ::= & \;\; n \mid x \mid i + i \mid i - i \mid n * i \\
+n ::= & \;\; 0, 1, 2, \ldots \\ -->
 
-The index expressions `i` for the region are restricted to addition,
-subtraction, and multiplication by a constant to keep things simple (and decidable, cf. Presburger arithmetic).
+<!-- The index expressions `i` for the region are restricted to addition,
+subtraction, and multiplication by a constant to keep things simple (and decidable, cf. Presburger arithmetic). -->
 
 **Programs / definitions / expressions:**
 
 $$
 \begin{aligned}
 P ::= & \;\; D_1 \; \ldots \; D_n \\
-D ::= & \;\; \texttt{def } f(x_1 : t_1, \ldots, x_m : t_m) \to t \texttt{ = } E \\
-E ::= & \;\; \texttt{let } \bar{y} \texttt{ = } \texttt{op}(\bar{x}); \; E 
-\;\mid\; \texttt{let } y \texttt{ = } f(\bar{x}); \; E 
-\;\mid\; \texttt{let } y \texttt{ = } v; \; E \\[6pt]
+D ::= & \;\; \texttt{decl } A : \;  [\texttt{int}; \texttt{ N}] \\
+      & \mid \; \texttt{def } f(\vec{x} : \vec{\tau}, \; \overrightarrow{A : 
+  \mathsf{uniq@}R \Vert \mathsf{shrd@} R'}) \to \vec{\tau}_o \texttt{ = } E \\
+E ::= & \;\mid\; \texttt{let } y \texttt{ = } v; \; E \\
+  & \;\mid\; \texttt{let } \vec{y} \texttt{ = } \texttt{op}(\vec{x}); \; E 
+  \;\mid\; \texttt{let } \vec{y} \texttt{ = } \texttt{op}(\vec{x}) \text{ ---} \;
+  E  \\[6pt]
+    
 & \;\mid\; \texttt{if } x \; \{ E_1 \} \texttt{ else } \{ E_2 \} 
 \;\mid\; x  
-\;\mid\; f(\bar{x}) \\
-v ::= & \;\; n \;\mid\; \texttt{true} \;\mid\; \texttt{false} \;\mid\; [n_0, \dots, n_{N-1}]
+\;\mid\; f(\vec{x}) \\
+v ::= & \;\; n \;\mid\; \texttt{true} \;\mid\; \texttt{false} \\
+R ::= & \;\; \emptyset \;\mid\;  \{rexp\} \;\mid\; R \cup R' \;\mid\; R \setminus
+R' \\
+rexp ::= & \;\; n \;\mid\; x \;\mid\; rexp + rexp \;\mid\; rexp - rexp \;\mid\; n * rexp \\
 \end{aligned}
 
 $$
 
+- `f` and `A` are globally unique identifiers for functions and arrays
+- We write `{n1, n2, ..., nk}` for the finite set `{n1} ∪ {n2} ∪ ... ∪ {nk}`
+- We write `{n..x}` for the finite set `{n} ∪ {n+1} ∪ ... ∪ {x-1}`
+- When we have `A : uniq@{0..N}`, it's equivalent to `A : uniq@{0..N}||shrd@{}`
+  (likewise for `shrd`)
+
 **Array:**
 
-We use a Rust-like syntax (`[T; N]` and `[a, b, c]`) for arrays, where `T` can be instantiated to any machine integer type, `N` is a compile-time constant, and `a`, `b`, `c` are integer literals.
+We use a Rust-like syntax (`[T; N]`) for arrays, where `T` can be instantiated to any machine integer type, `N` is a compile-time constant.
 
 **Region:**
 
@@ -532,18 +543,25 @@ We use a Rust-like syntax (`[T; N]` and `[a, b, c]`) for arrays, where `T` can b
 
 $R \subseteq \{0, \ldots, N-1\}$.
 
-For intervals, we use `a..b` ( $[a, b)$ ) for brevity.
-
 > Note that `R` may contain free variables from the typing context (e.g., `i..N`
-> for some index variable `i`). See Well-formed Type below.
+> for some index variable `i`).
 
 **Permission:**
 
-We use a Rust-like syntax (`&` and `&uniq`) to represent the (shared or unique) permission to access arrays. Note that they are not first-class references, but merely a decoration on the primitive array type.
+We use the syntax (`shrd` and `uniq`) to represent the (shared or unique)
+permission to access arrays. Note that they are not first-class reference types,
+but merely a permission decoration on the primitive array type.
 
 **Capability:**
 
-Intuitively, the region+permission-decorated array types represent the fine-grained *capability* to access an array. For example, if we have `A : &{0..N} [u8; N]` in the typing context, we have the *read-only*, full *spatial* capability to access the array `A`; if we have `B : &uniq{0} [u8; N]` in the typing context, we have the *read-write* capability to access the array `B`, but only with the index `0`.
+Intuitively, the region+permission-decorated array types represent the
+fine-grained *capability* to access an array. For example, if we have `A :
+shrd@{0..N}` in the typing context, we have the *read-only*, full *spatial*
+capability to access the array `A`; if we have `B : uniq@{0}` in the typing
+context, we have the *read-write* capability to access the array `B`, but only
+with the index `0`. Finally, if we have `C : uniq@{i..N}||shrd@{N..M}`, we have
+the *read-write* capability to access `C` at indices `i, i+1, ..., N-1` and the
+*read-only* capability to access `C` at indices `N, N+1, ..., M-1`.
 
 **Op:**
 
@@ -552,24 +570,22 @@ As before, `op` denotes a parametric operator set, with `load` and `store` being
 ### Typing judgement
 
 $$
-\Gamma ; \Sigma ; \Delta \;\vdash_{\Phi}\; E : \tau 
+\Gamma ; \Delta \;\vdash_{\Phi}\; E : \tau 
 $$
 
 - $\Gamma$ is the usually variable context
-- $\Sigma$ is the context for (persistent) read capability
-- $\Delta$ is the context for (affine) read-write capability
-- $\Phi$ contains lightweight propositions (e.g., presburger arithmetic?) that tracks necessary facts about the array indices.
+- $\Delta$ is the context for array capability
+- $\Phi$ contains lightweight propositions that tracks necessary facts about the array indices.
 
-This judgement reads: under $\Gamma$ and given capabilities in $\Sigma ; \Delta$,
+This judgement reads: under $\Gamma$ and given capabilities in $\Delta$,
 the expression `E` has type $\tau$, assuming the facts in $\Phi$.
 
 In general, we require:
 
-- $\text{dom}(\Sigma) \subseteq \text{dom}(\Gamma)$
-- $\text{dom}(\Delta) \subseteq \text{dom}(\Gamma)$
+- $\text{dom}(\Delta) \bot \text{dom}(\Gamma)$
 - $\text{fv}(\Phi) \subseteq \text{dom}(\Gamma)$
 
-### Well formed Type
+<!-- ### Well formed Type
 
 All primitive types (i.e. `int`, `bool`, `unit`) are well-formed. An array type
 is well-formed if its size is non-negative. A permission+region-decorated array
@@ -590,10 +606,10 @@ $$
 &\frac{ \Phi ; \Gamma \;\vdash\; \mathsf{\&}\{R\}[\texttt{int} ; \texttt{ N}] \;\mathsf{Type}  }
        { \Phi ; \Gamma \;\vdash\; \mathsf{\&uniq}\{R\}[\texttt{int} ; \texttt{ N}] \;\mathsf{Type} }
 \end{align*}
-$$
+$$ -->
 
 
-### Sub-typing
+<!-- ### Sub-typing
 
 Array types are "contravariant" over their region, i.e., `&{0..N} [T; N] <:
 &{1..N} [T; N]` and `&uniq{0..N} [T; N] <: &uniq{0} [T; N]` (greater capability can be used where smaller capability is expected).
@@ -626,24 +642,59 @@ $$
 }{
   \Phi ; \Gamma \;\vdash\; \mathsf{\&uniq}\{R1\}[\texttt{int}; \texttt{ N}] \;<:\; \mathsf{\&uniq}\{R2\}[\texttt{int}; \texttt{ N}]
 }
+$$ -->
+
+### Resource Algebra
+
+Capability contains fine-grained shared/unique permissions for
+  arrays and it forms a PCM (partial commutative monoid):
+
+- The carrier set is a pair $(\mathsf{shrd}, \mathsf{uniq})$, where
+  $\mathsf{shrd}$ and $\mathsf{uniq}$ are finite sets of indices
+- The validity predicate is defined as:
+
+$$
+\text{Valid}((\mathsf{shrd}, \mathsf{uniq})) \;\; \triangleq \;\; \mathsf{shrd} \cap \mathsf{uniq} = \varnothing
 $$
 
-### Resource Algebra (roughly)
+- The unit element is $(\varnothing, \varnothing)$
+- The composition operation is defined as:
 
-- Read capability ($\Sigma$ ) is persistent and is composed with regular set union
-  - We follow the usual rules for set union (commutative, associative,
-    idempotent, unit is empty set, etc)
-- Read-write capability ($\Delta$ ) is affine and forms a PCM (partial commutative monoid)
-  - Two unique capability `&uniq{R1} [int; N]` `&uniq{R2} [int; N]` compose with disjoint union, iff their regions are disjoint ($R_1 \; \cap \; R_2 = \varnothing$)
-  - We write $R_1 \; \cdot \; R_2$ (instead of $R_1 \; \uplus \; R_2$) to
-    resemble PCM
-  - We have $\mathsf{\&uniq}\{R1\} [\texttt{int}; \texttt{ N}] \;\cdot\;
-    \mathsf{\&uniq}\{R2\} [\texttt{int}; \texttt{ N}] \Longleftrightarrow
-    \mathsf{\&uniq}\{R1 \;\cdot\; R2\} [\texttt{int}; \texttt{ N}]$
-  - We have $\mathsf{\&uniq}\{\} [\texttt{int}; \texttt{ N}]$ as the unit element
-  - We define $\Delta_1 \; \cdot \; \Delta_2$ as the pointwise
-    composition of capabilities in $\Delta_1$ and $\Delta_2$
-  - A valid $\Delta$ should not contain overlapping regions for the same array
+$$
+(\mathsf{shrd}_1, \mathsf{uniq}_1) \cdot (\mathsf{shrd}_2, \mathsf{uniq}_2) = 
+\begin{cases}
+(\mathsf{shrd}_1 \cup \mathsf{shrd}_2, \mathsf{uniq}_1 \cup \mathsf{uniq}_2) & \mathsf{uniq}_1 \cap \mathsf{uniq}_2 = \varnothing \\
+& \land \mathsf{uniq}_1 \cap \mathsf{shrd}_2 = \varnothing \\
+& \land \mathsf{uniq}_2 \cap \mathsf{shrd}_1 = \varnothing \\
+\text{undefined} & \text{otherwise}
+\end{cases}
+$$
+
+- The composition is commutative and associative
+- The carrier set is closed under the inclusion relation $\preceq$:
+
+$$
+(\mathsf{shrd}_1, \mathsf{uniq}_1) \preceq (\mathsf{shrd}_2, \mathsf{uniq}_2)
+\;\; \triangleq \;\; \text{Valid}((\mathsf{shrd}_1, \mathsf{uniq}_1) \cdot
+(\mathsf{shrd}_2, \mathsf{uniq}_2)) \Longrightarrow \text{Valid}((\mathsf{shrd}_1, \mathsf{uniq}_1))
+$$
+
+- Unit identity:
+
+$$
+(\mathsf{shrd}, \mathsf{uniq}) \cdot (\varnothing, \varnothing) \equiv (\mathsf{shrd}, \mathsf{uniq})
+$$
+
+<!-- - Two unique capability `&uniq{R1} [int; N]` `&uniq{R2} [int; N]` compose with disjoint union, iff their regions are disjoint ($R_1 \; \cap \; R_2 = \varnothing$)
+- We write $R_1 \; \cdot \; R_2$ (instead of $R_1 \; \uplus \; R_2$) to
+  resemble PCM
+- We have $\mathsf{\&uniq}\{R1\} [\texttt{int}; \texttt{ N}] \;\cdot\;
+  \mathsf{\&uniq}\{R2\} [\texttt{int}; \texttt{ N}] \Longleftrightarrow
+  \mathsf{\&uniq}\{R1 \;\cdot\; R2\} [\texttt{int}; \texttt{ N}]$
+- We have $\mathsf{\&uniq}\{\} [\texttt{int}; \texttt{ N}]$ as the unit element
+- We define $\Delta_1 \; \cdot \; \Delta_2$ as the pointwise
+  composition of capabilities in $\Delta_1$ and $\Delta_2$
+- A valid $\Delta$ should not contain overlapping regions for the same array
   
 $$
 \text{Valid}_{\Phi}(\Delta) \;\; \triangleq \;\; \forall A.\;\Biggl( \bigcup_{A : \&uniq\{R1\} \in \Delta} R1 \Biggr) \;\cap\; \Biggl( \bigcup_{A : \&uniq\{R2\} \in \Delta} R2 \Biggr) = \varnothing
@@ -660,7 +711,119 @@ $$
 $$
 
 As regions can contain free variables, validity and consistency are checked
-against the propositional context $\Phi$.
+against the propositional context $\Phi$. -->
+
+A Verus formalization of the capability system above.
+```rust
+pub enum ArrPerm {
+    Perm { uniq: Set<int>, shrd: Set<int> },
+    Invalid,
+}
+
+impl PCM for ArrPerm {
+    open spec fn valid(self) -> bool {
+        match self {
+            ArrPerm::Perm { uniq, shrd } => uniq.disjoint(shrd),
+            ArrPerm::Invalid => false,
+        }
+    }
+
+    open spec fn op(self, other: Self) -> Self {
+        match (self, other) {
+            (
+                ArrPerm::Perm { uniq: u1, shrd: s1 },
+                ArrPerm::Perm { uniq: u2, shrd: s2 },
+            ) => {
+                // Rules:
+                //  - uniques must be disjoint
+                //  - no uniq may overlap any shared
+                if u1.disjoint(u2) 
+                // && (u1 + u2).disjoint(s1 + s2) 
+                {
+                    ArrPerm::Perm { uniq: u1 + u2, shrd: s1 + s2 }
+                } else {
+                    ArrPerm::Invalid
+                }
+            },
+            _ => ArrPerm::Invalid,
+        }
+    }
+
+    open spec fn unit() -> Self {
+        ArrPerm::Perm { uniq: Set::empty(), shrd: Set::empty() }
+    }
+
+    proof fn closed_under_incl(a: Self, b: Self) {
+        match (a, b) {
+            (
+                ArrPerm::Perm { uniq: u1, shrd: s1 },
+                ArrPerm::Perm { uniq: u2, shrd: s2 },
+            ) => {
+                if u1.disjoint(u2) 
+                {
+                    if (u1 + u2).disjoint(s1 + s2) {
+                        assert(a.valid()) by {
+                            assume(!(u1.disjoint(s1)));
+                            let x = choose|elem: int| u1.contains(elem) && s1.contains(elem);
+                            assert((u1 + u2) has x);
+                            assert((s1 + s2) has x);
+                            assert(!(u1 + u2).disjoint(s1 + s2));
+                        }
+                    }
+                }
+            },
+            _ => {}
+        }
+    }
+
+    proof fn commutative(a: Self, b: Self) {
+        match (a, b) {
+            (
+                ArrPerm::Perm { uniq: u1, shrd: s1 },
+                ArrPerm::Perm { uniq: u2, shrd: s2 },
+            ) => {
+                assert(u1.disjoint(u2) == u2.disjoint(u1));
+                assert((u1 + u2) == (u2 + u1));
+                assert((s1 + s2) == (s2 + s1));
+            },
+            _ => {}
+        }
+    }
+
+    proof fn associative(a: Self, b: Self, c: Self) {
+        match (a, b, c) {
+            (
+                ArrPerm::Perm { uniq: u1, shrd: s1 },
+                ArrPerm::Perm { uniq: u2, shrd: s2 },
+                ArrPerm::Perm { uniq: u3, shrd: s3 },
+            ) => {
+                assert((u1 + (u2 + u3)) == ((u1 + u2) + u3));
+                assert((s1 + (s2 + s3)) == ((s1 + s2) + s3));
+            },
+            _ => {}
+        }
+    }
+
+    proof fn op_unit(a: Self) {
+        let (uniq_emp, shrd_emp) = (Self::unit()->uniq, Self::unit()->shrd);
+        assert(uniq_emp == Set::<int>::empty());
+        assert(shrd_emp == Set::<int>::empty());
+        match a {
+            ArrPerm::Perm { uniq, shrd } => {
+                assert(uniq + uniq_emp == uniq);
+                assert(shrd + shrd_emp == shrd);
+                assert(uniq.disjoint(uniq_emp));
+            },
+            ArrPerm::Invalid => {
+                assert(Self::op(a, Self::unit()) == ArrPerm::Invalid);
+            },
+        }
+    }
+
+    proof fn unit_valid() {
+    }
+}
+```
 
 ### Value Typing
 
@@ -680,11 +843,11 @@ $$
 \frac{ }{ \Gamma \;\vdash\; \texttt{()} : \texttt{unit} }
 $$
 
-$$
+<!-- $$
 \frac{ \texttt{N} \geq 0 \quad \forall i \in [0, N-1].\; n_i \in \texttt{int} }{ \Gamma \;\vdash\; [n_0, \ldots, n_{N-1}] : [\texttt{int}; \texttt{ N}] }
-$$
+$$ -->
 
-### Coercion
+<!-- ### Coercion
 
 When there is an array in $\Gamma$, we can "coerce" it into full-spatial
 capabilities (a read capability in
@@ -698,7 +861,7 @@ $$
   \quad A \not\in \text{dom}(\Delta) \\
   \end{gather*}
 }{
-  \Gamma ; \Sigma ; \Delta \;\leadsto_{\Phi, \; \Sigma}\; 
+  \Gamma ; \Delta \;\leadsto_{\Phi, \; \Sigma}\; 
   \Gamma ; \Sigma[A \mapsto \mathsf{\&}\{\texttt{0..N}\}], \Delta
 }
 $$
@@ -710,7 +873,7 @@ $$
   \quad A \not\in \text{dom}(\Sigma) \\
   \end{gather*}
 }{
-  \Gamma ; \Sigma ; \Delta \;\leadsto_{\Phi, \; \Delta}\;
+  \Gamma ; \Delta \;\leadsto_{\Phi, \; \Delta}\;
   \Gamma ; \Sigma, \Delta \;\cdot\; A \mapsto \mathsf{\&uniq}\{\texttt{0..N}\}]
 }
 $$
@@ -719,8 +882,8 @@ $$
 \frac{
   \Gamma(A) = [\texttt{int}; \texttt{ N}] \quad A \in \text{dom}(\Sigma) \cup \text{dom}(\Delta)
 }{
-  \Gamma ; \Sigma ; \Delta \;\leadsto_{\Phi, \; \Sigma}\; 
-  \Gamma ; \Sigma ; \Delta
+  \Gamma ; \Delta \;\leadsto_{\Phi, \; \Sigma}\; 
+  \Gamma ; \Delta
 }
 $$
 
@@ -728,8 +891,8 @@ $$
 \frac{
   \Gamma(A) = [\texttt{int}; \texttt{ N}] \quad A \in \text{dom}(\Sigma) \cup \text{dom}(\Delta)
 }{
-  \Gamma ; \Sigma ; \Delta \;\leadsto_{\Phi, \; \Delta}\; 
-  \Gamma ; \Sigma ; \Delta
+  \Gamma ; \Delta \;\leadsto_{\Phi, \; \Delta}\; 
+  \Gamma ; \Delta
 }
 $$
 
@@ -746,7 +909,7 @@ $$
 >
 > TODO:
 >
-> - [ ]  Work around this limitation?
+> - [ ]  Work around this limitation? -->
 
 ### Weakening
 
@@ -754,15 +917,15 @@ As our type system is affine, we can weaken the affine context $\Delta$.
 
 $$
 \frac{
-  \Gamma ; \Sigma ; \Delta \;\vdash_{\Phi}\; E : \tau \quad
+  \Gamma ; \Delta \;\vdash_{\Phi}\; E : \tau \quad
 }{
-  \Gamma ; \Sigma ; \Delta \cdot \Delta' \;\vdash_{\Phi}\; E : \tau
+  \Gamma ; \Delta \cdot \Delta' \;\vdash_{\Phi}\; E : \tau
 }
 $$
 
 ### Expression Typing
 
-> Some care is needed to deal with `let A = [0,...,N]; let B = A; ...`. 
+<!-- > Some care is needed to deal with `let A = [0,...,N]; let B = A; ...`. 
 > 
 > As we
 > don't have (and don't aim to support) first-class references, when an array is
@@ -775,7 +938,7 @@ $$
 > But this treatment makes it hard to deal with expressions like `let A =
 > [0,...,N]; let B = A; ...`. Do we enforce a move semantics or copy semantics
 > here? Or do we simply lift all array declarations to the top-level and treat
-> them as global arrays? (This is more-or-less what our current type system is assuming.)
+> them as global arrays? (This is more-or-less what our current type system is assuming.) -->
 
 **Var:**
 
@@ -783,7 +946,7 @@ $$
 \frac{
   \Gamma(x) = \tau
 }{
-  \Gamma ; \Sigma ; \Delta \;\vdash_{\Phi}\; x : \tau
+  \Gamma ; \Delta \;\vdash_{\Phi}\; x : \tau
 }
 $$
 
@@ -791,10 +954,11 @@ $$
 
 $$
 \frac{
-  \Gamma \;\vdash\; v : \tau \quad \Gamma[y \mapsto \tau] ; \Sigma ; \Delta \;\vdash_{\Phi}\;
+  \Gamma \;\vdash\; v : \tau \quad \Gamma[y \mapsto \tau] ; \Delta
+  \;\vdash_{\Phi \land (y = v)}\;
 E : \tau_E
 }{
-  \Gamma ; \Sigma ; \Delta \;\vdash_{\Phi}\; \texttt{let } y \texttt{ = } v; \; E : \tau_E
+  \Gamma ; \Delta \;\vdash_{\Phi}\; \texttt{let } y \texttt{ = } v; \; E : \tau_E
 }
 $$
 
@@ -802,50 +966,50 @@ $$
 
 $$
 \frac{
-  \texttt{op} : \overline{\tau_{in}} \to \overline{\tau_{out}} \quad \Gamma
-  (\bar{x}) = \overline{\tau_{in}} \quad \Gamma[\bar{y} \mapsto \overline{\tau_{out}}] ; \Sigma ;
-  \Delta \;\vdash_{\Phi}\;
+  \texttt{op} : \vec{\tau_{i}} \to \vec{\tau_{o}} \quad \Gamma
+  (\vec{x}) = \vec{\tau}_i \quad \Gamma[\vec{y} \mapsto \vec{\tau}_o] ;
+  \Delta \;\vdash_{\Phi \land (\vec{y} = \texttt{op}(\vec{x}))}\;
 E : \tau_E
 }{
-  \Gamma ; \Sigma ; \Delta \;\vdash_{\Phi}\; 
-  \texttt{let } \bar{y} \texttt{ = } \texttt{op}(\bar{x}); \; E : \tau_E
+  \Gamma ; \Delta \;\vdash_{\Phi}\; 
+  \texttt{let } \vec{y} \texttt{ = } \texttt{op}(\vec{x}); \; E : \tau_E
 }
 $$
 
-**Load-**$\Sigma$:
+**Load-1**:
 
 $$
 \frac{
   \begin{gather*}
-  \Gamma ; \Sigma ; \Delta \;\leadsto_{\Phi, \; \Sigma}\; \Gamma ; \Sigma' ; \Delta \\
   \Gamma(A) = [\texttt{int}; \texttt{ N}] \quad
   \Gamma(i) = \texttt{int} \quad
-  \Sigma'(A) = \mathsf{\&}\{R\} \quad \\
-  \Phi \vdash 0 \leq i < \texttt{N} \quad i \in \llbracket R \rrbracket_{\Phi} \quad \\
-  \Gamma[y \mapsto \texttt{int}] ; \Sigma' ; \Delta \;\vdash_{\Phi}\;
+  \Delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
+  \Phi \vDash 0 \leq i < \texttt{N} \land i \in  R' \quad \\
+  \Gamma[y \mapsto \texttt{int}] ; \Delta \;\vdash_{\Phi \land (y = A[i])}\;
 E : \tau_E
   \end{gather*}
 }{
-  \Gamma ; \Sigma ; \Delta \;\vdash_{\Phi}\; 
+  \Gamma ; \Delta \;\vdash_{\Phi}\; 
   \texttt{let } y \texttt{ = } \texttt{load}(A, i); \; E : \tau_E
 }
 $$
 
-**Load-**$\Delta$:
+**Load-2**:
 
 $$
 \frac{
   \begin{gather*}
-  \Gamma ; \Sigma ; \Delta \;\leadsto_{\Phi, \; \Delta}\; \Gamma ; \Sigma ; \Delta' \\
   \Gamma(A) = [\texttt{int}; \texttt{ N}] \quad
   \Gamma(i) = \texttt{int} \quad
-  \Delta' = \Delta'' \;\cdot\; A \mapsto \mathsf{\&uniq}\{j \cdot R'\} \quad \\
-  \Phi \vdash 0 \leq i < \texttt{N} \land i = j \quad \\\
-  \Gamma[y \mapsto \texttt{int}] ; \Sigma ; \Delta'' \;\cdot\; A \mapsto \mathsf{\&uniq}\{R'\} \;\vdash_{\Phi}\;
-E : \tau_E 
+  \Delta = \Delta' \cdot A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
+  \Phi \vDash 0 \leq i < \texttt{N} \land i \in  R \quad \\
+  \Gamma[y \mapsto \texttt{int}] ; \Delta' \;\cdot\; A \mapsto \mathsf{uniq@}R
+  \setminus \{i\}  \Vert \mathsf{shrd@}R'
+  \;\vdash_{\Phi \land (y = A[i])}\;
+E : \tau_E
   \end{gather*}
 }{
-  \Gamma ; \Sigma ; \Delta \;\vdash_{\Phi}\; 
+  \Gamma ; \Delta \;\vdash_{\Phi}\; 
   \texttt{let } y \texttt{ = } \texttt{load}(A, i); \; E : \tau_E
 }
 $$
@@ -855,19 +1019,57 @@ $$
 $$
 \frac{
   \begin{gather*}
-  \Gamma ; \Sigma ; \Delta \;\leadsto_{\Phi, \; \Delta}\; \Gamma ; \Sigma ; \Delta' \\
   \Gamma(A) = [\texttt{int}; \texttt{ N}] \quad
   \Gamma(i) = \texttt{int} \quad
   \Gamma \vdash v : \texttt{int} \quad
-  \Delta' = \Delta'' \;\cdot\; A \mapsto \mathsf{\&uniq}\{j \cdot R'\} \quad \\
-  \Phi \vdash 0 \leq i < \texttt{N} \land i = j \quad \\
-  \Gamma ; \Sigma ; \Delta'' \;\cdot\; A \mapsto \mathsf{\&uniq}\{R'\} \;\vdash_{\Phi}\;
-E : \tau_E 
+  \Delta = \Delta' \;\cdot\; A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
+  \Phi \vDash 0 \leq i < \texttt{N} \land i \in  R \quad \\
+  \Gamma ; \Delta'' \;\cdot\; A \mapsto \mathsf{uniq@}R
+  \setminus \{i\}  \Vert \mathsf{shrd@}R'
+  \;\vdash_{\Phi \land (A[i]=v)}\;
+E : \tau_E
   \end{gather*}
 }{
-  \Gamma ; \Sigma ; \Delta \;\vdash_{\Phi}\; 
+  \Gamma ; \Delta \;\vdash_{\Phi}\; 
   \texttt{let } \_ \texttt{ = } \texttt{store}(A, i, v); \; E : \tau_E
   
+}
+$$
+
+**Load-fence:**
+
+$$
+\frac{
+  \begin{gather*}
+  \Gamma(A) = [\texttt{int}; \texttt{ N}] \quad
+  \Gamma(i) = \texttt{int} \quad
+  \Phi \vdash 0 \leq i < \texttt{N} \\
+  \Gamma[y \mapsto \text{int}] ; \Delta
+  \;\vdash_{\Phi \land (y = A[i])}\;
+E : \tau_E
+  \end{gather*}
+}{
+  \Gamma ; \Delta \;\vdash_{\Phi}\; 
+  \texttt{let } y \texttt{ = } \texttt{load}(A, i) \text{ ---} \; E : \tau_E
+}
+$$
+
+**Store-fence:**
+
+$$
+\frac{
+  \begin{gather*}
+  \Gamma(A) = [\texttt{int}; \texttt{ N}] \quad
+  \Gamma(i) = \texttt{int} \quad
+  \Gamma \vdash v : \texttt{int} \\
+  \Phi \vdash 0 \leq i < \texttt{N} \\
+  \Gamma ; \Delta
+  \;\vdash_{\Phi \land (A[i]=v)}\;
+E : \tau_E
+  \end{gather*}
+}{
+  \Gamma ; \Delta \;\vdash_{\Phi}\; 
+  \texttt{let } \_ \texttt{ = } \texttt{store}(A, i, v) \text{ ---} \; E : \tau_E
 }
 $$
 
@@ -876,10 +1078,10 @@ $$
 $$
 \frac{
   \Gamma(x) = \texttt{bool} \quad
-  \Gamma ; \Sigma ; \Delta \;\vdash_{\Phi \land x}\; E_1 : \tau \quad
-  \Gamma ; \Sigma ; \Delta \;\vdash_{\Phi \land \lnot x}\; E_2 : \tau
+  \Gamma ; \Delta \;\vdash_{\Phi \land x}\; E_1 : \tau \quad
+  \Gamma ; \Delta \;\vdash_{\Phi \land \lnot x}\; E_2 : \tau
 }{
-  \Gamma ; \Sigma ; \Delta \;\vdash_{\Phi}\; 
+  \Gamma ; \Delta \;\vdash_{\Phi}\; 
   \texttt{if } x \; \{ E_1 \} \texttt{ else } \{ E_2 \} : \tau
 }
 $$
@@ -890,34 +1092,29 @@ $$
 \frac{
   \begin{gather*}
   (f \text{ defined}) \\
-  \texttt{def } f(\bar{x} : \overline{\tau_{in}}, \; \overline{A :
-  \mathsf{\&}\{R(\bar{x})\ [\texttt{int}; \texttt{ N}]\}}, \; \overline{B : \mathsf{\&uniq}\{R'(\bar{x})\}[\texttt{int}; \texttt{ N}]}) \to \tau_{out} =
-  E_f\\
-  \Gamma ; \Sigma ; \Delta \;\leadsto_{\Phi, \; \Sigma}\; \Gamma ; \Sigma' ;
-  \Delta \\
-  \Gamma ; \Sigma' ; \Delta \;\leadsto_{\Phi, \; \Delta}\; \Gamma ; \Sigma' ; \Delta' \\
-  % \Gamma(\bar{y}) <: \overline{\tau_{in}} \quad \\
-  \Gamma(\bar{y}) = \overline{\tau_{in}} \quad \Gamma(\bar{X}) =
-  \overline{[\texttt{int}; \texttt{ N}]} \quad \Gamma(\bar{Y}) =
-  \overline{[\texttt{int}; \texttt{ N}]} \\
-  \Sigma(\bar{X}) <: \overline{\mathsf{\&}\{R[\bar{x} \mapsto \bar{y}]\}\
-  [\texttt{int}; \texttt{ N}]} \\
-  \Delta' = \Delta'' \;\cdot\; \overline{Y : \mathsf{\&uniq}\{R'[\bar{x} \mapsto
-  \bar{y}] \;\cdot\; R''\}\
-  [\texttt{int}; \texttt{ N}]} \quad
-  % \Delta(\bar{Y}) <: \overline{\mathsf{\&uniq}\{R'[\bar{x} \mapsto \bar{y}]\}
+  \texttt{def } f(\vec{x} : \vec{\tau}_i, \; \overrightarrow{A : 
+  \mathsf{uniq@}R \Vert \mathsf{shrd@} R'}) \to \vec{\tau}_o \texttt{ = } E_f\\
+  % \Gamma(\vec{y}) <: \overline{\tau_{in}} \quad \\
+  \Gamma(\vec{i}) = \vec{\tau}_i \quad
+  \Delta = \Delta' \;\cdot\; \overrightarrow{A \mapsto \mathsf{uniq@}\Rho \Vert
+  \mathsf{shrd@}\Rho'} \\
+  \Phi \vDash R[\vec{x} \mapsto \vec{i}] \subseteq \Rho \quad
+  \Phi \vDash R'[\vec{x} \mapsto \vec{i}] \subseteq \Rho'\\
+  % \Delta(\vec{Y}) <: \overline{\mathsf{\&uniq}\{R'[\vec{x} \mapsto \vec{y}]\}
   % [\texttt{int}; \texttt{ N}]} \quad 
-  \\
-  \Gamma[y \mapsto \tau_{out}] ; \Sigma ; \Delta' \;\cdot\; \overline{Y : \mathsf{\&uniq}\{R''\}\
-  [\texttt{int}; \texttt{ N}]}
-   \;\vdash_{\Phi}\;
-E : \tau_E
+  \Gamma[\vec{y} \mapsto \vec{\tau}_o] ; \Delta' \;\cdot\; \overrightarrow{A
+  \mapsto \mathsf{uniq@}\Rho \setminus R[\vec{x} \mapsto \vec{i}]
+   \Vert
+  \mathsf{shrd@}\Rho'}
+   \;\vdash_{\Phi}\; E : \tau_E
   \end{gather*}
 }{
-  \Gamma ; \Sigma ; \Delta \;\vdash_{\Phi}\; 
-  \texttt{let } y \texttt{ = } f(\bar{y}, \bar{X}, \bar{Y}); \; E : \tau_E
+  \Gamma ; \Delta \;\vdash_{\Phi}\; 
+  \texttt{let } \vec{y} \texttt{ = } f(\vec{i}, \vec{A}); \; E : \tau_E
 }
 $$
+
+> TODO: pre-and post-condition for function call?
 
 **Tail Call:**
 
@@ -925,58 +1122,53 @@ $$
 \frac{
   \begin{gather*}
   (f \text{ defined}) \\
-  \texttt{def } f(\bar{x} : \overline{\tau_{in}}, \; \overline{A :
-  \mathsf{\&}\{R(\bar{x})\ [\texttt{int}; \texttt{ N}]\}}, \; \overline{B : \mathsf{\&uniq}\{R'(\bar{x})\}[\texttt{int}; \texttt{ N}]}) \to \tau_{out} =
-  E_f\\
-    \Gamma ; \Sigma ; \Delta \;\leadsto_{\Phi, \; \Sigma}\; \Gamma ; \Sigma' ;
-  \Delta \\
-  \Gamma ; \Sigma' ; \Delta \;\leadsto_{\Phi, \; \Delta}\; \Gamma ; \Sigma' ; \Delta' \\
-  % \Gamma(\bar{y}) <: \overline{\tau_{in}} \quad \\
-  \Gamma(\bar{y}) = \overline{\tau_{in}} \quad \Gamma(\bar{X}) =
-  \overline{[\texttt{int}; \texttt{ N}]} \quad \Gamma(\bar{Y}) =
-  \overline{[\texttt{int}; \texttt{ N}]} \\
-  \Sigma(\bar{X}) <: \overline{\mathsf{\&}\{R[\bar{x} \mapsto \bar{y}]\}\
-  [\texttt{int}; \texttt{ N}]} \\
-  \Delta' = \Delta'' \;\cdot\; \overline{Y : \mathsf{\&uniq}\{R'[\bar{x} \mapsto
-  \bar{y}] \;\cdot\; R''\}\
-  [\texttt{int}; \texttt{ N}]} \quad
-  % \Delta(\bar{Y}) <: \overline{\mathsf{\&uniq}\{R'[\bar{x} \mapsto \bar{y}]\}
-  % [\texttt{int}; \texttt{ N}]} \quad 
+  \texttt{def } f(\vec{x} : \vec{\tau}_i, \; \overrightarrow{A : 
+  \mathsf{uniq@}R \Vert \mathsf{shrd@} R'}) \to \vec{\tau}_o \texttt{ = } E_f\\
+  % \Gamma(\vec{y}) <: \overline{\tau_{in}} \quad \\
+  \Gamma(\vec{i}) = \vec{\tau}_i \quad
+  \Delta = \Delta' \;\cdot\; \overrightarrow{A \mapsto \mathsf{uniq@}\Rho \Vert
+  \mathsf{shrd@}\Rho'} \\
+  \Phi \vDash R[\vec{x} \mapsto \vec{i}] \subseteq \Rho \quad
+  \Phi \vDash R'[\vec{x} \mapsto \vec{i}] \subseteq \Rho'
+  % \Delta(\vec{Y}) <: \overline{\mathsf{\&uniq}\{R'[\vec{x} \mapsto \vec{y}]\}
+  % [\texttt{int}; \texttt{ N}]} 
   \end{gather*}
 }{
-  \Gamma ; \Sigma ; \Delta \;\vdash_{\Phi}\; 
-  f(\bar{y}, \bar{X}, \bar{Y}) : \tau_{out}
+  \Gamma ; \Delta \;\vdash_{\Phi}\; 
+  f(\vec{i}, \vec{A}) : \vec{\tau}_o
 }
 $$
 
 ### Definition Typing
 
+Global array declarations introduce arrays names in the global typing context $\Pi$.
+Function definitions introduce function names in the global typing context
+$\Pi$. We require array names and function names to be globally unique.
+
 $$
 \frac{
   \begin{gather*}
-  \text{fv}(\Phi) \subseteq \text{dom}(\bar{x_i} \mapsto \overline{\tau_i}) \\
-  \overline{\Phi ; \bar{x_i} \mapsto \overline{\tau_i} \;\vdash\; \mathsf{\&}\{R_j(\bar{x_i})\}[\texttt{int}; \text{ N}] \;\mathsf{Type}} \\
-  \overline{\Phi ; \bar{x_i} \mapsto \overline{\tau_i} \;\vdash\; \mathsf{\&uniq}\{R'_k(\bar{x_i})\}[\texttt{int}; \text{ N}] \;\mathsf{Type}} \\
-  \bar{x_i} \mapsto \overline{\tau_i}, \; \overline{A_j \mapsto [\texttt{int}; \text{ N}]}, \; \overline{B_k \mapsto [\texttt{int}; \text{ N}]};
-  \quad
-  \overline{A_j \mapsto \mathsf{\&}\{R_j(\bar{x_i})\}} ; \quad
-  \overline{B_k \mapsto \mathsf{\&uniq}\{R'_k(\bar{x_i})\}} \;\vdash_{\Phi}\; E : \tau
+  \Pi(\vec{A}) = \overrightarrow{\texttt{decl } A: [\texttt{int}; \texttt{ N}]} \\
+  % \text{fv}(\Phi) \subseteq \text{dom}(\vec{x_i} \mapsto \overrightarrow{\tau_i}) \\
+  \vec{x_i} \mapsto \overrightarrow{\tau_i} \; ; \;
+  \overrightarrow{A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@} R'} \;\vdash_{\top}\; E_f : \vec{\tau}_o \\
   \end{gather*}
 }{
-  \;\vdash_{\Phi}\; \texttt{def } f(\bar{x_i} : \overline{\tau_i}, \; \overline{A_j :
-  \mathsf{\&}\{R_j(\bar{x_i})\}[\texttt{int}; \text{ N}]}, \; \overline{B_k : \mathsf{\&uniq}\{R'_k(\bar{x_i})\}[\texttt{int}; \text{ N}]}) \to \tau = E
+  \Pi
+  \;\vdash\;   \texttt{def } f(\vec{x} : \vec{\tau}_i, \; \overrightarrow{A : 
+  \mathsf{uniq@}R \Vert \mathsf{shrd@} R'}) \to \vec{\tau}_o \texttt{ = } E
 }
 $$
 
-> IDEA:
+<!-- > IDEA:
 > Another IR — Parallel L0 (free of data-races)?
 >
 > - First pass: insert fences to the sequential L0 programs according to the
 > typing rules and construct a Parallel L0 program
 > - Second pass: compile Parallel L0 to Dataflow graph
-> - "Well typed Parallel L0 programs are data-race free"
+> - "Well typed Parallel L0 programs are data-race free" -->
 
-TODO
+<!-- TODO
 
 - [ ]  Experiment with some Verus embedding?
-- [ ]  Another IR — Parallel L0 (free of data-races)
+- [ ]  Another IR — Parallel L0 (free of data-races) -->
