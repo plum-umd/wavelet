@@ -128,8 +128,8 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
       for (i, testVec) in testVecs.mapIdx (·, ·) do
         trace s!"  running test vector {i}..."
         match testVec.run proc with
-        | .ok (outputVals, finalState) =>
-          trace s!"    outputs: {outputVals}; final state: {Lean.ToJson.toJson finalState}"
+        | .ok (tr, outputs, st) =>
+          trace s!"    steps: {tr.length}, outputs: {outputs}, final state:\n{Lean.ToJson.toJson st}"
         | .error err =>
           trace s!"    failed: {err}"
 

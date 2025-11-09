@@ -179,7 +179,11 @@ partial def TestVector.run
   [Lean.ToJson Loc] [Lean.ToJson χ]
   (tv : TestVector Loc)
   (proc : Dataflow.Proc (SyncOp Loc) χ Value m n) :
-    Except String (List Value × State Loc) := do
+    Except String (
+      List (Nat × Label (SyncOp Loc) Value m n) × -- Execution trace
+      List Value × -- Output values
+      State Loc -- Final state
+    ) := do
   let c := Dataflow.Config.init proc
   let st := tv.state
   let inputs ← (tv.inputs.toVectorDyn m : Option _).toExcept
@@ -221,7 +225,7 @@ partial def TestVector.run
       if ¬ buf.isEmpty then
         dbg_trace s!"channel {repr name} (output of {Lean.ToJson.toJson rawAtom}) not empty at termination: {buf}"
 
-  return (outputs.toList, st)
+  return (tr, outputs.toList, st)
 
 section Examples
 

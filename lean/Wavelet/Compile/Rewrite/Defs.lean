@@ -778,7 +778,7 @@ def deadCodeElim
           .sink (inputs'.erase output).toVector,
         ]
       else failure
-    -- Merge -> steer can be optimized to a steer and a sink
+    -- Merge -> steer can be optimized to a forward and a sink
     -- if they have the same decider (both deciders coming from a fork)
     | .async (.steer flavor 1) inputs' outputs' =>
       .assume (inputs'.length = 2 ∧ outputs'.length = 1) λ h => do
@@ -790,16 +790,14 @@ def deadCodeElim
         if flavor then
           return .mk "merge-steer-true" [
             -- Pass RHS (true side) through and sink LHS (false side)
-            .steer true decider #v[decider'] #v[.rename 0 decider'],
-            .steer true (.rename 0 decider') #v[inputR] #v[output'],
-            .sink #v[inputL],
+            .forward #v[inputR] #v[output'],
+            .sink #v[decider, decider', inputL],
           ]
         else
           return .mk "merge-steer-false" [
             -- Pass LHS (false side) through and sink RHS (true side)
-            .steer false decider #v[decider'] #v[.rename 0 decider'],
-            .steer false (.rename 0 decider') #v[inputL] #v[output'],
-            .sink #v[inputR],
+            .forward #v[inputL] #v[output'],
+            .sink #v[decider, decider', inputR],
           ]
       else failure
     -- Two merges with the same left/right/decider channels from the same fork
