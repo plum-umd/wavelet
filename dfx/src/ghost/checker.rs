@@ -452,6 +452,8 @@ pub struct CheckContext {
     pub signatures: HashMap<String, FunctionSignature>,
     /// Cached entry permissions (p_sync, p_garb) for the function being checked.
     current_fn_entry_perms: Option<(PermExpr, PermExpr)>,
+    /// Emit detailed traces of the checking context as it evolves.
+    pub verbose: bool,
 }
 
 impl CheckContext {
@@ -462,6 +464,18 @@ impl CheckContext {
             solver,
             signatures: HashMap::new(),
             current_fn_entry_perms: None,
+            verbose: false,
+        }
+    }
+
+    pub fn new_with_verbose(solver: SmtSolver, verbose: bool) -> Self {
+        Self {
+            phi: Phi::new(),
+            penv: PermissionEnv::new(),
+            solver,
+            signatures: HashMap::new(),
+            current_fn_entry_perms: None,
+            verbose,
         }
     }
 
@@ -628,20 +642,253 @@ impl CheckContext {
     }
 }
 
+// ===== Pretty Printing and Tracing Utilities =====
+
+fn render_idx(idx: &Idx) -> String {
+    match idx {
+        Idx::Const(n) => n.to_string(),
+        Idx::Var(v) => v.clone(),
+        Idx::Add(a, b) => format!("({} + {})", render_idx(a), render_idx(b)),
+        Idx::Sub(a, b) => format!("({} - {})", render_idx(a), render_idx(b)),
+        Idx::Mul(a, b) => format!("({} * {})", render_idx(a), render_idx(b)),
+    }
+}
+
+fn render_atom(atom: &Atom) -> String {
+    match atom {
+        Atom::Le(a, b) => format!("{} <= {}", render_idx(a), render_idx(b)),
+        Atom::Lt(a, b) => format!("{} < {}", render_idx(a), render_idx(b)),
+        Atom::Eq(a, b) => format!("{} == {}", render_idx(a), render_idx(b)),
+        Atom::RealLe(a, b) => format!("{:?} <= {:?}", a, b),
+        Atom::RealLt(a, b) => format!("{:?} < {:?}", a, b),
+        Atom::RealEq(a, b) => format!("{:?} == {:?}", a, b),
+        Atom::BoolVar(name) => name.clone(),
+        Atom::And(lhs, rhs) => format!("({}) && ({})", render_atom(lhs), render_atom(rhs)),
+        Atom::Or(lhs, rhs) => format!("({}) || ({})", render_atom(lhs), render_atom(rhs)),
+        Atom::Implies(lhs, rhs) => format!("({}) => ({})", render_atom(lhs), render_atom(rhs)),
+        Atom::Not(inner) => format!("!({})", render_atom(inner)),
+    }
+}
+
+fn render_region(region: &RegionSetExpr) -> String {
+    match region {
+        RegionSetExpr::Empty => "∅".to_string(),
+        RegionSetExpr::Interval { lo, hi } => format!("{{{}..{}}}", render_idx(lo), render_idx(hi)),
+        RegionSetExpr::Union(items) => {
+            if items.is_empty() {
+                "∅".to_string()
+            } else {
+                let rendered: Vec<_> = items.iter().map(render_region).collect();
+                format!("({})", rendered.join(" ∪ "))
+            }
+        }
+        RegionSetExpr::Difference(lhs, rhs) => {
+            format!("({} \\ {})", render_region(lhs), render_region(rhs))
+        }
+        RegionSetExpr::Intersection(lhs, rhs) => {
+            format!("({} ∩ {})", render_region(lhs), render_region(rhs))
+        }
+    }
+}
+
+fn render_fraction(frac: &FractionExpr) -> String {
+    match frac {
+        FractionExpr::Const(n, d) => {
+            if *d == 1 {
+                n.to_string()
+            } else {
+                format!("{}/{}", n, d)
+            }
+        }
+        FractionExpr::Var(name) => name.clone(),
+        FractionExpr::Add(lhs, rhs) => {
+            format!("({} + {})", render_fraction(lhs), render_fraction(rhs))
+        }
+        FractionExpr::Sub(lhs, rhs) => {
+            format!("({} - {})", render_fraction(lhs), render_fraction(rhs))
+        }
+    }
+}
+
+fn render_permission(perm: &Permission) -> String {
+    format!(
+        "{}@{}{}",
+        render_fraction(&perm.fraction),
+        perm.array.0,
+        render_region(&perm.region)
+    )
+}
+
+fn render_perm_expr(expr: &PermExpr) -> String {
+    match expr {
+        PermExpr::Empty => "ε".to_string(),
+        PermExpr::Singleton(perm) => render_permission(perm),
+        PermExpr::Add(items) => {
+            if items.is_empty() {
+                "ε".to_string()
+            } else {
+                let rendered: Vec<_> = items.iter().map(render_perm_expr).collect();
+                format!("({})", rendered.join(" + "))
+            }
+        }
+        PermExpr::Sub(lhs, rhs) => {
+            format!("({} - {})", render_perm_expr(lhs), render_perm_expr(rhs))
+        }
+    }
+}
+
+fn render_ghost_var(var: &GhostVar) -> String {
+    var.0.clone()
+}
+
+fn render_ghost_stmt(stmt: &GhostStmt) -> String {
+    match stmt {
+        GhostStmt::Pure { inputs, output, op, ghost_out } => {
+            let inputs_str = inputs.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", ");
+            format!(
+                "({} = {}({}), [{}])",
+                output.0, op, inputs_str, ghost_out.0
+            )
+        }
+        GhostStmt::JoinSplit { left, right, inputs } => {
+            let inputs_str = inputs.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", ");
+            format!(
+                "{}, {} ← [{}]",
+                left.0, right.0, inputs_str
+            )
+        }
+        GhostStmt::Const { value, output, ghost_in, ghost_out } => {
+            format!(
+                "{} = {}, [{} → {}])",
+                output.0, value, ghost_in.0, ghost_out.0
+            )
+        }
+        GhostStmt::Load { array, index, output, ghost_in, ghost_out } => {
+            format!(
+                "{} = {}[{}], [{} → {}]",
+                output.0, array.0, index.0, ghost_in.0, ghost_out.0
+            )
+        }
+        GhostStmt::Store { array, index, value, ghost_in, ghost_out } => {
+            format!(
+                "{}[{}] := {}, [{} → ({}, {})]",
+                array.0, index.0, value.0, ghost_in.0, ghost_out.0.0, ghost_out.1.0
+            )
+        }
+        GhostStmt::Call { outputs, func, args, ghost_need, ghost_left, ghost_ret } => {
+            let outputs_str = outputs.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", ");
+            let args_str = args.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", ");
+            format!(
+                "{} = {}({}); [need={}, left={}, ret={}]",
+                outputs_str, func.0, args_str, ghost_need.0, ghost_left.0, ghost_ret.0
+            )
+        }
+    }
+}
+
+fn render_ghost_tail(tail: &GhostTail) -> String {
+    match tail {
+        GhostTail::Return { value, perm } => {
+            format!("ret({}, perm: {})", value.0, perm.0)
+        }
+        GhostTail::IfElse { cond, .. } => {
+            format!("IfElse({})", cond.0)
+        }
+        GhostTail::TailCall { func, args, ghost_need, ghost_left } => {
+            let args_str = args.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", ");
+            format!(
+                "{}({}), [need={}, left={}]",
+                func.0, args_str, ghost_need.0, ghost_left.0
+            )
+        }
+    }
+}
+
+fn trace_context(ctx: &CheckContext, stage: &str) {
+    if !ctx.verbose {
+        return;
+    }
+
+    println!("\n=== {} ===", stage);
+    print_context_contents(ctx);
+}
+
+fn print_context_contents(ctx: &CheckContext) {
+    // Print permission environment
+    if ctx.penv.perms.is_empty() {
+        println!("PermEnv: <empty>");
+    } else {
+        println!("PermEnv:");
+        for (name, perm) in ctx.penv.iter() {
+            println!("  {}: {}", name, render_perm_expr(perm));
+        }
+    }
+
+    // Print logical constraints
+    let atoms: Vec<_> = ctx.phi.iter().collect();
+    if atoms.is_empty() {
+        println!("Φ: <empty>");
+    } else {
+        println!("Φ:");
+        for atom in atoms {
+            println!("  {}", render_atom(atom));
+        }
+    }
+
+    println!();
+}
+
 /// Check a ghost program for permission correctness.
 pub fn check_ghost_program(program: &GhostProgram) -> Result<(), String> {
+    check_ghost_program_with_verbose(program, false)
+}
+
+/// Check a ghost program for permission correctness with optional verbose mode.
+pub fn check_ghost_program_with_verbose(program: &GhostProgram, verbose: bool) -> Result<(), String> {
     let solver = SmtSolver::new();
-    let mut ctx = CheckContext::new(solver.clone());
+    let mut ctx = CheckContext::new_with_verbose(solver.clone(), verbose);
+
+    if verbose {
+        println!("\n╔═══════════════════════════════════════════════════════════╗");
+        println!("║           Ghost Program Permission Checking               ║");
+        println!("╚═══════════════════════════════════════════════════════════╝\n");
+    }
 
     // First pass: collect function signatures
+    if verbose {
+        println!("=== Pass 1: Collecting function signatures ===\n");
+    }
     for def in &program.defs {
         let sig = build_function_signature(def);
+        if verbose {
+            println!("Function: {}", def.name.0);
+            println!("  Parameters: {}", def.params.iter().map(|(v, _)| v.0.as_str()).collect::<Vec<_>>().join(", "));
+            println!("  Ghost parameters: {}", def.ghost_params.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", "));
+            println!();
+        }
         ctx.register_signature(def.name.0.clone(), sig);
     }
 
     // Second pass: check each function
+    if verbose {
+        println!("=== Pass 2: Checking function bodies ===\n");
+    }
     for def in &program.defs {
+        if verbose {
+            println!("\n╭───────────────────────────────────────────────────────────────╮");
+            println!("│ Checking function: {:42} │", def.name.0);
+            println!("╰───────────────────────────────────────────────────────────────╯");
+        }
         check_ghost_fn(def, &mut ctx)?;
+        if verbose {
+            println!("✓ Function {} checked successfully\n", def.name.0);
+        }
+    }
+
+    if verbose {
+        println!("\n╔═══════════════════════════════════════════════════════════╗");
+        println!("║           ✓ All checks passed successfully               ║");
+        println!("╚═══════════════════════════════════════════════════════════╝\n");
     }
 
     Ok(())
@@ -680,6 +927,8 @@ fn build_function_signature(def: &GhostFnDef) -> FunctionSignature {
 fn check_ghost_fn(def: &GhostFnDef, ctx: &mut CheckContext) -> Result<(), String> {
     ctx.set_current_fn_entry_perms(None);
 
+    trace_context(ctx, &format!("Initial context for function {}", def.name.0));
+
     for (var, ty) in &def.params {
         if let Ty::Int(Signedness::Unsigned) = ty {
             ctx.add_constraint(Atom::Le(Idx::Const(0), Idx::Var(var.0.clone())));
@@ -692,10 +941,20 @@ fn check_ghost_fn(def: &GhostFnDef, ctx: &mut CheckContext) -> Result<(), String
 
         ctx.caps_to_permissions(&def.caps, p_sync, p_garb);
 
-        if let (Some(sync), Some(garb)) = (ctx.lookup_perm(p_sync), ctx.lookup_perm(p_garb)) {
-            ctx.set_current_fn_entry_perms(Some((sync.clone(), garb.clone())));
+        // Clone the permissions before setting them
+        let sync = ctx.lookup_perm(p_sync).cloned();
+        let garb = ctx.lookup_perm(p_garb).cloned();
+        
+        if let (Some(sync), Some(garb)) = (sync, garb) {
+            if ctx.verbose {
+                println!("  p_sync = {}", render_perm_expr(&sync));
+                println!("  p_garb = {}", render_perm_expr(&garb));
+            }
+            ctx.set_current_fn_entry_perms(Some((sync, garb)));
         }
     }
+
+    trace_context(ctx, "After capability initialization");
 
     check_ghost_expr(&def.body, ctx)?;
 
@@ -708,35 +967,72 @@ fn check_ghost_expr(expr: &GhostExpr, ctx: &mut CheckContext) -> Result<(), Stri
     let stmts = &expr.stmts;
     let mut i = 0;
 
+    trace_context(ctx, "Entering ghost expression");
+
     while i < stmts.len() {
         match &stmts[i] {
             GhostStmt::Pure { .. } => {
                 // Pure statements stand alone
+                if ctx.verbose {
+                    println!("Processing statement {}: {}", i, render_ghost_stmt(&stmts[i]));
+                }
                 check_ghost_stmt_pure(&stmts[i], ctx)?;
+                if ctx.verbose {
+                    println!("After Pure statement:");
+                    print_context_contents(ctx);
+                }
                 i += 1;
             }
             GhostStmt::JoinSplit { .. } => {
                 // JoinSplit must be followed by another statement or tail
                 if i + 1 >= stmts.len() {
                     // This is the last statement, so it must precede a tail (Return)
+                    if ctx.verbose {
+                        println!("JoinSplit at end, checking with tail: {}", render_ghost_tail(&expr.tail));
+                    }
                     check_ghost_tail_with_joinsplit(&stmts[i], &expr.tail, ctx)?;
+                    if ctx.verbose {
+                        println!("After JoinSplit+Return:");
+                        print_context_contents(ctx);
+                    }
                     return Ok(());
                 }
 
                 match &stmts[i + 1] {
                     GhostStmt::Const { .. } => {
                         // JoinSplit followed by Const
+                        if ctx.verbose {
+                            println!("Processing statement {}: {}", i, render_ghost_stmt(&stmts[i + 1]));
+                        }
                         check_ghost_stmt_joinsplit_const(&stmts[i], &stmts[i + 1], ctx)?;
+                        if ctx.verbose {
+                            println!("After JoinSplit+Const:");
+                            print_context_contents(ctx);
+                        }
                         i += 2;
                     }
                     GhostStmt::Load { .. } => {
                         // JoinSplit followed by Load
+                        if ctx.verbose {
+                            println!("Processing statement {}: {}", i, render_ghost_stmt(&stmts[i + 1]));
+                        }
                         check_ghost_stmt_joinsplit_load(&stmts[i], &stmts[i + 1], ctx)?;
+                        if ctx.verbose {
+                            println!("After JoinSplit+Load:");
+                            print_context_contents(ctx);
+                        }
                         i += 2;
                     }
                     GhostStmt::Store { .. } => {
                         // JoinSplit followed by Store
+                        if ctx.verbose {
+                            println!("Processing statement {}: {}", i, render_ghost_stmt(&stmts[i + 1]));
+                        }
                         check_ghost_stmt_joinsplit_store(&stmts[i], &stmts[i + 1], ctx)?;
+                        if ctx.verbose {
+                            println!("After JoinSplit+Store:");
+                            print_context_contents(ctx);
+                        }
                         i += 2;
                     }
                     GhostStmt::JoinSplit { .. } => {
@@ -744,23 +1040,37 @@ fn check_ghost_expr(expr: &GhostExpr, ctx: &mut CheckContext) -> Result<(), Stri
                         if i + 2 >= stmts.len() {
                             // The two JoinSplits are the last statements, so
                             // they must precede a tail (Call)
+                            if ctx.verbose {
+                                println!("Two JoinSplits at end, checking with tail: {}", render_ghost_tail(&expr.tail));
+                            }
                             check_ghost_tail_with_two_joinsplits(
                                 &stmts[i],
                                 &stmts[i + 1],
                                 &expr.tail,
                                 ctx,
                             )?;
+                            if ctx.verbose {
+                                println!("After JoinSplit+JoinSplit+TailCall:");
+                                print_context_contents(ctx);
+                            }
                             return Ok(());
                         }
                         match &stmts[i + 2] {
                             GhostStmt::Call { .. } => {
                                 // Two JoinSplits followed by Call
+                                if ctx.verbose {
+                                    println!("Processing statement {}: {}", i, render_ghost_stmt(&stmts[i + 2]));
+                                }
                                 check_ghost_stmt_jnsplt_jnsplt_call(
                                     &stmts[i],
                                     &stmts[i + 1],
                                     &stmts[i + 2],
                                     ctx,
                                 )?;
+                                if ctx.verbose {
+                                    println!("After JoinSplit+JoinSplit+Call:");
+                                    print_context_contents(ctx);
+                                }
                                 i += 3;
                             }
                             _ => {
@@ -789,7 +1099,14 @@ fn check_ghost_expr(expr: &GhostExpr, ctx: &mut CheckContext) -> Result<(), Stri
     }
 
     // If no more statements, check the tail if-else
+    if ctx.verbose {
+        println!("Checking tail: {}", render_ghost_tail(&expr.tail));
+    }
     check_ghost_tail_if(&expr.tail, ctx)?;
+    if ctx.verbose {
+        println!("After tail:");
+        print_context_contents(ctx);
+    }
     Ok(())
 }
 
@@ -866,7 +1183,16 @@ fn check_ghost_stmt_joinsplit_const(
         _ => unreachable!(),
     };
 
+    if ctx.verbose {
+        println!("  Joining permissions: [{}]", inputs.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", "));
+    }
+
     let joined_perm = ctx.join_perms(inputs)?;
+
+    if ctx.verbose {
+        println!("  Joined: {}", render_perm_expr(&joined_perm));
+    }
+
     ctx.bind_perm(right, joined_perm);
 
     // Process Const
@@ -934,7 +1260,15 @@ fn check_ghost_stmt_joinsplit_load(
         _ => unreachable!(),
     };
 
+    if ctx.verbose {
+        println!("  Joining permissions: [{}]", inputs.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", "));
+    }
+
     let joined_perm = ctx.join_perms(inputs)?;
+
+    if ctx.verbose {
+        println!("  Joined: {}", render_perm_expr(&joined_perm));
+    }
 
     // Process Load
     let (array, index, ghost_in, ghost_out) = match load_stmt {
@@ -959,6 +1293,10 @@ fn check_ghost_stmt_joinsplit_load(
         Idx::Var(index.0.clone()),
         Idx::Add(Box::new(Idx::Var(index.0.clone())), Box::new(Idx::Const(1))),
     );
+
+    if ctx.verbose {
+        println!("  Load from {}[{}], accessing region {}", array.0, index.0, render_region(&access_region));
+    }
 
     let collected = joined_perm
         .collect_permissions(&ctx.phi, &ctx.solver)
@@ -991,6 +1329,10 @@ fn check_ghost_stmt_joinsplit_load(
         )
     })?;
 
+    if ctx.verbose {
+        println!("  Found covering permission: {}", render_permission(&source_perm));
+    }
+
     let g_fraction = source_perm.fraction.clone();
     let f_fraction = ctx.fresh_fraction_var("__load_frac_");
     ctx.add_fraction_validity_constraint(&f_fraction);
@@ -1000,6 +1342,10 @@ fn check_ghost_stmt_joinsplit_load(
     // to make sure subsequent load/call won't stuck
     ctx.add_fraction_validity_constraint(&g_fraction);
     ctx.add_constraint(Atom::RealLt(f_real.clone(), g_real.clone()));
+
+    if ctx.verbose {
+        println!("  Splitting permission: {} < {}", render_fraction(&f_fraction), render_fraction(&g_fraction));
+    }
 
     let load_perm = Permission::new(f_fraction.clone(), array.clone(), access_region.clone());
     let load_perm_expr = PermExpr::singleton(load_perm.clone());
@@ -1034,7 +1380,15 @@ fn check_ghost_stmt_joinsplit_store(
         _ => unreachable!(),
     };
 
+    if ctx.verbose {
+        println!("  Joining permissions: [{}]", inputs.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", "));
+    }
+
     let joined_perm = ctx.join_perms(inputs)?;
+
+    if ctx.verbose {
+        println!("  Joined: {}", render_perm_expr(&joined_perm));
+    }
 
     // Process Store
     let (array, index, ghost_in, ghost_out) = match store_stmt {
@@ -1059,11 +1413,18 @@ fn check_ghost_stmt_joinsplit_store(
         Idx::Var(index.0.clone()),
         Idx::Add(Box::new(Idx::Var(index.0.clone())), Box::new(Idx::Const(1))),
     );
+    let store_region = RegionSetExpr::interval(lo, hi);
+    
+    if ctx.verbose {
+        println!("  Store to {}[{}], region {}", array.0, index.0, render_region(&store_region));
+        println!("  Requires full permission (1.0) on this region");
+    }
+
     // full permission on array at `index`
     let store_perm = PermExpr::Singleton(Permission {
         fraction: FractionExpr::from_int(1),
         array: array.clone(),
-        region: RegionSetExpr::interval(lo, hi),
+        region: store_region,
     });
 
     let rem_perm: PermExpr = PermExpr::Sub(Box::new(joined_perm), Box::new(store_perm.clone()));
@@ -1095,7 +1456,16 @@ fn check_ghost_stmt_jnsplt_jnsplt_call(
         } => (left, right, inputs),
         _ => unreachable!(),
     };
+    
+    if ctx.verbose {
+        println!("  First JoinSplit: joining [{}]", inputs1.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", "));
+    }
+    
     let joined_perm1 = ctx.join_perms(inputs1)?;
+
+    if ctx.verbose {
+        println!("    Joined (p_sync): {}", render_perm_expr(&joined_perm1));
+    }
 
     let (left2, right2, inputs2) = match join_stmt2 {
         GhostStmt::JoinSplit {
@@ -1105,7 +1475,16 @@ fn check_ghost_stmt_jnsplt_jnsplt_call(
         } => (left, right, inputs),
         _ => unreachable!(),
     };
+    
+    if ctx.verbose {
+        println!("  Second JoinSplit: joining [{}]", inputs2.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", "));
+    }
+    
     let joined_perm2 = ctx.join_perms(inputs2)?;
+
+    if ctx.verbose {
+        println!("    Joined (p_garb): {}", render_perm_expr(&joined_perm2));
+    }
 
     let (_outputs, func, args, ghost_need, ghost_left, ghost_ret) = match call_stmt {
         GhostStmt::Call {
@@ -1118,6 +1497,10 @@ fn check_ghost_stmt_jnsplt_jnsplt_call(
         } => (outputs, func, args, ghost_need, ghost_left, ghost_ret),
         _ => unreachable!(),
     };
+
+    if ctx.verbose {
+        println!("  Calling function: {}({})", func.0, args.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", "));
+    }
 
     if ghost_need.0 != left1.0 {
         return Err(format!(
@@ -1158,6 +1541,11 @@ fn check_ghost_stmt_jnsplt_jnsplt_call(
     let required_sync = substitute_perm_expr_with_maps(&sig.initial_perms.0, &idx_substitutions);
     let required_garb = substitute_perm_expr_with_maps(&sig.initial_perms.1, &idx_substitutions);
 
+    if ctx.verbose {
+        println!("  Required p_sync: {}", render_perm_expr(&required_sync));
+        println!("  Required p_garb: {}", render_perm_expr(&required_garb));
+    }
+
     if !required_sync.is_valid(&ctx.phi, &ctx.solver) {
         return Err(format!(
             "Required permission for {} (p_sync) is invalid after substitution",
@@ -1169,6 +1557,10 @@ fn check_ghost_stmt_jnsplt_jnsplt_call(
             "Required permission for {} (p_garb) is invalid after substitution",
             func.0
         ));
+    }
+
+    if ctx.verbose {
+        println!("  Consuming p_sync permissions...");
     }
 
     let mut available_sync = joined_perm1
@@ -1194,6 +1586,12 @@ fn check_ghost_stmt_jnsplt_jnsplt_call(
             func.0
         ));
     }
+
+    if ctx.verbose {
+        println!("    Remainder p_sync: {}", render_perm_expr(&remainder_sync_expr));
+        println!("  Consuming p_garb permissions...");
+    }
+
     ctx.bind_perm(right1, remainder_sync_expr);
 
     let mut available_garb = joined_perm2
@@ -1219,6 +1617,11 @@ fn check_ghost_stmt_jnsplt_jnsplt_call(
             func.0
         ));
     }
+
+    if ctx.verbose {
+        println!("    Remainder p_garb: {}", render_perm_expr(&remainder_garb_expr));
+    }
+
     ctx.bind_perm(right2, remainder_garb_expr);
 
     // bind ghost_ret with the sum of the callee's needed sync and garb permissions
@@ -1247,7 +1650,15 @@ fn check_ghost_tail_with_joinsplit(
                 _ => unreachable!(),
             };
 
+            if ctx.verbose {
+                println!("  Joining permissions for return: [{}]", inputs.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", "));
+            }
+
             let joined_perm = ctx.join_perms(inputs)?;
+
+            if ctx.verbose {
+                println!("  Joined: {}", render_perm_expr(&joined_perm));
+            }
 
             if left.0 != perm.0 {
                 return Err(format!(
@@ -1260,6 +1671,12 @@ fn check_ghost_tail_with_joinsplit(
                 "Return encountered without recorded entry permissions".to_string()
             })?;
 
+            if ctx.verbose {
+                println!("  Checking return permissions match entry permissions...");
+                println!("    Entry p_sync: {}", render_perm_expr(&entry_perms.0));
+                println!("    Entry p_garb: {}", render_perm_expr(&entry_perms.1));
+            }
+
             let expected_total =
                 PermExpr::union(vec![entry_perms.0.clone(), entry_perms.1.clone()]);
 
@@ -1269,6 +1686,10 @@ fn check_ghost_tail_with_joinsplit(
             let mut expected_flat = expected_total
                 .collect_permissions(&ctx.phi, &ctx.solver)
                 .ok_or_else(|| "Entry permissions could not be normalised".to_string())?;
+
+            if ctx.verbose {
+                println!("  Verifying returned permissions consume exactly the entry permissions...");
+            }
 
             for perm_piece in &joined_flat {
                 if !consume_permission(&mut expected_flat, perm_piece, &ctx.phi, &ctx.solver) {
@@ -1280,10 +1701,20 @@ fn check_ghost_tail_with_joinsplit(
             }
 
             if !expected_flat.is_empty() {
+                if ctx.verbose {
+                    println!("  ✗ Missing permissions in return:");
+                    for missing in &expected_flat {
+                        println!("    - {}", render_permission(missing));
+                    }
+                }
                 return Err(
                     "Return permission is missing resources that were provided at function entry"
                         .to_string(),
                 );
+            }
+
+            if ctx.verbose {
+                println!("  ✓ Return permissions match entry permissions exactly");
             }
 
             Ok(())
@@ -1309,7 +1740,26 @@ fn check_ghost_tail_with_two_joinsplits(
             ghost_need,
             ghost_left,
         } => {
-            let (left1, _right1, inputs1) = match join_stmt1 {
+            if ctx.verbose {
+                println!("  Tail calling: {}({})", func.0, args.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", "));
+            }
+
+            let sig = ctx
+                .get_signature(&func.0)
+                .ok_or_else(|| format!("TailCall to unknown function {}", func.0))?;
+            let sig = sig.clone();
+
+            if sig.params.len() != args.len() {
+                return Err(format!(
+                    "TailCall to {} expects {} arguments but received {}",
+                    func.0,
+                    sig.params.len(),
+                    args.len()
+                ));
+            }
+
+            // right1 would be added to the garb ctx at lowering
+            let (left1, right1, inputs1) = match join_stmt1 {
                 GhostStmt::JoinSplit {
                     left,
                     right,
@@ -1317,8 +1767,8 @@ fn check_ghost_tail_with_two_joinsplits(
                 } => (left, right, inputs),
                 _ => unreachable!(),
             };
-            let joined_perm1 = ctx.join_perms(inputs1)?;
 
+            // right2 would always be epsilon
             let (left2, _right2, inputs2) = match join_stmt2 {
                 GhostStmt::JoinSplit {
                     left,
@@ -1327,8 +1777,7 @@ fn check_ghost_tail_with_two_joinsplits(
                 } => (left, right, inputs),
                 _ => unreachable!(),
             };
-            let joined_perm2 = ctx.join_perms(inputs2)?;
-
+            
             if ghost_need.0 != left1.0 {
                 return Err(format!(
                     "TailCall ghost_need {} does not match first JoinSplit left {}",
@@ -1341,18 +1790,22 @@ fn check_ghost_tail_with_two_joinsplits(
                     ghost_left.0, left2.0
                 ));
             }
-
-            let sig = ctx
-                .get_signature(&func.0)
-                .ok_or_else(|| format!("TailCall to unknown function {}", func.0))?;
-
-            if sig.params.len() != args.len() {
+            // check right1 is part of inputs2
+            if !inputs2.iter().any(|v| v.0 == right1.0) {
                 return Err(format!(
-                    "TailCall to {} expects {} arguments but received {}",
-                    func.0,
-                    sig.params.len(),
-                    args.len()
+                    "TailCall ghost_left {} does not join first JoinSplit right {}",
+                    ghost_left.0, right1.0
                 ));
+            }
+
+            if ctx.verbose {
+                println!("  First JoinSplit (p_sync): joining [{}]", inputs1.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", "));
+            }
+
+            let joined_perm1 = ctx.join_perms(inputs1)?;
+
+            if ctx.verbose {
+                println!("    Joined: {}", render_perm_expr(&joined_perm1));
             }
 
             let mut idx_substitutions: Vec<(String, Idx)> = Vec::new();
@@ -1368,6 +1821,11 @@ fn check_ghost_tail_with_two_joinsplits(
             let required_garb =
                 substitute_perm_expr_with_maps(&sig.initial_perms.1, &idx_substitutions);
 
+            if ctx.verbose {
+                println!("  Required p_sync: {}", render_perm_expr(&required_sync));
+                println!("  Required p_garb: {}", render_perm_expr(&required_garb));
+            }
+
             if !required_sync.is_valid(&ctx.phi, &ctx.solver) {
                 return Err(format!(
                     "Required permission for {} (p_sync) is invalid after substitution",
@@ -1379,6 +1837,10 @@ fn check_ghost_tail_with_two_joinsplits(
                     "Required permission for {} (p_garb) is invalid after substitution",
                     func.0
                 ));
+            }
+
+            if ctx.verbose {
+                println!("  Consuming p_sync permissions...");
             }
 
             let mut available_sync = joined_perm1
@@ -1393,17 +1855,39 @@ fn check_ghost_tail_with_two_joinsplits(
                 })?;
             for need in &needed_sync {
                 if !consume_permission(&mut available_sync, need, &ctx.phi, &ctx.solver) {
+                    if ctx.verbose {
+                        println!("    ✗ Cannot consume required permission: {}", render_permission(need));
+                    }
                     return Err(format!(
                         "TailCall to {} cannot provide required permission for p_sync",
                         func.0
                     ));
                 }
             }
-            if !available_sync.is_empty() {
+
+            // bind remainder to right1
+            let remainder_sync_expr = permissions_to_expr(available_sync);
+            if !remainder_sync_expr.is_valid(&ctx.phi, &ctx.solver) {
                 return Err(format!(
-                    "TailCall to {} leaves extra permission for p_sync after consumption",
+                    "Remaining permissions after consuming p_sync for {} are invalid",
                     func.0
                 ));
+            }
+            ctx.bind_perm(right1, remainder_sync_expr);
+
+            if ctx.verbose {
+                println!("    ✓ p_sync consumed successfully");
+                println!("  Consuming p_garb permissions...");
+            }
+
+            if ctx.verbose {
+                println!("  Second JoinSplit (p_garb): joining [{}]", inputs2.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", "));
+            }
+
+            let joined_perm2 = ctx.join_perms(inputs2)?;
+
+            if ctx.verbose {
+                println!("    Joined: {}", render_perm_expr(&joined_perm2));
             }
 
             let mut available_garb = joined_perm2
@@ -1419,6 +1903,9 @@ fn check_ghost_tail_with_two_joinsplits(
                 })?;
             for need in &needed_garb {
                 if !consume_permission(&mut available_garb, need, &ctx.phi, &ctx.solver) {
+                    if ctx.verbose {
+                        println!("    ✗ Cannot consume required permission: {}", render_permission(need));
+                    }
                     return Err(format!(
                         "TailCall to {} cannot provide required permission for p_garb",
                         func.0
@@ -1426,15 +1913,31 @@ fn check_ghost_tail_with_two_joinsplits(
                 }
             }
             if !available_garb.is_empty() {
+                if ctx.verbose {
+                    println!("    ✗ Extra permissions remaining after p_garb consumption:");
+                    for extra in &available_garb {
+                        println!("      - {}", render_permission(extra));
+                    }
+                }
                 return Err(format!(
                     "TailCall to {} leaves extra permission for p_garb after consumption",
                     func.0
                 ));
             }
 
+            if ctx.verbose {
+                println!("    ✓ p_garb consumed exactly");
+                println!("  Verifying total permissions match entry permissions...");
+            }
+
             let entry_perms = ctx.current_fn_entry_perms().ok_or_else(|| {
                 "TailCall encountered without recorded entry permissions".to_string()
             })?;
+
+            if ctx.verbose {
+                println!("    Entry p_sync: {}", render_perm_expr(&entry_perms.0));
+                println!("    Entry p_garb: {}", render_perm_expr(&entry_perms.1));
+            }
 
             let tail_total =
                 PermExpr::union(vec![joined_perm1.clone(), joined_perm2.clone()]);
@@ -1458,10 +1961,20 @@ fn check_ghost_tail_with_two_joinsplits(
             }
 
             if !expected_flat.is_empty() {
+                if ctx.verbose {
+                    println!("    ✗ Missing permissions in tail call:");
+                    for missing in &expected_flat {
+                        println!("      - {}", render_permission(missing));
+                    }
+                }
                 return Err(
                     "TailCall permissions are missing resources that were provided at function entry"
                         .to_string(),
                 );
+            }
+
+            if ctx.verbose {
+                println!("    ✓ Total permissions match entry permissions exactly");
             }
 
             Ok(())
@@ -1481,6 +1994,10 @@ pub fn check_ghost_tail_if(tail: &GhostTail, ctx: &mut CheckContext) -> Result<(
             then_expr,
             else_expr,
         } => {
+            if ctx.verbose {
+                println!("\n  ┌─ Checking if-else with condition: {}", cond.0);
+            }
+
             // Branch: create two sub-contexts
             let mut then_ctx = ctx.clone();
             let mut else_ctx = ctx.clone();
@@ -1490,9 +2007,23 @@ pub fn check_ghost_tail_if(tail: &GhostTail, ctx: &mut CheckContext) -> Result<(
             then_ctx.add_constraint(cond_var.clone());
             else_ctx.add_constraint(Atom::Not(Box::new(cond_var)));
 
+            if ctx.verbose {
+                println!("  │");
+                println!("  ├─ Then branch (assuming {}):", cond.0);
+            }
             // Check both branches
             check_ghost_expr(then_expr, &mut then_ctx)?;
+            
+            if ctx.verbose {
+                println!("  │");
+                println!("  ├─ Else branch (assuming !{}):", cond.0);
+            }
             check_ghost_expr(else_expr, &mut else_ctx)?;
+
+            if ctx.verbose {
+                println!("  │");
+                println!("  └─ Both branches checked successfully");
+            }
 
             // Both branches must succeed independently
             Ok(())
