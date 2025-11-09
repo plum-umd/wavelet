@@ -977,33 +977,16 @@ E : \tau_E
 }
 $$
 
-**Load-1**:
-
-$$
-\frac{
-  \begin{gather*}
-  \Gamma(i) = \texttt{int} \quad
-  \Delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
-  \Phi \vDash 0 \leq i < \texttt{N} \land i \in  R' \quad \\
-  \Gamma[y \mapsto \texttt{int}] ; \Delta \;\vdash_{\Phi}\;
-E : \tau_E
-  \end{gather*}
-}{
-  \Gamma ; \Delta \;\vdash_{\Phi}\; 
-  \texttt{let } y \texttt{ = } \texttt{load}(A, i); \; E : \tau_E
-}
-$$
-
-**Load-2**:
+**Load**:
 
 $$
 \frac{
   \begin{gather*}
   \Gamma(i) = \texttt{int} \quad
   \Delta = \Delta' \cdot A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
-  \Phi \vDash 0 \leq i < \texttt{N} \land i \in  R \quad \\
-  \Gamma[y \mapsto \texttt{int}] ; \Delta' \;\cdot\; A \mapsto \mathsf{uniq@}R
-  \setminus \{i\}  \Vert \mathsf{shrd@}R'
+  \Phi \vDash 0 \leq i < \texttt{N} \land i \in  R \cup R' \quad \\
+  \Gamma[y \mapsto \texttt{int}] ; \Delta' \cdot A \mapsto \mathsf{uniq@}R
+  \Vert \mathsf{shrd@}R' \; \setminus \; \mathsf{shrd@}\{i\}
   \;\vdash_{\Phi}\;
 E : \tau_E
   \end{gather*}
@@ -1020,10 +1003,10 @@ $$
   \begin{gather*}
   \Gamma(i) = \texttt{int} \quad
   \Gamma \vdash v : \texttt{int} \quad
-  \Delta = \Delta' \;\cdot\; A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
+  \Delta = \Delta' \cdot A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
   \Phi \vDash 0 \leq i < \texttt{N} \land i \in  R \quad \\
-  \Gamma ; \Delta'' \;\cdot\; A \mapsto \mathsf{uniq@}R
-  \setminus \{i\}  \Vert \mathsf{shrd@}R'
+  \Gamma ; \Delta' \cdot A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@}R'
+  \; \setminus \; \mathsf{uniq@}\{i\}
   \;\vdash_{\Phi}\;
 E : \tau_E
   \end{gather*}
@@ -1317,4 +1300,162 @@ $$
   \texttt{let } j \texttt{ = } i + 1; \;
    \texttt{increment}(j, A) : \texttt{unit}
   }
+$$
+
+## Operational Semantics
+
+As `L0` is a sequential language, it doesn't make sense for our type soundness
+theorem to talk about data races. Instead, we augment the operational semantics
+to track the capabilities in the program state and ensure that the capabilities
+are used according to the typing rules.
+
+### `L0` Configuration
+
+An `L0` configuration is a tuple $(\Pi, E, \sigma, S, \delta)$ where
+
+- $\Pi$ is the function definition context
+- $E$ is the current expression being evaluated
+- $\sigma$ is the regular variable environment mapping variables to values
+- $S$ is the store mapping array names to array values
+- $\delta$ tracks the shared and unique accessess to arrays so far
+
+If we have a function definition $\texttt{def } f(\vec{x} : \vec{\tau}_i, \; \overrightarrow{A : 
+  \mathsf{uniq@}R \Vert \mathsf{shrd@} R'}) \to \vec{\tau}_o \texttt{ = } E$,
+  the initial configuration for evaluating a call to `f` with arguments
+  $\vec{v_i}$ and capability $\vec{U}$, where
+  $\overrightarrow{\mathsf{uniq@}R[\vec{x} \mapsto \vec{v_i}] \Vert
+  \mathsf{shrd@}R'[\vec{x} \mapsto \vec{v_i}]} \le \vec{U}$,
+   is
+
+$$
+(\Pi, E, [\vec{x} \mapsto \vec{v_i}], \vec{A} \mapsto [...], \overrightarrow{A \mapsto \mathsf{uniq@}\varnothing \Vert \mathsf{shrd@}\varnothing})
+$$  
+
+### Small-step Operational Semantics
+
+$$
+(\Pi, E, \sigma, S, \delta) \;\to\; (\Pi, E', \sigma', S', \delta')
+$$
+
+**Var:**
+
+$$
+\frac{
+  \sigma(x) = v
+}{
+  (\Pi, x, \sigma, S, \delta) \;\to\; (\Pi, v, \sigma, S, \delta)
+}
+$$
+
+**Pure Op:**
+
+$$
+\frac{
+  \sigma(\vec{x}) = \vec{v_i} \quad
+  \texttt{op}(\vec{v_i}) = \vec{v_o}
+}{
+  (\Pi, \texttt{let } \vec{y} \texttt{ = } \texttt{op}(\vec{x}); \; E, \sigma, S, \delta)
+  \;\to\; (\Pi, E, \sigma[\vec{y} \mapsto \vec{v_o}], S, \delta)
+}
+$$
+
+**Load:**
+
+$$
+\frac{
+  \begin{gather*}
+  \sigma(i) = n \quad S(A) = [a_0, \ldots, a_{N-1}] \quad a_n = v \quad
+  \delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad
+  0 \leq n < N \quad n \notin R
+  \\
+  \delta' = \delta[A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \cup \{n\}]
+  \end{gather*}
+}{
+  (\Pi, \texttt{let } y \texttt{ = } \texttt{load}(A, i); \; E, \sigma, S, \delta)
+  \;\to\; (\Pi, E, \sigma[y \mapsto v], S, \delta')
+}
+$$
+
+**Store:**
+
+$$
+\frac{
+  \begin{gather*}
+  \sigma(i) = n \quad \sigma(v) = a_n' \quad S(A) = [a_0, \ldots, a_{N-1}] \quad
+  \delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad
+  0 \leq n < N \quad n \notin R \cup R' \\
+  S' = S[A \mapsto [a_0, \ldots, a_{n-1}, a_n', a_{n+1}, \ldots, a_{N-1}]] \\
+  \delta' = \delta[A \mapsto \mathsf{uniq@}R \cup \{n\} \Vert \mathsf{shrd@}R']
+  \end{gather*}
+}{
+  (\Pi, \texttt{let } \_ \texttt{ = } \texttt{store}(A, i, v); \; E, \sigma, S, \delta)
+  \;\to\; (\Pi, E, \sigma, S', \delta')
+}
+$$
+
+**Load-fence:**
+
+$$
+\frac{
+  \begin{gather*}
+  \sigma(i) = n \quad S(A) = [a_0, \ldots, a_{N-1}] \quad a_n = v \quad
+  \delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad
+  0 \leq n < N \quad n \notin R
+  \end{gather*}
+}{
+  (\Pi, \texttt{let } y \texttt{ = } \text{load}(A, i) \text{ ---} \; E, \sigma, S, \delta)
+  \;\to\; (\Pi, E, \sigma[y \mapsto v], S, \delta)
+}
+$$
+
+**Store-fence:**
+
+$$
+\frac{
+  \begin{gather*}
+  \sigma(i) = n \quad \sigma(v) = a_n' \quad S(A) = [a_0, \ldots, a_{N-1}] \quad
+  \delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad
+  0 \leq n < N \quad n \notin R \cup R' \\
+  S' = S[A \mapsto [a_0, \ldots, a_{n-1}, a_n', a_{n+1}, \ldots, a_{N-1}]]
+  \end{gather*}
+}{
+  (\Pi, \texttt{let } \_ \texttt{ = } \text{store}(A, i, v) \text{ ---} \; E, \sigma, S, \delta)
+  \;\to\; (\Pi, E, \sigma, S', \delta)
+}
+$$
+
+**Conditional:**
+
+$$
+\frac{
+  \sigma(x) = \texttt{true} \quad
+}{
+  (\Pi, \texttt{if } x \; \{ E_1 \} \texttt{ else } \{ E_2 \}, \sigma, S, \delta)
+  \;\to\; (\Pi, E_1, \sigma, S, \delta)
+}
+$$
+
+$$
+\frac{
+  \sigma(x) = \texttt{false} \quad
+}{
+  (\Pi, \texttt{if } x \; \{ E_1 \} \texttt{ else } \{ E_2 \}, \sigma, S, \delta)
+  \;\to\; (\Pi, E_2, \sigma, S, \delta)
+}
+$$
+
+**Tail Call:**
+
+$$
+\frac{
+  \begin{gather*}
+  \Pi(f) = \texttt{def } f(\vec{x} : \vec{\tau}_i, \; \overrightarrow{A : 
+  \mathsf{uniq@}R \Vert \mathsf{shrd@} R'}) \to \vec{\tau}_o \texttt{ = } E_f \\
+  \sigma(\vec{i}) = \vec{v_i} \quad
+  \end{gather*}
+}{
+  (\Pi, f(\vec{i}, \vec{A}), \sigma, S, \delta)
+  \;\to\; (\Pi, E_f, [\vec{x} \mapsto \vec{v_i}], S, 
+  \delta)
+}
 $$
