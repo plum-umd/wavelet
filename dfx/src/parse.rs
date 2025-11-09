@@ -40,6 +40,36 @@ fn fresh_literal_name(base: &str) -> String {
     format!("{}_{}", base, id)
 }
 
+/// Context for tracking literal bindings during parsing
+struct ParseContext {
+    /// Statements accumulated during parsing, including literal bindings
+    stmts: Vec<ir::Stmt>,
+}
+
+impl ParseContext {
+    fn new() -> Self {
+        ParseContext { stmts: Vec::new() }
+    }
+
+    /// Ensure a literal value is bound to a variable, creating a LetVal if needed.
+    /// Returns the variable name that holds the literal.
+    fn ensure_literal_bound(&mut self, val: ir::Val) -> String {
+        let var_name = match &val {
+            ir::Val::Int(n) => fresh_literal_name(&format!("_lit_{}", n)),
+            ir::Val::Bool(b) => fresh_literal_name(&format!("_lit_{}", b)),
+            ir::Val::Unit => "_unit_literal".to_string(),
+        };
+
+        self.stmts.push(ir::Stmt::LetVal {
+            var: Var(var_name.clone()),
+            val,
+            fence: false,
+        });
+
+        var_name
+    }
+}
+
 /// Parse error for the frontend.
 #[derive(Debug)]
 pub struct ParseError {
@@ -545,7 +575,7 @@ fn parse_block(
     block: &syn::Block,
     array_lens: &HashMap<String, ArrayLen>,
 ) -> Result<ir::Expr, ParseError> {
-    let mut stmts = Vec::new();
+    let mut ctx = ParseContext::new();
     let mut tail = None;
 
     for (i, stmt) in block.stmts.iter().enumerate() {
@@ -554,15 +584,15 @@ fn parse_block(
         match stmt {
             Stmt::Local(local) => {
                 // let binding
-                let ir_stmt = parse_local(local, array_lens)?;
-                stmts.push(ir_stmt);
+                let ir_stmt = parse_local(local, array_lens, &mut ctx)?;
+                ctx.stmts.push(ir_stmt);
             }
             Stmt::Macro(macro_stmt) => {
                 // Check if it's a fence macro
                 if let Some(ident) = macro_stmt.mac.path.get_ident() {
                     if ident == "fence" {
                         // Mark the previous statement as fenced
-                        if let Some(last_stmt) = stmts.last_mut() {
+                        if let Some(last_stmt) = ctx.stmts.last_mut() {
                             mark_stmt_as_fenced(last_stmt);
                         }
                     } else {
@@ -580,13 +610,13 @@ fn parse_block(
                 // Expression with or without semicolon
                 if is_fence_marker(expr) {
                     // fence!(); - mark the previous statement as fenced
-                    if let Some(last_stmt) = stmts.last_mut() {
+                    if let Some(last_stmt) = ctx.stmts.last_mut() {
                         mark_stmt_as_fenced(last_stmt);
                     }
                 } else if semi.is_some() {
                     // Expression with semicolon - regular statement
-                    let ir_stmt = parse_expr_stmt(expr, array_lens)?;
-                    stmts.push(ir_stmt);
+                    let ir_stmt = parse_expr_stmt(expr, array_lens, &mut ctx)?;
+                    ctx.stmts.push(ir_stmt);
                 } else {
                     // Expression without semicolon - this is the tail (if last)
                     if is_last {
@@ -594,11 +624,11 @@ fn parse_block(
                         if matches!(expr, Expr::Tuple(t) if t.elems.is_empty()) {
                             // Don't set tail, let the default unit handling below kick in
                         } else {
-                            tail = Some(parse_tail_expr(expr, array_lens)?);
+                            tail = Some(parse_tail_expr(expr, array_lens, &mut ctx)?);
                         }
                     } else {
-                        let ir_stmt = parse_expr_stmt(expr, array_lens)?;
-                        stmts.push(ir_stmt);
+                        let ir_stmt = parse_expr_stmt(expr, array_lens, &mut ctx)?;
+                        ctx.stmts.push(ir_stmt);
                     }
                 }
             }
@@ -615,7 +645,7 @@ fn parse_block(
     } else {
         // No explicit tail - bind unit and return it
         let unit_var = Var("_unit_ret".to_string());
-        stmts.push(ir::Stmt::LetVal {
+        ctx.stmts.push(ir::Stmt::LetVal {
             var: unit_var.clone(),
             val: ir::Val::Unit,
             fence: false,
@@ -623,7 +653,10 @@ fn parse_block(
         Tail::RetVar(unit_var)
     };
 
-    Ok(ir::Expr { stmts, tail })
+    Ok(ir::Expr {
+        stmts: ctx.stmts,
+        tail,
+    })
 }
 
 fn lookup_array_len(
@@ -658,6 +691,7 @@ fn mark_stmt_as_fenced(stmt: &mut ir::Stmt) {
 fn parse_local(
     local: &syn::Local,
     array_lens: &HashMap<String, ArrayLen>,
+    ctx: &mut ParseContext,
 ) -> Result<ir::Stmt, ParseError> {
     let var_name = extract_var_name(&local.pat)?;
 
@@ -665,7 +699,7 @@ fn parse_local(
         let expr = &init.expr;
 
         // Check what kind of expression this is
-        if let Some(op_stmt) = try_parse_as_op(var_name.clone(), expr, array_lens)? {
+        if let Some(op_stmt) = try_parse_as_op(var_name.clone(), expr, array_lens, ctx)? {
             return Ok(op_stmt);
         }
 
@@ -689,11 +723,12 @@ fn try_parse_as_op(
     result_var: String,
     expr: &Expr,
     array_lens: &HashMap<String, ArrayLen>,
+    ctx: &mut ParseContext,
 ) -> Result<Option<ir::Stmt>, ParseError> {
     match expr {
         Expr::Binary(bin_expr) => {
-            let left = extract_var_from_expr(&bin_expr.left)?;
-            let right = extract_var_from_expr(&bin_expr.right)?;
+            let left = extract_var_from_expr(&bin_expr.left, ctx)?;
+            let right = extract_var_from_expr(&bin_expr.right, ctx)?;
 
             let op = match bin_expr.op {
                 syn::BinOp::Add(_) => Op::Add,
@@ -723,8 +758,8 @@ fn try_parse_as_op(
         }
         Expr::Index(index_expr) => {
             // Array indexing: A[i] becomes load(A, i)
-            let array = extract_var_from_expr(&index_expr.expr)?;
-            let index = extract_var_from_expr(&index_expr.index)?;
+            let array = extract_var_from_expr(&index_expr.expr, ctx)?;
+            let index = extract_var_from_expr(&index_expr.index, ctx)?;
 
             let len = lookup_array_len(array_lens, &array)?;
 
@@ -741,13 +776,13 @@ fn try_parse_as_op(
         Expr::Call(call_expr) => {
             // Function call (with optional turbofish generics). Reorder arguments so
             // that scalar values precede arrays, and append const-generic parameters
-            // to match the checker’s expected layout.
+            // to match the checker's expected layout.
             let (func_name, generic_args) = extract_func_name_and_generics(&call_expr.func)?;
 
             let mut scalar_args = Vec::new();
             let mut array_args = Vec::new();
             for arg in &call_expr.args {
-                let var_name = extract_var_from_expr(arg)?;
+                let var_name = extract_var_from_expr(arg, ctx)?;
                 if array_lens.contains_key(&var_name) {
                     array_args.push(Var(var_name));
                 } else {
@@ -811,12 +846,13 @@ fn try_parse_as_val(expr: &Expr) -> Result<Option<ir::Val>, ParseError> {
 fn parse_expr_stmt(
     expr: &Expr,
     array_lens: &HashMap<String, ArrayLen>,
+    ctx: &mut ParseContext,
 ) -> Result<ir::Stmt, ParseError> {
     // Check for array assignment: A[i] = val
     if let Expr::Assign(assign_expr) = expr {
         if let Expr::Index(index_expr) = &*assign_expr.left {
-            let array = extract_var_from_expr(&index_expr.expr)?;
-            let index = extract_var_from_expr(&index_expr.index)?;
+            let array = extract_var_from_expr(&index_expr.expr, ctx)?;
+            let index = extract_var_from_expr(&index_expr.index, ctx)?;
 
             // Check if right side is a literal - if so, we need to handle it specially
             // For now, just require it to be a variable
@@ -826,7 +862,7 @@ fn parse_expr_stmt(
                         message: "Array assignment requires value to be bound to a variable first. Use 'let tmp = 0; A[i] = tmp;' instead of 'A[i] = 0;'".to_string(),
                     });
                 }
-                _ => extract_var_from_expr(&assign_expr.right)?,
+                _ => extract_var_from_expr(&assign_expr.right, ctx)?,
             };
 
             let len = lookup_array_len(array_lens, &array)?;
@@ -844,10 +880,10 @@ fn parse_expr_stmt(
         }
         // Regular variable assignment: x = expr
         if let Expr::Path(_) = &*assign_expr.left {
-            let var_name = extract_var_from_expr(&assign_expr.left)?;
+            let var_name = extract_var_from_expr(&assign_expr.left, ctx)?;
 
             // Check if right side is an operation
-            if let Some(stmt) = try_parse_as_op(var_name.clone(), &assign_expr.right, array_lens)? {
+            if let Some(stmt) = try_parse_as_op(var_name.clone(), &assign_expr.right, array_lens, ctx)? {
                 return Ok(stmt);
             }
 
@@ -879,10 +915,11 @@ fn parse_expr_stmt(
 fn parse_tail_expr(
     expr: &Expr,
     array_lens: &HashMap<String, ArrayLen>,
+    ctx: &mut ParseContext,
 ) -> Result<Tail, ParseError> {
     match expr {
         Expr::If(if_expr) => {
-            let cond = extract_var_from_expr(&if_expr.cond)?;
+            let cond = extract_var_from_expr(&if_expr.cond, ctx)?;
             let then_branch = parse_block(&if_expr.then_branch, array_lens)?;
 
             let else_branch = if let Some((_, else_expr)) = &if_expr.else_branch {
@@ -914,7 +951,7 @@ fn parse_tail_expr(
             let mut array_args: Vec<Var> = Vec::new();
 
             for arg in &call_expr.args {
-                let var_name = extract_var_from_expr(arg)?;
+                let var_name = extract_var_from_expr(arg, ctx)?;
 
                 // Check if this variable is an array using the array_vars set
                 if array_lens.contains_key(&var_name) {
@@ -941,7 +978,7 @@ fn parse_tail_expr(
         }
         Expr::Path(_) | Expr::Lit(_) => {
             // Return variable or literal
-            let var_name = extract_var_from_expr(expr)?;
+            let var_name = extract_var_from_expr(expr, ctx)?;
             Ok(Tail::RetVar(Var(var_name)))
         }
         _ => Err(ParseError {
@@ -951,30 +988,30 @@ fn parse_tail_expr(
 }
 
 /// Extract variable name from expression
-fn extract_var_from_expr(expr: &Expr) -> Result<String, ParseError> {
+fn extract_var_from_expr(expr: &Expr, ctx: &mut ParseContext) -> Result<String, ParseError> {
     match expr {
         Expr::Path(expr_path) => {
             let ident = &expr_path.path.segments.last().unwrap().ident;
             Ok(ident.to_string())
         }
         Expr::Lit(expr_lit) => {
-            // For literals, we need to create a temporary variable
-            // In practice, the caller should handle this
+            // For literals, create a binding and return the variable name
             match &expr_lit.lit {
                 syn::Lit::Int(lit_int) => {
-                    let base = format!("_lit_{}", lit_int.base10_digits());
-                    Ok(fresh_literal_name(&base))
+                    let n = lit_int.base10_parse::<i64>().map_err(|_| ParseError {
+                        message: "Invalid integer literal".to_string(),
+                    })?;
+                    Ok(ctx.ensure_literal_bound(ir::Val::Int(n)))
                 }
                 syn::Lit::Bool(lit_bool) => {
-                    let base = format!("_lit_{}", lit_bool.value);
-                    Ok(fresh_literal_name(&base))
+                    Ok(ctx.ensure_literal_bound(ir::Val::Bool(lit_bool.value)))
                 }
                 _ => Err(ParseError {
                     message: "Unsupported literal in expression".to_string(),
                 }),
             }
         }
-        Expr::Paren(paren_expr) => extract_var_from_expr(&paren_expr.expr),
+        Expr::Paren(paren_expr) => extract_var_from_expr(&paren_expr.expr, ctx),
         _ => Err(ParseError {
             message: format!("Expected variable, got: {:?}", expr),
         }),

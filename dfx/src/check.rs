@@ -135,30 +135,7 @@ where
         if self.gamma.0.contains_key(&var.0) {
             return Ok(());
         }
-        if let Some(rest) = var.0.strip_prefix("_lit_") {
-            let (value_part, _) = rest.rsplit_once('_').unwrap_or((rest, ""));
-            if let Ok(value) = value_part.parse::<i64>() {
-                let ty = if value >= 0 {
-                    Ty::Int(Signedness::Unsigned)
-                } else {
-                    Ty::Int(Signedness::Signed)
-                };
-                self.bind_var(var, ty);
-                self.phi
-                    .push(Atom::Eq(Idx::Var(var.0.clone()), Idx::Const(value)));
-                return Ok(());
-            }
-            if value_part == "true" {
-                self.bind_var(var, Ty::Bool);
-                self.phi.push(bool_atom(&var.0));
-                return Ok(());
-            }
-            if value_part == "false" {
-                self.bind_var(var, Ty::Bool);
-                self.phi.push(not(bool_atom(&var.0)));
-                return Ok(());
-            }
-        }
+        // Special case for unit literal (rare, should be handled by LetVal now)
         if var.0 == "_unit_literal" || var.0 == "_unit_ret" {
             self.bind_var(var, Ty::Unit);
             return Ok(());
