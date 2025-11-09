@@ -582,6 +582,11 @@ fn try_parse_as_op(
                 syn::BinOp::Sub(_) => Op::Sub,
                 syn::BinOp::Mul(_) => Op::Mul,
                 syn::BinOp::Div(_) => Op::Div,
+                syn::BinOp::BitAnd(_) => Op::BitAnd,
+                syn::BinOp::BitOr(_) => Op::BitOr,
+                syn::BinOp::BitXor(_) => Op::BitXor,
+                syn::BinOp::Shl(_) => Op::Shl,
+                syn::BinOp::Shr(_) => Op::Shr,
                 syn::BinOp::Lt(_) => Op::LessThan,
                 syn::BinOp::Le(_) => Op::LessEqual,
                 syn::BinOp::Eq(_) => Op::Equal,
@@ -647,6 +652,19 @@ fn try_parse_as_val(expr: &Expr) -> Result<Option<ir::Val>, ParseError> {
             syn::Lit::Bool(lit_bool) => Ok(Some(ir::Val::Bool(lit_bool.value))),
             _ => Ok(None),
         },
+        Expr::Unary(expr_unary) => {
+            if let syn::UnOp::Neg(_) = expr_unary.op {
+                if let Expr::Lit(inner_lit) = &*expr_unary.expr {
+                    if let syn::Lit::Int(lit_int) = &inner_lit.lit {
+                        let n = lit_int.base10_parse::<i64>().map_err(|_| ParseError {
+                            message: "Invalid integer literal".to_string(),
+                        })?;
+                        return Ok(Some(ir::Val::Int(-n)));
+                    }
+                }
+            }
+            Ok(None)
+        }
         Expr::Tuple(tuple_expr) => {
             if tuple_expr.elems.is_empty() {
                 Ok(Some(ir::Val::Unit))

@@ -84,14 +84,24 @@ pub enum Op {
     And,
     /// Boolean disjunction: x || y
     Or,
+    /// Bitwise and: x & y
+    BitAnd,
+    /// Bitwise or: x | y
+    BitOr,
+    /// Bitwise xor: x ^ y
+    BitXor,
+    /// Left shift: x << y
+    Shl,
+    /// Right shift: x >> y
+    Shr,
     /// Integer less-than comparison: x < y
     LessThan,
     /// Integer less-than-or-equal comparison: x <= y
     LessEqual,
     /// Equality comparison: x == y
     Equal,
-    /// Conversion to i32
-    IntoI32,
+    /// Integer cast between widths.
+    Cast,
     /// Load from array.
     Load {
         /// Array variable to load from.

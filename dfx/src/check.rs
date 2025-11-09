@@ -137,10 +137,15 @@ fn render_op(op: &Op, vars: &[Var]) -> String {
         Op::Div => format!("{} = {} / {}", vars[2].0, vars[0].0, vars[1].0),
         Op::And => format!("{} = {} && {}", vars[2].0, vars[0].0, vars[1].0),
         Op::Or => format!("{} = {} || {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::BitAnd => format!("{} = {} & {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::BitOr => format!("{} = {} | {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::BitXor => format!("{} = {} ^ {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::Shl => format!("{} = {} << {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::Shr => format!("{} = {} >> {}", vars[2].0, vars[0].0, vars[1].0),
         Op::LessThan => format!("{} = {} < {}", vars[2].0, vars[0].0, vars[1].0),
         Op::LessEqual => format!("{} = {} <= {}", vars[2].0, vars[0].0, vars[1].0),
         Op::Equal => format!("{} = {} == {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::IntoI32 => format!("{} = i32::from({})", vars[1].0, vars[0].0),
+        Op::Cast => format!("{} = cast({})", vars[1].0, vars[0].0),
         Op::Load {
             array,
             index,
@@ -552,6 +557,40 @@ where
                     log_after_statement(ctx, stmt);
                     Ok(())
                 }
+                Op::BitAnd | Op::BitOr | Op::BitXor => {
+                    if vars.len() != 3 {
+                        return Err(TypeError::InvalidOp {
+                            op: format!("{:?}", op),
+                        });
+                    }
+                    let x_ty = ctx.gamma.get(&vars[0])?;
+                    let y_ty = ctx.gamma.get(&vars[1])?;
+                    if !x_ty.is_int() || !y_ty.is_int() {
+                        return Err(TypeError::InvalidOp {
+                            op: format!("{:?}", op),
+                        });
+                    }
+                    ctx.gamma.insert(vars[2].clone(), Ty::Int);
+                    log_after_statement(ctx, stmt);
+                    Ok(())
+                }
+                Op::Shl | Op::Shr => {
+                    if vars.len() != 3 {
+                        return Err(TypeError::InvalidOp {
+                            op: format!("{:?}", op),
+                        });
+                    }
+                    let x_ty = ctx.gamma.get(&vars[0])?;
+                    let y_ty = ctx.gamma.get(&vars[1])?;
+                    if !x_ty.is_int() || !y_ty.is_int() {
+                        return Err(TypeError::InvalidOp {
+                            op: format!("{:?}", op),
+                        });
+                    }
+                    ctx.gamma.insert(vars[2].clone(), Ty::Int);
+                    log_after_statement(ctx, stmt);
+                    Ok(())
+                }
                 Op::LessThan | Op::LessEqual => {
                     if vars.len() != 3 {
                         return Err(TypeError::InvalidOp {
@@ -620,7 +659,7 @@ where
                     log_after_statement(ctx, stmt);
                     Ok(())
                 }
-                Op::IntoI32 => {
+                Op::Cast => {
                     if vars.len() != 2 {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
