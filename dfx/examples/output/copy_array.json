@@ -5,8 +5,6 @@
       "params": [
         "i",
         "N",
-        "src",
-        "dst",
         "p_sync",
         "p_garb"
       ],
@@ -221,8 +219,6 @@
                                                             "tail": [
                                                               "j",
                                                               "N_copy1",
-                                                              "src",
-                                                              "dst",
                                                               "p13",
                                                               "p15"
                                                             ]

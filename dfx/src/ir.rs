@@ -70,6 +70,11 @@ impl Ty {
             _ => None,
         }
     }
+
+    /// Check if this type is an array reference (shared or unique).
+    pub fn is_array_ref(&self) -> bool {
+        matches!(self, Ty::RefShrd { .. } | Ty::RefUniq { .. })
+    }
 }
 
 /// Literal values.
@@ -449,12 +454,59 @@ impl Program {
             def.desugar_tail_calls();
         }
     }
+
+    /// Array references (both shared and unique) are removed from parameter lists
+    /// and argument lists, as they are assumed to be globally available.
+    pub fn eliminate_array_params(&mut self) {
+        let mut fn_array_indices: std::collections::HashMap<String, Vec<usize>> = 
+            std::collections::HashMap::new();
+
+        // collect array parameter indices for all functions
+        for def in &self.defs {
+            let array_indices: Vec<usize> = def
+                .params
+                .iter()
+                .enumerate()
+                .filter_map(|(i, (_, ty))| if ty.is_array_ref() { Some(i) } else { None })
+                .collect();
+            fn_array_indices.insert(def.name.0.clone(), array_indices);
+        }
+
+        for def in &mut self.defs {
+            def.eliminate_array_params_with_map(&fn_array_indices);
+        }
+    }
 }
 
 impl FnDef {
     pub fn desugar_tail_calls(&mut self) {
         let fn_name = &self.name;
         self.body.desugar_tail_calls(fn_name);
+    }
+
+    pub fn eliminate_array_params(&mut self) {
+        let mut fn_array_indices = std::collections::HashMap::new();
+        let array_param_indices: Vec<usize> = self
+            .params
+            .iter()
+            .enumerate()
+            .filter_map(|(i, (_, ty))| if ty.is_array_ref() { Some(i) } else { None })
+            .collect();
+        fn_array_indices.insert(self.name.0.clone(), array_param_indices);
+
+        self.body.eliminate_array_args_with_map(&fn_array_indices);
+
+        self.params.retain(|(_, ty)| !ty.is_array_ref());
+    }
+
+    fn eliminate_array_params_with_map(
+        &mut self,
+        fn_array_indices: &std::collections::HashMap<String, Vec<usize>>,
+    ) {
+        self.body.eliminate_array_args_with_map(fn_array_indices);
+
+        // Filter out array parameters from the parameter list
+        self.params.retain(|(_, ty)| !ty.is_array_ref());
     }
 }
 
@@ -505,6 +557,16 @@ impl Expr {
         }
         self.tail.collect_vars(vars);
     }
+
+    fn eliminate_array_args_with_map(
+        &mut self,
+        fn_array_indices: &std::collections::HashMap<String, Vec<usize>>,
+    ) {
+        for stmt in &mut self.stmts {
+            stmt.eliminate_array_args_with_map(fn_array_indices);
+        }
+        self.tail.eliminate_array_args_with_map(fn_array_indices);
+    }
 }
 
 impl Stmt {
@@ -529,6 +591,23 @@ impl Stmt {
                 for arg in args {
                     vars.insert(arg.clone());
                 }
+            }
+        }
+    }
+
+    fn eliminate_array_args_with_map(
+        &mut self,
+        fn_array_indices: &std::collections::HashMap<String, Vec<usize>>,
+    ) {
+        if let Stmt::LetCall { args, func, .. } = self {
+            if let Some(array_indices) = fn_array_indices.get(&func.0) {
+                // Filter out arguments at positions corresponding to array parameters
+                let mut i = 0;
+                args.retain(|_| {
+                    let keep = !array_indices.contains(&i);
+                    i += 1;
+                    keep
+                });
             }
         }
     }
@@ -565,6 +644,30 @@ impl Tail {
                     vars.insert(arg.clone());
                 }
             }
+        }
+    }
+
+    fn eliminate_array_args_with_map(
+        &mut self,
+        fn_array_indices: &std::collections::HashMap<String, Vec<usize>>,
+    ) {
+        match self {
+            Tail::IfElse { then_e, else_e, .. } => {
+                then_e.eliminate_array_args_with_map(fn_array_indices);
+                else_e.eliminate_array_args_with_map(fn_array_indices);
+            }
+            Tail::TailCall { args, func, .. } => {
+                if let Some(array_indices) = fn_array_indices.get(&func.0) {
+                    // Filter out arguments at positions corresponding to array parameters
+                    let mut i = 0;
+                    args.retain(|_| {
+                        let keep = !array_indices.contains(&i);
+                        i += 1;
+                        keep
+                    });
+                }
+            }
+            Tail::RetVar(_) => {}
         }
     }
 }
@@ -747,4 +850,48 @@ mod tests {
         assert_ne!(fresh.0, "_tail_ret");
         assert!(fresh.0.starts_with("_tail_ret_"));
     }
+
+    #[test]
+    fn test_eliminate_array_args_in_call() {
+        // fn foo(i: uint, A: &mut [int; 10]) {
+        //     let _ = foo(i, A);  // recursive call
+        // }
+        let foo_call = Stmt::LetCall {
+            vars: vec![Var("_".into())],
+            func: FnName("foo".into()),
+            args: vec![Var("i".into()), Var("A".into())],
+            fence: false,
+        };
+
+        let mut foo_def = FnDef {
+            name: FnName("foo".into()),
+            params: vec![
+                (Var("i".into()), Ty::Int(Signedness::Unsigned)),
+                (
+                    Var("A".into()),
+                    Ty::RefUniq {
+                        elem: Box::new(Ty::Int(Signedness::Signed)),
+                        len: ArrayLen::Const(10),
+                    },
+                ),
+            ],
+            caps: vec![],
+            returns: Ty::Unit,
+            body: Expr::new(vec![foo_call], Tail::RetVar(Var("_".into()))),
+        };
+
+        foo_def.eliminate_array_params();
+
+        assert_eq!(foo_def.params.len(), 1);
+
+        // Check that array argument was removed from the call
+        match &foo_def.body.stmts[0] {
+            Stmt::LetCall { args, .. } => {
+                assert_eq!(args.len(), 1);
+                assert_eq!(args[0].0, "i");
+            }
+            _ => panic!("Expected LetCall statement"),
+        }
+    }
+
 }

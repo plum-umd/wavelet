@@ -5,7 +5,6 @@
       "params": [
         "i",
         "N",
-        "grid",
         "p_sync",
         "p_garb"
       ],
@@ -432,7 +431,6 @@
                                                                                                                 "tail": [
                                                                                                                   "next_copy1",
                                                                                                                   "N_copy1",
-                                                                                                                  "grid",
                                                                                                                   "p27",
                                                                                                                   "p29"
                                                                                                                 ]
@@ -557,7 +555,6 @@
       "name": "diffusion_step",
       "params": [
         "N",
-        "grid",
         "p_sync",
         "p_garb"
       ],
@@ -637,7 +634,6 @@
                           [
                             "start",
                             "N",
-                            "grid",
                             "p4",
                             "p6"
                           ],

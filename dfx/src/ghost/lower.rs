@@ -6,6 +6,7 @@ use crate::ir::{Expr, FnDef, FnName, Op, Program, Stmt, Tail, Var};
 pub fn synthesize_ghost_program(prog: &Program) -> GhostProgram {
     let mut prog = prog.clone();
     prog.desugar_tail_calls();
+    prog.eliminate_array_params();
     let mut ghost = GhostProgram::new();
     for def in &prog.defs {
         ghost.add_fn(lower_fn(def));
@@ -525,15 +526,14 @@ mod tests {
             .expect("params should be an array");
         assert_eq!(
             params.len(),
-            6,
-            "sum should have 6 parameters (4 regular + 2 ghost)"
+            5,
+            "sum should have 5 parameters (3 regular + 2 ghost, array param A eliminated)"
         );
         assert_eq!(params[0], "i");
         assert_eq!(params[1], "a");
         assert_eq!(params[2], "N");
-        assert_eq!(params[3], "A");
-        assert_eq!(params[4], "p_sync");
-        assert_eq!(params[5], "p_garb");
+        assert_eq!(params[3], "p_sync");
+        assert_eq!(params[4], "p_garb");
 
         // Verify body structure
         assert!(

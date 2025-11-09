@@ -5,7 +5,6 @@
       "params": [
         "i",
         "N",
-        "a",
         "p_sync",
         "p_garb"
       ],
@@ -334,7 +333,6 @@
                                                                                         "tail": [
                                                                                           "next",
                                                                                           "N_copy1",
-                                                                                          "a",
                                                                                           "p20",
                                                                                           "p22"
                                                                                         ]
@@ -447,7 +445,6 @@
       "name": "prefix_sum_inplace",
       "params": [
         "N",
-        "a",
         "p_sync",
         "p_garb"
       ],
@@ -527,7 +524,6 @@
                           [
                             "start",
                             "N",
-                            "a",
                             "p4",
                             "p6"
                           ],
