@@ -34,6 +34,7 @@ impl Gamma {
 pub struct Ctx<'logic, L: CapabilityLogic> {
     pub gamma: Gamma,
     pub delta: Delta<L::Region>,
+    pub initial_delta: Delta<L::Region>,
     pub phi: Phi,
     pub logic: &'logic L,
     pub verbose: bool,
@@ -45,6 +46,7 @@ impl<'logic, L: CapabilityLogic> Ctx<'logic, L> {
         Self {
             gamma: Gamma::default(),
             delta: Delta::default(),
+            initial_delta: Delta::default(),
             phi: Phi::default(),
             logic,
             verbose,

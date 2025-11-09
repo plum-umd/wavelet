@@ -287,13 +287,9 @@ impl std::fmt::Display for Expr {
 impl std::fmt::Display for Stmt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Stmt::LetVal { var, val, fence } => write!(
-                f,
-                "let {} = {}{};",
-                var,
-                if *fence { "@" } else { "" },
-                val
-            ),
+            Stmt::LetVal { var, val, fence } => {
+                write!(f, "let {} = {}{};", var, if *fence { "@" } else { "" }, val)
+            }
             Stmt::LetOp { vars, op, fence } => {
                 write!(f, "let ")?;
                 for (i, var) in vars.iter().enumerate() {
@@ -377,18 +373,8 @@ impl std::fmt::Display for Op {
             Op::LessEqual => write!(f, "<="),
             Op::Equal => write!(f, "=="),
             Op::Cast => write!(f, "cast"),
-            Op::Load {
-                array,
-                index,
-                len,
-            } => {
-                write!(
-                    f,
-                    "{}[{}:{}]",
-                    array,
-                    index,
-                    len.display()
-                )
+            Op::Load { array, index, len } => {
+                write!(f, "{}[{}:{}]", array, index, len.display())
             }
             Op::Store {
                 array,
@@ -396,14 +382,7 @@ impl std::fmt::Display for Op {
                 value,
                 len,
             } => {
-                write!(
-                    f,
-                    "{}[{}:{}] = {}",
-                    array,
-                    index,
-                    len.display(),
-                    value
-                )
+                write!(f, "{}[{}:{}] = {}", array, index, len.display(), value)
             }
         }
     }

@@ -8,12 +8,11 @@ fn diffusion_step_aux<const N: usize>(i: usize, grid: &mut [i32; N]) {
         let next = i + one;
         let left = grid[prev];
         let center = grid[i];
-        fence!();
         let right = grid[next];
-        fence!();
         let sum_left_center = left + center;
         let total = sum_left_center + right;
         let avg = total / 3;
+        fence!();
         grid[i] = avg;
         fence!();
         diffusion_step_aux::<N>(next, grid)

@@ -53,7 +53,7 @@ enum CliError {
         #[source]
         source: ParseError,
     },
-    #[error("type checking failed for '{path}': {source}")]
+    #[error("type checking failed for '{path}'")]
     Type {
         path: PathBuf,
         #[source]
@@ -149,9 +149,7 @@ fn report_error(err: &CliError) {
             );
         }
         CliError::Export { .. } => {
-            eprintln!(
-                "  hint: the JSON backend may be missing support for this construct."
-            );
+            eprintln!("  hint: the JSON backend may be missing support for this construct.");
         }
         _ => {}
     }

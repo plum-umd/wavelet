@@ -84,12 +84,8 @@ impl FunctionLowerer {
 
     fn lower_stmt(&mut self, stmt: &Stmt, builder: &mut Vec<GhostStmt>, ctx: &mut PermCtx) {
         match stmt {
-            Stmt::LetVal { var, val, fence } => {
-                self.lower_const(var, val, *fence, builder, ctx)
-            }
-            Stmt::LetOp { vars, op, fence } => {
-                self.lower_op(vars, op, *fence, builder, ctx)
-            }
+            Stmt::LetVal { var, val, fence } => self.lower_const(var, val, *fence, builder, ctx),
+            Stmt::LetOp { vars, op, fence } => self.lower_op(vars, op, *fence, builder, ctx),
             Stmt::LetCall {
                 vars,
                 func,
@@ -172,11 +168,7 @@ impl FunctionLowerer {
         ctx: &mut PermCtx,
     ) {
         match op {
-            Op::Load {
-                array,
-                index,
-                ..
-            } => {
+            Op::Load { array, index, .. } => {
                 let (ghost_in, _) = self.split_sync(builder, ctx);
                 let ghost_out = self.fresh();
                 builder.push(GhostStmt::Load {

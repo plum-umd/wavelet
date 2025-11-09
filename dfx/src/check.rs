@@ -7,7 +7,7 @@ use crate::env::{Ctx, FnRegistry};
 use crate::error::TypeError;
 use crate::ir::{Expr, FnDef, Op, Program, Signedness, Stmt, Tail, Ty, Val, Var};
 use crate::logic::CapabilityLogic;
-use crate::logic::cap::{Cap, CapPattern, Delta, RegionModel};
+use crate::logic::cap::{Cap, Delta, RegionModel};
 use crate::logic::region::Region;
 use crate::logic::semantic::Interval;
 use crate::logic::semantic::solver::{Atom, Idx, Phi};
@@ -121,6 +121,14 @@ where
                 .push(Atom::Le(Idx::Const(0), Idx::Var(var.0.clone())));
         }
         self.gamma.insert(var.clone(), ty);
+    }
+
+    fn record_initial_delta(&mut self) {
+        self.initial_delta = self.delta.clone();
+    }
+
+    fn restore_initial_delta(&mut self) {
+        self.delta = self.initial_delta.clone();
     }
 
     fn ensure_literal_binding(&mut self, var: &Var) -> Result<(), TypeError> {
@@ -288,11 +296,7 @@ fn render_op(op: &Op, vars: &[Var]) -> String {
         Op::LessEqual => format!("{} = {} <= {}", vars[2].0, vars[0].0, vars[1].0),
         Op::Equal => format!("{} = {} == {}", vars[2].0, vars[0].0, vars[1].0),
         Op::Cast => format!("{} = cast({})", vars[1].0, vars[0].0),
-        Op::Load {
-            array,
-            index,
-            len,
-        } => {
+        Op::Load { array, index, len } => {
             format!(
                 "{} = {}[{}] (len {})",
                 vars[0].0,
@@ -427,10 +431,22 @@ where
     println!();
 }
 
-fn log_after_statement<L: CapabilityLogic>(ctx: &Ctx<L>, stmt: &Stmt)
+// Optionally restore the initial capability environment (if fenced)
+fn finalize_statement<L: CapabilityLogic>(ctx: &mut Ctx<L>, stmt: &Stmt)
 where
     L::Region: RegionModel,
 {
+    let fenced = matches!(
+        stmt,
+        Stmt::LetVal { fence: true, .. }
+            | Stmt::LetOp { fence: true, .. }
+            | Stmt::LetCall { fence: true, .. }
+    );
+
+    if fenced {
+        ctx.restore_initial_delta();
+    }
+
     if ctx.verbose {
         println!("After {}:", render_stmt(stmt));
         print_context_contents(ctx);
@@ -499,6 +515,7 @@ where
         let cap = cap_pat.initialize::<L::Region>();
         ctx.delta.0.insert(cap_pat.array.clone(), cap);
     }
+    ctx.record_initial_delta();
     trace_context(&ctx, "Initial context after parameter and capability setup");
 
     // Check body.
@@ -604,7 +621,7 @@ where
     L::Region: RegionModel,
 {
     match stmt {
-    Stmt::LetVal { var, val, .. } => {
+        Stmt::LetVal { var, val, .. } => {
             // Determine literal type and bind it.
             let ty = match val {
                 Val::Int(n) => {
@@ -626,7 +643,7 @@ where
                 Val::Bool(false) => ctx.phi.push(not(bool_atom(&var.0))),
                 Val::Unit => {}
             }
-            log_after_statement(ctx, stmt);
+            finalize_statement(ctx, stmt);
             Ok(())
         }
         Stmt::LetOp { vars, op, fence } => {
@@ -663,7 +680,7 @@ where
                         ctx.phi.push(Atom::Eq(result_idx, rhs));
                     }
                     ctx.bind_var(&vars[2], Ty::Int(result_sign));
-                    log_after_statement(ctx, stmt);
+                    finalize_statement(ctx, stmt);
                     Ok(())
                 }
                 Op::And => {
@@ -686,7 +703,7 @@ where
                     let conjunction = and(lhs_atom.clone(), rhs_atom.clone());
                     ctx.phi.push(implies(res_atom.clone(), conjunction.clone()));
                     ctx.phi.push(implies(conjunction, res_atom));
-                    log_after_statement(ctx, stmt);
+                    finalize_statement(ctx, stmt);
                     Ok(())
                 }
                 Op::Or => {
@@ -709,7 +726,7 @@ where
                     let disjunction = or(lhs_atom.clone(), rhs_atom.clone());
                     ctx.phi.push(implies(res_atom.clone(), disjunction.clone()));
                     ctx.phi.push(implies(disjunction, res_atom));
-                    log_after_statement(ctx, stmt);
+                    finalize_statement(ctx, stmt);
                     Ok(())
                 }
                 Op::BitAnd | Op::BitOr | Op::BitXor => {
@@ -729,7 +746,7 @@ where
                     let y_sign = y_ty.signedness().unwrap();
                     let result_sign = combine_signedness(x_sign, y_sign);
                     ctx.bind_var(&vars[2], Ty::Int(result_sign));
-                    log_after_statement(ctx, stmt);
+                    finalize_statement(ctx, stmt);
                     Ok(())
                 }
                 Op::Shl | Op::Shr => {
@@ -747,7 +764,7 @@ where
                     }
                     let x_sign = x_ty.signedness().unwrap();
                     ctx.bind_var(&vars[2], Ty::Int(x_sign));
-                    log_after_statement(ctx, stmt);
+                    finalize_statement(ctx, stmt);
                     Ok(())
                 }
                 Op::LessThan | Op::LessEqual => {
@@ -777,7 +794,7 @@ where
                     ctx.phi
                         .push(implies(not(result_atom.clone()), not(comparison)));
                     ctx.bind_var(&vars[2], Ty::Bool);
-                    log_after_statement(ctx, stmt);
+                    finalize_statement(ctx, stmt);
                     Ok(())
                 }
                 Op::Equal => {
@@ -815,7 +832,7 @@ where
                         }
                         _ => {}
                     }
-                    log_after_statement(ctx, stmt);
+                    finalize_statement(ctx, stmt);
                     Ok(())
                 }
                 Op::Cast => {
@@ -831,7 +848,7 @@ where
                         });
                     }
                     ctx.bind_var(&vars[1], x_ty.clone());
-                    log_after_statement(ctx, stmt);
+                    finalize_statement(ctx, stmt);
                     Ok(())
                 }
                 Op::Load { array, index, len } => {
@@ -904,7 +921,7 @@ where
                     // Bind result.
                     let dest = &vars[0];
                     ctx.bind_var(dest, elem_ty);
-                    log_after_statement(ctx, stmt);
+                    finalize_statement(ctx, stmt);
                     Ok(())
                 }
                 Op::Store {
@@ -989,7 +1006,7 @@ where
                                 array: arr_name.clone(),
                             })?;
                     }
-                    log_after_statement(ctx, stmt);
+                    finalize_statement(ctx, stmt);
                     Ok(())
                 }
             }
@@ -1107,7 +1124,7 @@ where
                 });
             }
             ctx.bind_var(&vars[0], fn_def.returns.clone());
-            log_after_statement(ctx, stmt);
+            finalize_statement(ctx, stmt);
             Ok(())
         }
     }
@@ -1140,6 +1157,7 @@ where
             let mut ctx_th = Ctx {
                 gamma: ctx.gamma.clone(),
                 delta: ctx.delta.clone(),
+                initial_delta: ctx.initial_delta.clone(),
                 phi: ctx.phi.clone(),
                 logic: ctx.logic,
                 verbose: ctx.verbose,
@@ -1149,6 +1167,7 @@ where
             let mut ctx_el = Ctx {
                 gamma: ctx.gamma.clone(),
                 delta: ctx.delta.clone(),
+                initial_delta: ctx.initial_delta.clone(),
                 phi: ctx.phi.clone(),
                 logic: ctx.logic,
                 verbose: ctx.verbose,

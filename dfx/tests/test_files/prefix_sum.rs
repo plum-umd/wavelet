@@ -8,8 +8,8 @@ fn prefix_sum_inplace_aux<const N: usize>(i: usize, a: &mut [i32; N]) {
         let prev = i - one;
         let prev_val = a[prev];
         let curr = a[i];
-        fence!();
         let new_val = curr + prev_val;
+        fence!();
         a[i] = new_val; // a[i] = a[i] + a[i-1]
         fence!();
         let next = i + one;
