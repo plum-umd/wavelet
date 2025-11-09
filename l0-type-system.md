@@ -1040,7 +1040,8 @@ $$
 \frac{
   \begin{gather*}
   \Gamma(i) = \texttt{int} \quad
-  \Phi \vdash 0 \leq i < \texttt{N} \\
+  \Delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
+  \Phi \vdash 0 \leq i < \texttt{N} \land i \in R \cup R'\\
   \Gamma[y \mapsto \text{int}] ; \Delta
   \;\vdash_{\Phi}\;
 E : \tau_E
@@ -1058,7 +1059,8 @@ $$
   \begin{gather*}
   \Gamma(i) = \texttt{int} \quad
   \Gamma \vdash v : \texttt{int} \\
-  \Phi \vdash 0 \leq i < \texttt{N} \\
+  \Delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
+  \Phi \vdash 0 \leq i < \texttt{N} \land i \in R\\
   \Gamma ; \Delta
   \;\vdash_{\Phi}\;
 E : \tau_E
