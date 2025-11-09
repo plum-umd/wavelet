@@ -80,6 +80,7 @@ impl GhostExpr {
     pub fn new(stmts: Vec<GhostStmt>, tail: GhostTail) -> Self {
         Self { stmts, tail }
     }
+    
 }
 
 /// Ghost function definition.
