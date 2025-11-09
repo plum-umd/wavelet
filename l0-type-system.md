@@ -794,7 +794,7 @@ $$
   \Gamma \;\vdash\; v : \tau \quad \Gamma[y \mapsto \tau] ; \Sigma ; \Delta \;\vdash_{\Phi}\;
 E : \tau_E
 }{
-  \Gamma ; \Sigma ; \Delta \;\vdash\; \texttt{let } y \texttt{ = } v; \; E : \tau_E
+  \Gamma ; \Sigma ; \Delta \;\vdash_{\Phi}\; \texttt{let } y \texttt{ = } v; \; E : \tau_E
 }
 $$
 
@@ -822,7 +822,7 @@ $$
   \Gamma(i) = \texttt{int} \quad
   \Sigma'(A) = \mathsf{\&}\{R\} \quad \\
   \Phi \vdash 0 \leq i < \texttt{N} \quad i \in \llbracket R \rrbracket_{\Phi} \quad \\
-  \Gamma[y \mapsto \texttt{int}] ; \Sigma ; \Delta \;\vdash_{\Phi}\;
+  \Gamma[y \mapsto \texttt{int}] ; \Sigma' ; \Delta \;\vdash_{\Phi}\;
 E : \tau_E
   \end{gather*}
 }{
@@ -839,9 +839,9 @@ $$
   \Gamma ; \Sigma ; \Delta \;\leadsto_{\Phi, \; \Delta}\; \Gamma ; \Sigma ; \Delta' \\
   \Gamma(A) = [\texttt{int}; \texttt{ N}] \quad
   \Gamma(i) = \texttt{int} \quad
-  \Delta = \Delta' \;\cdot\; A \mapsto \mathsf{\&uniq}\{j \cdot R'\} \quad \\
+  \Delta' = \Delta'' \;\cdot\; A \mapsto \mathsf{\&uniq}\{j \cdot R'\} \quad \\
   \Phi \vdash 0 \leq i < \texttt{N} \land i = j \quad \\\
-  \Gamma[y \mapsto \texttt{int}] ; \Sigma ; \Delta' \;\cdot\; A \mapsto \mathsf{\&uniq}\{R'\} \;\vdash_{\Phi}\;
+  \Gamma[y \mapsto \texttt{int}] ; \Sigma ; \Delta'' \;\cdot\; A \mapsto \mathsf{\&uniq}\{R'\} \;\vdash_{\Phi}\;
 E : \tau_E 
   \end{gather*}
 }{
@@ -859,9 +859,9 @@ $$
   \Gamma(A) = [\texttt{int}; \texttt{ N}] \quad
   \Gamma(i) = \texttt{int} \quad
   \Gamma \vdash v : \texttt{int} \quad
-  \Delta = \Delta' \;\cdot\; A \mapsto \mathsf{\&uniq}\{j \cdot R'\} \quad \\
+  \Delta' = \Delta'' \;\cdot\; A \mapsto \mathsf{\&uniq}\{j \cdot R'\} \quad \\
   \Phi \vdash 0 \leq i < \texttt{N} \land i = j \quad \\
-  \Gamma ; \Sigma ; \Delta' \;\cdot\; A \mapsto \mathsf{\&uniq}\{R'\} \;\vdash_{\Phi}\;
+  \Gamma ; \Sigma ; \Delta'' \;\cdot\; A \mapsto \mathsf{\&uniq}\{R'\} \;\vdash_{\Phi}\;
 E : \tau_E 
   \end{gather*}
 }{
@@ -893,13 +893,16 @@ $$
   \texttt{def } f(\bar{x} : \overline{\tau_{in}}, \; \overline{A :
   \mathsf{\&}\{R(\bar{x})\ [\texttt{int}; \texttt{ N}]\}}, \; \overline{B : \mathsf{\&uniq}\{R'(\bar{x})\}[\texttt{int}; \texttt{ N}]}) \to \tau_{out} =
   E_f\\
+  \Gamma ; \Sigma ; \Delta \;\leadsto_{\Phi, \; \Sigma}\; \Gamma ; \Sigma' ;
+  \Delta \\
+  \Gamma ; \Sigma' ; \Delta \;\leadsto_{\Phi, \; \Delta}\; \Gamma ; \Sigma' ; \Delta' \\
   % \Gamma(\bar{y}) <: \overline{\tau_{in}} \quad \\
   \Gamma(\bar{y}) = \overline{\tau_{in}} \quad \Gamma(\bar{X}) =
   \overline{[\texttt{int}; \texttt{ N}]} \quad \Gamma(\bar{Y}) =
   \overline{[\texttt{int}; \texttt{ N}]} \\
   \Sigma(\bar{X}) <: \overline{\mathsf{\&}\{R[\bar{x} \mapsto \bar{y}]\}\
   [\texttt{int}; \texttt{ N}]} \\
-  \Delta = \Delta' \;\cdot\; \overline{Y : \mathsf{\&uniq}\{R'[\bar{x} \mapsto
+  \Delta' = \Delta'' \;\cdot\; \overline{Y : \mathsf{\&uniq}\{R'[\bar{x} \mapsto
   \bar{y}] \;\cdot\; R''\}\
   [\texttt{int}; \texttt{ N}]} \quad
   % \Delta(\bar{Y}) <: \overline{\mathsf{\&uniq}\{R'[\bar{x} \mapsto \bar{y}]\}
@@ -925,13 +928,16 @@ $$
   \texttt{def } f(\bar{x} : \overline{\tau_{in}}, \; \overline{A :
   \mathsf{\&}\{R(\bar{x})\ [\texttt{int}; \texttt{ N}]\}}, \; \overline{B : \mathsf{\&uniq}\{R'(\bar{x})\}[\texttt{int}; \texttt{ N}]}) \to \tau_{out} =
   E_f\\
+    \Gamma ; \Sigma ; \Delta \;\leadsto_{\Phi, \; \Sigma}\; \Gamma ; \Sigma' ;
+  \Delta \\
+  \Gamma ; \Sigma' ; \Delta \;\leadsto_{\Phi, \; \Delta}\; \Gamma ; \Sigma' ; \Delta' \\
   % \Gamma(\bar{y}) <: \overline{\tau_{in}} \quad \\
   \Gamma(\bar{y}) = \overline{\tau_{in}} \quad \Gamma(\bar{X}) =
   \overline{[\texttt{int}; \texttt{ N}]} \quad \Gamma(\bar{Y}) =
   \overline{[\texttt{int}; \texttt{ N}]} \\
   \Sigma(\bar{X}) <: \overline{\mathsf{\&}\{R[\bar{x} \mapsto \bar{y}]\}\
   [\texttt{int}; \texttt{ N}]} \\
-  \Delta = \Delta' \;\cdot\; \overline{Y : \mathsf{\&uniq}\{R'[\bar{x} \mapsto
+  \Delta' = \Delta'' \;\cdot\; \overline{Y : \mathsf{\&uniq}\{R'[\bar{x} \mapsto
   \bar{y}] \;\cdot\; R''\}\
   [\texttt{int}; \texttt{ N}]} \quad
   % \Delta(\bar{Y}) <: \overline{\mathsf{\&uniq}\{R'[\bar{x} \mapsto \bar{y}]\}
