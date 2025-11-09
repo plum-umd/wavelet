@@ -699,6 +699,22 @@ def c₁ \ c₂ :=
       }
   else
     none
+
+def Δ₁ ≤ Δ₂ :=
+  ∀ A c₁, Δ₁ A = some c₁ →
+    ∃ c₂, Δ₂ A = some c₂ 
+    ∧ c₁ ≤ c₂
+
+def Δ₁ \ Δ₂ :=
+  if Δ₂ ≤ Δ₁ then
+    some (λ A,
+      match Δ₁ A, Δ₂ A with
+      | some c₁, some c₂ => c₁ \ c₂
+      | some c₁, none => some c₁
+      | none, _ => none
+      end)
+  else
+    none
 ```
 
 <!-- - Two unique capability `&uniq{R1} [int; N]` `&uniq{R2} [int; N]` compose with disjoint union, iff their regions are disjoint ($R_1 \; \cap \; R_2 = \varnothing$)
@@ -997,11 +1013,9 @@ $$
 $$
 \frac{
   \begin{gather*}
-  \Gamma(i) = \texttt{int} \quad
-  \Delta = \Delta' \cdot A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
-  \Phi \vDash 0 \leq i < \texttt{N} \land \mathsf{shrd@}\{i\} \subseteq  \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
-  \Gamma[y \mapsto \texttt{int}] ; \Delta' \cdot A \mapsto \mathsf{uniq@}R
-  \Vert \mathsf{shrd@}R' \; \setminus \; \mathsf{shrd@}\{i\}
+  \Gamma(i) = \texttt{int} \\
+  \Phi \vDash 0 \leq i < \texttt{N} \land A \mapsto \mathsf{shrd@}\{i\} \le \Delta \quad \\
+  \Gamma[y \mapsto \texttt{int}] ; \Delta \setminus \; A \mapsto  \mathsf{shrd@}\{i\}
   \;\vdash_{\Phi}\;
 E : \tau_E
   \end{gather*}
@@ -1017,11 +1031,9 @@ $$
 \frac{
   \begin{gather*}
   \Gamma(i) = \texttt{int} \quad
-  \Gamma \vdash v : \texttt{int} \quad
-  \Delta = \Delta' \cdot A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
-  \Phi \vDash 0 \leq i < \texttt{N} \land \mathsf{uniq@}\{i\} \subseteq  \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
-  \Gamma ; \Delta' \cdot A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@}R'
-  \; \setminus \; \mathsf{uniq@}\{i\}
+  \Gamma \vdash v : \texttt{int} \\
+  \Phi \vDash 0 \leq i < \texttt{N} \land A \mapsto \mathsf{uniq@}\{i\} \le \Delta \quad \\
+  \Gamma ; \Delta \setminus \; A \mapsto  \mathsf{uniq@}\{i\}
   \;\vdash_{\Phi}\;
 E : \tau_E
   \end{gather*}
@@ -1037,9 +1049,8 @@ $$
 $$
 \frac{
   \begin{gather*}
-  \Gamma(i) = \texttt{int} \quad
-  \Delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
-  \Phi \vdash 0 \leq i < \texttt{N} \land \mathsf{shrd@}\{i\} \subseteq  \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
+  \Gamma(i) = \texttt{int} \\
+  \Phi \vDash 0 \leq i < \texttt{N} \land A \mapsto \mathsf{shrd@}\{i\} \le \Delta \quad \\
   \Gamma[y \mapsto \text{int}] ; \Delta
   \;\vdash_{\Phi}\;
 E : \tau_E
@@ -1057,8 +1068,7 @@ $$
   \begin{gather*}
   \Gamma(i) = \texttt{int} \quad
   \Gamma \vdash v : \texttt{int} \\
-  \Delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
-  \Phi \vdash 0 \leq i < \texttt{N} \land \mathsf{uniq@}\{i\} \subseteq  \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \\
+  \Phi \vDash 0 \leq i < \texttt{N} \land A \mapsto \mathsf{uniq@}\{i\} \le \Delta \\
   \Gamma ; \Delta
   \;\vdash_{\Phi}\;
 E : \tau_E
@@ -1094,16 +1104,10 @@ $$
   \mathsf{uniq@}R \Vert \mathsf{shrd@} R'}) \to \vec{\tau}_o \texttt{ = } E_f\\
   % \Gamma(\vec{y}) <: \overline{\tau_{in}} \quad \\
   \Gamma(\vec{i}) = \vec{\tau}_i \quad
-  \Delta = \Delta' \;\cdot\; \overrightarrow{A \mapsto \mathsf{uniq@}\Rho \Vert
-  \mathsf{shrd@}\Rho'} \\
-  \Phi \vDash \overrightarrow{\mathsf{uniq@}R[\vec{x} \mapsto \vec{i}] \Vert
-  \mathsf{shrd@}R'[\vec{x} \mapsto \vec{i}] \subseteq \mathsf{uniq@}\Rho \Vert
-  \mathsf{shrd@}\Rho'} \\
-  % \Delta(\vec{Y}) <: \overline{\mathsf{\&uniq}\{R'[\vec{x} \mapsto \vec{y}]\}
-  % [\texttt{int}; \texttt{ N}]} \quad 
-  \Gamma[\vec{y} \mapsto \vec{\tau}_o] ; \Delta' \;\cdot\; \overrightarrow{A
-  \mapsto \mathsf{uniq@}\Rho \Vert \mathsf{shrd@}\Rho' \; \setminus
-  \mathsf{uniq@}R[\vec{x} \mapsto \vec{i}] \Vert \mathsf{shrd@}R'[\vec{x} \mapsto \vec{i}]}
+  \Phi \vDash \overrightarrow{A \mapsto \mathsf{uniq@}R[\vec{x} \mapsto \vec{i}] \Vert
+  \mathsf{shrd@}R'[\vec{x} \mapsto \vec{i}] \le \Delta} \\
+  \Gamma[\vec{y} \mapsto \vec{\tau}_o] ; \Delta \setminus \overrightarrow{A \mapsto \mathsf{uniq@}R[\vec{x} \mapsto \vec{i}] \Vert
+  \mathsf{shrd@}R'[\vec{x} \mapsto \vec{i}]}
    \;\vdash_{\Phi}\; E : \tau_E
   \end{gather*}
 }{
@@ -1123,12 +1127,9 @@ $$
   \texttt{def } f(\vec{x} : \vec{\tau}_i, \; \overrightarrow{A : 
   \mathsf{uniq@}R \Vert \mathsf{shrd@} R'}) \to \vec{\tau}_o \texttt{ = } E_f\\
   % \Gamma(\vec{y}) <: \overline{\tau_{in}} \quad \\
-  \Gamma(\vec{i}) = \vec{\tau}_i \quad
-  \Delta(A) = \overrightarrow{\mathsf{uniq@}\Rho \Vert
-  \mathsf{shrd@}\Rho'} \\
-  \Phi \vDash \overrightarrow{\mathsf{uniq@}R[\vec{x} \mapsto \vec{i}] \Vert
-  \mathsf{shrd@}R'[\vec{x} \mapsto \vec{i}] \subseteq \mathsf{uniq@}\Rho \Vert
-  \mathsf{shrd@}\Rho'} \\
+  \Gamma(\vec{i}) = \vec{\tau}_i \\
+  \Phi \vDash \overrightarrow{A \mapsto \mathsf{uniq@}R[\vec{x} \mapsto \vec{i}] \Vert
+  \mathsf{shrd@}R'[\vec{x} \mapsto \vec{i}] \le \Delta} \\
   % \Delta(\vec{Y}) <: \overline{\mathsf{\&uniq}\{R'[\vec{x} \mapsto \vec{y}]\}
   % [\texttt{int}; \texttt{ N}]} \quad 
   \Gamma[\vec{y} \mapsto \vec{\tau}_o] ; \Delta \;\vdash_{\Phi}\; E : \tau_E
@@ -1148,10 +1149,9 @@ $$
   \texttt{def } f(\vec{x} : \vec{\tau}_i, \; \overrightarrow{A : 
   \mathsf{uniq@}R \Vert \mathsf{shrd@} R'}) \to \vec{\tau}_o \texttt{ = } E_f\\
   % \Gamma(\vec{y}) <: \overline{\tau_{in}} \quad \\
-  \Gamma(\vec{i}) = \vec{\tau}_i \quad
-  \Delta = \Delta' \;\cdot\; \overrightarrow{A \mapsto \mathsf{uniq@}\Rho \Vert
-  \mathsf{shrd@}\Rho'} \\
-  \Phi \vDash R[\vec{x} \mapsto \vec{i}] \subseteq \Rho \land R'[\vec{x} \mapsto \vec{i}] \subseteq \Rho'
+  \Gamma(\vec{i}) = \vec{\tau}_i \\
+  \Phi \vDash \overrightarrow{A \mapsto \mathsf{uniq@}R[\vec{x} \mapsto \vec{i}] \Vert
+  \mathsf{shrd@}R'[\vec{x} \mapsto \vec{i}] \le \Delta} \\
   % \Delta(\vec{Y}) <: \overline{\mathsf{\&uniq}\{R'[\vec{x} \mapsto \vec{y}]\}
   % [\texttt{int}; \texttt{ N}]} 
   \end{gather*}
