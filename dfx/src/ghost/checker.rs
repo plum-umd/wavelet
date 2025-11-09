@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::Val;
-use crate::ghost::fracperms::{FractionExpr, check_fraction_valid};
+use crate::ghost::fracperms::{FractionExpr, check_fraction_valid, try_add_fractions};
 use crate::ghost::ir::{GhostExpr, GhostFnDef, GhostProgram, GhostStmt, GhostTail, GhostVar};
 use crate::ir::{Signedness, Ty, Var};
 use crate::logic::cap::{CapPattern, RegionModel};
@@ -58,6 +58,8 @@ impl PermExpr {
         let items: Vec<_> = perms.into_iter().collect();
         if items.is_empty() {
             PermExpr::Empty
+        } else if items.len() == 1 {
+            items.into_iter().next().unwrap()
         } else {
             PermExpr::Add(items)
         }
@@ -164,14 +166,18 @@ impl PermExpr {
     fn collect_permissions(&self, phi: &Phi, solver: &SmtSolver) -> Option<Vec<Permission>> {
         match self {
             PermExpr::Empty => Some(Vec::new()),
-            PermExpr::Singleton(perm) => Some(vec![perm.clone()]),
+            PermExpr::Singleton(perm) => {
+                let perms = normalize_permission_list(vec![perm.clone()], phi, solver);
+                Some(perms)
+            }
             PermExpr::Add(items) => {
                 let mut acc = Vec::new();
                 for item in items {
                     let mut child = item.collect_permissions(phi, solver)?;
                     acc.append(&mut child);
                 }
-                Some(acc)
+                let perms = normalize_permission_list(acc, phi, solver);
+                Some(perms)
             }
             PermExpr::Sub(lhs, rhs) => {
                 let mut available = lhs.collect_permissions(phi, solver)?;
@@ -181,12 +187,177 @@ impl PermExpr {
                         return None;
                     }
                 }
-                Some(available)
+                let perms = normalize_permission_list(available, phi, solver);
+                Some(perms)
             }
         }
     }
+
+    /// Produce a canonical representation of this permission expression by
+    /// flattening sums/subtractions and simplifying regions and fractions.
+    pub fn normalize(&self, phi: &Phi, solver: &SmtSolver) -> Option<PermExpr> {
+        let perms = self.collect_permissions(phi, solver)?;
+        let normalized = normalize_permission_list(perms, phi, solver);
+        Some(permissions_to_expr(normalized))
+    }
 }
 
+fn normalize_fraction_expr(expr: FractionExpr) -> FractionExpr {
+    fn is_structural_zero(expr: &FractionExpr) -> bool {
+        matches!(expr, FractionExpr::Const(n, _) if *n == 0)
+    }
+
+    fn normalize_once(expr: FractionExpr) -> FractionExpr {
+        match expr {
+            FractionExpr::Const(_, _) | FractionExpr::Var(_) => expr,
+            FractionExpr::Add(lhs, rhs) => {
+                let lhs = normalize_fraction_expr(*lhs);
+                let rhs = normalize_fraction_expr(*rhs);
+
+                if is_structural_zero(&lhs) {
+                    return rhs;
+                }
+                if is_structural_zero(&rhs) {
+                    return lhs;
+                }
+
+                if let (FractionExpr::Const(n1, d1), FractionExpr::Const(n2, d2)) = (&lhs, &rhs) {
+                    let num = (*n1 as i128) * (*d2 as i128) + (*n2 as i128) * (*d1 as i128);
+                    let den = (*d1 as i128) * (*d2 as i128);
+                    return FractionExpr::from_ratio(num as i64, den as i64);
+                }
+
+                if let FractionExpr::Sub(a, b) = &lhs {
+                    if **b == rhs {
+                        return (**a).clone();
+                    }
+                }
+                if let FractionExpr::Sub(a, b) = &rhs {
+                    if **b == lhs {
+                        return (**a).clone();
+                    }
+                }
+
+                FractionExpr::Add(Box::new(lhs), Box::new(rhs))
+            }
+            FractionExpr::Sub(lhs, rhs) => {
+                let lhs = normalize_fraction_expr(*lhs);
+                let rhs = normalize_fraction_expr(*rhs);
+
+                if lhs == rhs {
+                    return FractionExpr::from_int(0);
+                }
+
+                if is_structural_zero(&rhs) {
+                    return lhs;
+                }
+
+                if let (FractionExpr::Const(n1, d1), FractionExpr::Const(n2, d2)) = (&lhs, &rhs) {
+                    let num = (*n1 as i128) * (*d2 as i128) - (*n2 as i128) * (*d1 as i128);
+                    let den = (*d1 as i128) * (*d2 as i128);
+                    return FractionExpr::from_ratio(num as i64, den as i64);
+                }
+
+                if let FractionExpr::Add(a, b) = &lhs {
+                    if **a == rhs {
+                        return (**b).clone();
+                    }
+                    if **b == rhs {
+                        return (**a).clone();
+                    }
+                }
+
+                if let FractionExpr::Sub(a, b) = &lhs {
+                    if **b == rhs {
+                        return (**a).clone();
+                    }
+                }
+
+                if let FractionExpr::Sub(a, b) = &rhs {
+                    if **a == lhs {
+                        return (**b).clone();
+                    }
+                }
+
+                FractionExpr::Sub(Box::new(lhs), Box::new(rhs))
+            }
+        }
+    }
+
+    let mut current = expr;
+    loop {
+        let next = normalize_once(current.clone());
+        if next == current {
+            return next;
+        }
+        current = next;
+    }
+}
+
+fn normalize_permission_list(
+    perms: Vec<Permission>,
+    phi: &Phi,
+    solver: &SmtSolver,
+) -> Vec<Permission> {
+    let mut normalized: Vec<Permission> = Vec::new();
+
+    for perm in perms {
+        let region = perm.region.simplify(phi, solver);
+        if region.is_empty(phi, solver) {
+            continue;
+        }
+        let fraction = normalize_fraction_expr(perm.fraction);
+        if is_fraction_zero(phi, &fraction, solver) {
+            continue;
+        }
+
+        let mut merged = false;
+        for existing in &mut normalized {
+            if existing.array == perm.array && existing.region == region {
+                if let Some(sum) = try_add_fractions(&existing.fraction, &fraction, phi, solver) {
+                    existing.fraction = normalize_fraction_expr(sum);
+                    merged = true;
+                    break;
+                }
+            }
+
+            if !merged
+                && existing.array == perm.array
+                && existing.fraction == fraction
+            {
+                let combined = RegionSetExpr::union([
+                    existing.region.clone(),
+                    region.clone(),
+                ])
+                .simplify(phi, solver);
+
+                existing.region = combined;
+                merged = true;
+                break;
+            }
+        }
+
+        if !merged {
+            normalized.push(Permission::new(
+                fraction,
+                perm.array,
+                region,
+            ));
+        }
+    }
+
+    normalized.sort_by(|a, b| {
+        a.array
+            .0
+            .cmp(&b.array.0)
+            .then_with(|| a.region.to_string().cmp(&b.region.to_string()))
+    });
+
+    normalized
+}
+
+// Iteratively carve out overlapping slices of `available` until `needed` is
+// satisfied, splitting regions/fractions as required and queuing leftovers.
 fn consume_permission(
     available: &mut Vec<Permission>,
     needed: &Permission,
@@ -194,60 +365,101 @@ fn consume_permission(
     solver: &SmtSolver,
 ) -> bool {
     use crate::ghost::fracperms::{check_fraction_leq, try_sub_fractions};
-    use crate::logic::semantic::region_set::{check_subset, overlaps};
+    use crate::logic::semantic::region_set::RegionSetExpr;
 
-    let mut idx = 0;
-    while idx < available.len() {
-        let candidate = &available[idx];
-        if candidate.array != needed.array {
-            idx += 1;
+    let mut pending: Vec<Permission> = vec![needed.clone()];
+
+    while let Some(piece) = pending.pop() {
+        let region = piece.region.simplify(phi, solver);
+        if region.is_empty(phi, solver) {
             continue;
         }
 
-        if !overlaps(phi, &candidate.region, &needed.region, solver) {
-            idx += 1;
-            continue;
+        let mut idx = 0;
+        let mut satisfied = false;
+        while idx < available.len() {
+            if available[idx].array != piece.array {
+                idx += 1;
+                continue;
+            }
+
+            let candidate = available[idx].clone();
+            let overlap = RegionSetExpr::intersection(candidate.region.clone(), region.clone())
+                .simplify(phi, solver);
+            if overlap.is_empty(phi, solver) {
+                idx += 1;
+                continue;
+            }
+
+            let candidate_ge_piece =
+                check_fraction_leq(phi, &piece.fraction, &candidate.fraction, solver);
+
+            available.remove(idx);
+
+            let candidate_outside =
+                RegionSetExpr::difference(candidate.region.clone(), overlap.clone())
+                    .simplify(phi, solver);
+            if !candidate_outside.is_empty(phi, solver) {
+                available.push(Permission::new(
+                    normalize_fraction_expr(candidate.fraction.clone()),
+                    candidate.array.clone(),
+                    candidate_outside,
+                ));
+            }
+
+            let piece_outside =
+                RegionSetExpr::difference(region.clone(), overlap.clone()).simplify(phi, solver);
+            if !piece_outside.is_empty(phi, solver) {
+                pending.push(Permission::new(
+                    normalize_fraction_expr(piece.fraction.clone()),
+                    piece.array.clone(),
+                    piece_outside,
+                ));
+            }
+
+            if candidate_ge_piece {
+                if let Some(diff_fraction) =
+                    try_sub_fractions(&candidate.fraction, &piece.fraction, phi, solver)
+                {
+                    let diff_fraction = normalize_fraction_expr(diff_fraction);
+                    if !is_fraction_zero(phi, &diff_fraction, solver) {
+                        available.push(Permission::new(
+                            diff_fraction,
+                            candidate.array.clone(),
+                            overlap.clone(),
+                        ));
+                    }
+                    satisfied = true;
+                } else {
+                    return false;
+                }
+            } else {
+                if let Some(diff_fraction) =
+                    try_sub_fractions(&piece.fraction, &candidate.fraction, phi, solver)
+                {
+                    let diff_fraction = normalize_fraction_expr(diff_fraction);
+                    if !is_fraction_zero(phi, &diff_fraction, solver) {
+                        pending.push(Permission::new(
+                            diff_fraction,
+                            piece.array.clone(),
+                            overlap.clone(),
+                        ));
+                    }
+                    satisfied = true;
+                } else {
+                    return false;
+                }
+            }
+
+            break;
         }
 
-        if !check_subset(phi, &needed.region, &candidate.region, solver) {
-            idx += 1;
-            continue;
+        if !satisfied {
+            return false;
         }
-
-        if !check_fraction_leq(phi, &needed.fraction, &candidate.fraction, solver) {
-            idx += 1;
-            continue;
-        }
-
-        let candidate = available.remove(idx);
-        let diff_fraction =
-            match try_sub_fractions(&candidate.fraction, &needed.fraction, phi, solver) {
-                Some(diff) => diff,
-                None => return false,
-            };
-
-        if !is_fraction_zero(phi, &diff_fraction, solver) {
-            available.push(Permission::new(
-                diff_fraction,
-                candidate.array.clone(),
-                needed.region.clone(),
-            ));
-        }
-
-        let leftover_region =
-            RegionSetExpr::difference(candidate.region.clone(), needed.region.clone());
-        if !leftover_region.is_empty(phi, solver) {
-            available.push(Permission::new(
-                candidate.fraction,
-                candidate.array,
-                leftover_region,
-            ));
-        }
-
-        return true;
     }
 
-    false
+    true
 }
 
 fn is_fraction_zero(phi: &Phi, frac: &FractionExpr, solver: &SmtSolver) -> bool {
@@ -486,7 +698,8 @@ impl CheckContext {
 
     /// Bind a ghost variable to a permission expression.
     pub fn bind_perm(&mut self, var: &GhostVar, perm: PermExpr) {
-        self.penv.bind(var, perm);
+        let normalized = perm.normalize(&self.phi, &self.solver);
+        self.penv.bind(var, normalized.unwrap_or(perm));
     }
 
     /// Lookup a permission expression.
@@ -659,9 +872,9 @@ fn render_atom(atom: &Atom) -> String {
         Atom::Le(a, b) => format!("{} <= {}", render_idx(a), render_idx(b)),
         Atom::Lt(a, b) => format!("{} < {}", render_idx(a), render_idx(b)),
         Atom::Eq(a, b) => format!("{} == {}", render_idx(a), render_idx(b)),
-        Atom::RealLe(a, b) => format!("{:?} <= {:?}", a, b),
-        Atom::RealLt(a, b) => format!("{:?} < {:?}", a, b),
-        Atom::RealEq(a, b) => format!("{:?} == {:?}", a, b),
+        Atom::RealLe(a, b) => format!("{} <= {}", a, b),
+        Atom::RealLt(a, b) => format!("{} < {}", a, b),
+        Atom::RealEq(a, b) => format!("{} == {}", a, b),
         Atom::BoolVar(name) => name.clone(),
         Atom::And(lhs, rhs) => format!("({}) && ({})", render_atom(lhs), render_atom(rhs)),
         Atom::Or(lhs, rhs) => format!("({}) || ({})", render_atom(lhs), render_atom(rhs)),
@@ -735,10 +948,6 @@ fn render_perm_expr(expr: &PermExpr) -> String {
             format!("({} - {})", render_perm_expr(lhs), render_perm_expr(rhs))
         }
     }
-}
-
-fn render_ghost_var(var: &GhostVar) -> String {
-    var.0.clone()
 }
 
 fn render_ghost_stmt(stmt: &GhostStmt) -> String {
@@ -848,15 +1057,9 @@ pub fn check_ghost_program_with_verbose(program: &GhostProgram, verbose: bool) -
     let solver = SmtSolver::new();
     let mut ctx = CheckContext::new_with_verbose(solver.clone(), verbose);
 
-    if verbose {
-        println!("\n╔═══════════════════════════════════════════════════════════╗");
-        println!("║           Ghost Program Permission Checking               ║");
-        println!("╚═══════════════════════════════════════════════════════════╝\n");
-    }
-
     // First pass: collect function signatures
     if verbose {
-        println!("=== Pass 1: Collecting function signatures ===\n");
+        println!("=== Collecting function signatures ===\n");
     }
     for def in &program.defs {
         let sig = build_function_signature(def);
@@ -871,7 +1074,7 @@ pub fn check_ghost_program_with_verbose(program: &GhostProgram, verbose: bool) -
 
     // Second pass: check each function
     if verbose {
-        println!("=== Pass 2: Checking function bodies ===\n");
+        println!("=== Checking function bodies ===\n");
     }
     for def in &program.defs {
         if verbose {
@@ -887,7 +1090,7 @@ pub fn check_ghost_program_with_verbose(program: &GhostProgram, verbose: bool) -
 
     if verbose {
         println!("\n╔═══════════════════════════════════════════════════════════╗");
-        println!("║           ✓ All checks passed successfully               ║");
+        println!("║           ✓ All checks passed successfully                ║");
         println!("╚═══════════════════════════════════════════════════════════╝\n");
     }
 
@@ -1334,13 +1537,12 @@ fn check_ghost_stmt_joinsplit_load(
     }
 
     let g_fraction = source_perm.fraction.clone();
-    let f_fraction = ctx.fresh_fraction_var("__load_frac_");
+    let f_fraction = ctx.fresh_fraction_var("__frac_");
     ctx.add_fraction_validity_constraint(&f_fraction);
     let f_real = f_fraction.to_real_expr();
     let g_real = g_fraction.to_real_expr();
     // Add constraint: 0 < f < g
     // to make sure subsequent load/call won't stuck
-    ctx.add_fraction_validity_constraint(&g_fraction);
     ctx.add_constraint(Atom::RealLt(f_real.clone(), g_real.clone()));
 
     if ctx.verbose {
@@ -1694,8 +1896,8 @@ fn check_ghost_tail_with_joinsplit(
             for perm_piece in &joined_flat {
                 if !consume_permission(&mut expected_flat, perm_piece, &ctx.phi, &ctx.solver) {
                     return Err(format!(
-                        "Return permission contains {:?} which was not present at function entry",
-                        perm_piece
+                        "Return permission contains {} which was not present at function entry",
+                        render_permission(perm_piece)
                     ));
                 }
             }
@@ -1940,7 +2142,7 @@ fn check_ghost_tail_with_two_joinsplits(
             }
 
             let tail_total =
-                PermExpr::union(vec![joined_perm1.clone(), joined_perm2.clone()]);
+                PermExpr::union(vec![required_sync.clone(), required_garb.clone()]);
             let expected_total =
                 PermExpr::union(vec![entry_perms.0.clone(), entry_perms.1.clone()]);
 
@@ -1954,8 +2156,8 @@ fn check_ghost_tail_with_two_joinsplits(
             for perm_piece in &tail_flat {
                 if !consume_permission(&mut expected_flat, perm_piece, &ctx.phi, &ctx.solver) {
                     return Err(format!(
-                        "TailCall permissions contain {:?} which was not present at function entry",
-                        perm_piece
+                        "TailCall permissions contain {} which was not present at function entry",
+                        render_permission(perm_piece)
                     ));
                 }
             }
@@ -1995,7 +2197,7 @@ pub fn check_ghost_tail_if(tail: &GhostTail, ctx: &mut CheckContext) -> Result<(
             else_expr,
         } => {
             if ctx.verbose {
-                println!("\n  ┌─ Checking if-else with condition: {}", cond.0);
+                println!("\n === Checking if-else with condition: {} ===", cond.0);
             }
 
             // Branch: create two sub-contexts
@@ -2008,21 +2210,18 @@ pub fn check_ghost_tail_if(tail: &GhostTail, ctx: &mut CheckContext) -> Result<(
             else_ctx.add_constraint(Atom::Not(Box::new(cond_var)));
 
             if ctx.verbose {
-                println!("  │");
                 println!("  ├─ Then branch (assuming {}):", cond.0);
             }
             // Check both branches
             check_ghost_expr(then_expr, &mut then_ctx)?;
             
             if ctx.verbose {
-                println!("  │");
                 println!("  ├─ Else branch (assuming !{}):", cond.0);
             }
             check_ghost_expr(else_expr, &mut else_ctx)?;
 
             if ctx.verbose {
-                println!("  │");
-                println!("  └─ Both branches checked successfully");
+                println!("  === Both branches checked successfully ===\n");
             }
 
             // Both branches must succeed independently
@@ -2043,6 +2242,63 @@ mod tests {
             Var(array.to_string()),
             RegionSetExpr::interval(Idx::Const(lo), Idx::Const(hi)),
         ))
+    }
+
+    #[test]
+    fn test_perm_normalize_adjacent_partitions() {
+        let solver = SmtSolver::new();
+        let mut phi = Phi::new();
+
+        phi.push(Atom::Le(Idx::Const(0), Idx::Var("i".to_string())));
+        phi.push(Atom::Le(Idx::Const(0), Idx::Var("N".to_string())));
+        phi.push(Atom::Lt(Idx::Var("i".to_string()), Idx::Var("N".to_string())));
+        phi.push(Atom::Eq(
+            Idx::Var("j".to_string()),
+            Idx::Add(
+                Box::new(Idx::Var("i".to_string())),
+                Box::new(Idx::Const(1)),
+            ),
+        ));
+
+        let dst = Var("dst".to_string());
+        let total = RegionSetExpr::interval(Idx::Const(0), Idx::Var("N".to_string()));
+        let region_i = RegionSetExpr::interval(Idx::Var("i".to_string()), Idx::Var("N".to_string()));
+        let region_j = RegionSetExpr::interval(Idx::Var("j".to_string()), Idx::Var("N".to_string()));
+
+        let expr_i = PermExpr::Add(vec![
+            PermExpr::singleton(Permission::new(
+                FractionExpr::from_int(1),
+                dst.clone(),
+                RegionSetExpr::difference(total.clone(), region_i.clone()),
+            )),
+            PermExpr::singleton(Permission::new(
+                FractionExpr::from_int(1),
+                dst.clone(),
+                region_i,
+            )),
+        ]);
+
+        let expr_j = PermExpr::Add(vec![
+            PermExpr::singleton(Permission::new(
+                FractionExpr::from_int(1),
+                dst.clone(),
+                RegionSetExpr::difference(total.clone(), region_j.clone()),
+            )),
+            PermExpr::singleton(Permission::new(
+                FractionExpr::from_int(1),
+                dst.clone(),
+                region_j,
+            )),
+        ]);
+
+        let expected = PermExpr::singleton(Permission::new(
+            FractionExpr::from_int(1),
+            dst,
+            total,
+        ));
+
+        assert_eq!(expr_i.normalize(&phi, &solver), Some(expected.clone()));
+        assert_eq!(expr_j.normalize(&phi, &solver), Some(expected));
     }
 
     #[test]

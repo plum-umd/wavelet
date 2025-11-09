@@ -5,6 +5,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use dfx::check::{CheckOptions, check_program_with_options};
+use dfx::ghost::check_ghost_program_with_verbose;
 use dfx::ghost::json::{ExportError, export_program_json};
 use dfx::{ParseError, SemanticLogic, TypeError, parse_program, synthesize_ghost_program};
 use thiserror::Error;
@@ -105,13 +106,38 @@ fn run(cli: Cli) -> Result<(), CliError> {
     options.verbose = verbose;
     options.log_solver_queries = log_solver;
     let logic = SemanticLogic::new();
+    if verbose {
+        println!("\n╔═══════════════════════════════════════════════════════════╗");
+        println!("║                  Checking Input Program                   ║");
+        println!("╚═══════════════════════════════════════════════════════════╝\n");
+    }
 
     check_program_with_options(&program, &logic, options).map_err(|source| CliError::Type {
         path: input.clone(),
         source,
     })?;
-
+    if verbose {
+        println!("\n✅ Type checking succeeded!\n");
+    }
     let ghost = synthesize_ghost_program(&program);
+
+    // Also check the ghost program with verbose mode if requested
+    if verbose {
+        println!("\n╔═══════════════════════════════════════════════════════════╗");
+        println!("║         Checking Synthesized Ghost Program                ║");
+        println!("╚═══════════════════════════════════════════════════════════╝\n");
+    }
+
+    check_ghost_program_with_verbose(&ghost, verbose).map_err(|err| CliError::Type {
+        path: input.clone(),
+        source: TypeError::InvalidOp {
+            op: format!("Ghost program check failed: {}", err),
+        },
+    })?;
+    if verbose {
+        println!("\n✅ Ghost program validation succeeded!\n");
+    }
+
     if emit_ghost {
         println!("{}", ghost);
     }

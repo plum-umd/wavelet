@@ -154,11 +154,16 @@ impl RegionSetExpr {
         }
     }
 
+    /// Apply a single round of region simplification by eliminating structural
+    /// noise (such as nested unions, empty pieces, redundant subsets, and
+    /// degenerate differences/intersections) while respecting the logical
+    /// context carried in `phi`.
     fn simplify_once(&self, phi: &Phi, solver: &SmtSolver) -> RegionSetExpr {
         match self {
             RegionSetExpr::Empty => RegionSetExpr::Empty,
             RegionSetExpr::Interval { .. } => self.clone(),
             RegionSetExpr::Union(items) => {
+                // Flatten nested unions and simplify each child first.
                 let mut flat: Vec<RegionSetExpr> = Vec::new();
                 for item in items {
                     let simplified = item.simplify(phi, solver);
@@ -170,6 +175,7 @@ impl RegionSetExpr {
 
                 flat.retain(|expr| !is_empty_expr(expr, phi, solver));
 
+                // Remove redundant subsets while preserving larger covering regions.
                 let mut normalized: Vec<RegionSetExpr> = Vec::new();
                 'outer: for expr in flat {
                     let mut to_remove = Vec::new();
@@ -187,6 +193,30 @@ impl RegionSetExpr {
                     normalized.push(expr);
                 }
 
+                loop {
+                    let mut reduced = false;
+                    // Collapse `(base \ rhs) ∪ rhs` back to `base` when both parts appear.
+                    'outer_reduce: for idx in 0..normalized.len() {
+                        if let RegionSetExpr::Difference(base, rhs) = normalized[idx].clone() {
+                            for j in 0..normalized.len() {
+                                if idx == j {
+                                    continue;
+                                }
+                                if regions_equivalent(phi, &normalized[j], &rhs, solver) {
+                                    let base_expr = base.simplify(phi, solver);
+                                    normalized[idx] = base_expr;
+                                    normalized.remove(j);
+                                    reduced = true;
+                                    break 'outer_reduce;
+                                }
+                            }
+                        }
+                    }
+                    if !reduced {
+                        break;
+                    }
+                }
+
                 if normalized.is_empty() {
                     RegionSetExpr::Empty
                 } else if normalized.len() == 1 {
@@ -200,6 +230,7 @@ impl RegionSetExpr {
                 let left = lhs.simplify(phi, solver);
                 let right = rhs.simplify(phi, solver);
 
+                // Short-circuit obvious empty or redundant differences.
                 if is_empty_expr(&left, phi, solver) {
                     return RegionSetExpr::Empty;
                 }
@@ -210,6 +241,7 @@ impl RegionSetExpr {
                     return RegionSetExpr::Empty;
                 }
 
+                // Pull nested differences apart so we can combine all subtractions.
                 let mut base = left;
                 let mut subtracts = vec![right];
                 loop {
@@ -237,6 +269,7 @@ impl RegionSetExpr {
                 let left = lhs.simplify(phi, solver);
                 let right = rhs.simplify(phi, solver);
 
+                // Intersection collapses to empty or a subset if either side dominates.
                 if is_empty_expr(&left, phi, solver) || is_empty_expr(&right, phi, solver) {
                     return RegionSetExpr::Empty;
                 }
@@ -265,6 +298,15 @@ fn is_empty_expr(expr: &RegionSetExpr, phi: &Phi, solver: &SmtSolver) -> bool {
 
 fn is_subset_expr(lhs: &RegionSetExpr, rhs: &RegionSetExpr, phi: &Phi, solver: &SmtSolver) -> bool {
     check_subset(phi, lhs, rhs, solver)
+}
+
+fn regions_equivalent(
+    phi: &Phi,
+    lhs: &RegionSetExpr,
+    rhs: &RegionSetExpr,
+    solver: &SmtSolver,
+) -> bool {
+    check_subset(phi, lhs, rhs, solver) && check_subset(phi, rhs, lhs, solver)
 }
 
 impl RegionModel for RegionSetExpr {

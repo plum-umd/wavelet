@@ -2,7 +2,7 @@
 
 use std::{
     collections::HashMap,
-    fmt,
+    fmt::{self, Display},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -54,6 +54,23 @@ pub enum RealExpr {
     Add(Box<RealExpr>, Box<RealExpr>),
     /// Difference of two real expressions.
     Sub(Box<RealExpr>, Box<RealExpr>),
+}
+
+impl Display for RealExpr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RealExpr::Const(n, d) => {
+                if *d == 1 {
+                    write!(f, "{}", n)
+                } else {
+                    write!(f, "({}/{})", n, d)
+                }
+            }
+            RealExpr::Var(name) => write!(f, "{}", name),
+            RealExpr::Add(lhs, rhs) => write!(f, "({} + {})", lhs, rhs),
+            RealExpr::Sub(lhs, rhs) => write!(f, "({} - {})", lhs, rhs),
+        }
+    }
 }
 
 impl RealExpr {
