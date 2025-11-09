@@ -53,6 +53,12 @@ fn par_store<T: Copy, const N: usize>(i: u32, A: &mut [T; N], t: T, Tracked(A_ca
     A[i as usize] = t;
 }
 
+#[verifier(external_body)]
+fn fence<const N: usize>(Tracked(cap): Tracked<&mut Region<N>>, Ghost(old_cap): Ghost<Region<N>>)
+    ensures cap.0 == old_cap.0
+{
+}
+
 // a tail-recursive sum of an array A of length N, starting from index i, with accumulator a
 fn sum<const N: usize>(i: u32, A: &[u32; N], tracked A_cap: &Region<N>, a: u32) -> u32 
     requires 
@@ -116,12 +122,10 @@ fn increment<const N: usize>(i: u32, A: &mut [u32; N], Tracked(A_cap): Tracked<&
     decreases N - i,
 {
     if i < N as u32 {
-        // let x = par_load_unique(i, A, Tracked(A_cap));
-        let x = A[i as usize]; // mimic fence here
-        // ---
+        let x = par_load_unique(i, A, Tracked(A_cap));
+        fence::<N>(Tracked(A_cap), Ghost(*old(A_cap)));  // mimic fence here
         let x_add_1 = x.wrapping_add(1);
         let _ = par_store(i, A, x_add_1, Tracked(A_cap));
-        // A[i as usize] = x_add_1; // mimic fence here
         increment(i + 1, A, Tracked(A_cap));
     } else {
         ()
@@ -140,9 +144,8 @@ fn raw<const N: usize>(j: u32, A: &mut [u32; N], Tracked(A_cap): Tracked<&mut Re
 {
     if j < N as u32 {
         let x = par_load_unique(j - 1, A, Tracked(A_cap));
-        // let _ = par_store(j, A, x, Tracked(A_cap));
-        A[j as usize] = x; // mimic fence here
-        // ---
+        let _ = par_store(j, A, x, Tracked(A_cap));
+        fence::<N>(Tracked(A_cap), Ghost(*old(A_cap)));  // mimic fence here
         raw(j + 1, A, Tracked(A_cap));
     } else {
         ()
@@ -154,13 +157,15 @@ fn raw<const N: usize>(j: u32, A: &mut [u32; N], Tracked(A_cap): Tracked<&mut Re
 //  a[j] = a[j + 1];
 fn war<const N: usize>(j: u32, A: &mut [u32; N], Tracked(A_cap): Tracked<&mut Region<N>>) 
     requires 
+        N > 1,
         // mimic &uniq{j..N-1} [u32; N]
         Set::new(|i: int| j <= i < N as int).subset_of(old(A_cap).0),
     decreases N - j,
 {
-    if j < N as u32 - 1 {
+    if j < (N - 1) as u32 {
         let x = par_load_unique(j + 1, A, Tracked(A_cap));
         let _ = par_store(j, A, x, Tracked(A_cap));
+        fence::<N>(Tracked(A_cap), Ghost(*old(A_cap)));  // mimic fence here
         war(j + 1, A, Tracked(A_cap));
     } else {
         ()
