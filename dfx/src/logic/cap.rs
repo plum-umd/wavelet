@@ -1,6 +1,7 @@
 //! Capability algebra parameterised over an abstract region model.
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 use super::region::Region;
 use crate::logic::semantic::solver::{Phi, PhiSolver};
@@ -27,6 +28,12 @@ pub trait RegionModel: Clone + Default + std::fmt::Debug {
 
     /// Render the region for diagnostics.
     fn display(&self) -> String;
+
+    /// Render the region using contextual simplifications from `phi`.
+    fn display_with(&self, phi: &Phi, solver: &Self::Solver) -> String {
+        let _ = (phi, solver);
+        self.display()
+    }
 }
 
 /// A capability comprising read-only (`shrd`) and read-write (`uniq`) regions.
@@ -71,6 +78,19 @@ impl<R: RegionModel> Cap<R> {
     }
 }
 
+impl<R: RegionModel> fmt::Display for Cap<R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let shrd = self.shrd.display();
+        let uniq = self.uniq.display();
+        match (shrd.as_str(), uniq.as_str()) {
+            (s, u) if s == "<empty>" && u == "<empty>" => write!(f, "<empty>"),
+            (s, u) if u == "<empty>" => write!(f, "shrd: {s}"),
+            (s, u) if s == "<empty>" => write!(f, "uniq: {u}"),
+            (s, u) => write!(f, "shrd: {s}; uniq: {u}"),
+        }
+    }
+}
+
 /// A mapping from array identifiers to capabilities.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Delta<R: RegionModel>(pub BTreeMap<String, Cap<R>>);
@@ -107,6 +127,24 @@ impl<R: RegionModel> Delta<R> {
     }
 }
 
+impl<R: RegionModel> fmt::Display for Delta<R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0.is_empty() {
+            return write!(f, "<empty>");
+        }
+        let mut first = true;
+        write!(f, "{{")?;
+        for (name, cap) in &self.0 {
+            if !first {
+                write!(f, ", ")?;
+            }
+            first = false;
+            write!(f, "{}: {}", name, cap)?;
+        }
+        write!(f, "}}")
+    }
+}
+
 /// A capability pattern appearing in a function signature.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CapPattern {
@@ -116,9 +154,7 @@ pub struct CapPattern {
 }
 
 impl CapPattern {
-    pub fn initialize<R: RegionModel>(
-        &self,
-    ) -> Cap<R> {
+    pub fn initialize<R: RegionModel>(&self) -> Cap<R> {
         let mut cap = Cap::<R>::default();
         if let Some(uniq) = &self.uniq {
             cap.uniq = R::from_region(uniq);

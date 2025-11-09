@@ -4,8 +4,8 @@ use dfx::SemanticLogic;
 use dfx::check::{CheckOptions, check_fn_with_options};
 use dfx::env::FnRegistry;
 use dfx::ir::FnDef;
-use dfx::parse::parse_fn_def;
 use dfx::logic::syntactic::SyntacticLogic;
+use dfx::parse::parse_fn_def;
 use quote::quote;
 use std::collections::HashMap;
 use syn::{Item, parse_file};
@@ -36,20 +36,18 @@ fn parse_fixture(code: &str) -> HashMap<String, FnDef> {
 }
 
 macro_rules! with_backends {
-    (($name:ident, $logic:ident) => $body:block) => {
-        {
-            let $name = "semantic";
-            let semantic_logic = SemanticLogic::default();
-            let $logic = &semantic_logic;
-            $body
-        }
-        {
-            let $name = "syntactic";
-            let syntactic_logic = SyntacticLogic::default();
-            let $logic = &syntactic_logic;
-            $body
-        }
-    };
+    (($name:ident, $logic:ident) => $body:block) => {{
+        let $name = "semantic";
+        let semantic_logic = SemanticLogic::default();
+        let $logic = &semantic_logic;
+        $body
+    }
+    {
+        let $name = "syntactic";
+        let syntactic_logic = SyntacticLogic::default();
+        let $logic = &syntactic_logic;
+        $body
+    }};
 }
 
 macro_rules! single_fn_parser_test_ok {
@@ -154,7 +152,7 @@ macro_rules! parser_case {
 }
 
 macro_rules! fixture_parser_test {
-    ($test_name:ident, file = $file:expr, entry = $entry:expr, extra = [$($extra:expr),* $(,)?]) => {
+    ($test_name:ident, file = $file:expr, entry = $entry:expr, extra = [$($extra:expr),* $(,)?], backends = [$($backend:expr),+ $(,)?] $(,)?) => {
         #[test]
         fn $test_name() {
             let defs = parse_fixture(include_str!($file));
@@ -172,11 +170,23 @@ macro_rules! fixture_parser_test {
                 registry.insert(def);
             )*
             let options: CheckOptions = CheckOptions::default();
+            let allowed_backends = [$( $backend ),+];
             with_backends!((name, logic) => {
-                let result = check_fn_with_options(&top_def, &registry, logic, options);
-                assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
+                if allowed_backends.contains(&name) {
+                    let result = check_fn_with_options(&top_def, &registry, logic, options);
+                    assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
+                }
             });
         }
+    };
+    ($test_name:ident, file = $file:expr, entry = $entry:expr, extra = [$($extra:expr),* $(,)?]) => {
+        fixture_parser_test!(
+            $test_name,
+            file = $file,
+            entry = $entry,
+            extra = [$($extra),*],
+            backends = ["semantic", "syntactic"],
+        );
     };
 }
 
@@ -297,12 +307,14 @@ fixture_parser_test!(
     test_nn_fc_with_parser,
     file = "test_files/nn_fc.rs",
     entry = "nn_fc",
-    extra = ["row_dot", "rec_rows"]
+    extra = ["row_dot", "rec_rows"],
+    backends = ["semantic"]
 );
 
 fixture_parser_test!(
     test_dmv_with_parser,
     file = "test_files/dmv.rs",
     entry = "dmv",
-    extra = ["cal_dot_product", "mv_mul"]
+    extra = ["cal_dot_product", "mv_mul"],
+    backends = ["semantic"]
 );

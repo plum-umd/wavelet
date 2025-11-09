@@ -197,6 +197,7 @@ pub fn linearise(idx: &Idx) -> Option<LinearExpr> {
                 coeffs,
             })
         }
+        Idx::Mul(_, _) => None,
     }
 }
 
@@ -244,6 +245,10 @@ impl BasicSolver {
                 Box::new(BasicSolver::rewrite_idx(b, eqs, seen)),
             ),
             Idx::Sub(a, b) => Idx::Sub(
+                Box::new(BasicSolver::rewrite_idx(a, eqs, seen)),
+                Box::new(BasicSolver::rewrite_idx(b, eqs, seen)),
+            ),
+            Idx::Mul(a, b) => Idx::Mul(
                 Box::new(BasicSolver::rewrite_idx(a, eqs, seen)),
                 Box::new(BasicSolver::rewrite_idx(b, eqs, seen)),
             ),

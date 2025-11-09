@@ -1371,6 +1371,8 @@ fn cal_dot_product<const M: usize, const N: usize>(
 
 Sum elements of an array from `i` to `N`:
 
+**Capability**
+
 ```rust
 // `A: &[u32; N]@{i..N} ` represents read-only (shared) permission for `A` from `i` (inclusive) to `N` (exclusive)
 fn sum<const N: usize>(i: u32, A: &[u32; N]@{i..N}, a: u32) -> u32 =
@@ -1382,6 +1384,21 @@ fn sum<const N: usize>(i: u32, A: &[u32; N]@{i..N}, a: u32) -> u32 =
     sum(j, A, val + a) // 1. substitution in fun sig: `A |-> shrd@{i..N}[j/i] = A |-> shrd@{j..N}`
                       // 2. current Δ: A |-> shrd@{i..N}
                       // Φ ⊨ A |-> shrd@{j..N} ≤ Δ (according to some concrete program logic that proves this, i.e. j > i)
+  } else {
+    a
+  }
+```
+
+**Ghost Permission**
+
+```rust
+fn sum<const N: usize>(i: u32, A: &[u32; N], p0: shrd@A{i..N}, a: u32) -> u32 =
+  let p1, p2 = jnsplt([]); // p0: shrd@A{i..N}, 
+  let c, p3 = lt(i, N, p1);
+  if c {
+    let val = load(i, A);
+    let j = i + 1;
+    sum(j, A, val + a)
   } else {
     a
   }

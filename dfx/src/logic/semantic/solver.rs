@@ -29,6 +29,8 @@ pub enum Idx {
     Add(Box<Idx>, Box<Idx>),
     /// Difference of two indices.
     Sub(Box<Idx>, Box<Idx>),
+    /// Product of two indices.
+    Mul(Box<Idx>, Box<Idx>),
 }
 
 impl Idx {
@@ -294,6 +296,11 @@ impl<'st> Encoder<'st> {
                 let l = self.encode_idx(lhs);
                 let r = self.encode_idx(rhs);
                 l - r
+            }
+            Idx::Mul(lhs, rhs) => {
+                let l = self.encode_idx(lhs);
+                let r = self.encode_idx(rhs);
+                l * r
             }
         }
     }

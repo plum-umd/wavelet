@@ -1,6 +1,7 @@
 //! The core type checking logic for the restricted language.
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 use crate::env::{Ctx, FnRegistry};
 use crate::error::TypeError;
@@ -27,6 +28,10 @@ fn substitute_idx(idx: &Idx, subst: &BTreeMap<String, String>) -> Idx {
             Box::new(substitute_idx(b, subst)),
         ),
         Idx::Sub(a, b) => Idx::Sub(
+            Box::new(substitute_idx(a, subst)),
+            Box::new(substitute_idx(b, subst)),
+        ),
+        Idx::Mul(a, b) => Idx::Mul(
             Box::new(substitute_idx(a, subst)),
             Box::new(substitute_idx(b, subst)),
         ),
@@ -62,6 +67,7 @@ fn render_idx(idx: &Idx) -> String {
         Idx::Var(v) => v.clone(),
         Idx::Add(a, b) => format!("({} + {})", render_idx(a), render_idx(b)),
         Idx::Sub(a, b) => format!("({} - {})", render_idx(a), render_idx(b)),
+        Idx::Mul(a, b) => format!("({} * {})", render_idx(a), render_idx(b)),
     }
 }
 
@@ -107,9 +113,83 @@ where
     let uniq_empty = cap.uniq.is_empty(phi, solver);
     match (shrd_empty, uniq_empty) {
         (true, true) => "<empty>".to_string(),
-        (false, true) => format!("shrd: {}", cap.shrd.display()),
-        (true, false) => format!("uniq: {}", cap.uniq.display()),
-        (false, false) => format!("shrd: {}; uniq: {}", cap.shrd.display(), cap.uniq.display()),
+        (false, true) => format!("shrd: {}", cap.shrd.display_with(phi, solver)),
+        (true, false) => format!("uniq: {}", cap.uniq.display_with(phi, solver)),
+        (false, false) => format!(
+            "shrd: {}; uniq: {}",
+            cap.shrd.display_with(phi, solver),
+            cap.uniq.display_with(phi, solver)
+        ),
+    }
+}
+
+fn display_cap_with<'a, L: CapabilityLogic>(
+    logic: &'a L,
+    phi: &'a Phi,
+    cap: &'a Cap<L::Region>,
+) -> CapDisplay<'a, L>
+where
+    L::Region: RegionModel,
+{
+    CapDisplay { logic, phi, cap }
+}
+
+fn display_delta_with<'a, L: CapabilityLogic>(
+    logic: &'a L,
+    phi: &'a Phi,
+    delta: &'a Delta<L::Region>,
+) -> DeltaDisplay<'a, L>
+where
+    L::Region: RegionModel,
+{
+    DeltaDisplay { logic, phi, delta }
+}
+
+struct CapDisplay<'a, L: CapabilityLogic>
+where
+    L::Region: RegionModel,
+{
+    logic: &'a L,
+    phi: &'a Phi,
+    cap: &'a Cap<L::Region>,
+}
+
+impl<'a, L: CapabilityLogic> fmt::Display for CapDisplay<'a, L>
+where
+    L::Region: RegionModel,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", render_cap(self.logic, self.phi, self.cap))
+    }
+}
+
+struct DeltaDisplay<'a, L: CapabilityLogic>
+where
+    L::Region: RegionModel,
+{
+    logic: &'a L,
+    phi: &'a Phi,
+    delta: &'a Delta<L::Region>,
+}
+
+impl<'a, L: CapabilityLogic> fmt::Display for DeltaDisplay<'a, L>
+where
+    L::Region: RegionModel,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.delta.0.is_empty() {
+            return write!(f, "<empty>");
+        }
+        let mut first = true;
+        write!(f, "{{")?;
+        for (name, cap) in &self.delta.0 {
+            if !first {
+                write!(f, ", ")?;
+            }
+            first = false;
+            write!(f, "{}: {}", name, render_cap(self.logic, self.phi, cap))?;
+        }
+        write!(f, "}}")
     }
 }
 
@@ -495,16 +575,17 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    // Add fact to Phi for Add/Sub operations.
+                    // Add fact to Phi for Add/Sub/Mul operations.
                     let x_idx = Idx::Var(vars[0].0.clone());
                     let y_idx = Idx::Var(vars[1].0.clone());
                     let result_idx = Idx::Var(vars[2].0.clone());
                     let rhs = match op {
                         Op::Add => Idx::Add(Box::new(x_idx), Box::new(y_idx)),
                         Op::Sub => Idx::Sub(Box::new(x_idx), Box::new(y_idx)),
-                        _ => result_idx.clone(), // Don't track Mul/Div as they're non-linear
+                        Op::Mul => Idx::Mul(Box::new(x_idx), Box::new(y_idx)),
+                        _ => result_idx.clone(),
                     };
-                    if !matches!(op, Op::Mul | Op::Div) {
+                    if !matches!(op, Op::Div) {
                         ctx.phi.push(Atom::Eq(result_idx, rhs));
                     }
                     ctx.gamma.insert(vars[2].clone(), Ty::Int);
@@ -725,7 +806,14 @@ where
                     if !ctx.logic.cap_leq(&ctx.phi, &req_cap, &have_cap) {
                         return Err(TypeError::InsufficientCapability {
                             array: arr_name.clone(),
-                            region: region.to_string(),
+                            required: format!(
+                                "{}",
+                                display_cap_with(ctx.logic, &ctx.phi, &req_cap)
+                            ),
+                            available: format!(
+                                "{}",
+                                display_cap_with(ctx.logic, &ctx.phi, &have_cap)
+                            ),
                         });
                     }
                     if !*fence {
@@ -795,7 +883,14 @@ where
                     if !ctx.logic.cap_leq(&ctx.phi, &req_cap, &have_cap) {
                         return Err(TypeError::InsufficientCapability {
                             array: arr_name.clone(),
-                            region: region.to_string(),
+                            required: format!(
+                                "{}",
+                                display_cap_with(ctx.logic, &ctx.phi, &req_cap)
+                            ),
+                            available: format!(
+                                "{}",
+                                display_cap_with(ctx.logic, &ctx.phi, &have_cap)
+                            ),
                         });
                     }
                     if !*fence {
@@ -891,7 +986,11 @@ where
             if !ctx.logic.delta_leq(&ctx.phi, &required_delta, &ctx.delta) {
                 return Err(TypeError::InsufficientCapability {
                     array: format!("function call to {}", func.0),
-                    region: format!("{:?}", required_delta),
+                    required: format!(
+                        "{}",
+                        display_delta_with(ctx.logic, &ctx.phi, &required_delta)
+                    ),
+                    available: format!("{}", display_delta_with(ctx.logic, &ctx.phi, &ctx.delta)),
                 });
             }
 
@@ -1046,7 +1145,11 @@ where
             if !ctx.logic.delta_leq(&ctx.phi, &required_delta, &ctx.delta) {
                 return Err(TypeError::InsufficientCapability {
                     array: format!("tail call to {}", func.0),
-                    region: format!("{:?}", required_delta),
+                    required: format!(
+                        "{}",
+                        display_delta_with(ctx.logic, &ctx.phi, &required_delta)
+                    ),
+                    available: format!("{}", display_delta_with(ctx.logic, &ctx.phi, &ctx.delta)),
                 });
             }
 

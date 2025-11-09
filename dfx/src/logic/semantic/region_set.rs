@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::fmt;
 
 use smtlib_lowlevel::{
     Driver, Storage,
@@ -128,6 +129,182 @@ impl RegionSetExpr {
             }
         }
     }
+
+    fn precedence(&self) -> u8 {
+        match self {
+            RegionSetExpr::Empty | RegionSetExpr::Interval { .. } => 3,
+            RegionSetExpr::Intersection(_, _) => 2,
+            RegionSetExpr::Difference(_, _) => 1,
+            RegionSetExpr::Union(_) => 0,
+        }
+    }
+
+    fn fmt_with_prec(&self, f: &mut fmt::Formatter<'_>, parent_prec: u8) -> fmt::Result {
+        let prec = self.precedence();
+        let needs_paren = prec < parent_prec;
+        if needs_paren {
+            write!(f, "(")?;
+        }
+
+        match self {
+            RegionSetExpr::Empty => write!(f, "∅")?,
+            RegionSetExpr::Interval { lo, hi } => write!(f, "[{}..{})", lo, hi)?,
+            RegionSetExpr::Union(items) => {
+                if items.is_empty() {
+                    write!(f, "∅")?
+                } else {
+                    let mut first = true;
+                    for item in items {
+                        if first {
+                            first = false;
+                        } else {
+                            write!(f, " ∪ ")?;
+                        }
+                        item.fmt_with_prec(f, prec)?;
+                    }
+                }
+            }
+            RegionSetExpr::Difference(lhs, rhs) => {
+                lhs.fmt_with_prec(f, prec)?;
+                write!(f, " \\ ")?;
+                rhs.fmt_with_prec(f, prec + 1)?;
+            }
+            RegionSetExpr::Intersection(lhs, rhs) => {
+                lhs.fmt_with_prec(f, prec)?;
+                write!(f, " ∩ ")?;
+                rhs.fmt_with_prec(f, prec)?;
+            }
+        }
+
+        if needs_paren {
+            write!(f, ")")?;
+        }
+
+        Ok(())
+    }
+
+    pub fn simplify(&self, phi: &Phi, solver: &SmtSolver) -> RegionSetExpr {
+        let mut current = self.clone();
+        loop {
+            let next = current.simplify_once(phi, solver);
+            if next == current {
+                return next;
+            }
+            current = next;
+        }
+    }
+
+    fn simplify_once(&self, phi: &Phi, solver: &SmtSolver) -> RegionSetExpr {
+        match self {
+            RegionSetExpr::Empty => RegionSetExpr::Empty,
+            RegionSetExpr::Interval { .. } => self.clone(),
+            RegionSetExpr::Union(items) => {
+                let mut flat: Vec<RegionSetExpr> = Vec::new();
+                for item in items {
+                    let simplified = item.simplify(phi, solver);
+                    match simplified {
+                        RegionSetExpr::Union(inner) => flat.extend(inner),
+                        other => flat.push(other),
+                    }
+                }
+
+                flat.retain(|expr| !is_empty_expr(expr, phi, solver));
+
+                let mut normalized: Vec<RegionSetExpr> = Vec::new();
+                'outer: for expr in flat {
+                    let mut to_remove = Vec::new();
+                    for (idx, existing) in normalized.iter().enumerate() {
+                        if is_subset_expr(&expr, existing, phi, solver) {
+                            continue 'outer;
+                        }
+                        if is_subset_expr(existing, &expr, phi, solver) {
+                            to_remove.push(idx);
+                        }
+                    }
+                    for idx in to_remove.into_iter().rev() {
+                        normalized.remove(idx);
+                    }
+                    normalized.push(expr);
+                }
+
+                if normalized.is_empty() {
+                    RegionSetExpr::Empty
+                } else if normalized.len() == 1 {
+                    normalized.pop().unwrap()
+                } else {
+                    normalized.sort_by(|a, b| format!("{}", a).cmp(&format!("{}", b)));
+                    RegionSetExpr::Union(normalized)
+                }
+            }
+            RegionSetExpr::Difference(lhs, rhs) => {
+                let left = lhs.simplify(phi, solver);
+                let right = rhs.simplify(phi, solver);
+
+                if is_empty_expr(&left, phi, solver) {
+                    return RegionSetExpr::Empty;
+                }
+                if is_empty_expr(&right, phi, solver) {
+                    return left;
+                }
+                if is_subset_expr(&left, &right, phi, solver) {
+                    return RegionSetExpr::Empty;
+                }
+
+                let mut base = left;
+                let mut subtracts = vec![right];
+                loop {
+                    match base {
+                        RegionSetExpr::Difference(inner_lhs, inner_rhs) => {
+                            subtracts.push(*inner_rhs);
+                            base = *inner_lhs;
+                        }
+                        _ => break,
+                    }
+                }
+
+                let subtraction = RegionSetExpr::union(subtracts).simplify(phi, solver);
+
+                if is_empty_expr(&subtraction, phi, solver) {
+                    return base;
+                }
+                if is_subset_expr(&base, &subtraction, phi, solver) {
+                    return RegionSetExpr::Empty;
+                }
+
+                RegionSetExpr::Difference(Box::new(base), Box::new(subtraction))
+            }
+            RegionSetExpr::Intersection(lhs, rhs) => {
+                let left = lhs.simplify(phi, solver);
+                let right = rhs.simplify(phi, solver);
+
+                if is_empty_expr(&left, phi, solver) || is_empty_expr(&right, phi, solver) {
+                    return RegionSetExpr::Empty;
+                }
+                if is_subset_expr(&left, &right, phi, solver) {
+                    return left;
+                }
+                if is_subset_expr(&right, &left, phi, solver) {
+                    return right;
+                }
+
+                RegionSetExpr::Intersection(Box::new(left), Box::new(right))
+            }
+        }
+    }
+}
+
+impl fmt::Display for RegionSetExpr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.fmt_with_prec(f, 0)
+    }
+}
+
+fn is_empty_expr(expr: &RegionSetExpr, phi: &Phi, solver: &SmtSolver) -> bool {
+    check_subset(phi, expr, &RegionSetExpr::Empty, solver)
+}
+
+fn is_subset_expr(lhs: &RegionSetExpr, rhs: &RegionSetExpr, phi: &Phi, solver: &SmtSolver) -> bool {
+    check_subset(phi, lhs, rhs, solver)
 }
 
 impl RegionModel for RegionSetExpr {
@@ -154,7 +331,11 @@ impl RegionModel for RegionSetExpr {
     }
 
     fn display(&self) -> String {
-        format!("{:?}", self)
+        format!("{}", self)
+    }
+
+    fn display_with(&self, phi: &Phi, solver: &Self::Solver) -> String {
+        self.simplify(phi, solver).to_string()
     }
 }
 
@@ -195,7 +376,7 @@ pub fn check_subset(
     let witness_name = choose_witness_name(&int_vars);
 
     let mut commands = Vec::new();
-    commands.push("(set-logic QF_LIA)".to_string());
+    commands.push("(set-logic QF_NIA)".to_string());
     if let Some(timeout) = solver.timeout_ms() {
         commands.push(format!("(set-option :timeout {timeout})"));
     }
@@ -387,7 +568,7 @@ fn collect_idx_vars(idx: &Idx, set: &mut BTreeSet<String>) {
         Idx::Var(name) => {
             set.insert(name.clone());
         }
-        Idx::Add(lhs, rhs) | Idx::Sub(lhs, rhs) => {
+        Idx::Add(lhs, rhs) | Idx::Sub(lhs, rhs) | Idx::Mul(lhs, rhs) => {
             collect_idx_vars(lhs, set);
             collect_idx_vars(rhs, set);
         }
@@ -400,6 +581,7 @@ fn encode_idx(idx: &Idx) -> String {
         Idx::Var(name) => name.clone(),
         Idx::Add(lhs, rhs) => format!("(+ {} {})", encode_idx(lhs), encode_idx(rhs)),
         Idx::Sub(lhs, rhs) => format!("(- {} {})", encode_idx(lhs), encode_idx(rhs)),
+        Idx::Mul(lhs, rhs) => format!("(* {} {})", encode_idx(lhs), encode_idx(rhs)),
     }
 }
 
@@ -425,6 +607,7 @@ fn flush_trace(lines: &[String]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::logic::cap::RegionModel;
     use crate::logic::region::{Interval, Region};
 
     fn const_interval(lo: i64, hi: i64) -> RegionSetExpr {
@@ -502,5 +685,47 @@ mod tests {
         let disjoint_left = const_interval(0, 3);
         let disjoint_right = const_interval(5, 7);
         assert!(!overlaps(&phi, &disjoint_left, &disjoint_right, &solver));
+    }
+
+    #[test]
+    fn display_handles_primitives() {
+        let solver = SmtSolver::new();
+        let phi = Phi::new();
+
+        assert_eq!(RegionSetExpr::Empty.display_with(&phi, &solver), "∅");
+
+        let interval = RegionSetExpr::interval(Idx::Const(0), Idx::Const(4));
+        assert_eq!(interval.display_with(&phi, &solver), "[0..4)");
+    }
+
+    #[test]
+    fn display_formats_composite() {
+        let solver = SmtSolver::new();
+        let phi = Phi::new();
+
+        let first = RegionSetExpr::interval(Idx::Const(0), Idx::Const(2));
+        let second = RegionSetExpr::interval(Idx::Const(4), Idx::Const(6));
+        let union = RegionSetExpr::union([first.clone(), second.clone()]);
+        assert_eq!(union.display_with(&phi, &solver), "[0..2) ∪ [4..6)");
+
+        let diff = RegionSetExpr::difference(
+            RegionSetExpr::interval(Idx::Const(0), Idx::Const(8)),
+            RegionSetExpr::interval(Idx::Const(2), Idx::Const(3)),
+        );
+        let expr = RegionSetExpr::intersection(diff, second);
+        assert_eq!(expr.display_with(&phi, &solver), "[4..6)");
+    }
+
+    #[test]
+    fn display_drops_empty_unions() {
+        let solver = SmtSolver::new();
+        let phi = Phi::new();
+        let expr = RegionSetExpr::union([
+            RegionSetExpr::Empty,
+            RegionSetExpr::Empty,
+            RegionSetExpr::interval(Idx::Const(10), Idx::Const(11)),
+        ]);
+
+        assert_eq!(expr.display_with(&phi, &solver), "[10..11)");
     }
 }

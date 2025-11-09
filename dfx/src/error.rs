@@ -22,8 +22,14 @@ pub enum TypeError {
     InvalidOp { op: String },
 
     /// A capability required for an operation or call was not present.
-    #[error("insufficient capability on array '{array}' for region {region}")]
-    InsufficientCapability { array: String, region: String },
+    #[error(
+        "insufficient capability on array '{array}': required {required}, available {available}"
+    )]
+    InsufficientCapability {
+        array: String,
+        required: String,
+        available: String,
+    },
 
     /// A subtraction of capabilities failed because the minuend did not
     /// contain the subtrahend.

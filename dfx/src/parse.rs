@@ -82,6 +82,7 @@ enum IndexExpr {
     Const(i64),
     Add(Box<IndexExpr>, Box<IndexExpr>),
     Sub(Box<IndexExpr>, Box<IndexExpr>),
+    Mul(Box<IndexExpr>, Box<IndexExpr>),
 }
 
 impl IndexExpr {
@@ -91,6 +92,7 @@ impl IndexExpr {
             IndexExpr::Const(n) => Idx::Const(*n),
             IndexExpr::Add(a, b) => Idx::Add(Box::new(a.to_idx()), Box::new(b.to_idx())),
             IndexExpr::Sub(a, b) => Idx::Sub(Box::new(a.to_idx()), Box::new(b.to_idx())),
+            IndexExpr::Mul(a, b) => Idx::Mul(Box::new(a.to_idx()), Box::new(b.to_idx())),
         }
     }
 }
@@ -215,9 +217,130 @@ fn parse_index_expr(s: &str) -> Result<IndexExpr, ParseError> {
         }
     }
 
+    // Try to parse as multiplication
+    if let Some(pos) = s.find('*') {
+        let left = parse_index_expr(s[..pos].trim())?;
+        let right = parse_index_expr(s[pos + 1..].trim())?;
+        return Ok(IndexExpr::Mul(Box::new(left), Box::new(right)));
+    }
+
     Err(ParseError {
         message: format!("Cannot parse index expression: {}", s),
     })
+}
+
+fn syn_expr_to_index_expr(
+    expr: &Expr,
+    const_generics: &HashSet<String>,
+) -> Result<IndexExpr, ParseError> {
+    match expr {
+        Expr::Lit(expr_lit) => {
+            if let syn::Lit::Int(lit_int) = &expr_lit.lit {
+                let value = lit_int.base10_parse::<i64>().map_err(|_| ParseError {
+                    message: "Invalid integer literal".to_string(),
+                })?;
+                Ok(IndexExpr::Const(value))
+            } else {
+                Err(ParseError {
+                    message: "Unsupported literal in array length".to_string(),
+                })
+            }
+        }
+        Expr::Path(expr_path) => {
+            let ident = expr_path
+                .path
+                .get_ident()
+                .map(|ident| ident.to_string())
+                .ok_or_else(|| ParseError {
+                    message: "Unsupported path in array length expression".to_string(),
+                })?;
+            if const_generics.contains(&ident) {
+                Ok(IndexExpr::Var(ident))
+            } else {
+                Err(ParseError {
+                    message: format!(
+                        "Unsupported array length expression (unknown const generic): {}",
+                        ident
+                    ),
+                })
+            }
+        }
+        Expr::Binary(expr_binary) => {
+            let lhs = syn_expr_to_index_expr(&expr_binary.left, const_generics)?;
+            let rhs = syn_expr_to_index_expr(&expr_binary.right, const_generics)?;
+            match expr_binary.op {
+                syn::BinOp::Add(_) => Ok(IndexExpr::Add(Box::new(lhs), Box::new(rhs))),
+                syn::BinOp::Sub(_) => Ok(IndexExpr::Sub(Box::new(lhs), Box::new(rhs))),
+                syn::BinOp::Mul(_) => Ok(IndexExpr::Mul(Box::new(lhs), Box::new(rhs))),
+                _ => Err(ParseError {
+                    message: "Unsupported operator in array length expression".to_string(),
+                }),
+            }
+        }
+        Expr::Paren(expr_paren) => syn_expr_to_index_expr(&expr_paren.expr, const_generics),
+        Expr::Group(expr_group) => syn_expr_to_index_expr(&expr_group.expr, const_generics),
+        Expr::Block(expr_block) => {
+            // Blocks in const-length positions are expected to contain a single expression.
+            let stmts = &expr_block.block.stmts;
+            if stmts.len() == 1 {
+                match &stmts[0] {
+                    Stmt::Expr(inner, _) => syn_expr_to_index_expr(inner, const_generics),
+                    _ => Err(ParseError {
+                        message: "Unsupported block form in array length expression".to_string(),
+                    }),
+                }
+            } else {
+                Err(ParseError {
+                    message: "Unsupported block in array length expression".to_string(),
+                })
+            }
+        }
+        Expr::Unary(expr_unary) => {
+            if matches!(expr_unary.op, syn::UnOp::Neg(_)) {
+                let inner = syn_expr_to_index_expr(&expr_unary.expr, const_generics)?;
+                if let IndexExpr::Const(value) = inner {
+                    Ok(IndexExpr::Const(-value))
+                } else {
+                    Err(ParseError {
+                        message: "Unsupported unary minus in array length expression".to_string(),
+                    })
+                }
+            } else {
+                Err(ParseError {
+                    message: "Unsupported unary operator in array length expression".to_string(),
+                })
+            }
+        }
+        _ => Err(ParseError {
+            message: "Unsupported array length expression".to_string(),
+        }),
+    }
+}
+
+fn parse_array_length(
+    expr: &Expr,
+    const_generics: &HashSet<String>,
+) -> Result<ArrayLen, ParseError> {
+    match expr {
+        Expr::Lit(expr_lit) => {
+            if let syn::Lit::Int(lit_int) = &expr_lit.lit {
+                let value = lit_int.base10_parse::<usize>().map_err(|_| ParseError {
+                    message: "Invalid array length".to_string(),
+                })?;
+                return Ok(ArrayLen::Const(value));
+            }
+        }
+        _ => {}
+    }
+
+    let idx_expr = syn_expr_to_index_expr(expr, const_generics)?;
+    let idx = idx_expr.to_idx();
+    if let Idx::Const(value) = idx {
+        if value >= 0 {
+            return Ok(ArrayLen::Const(value as usize));
+        }
+    }
+    Ok(ArrayLen::Symbol(format!("{}", idx)))
 }
 
 /// Convert capability annotation to CapPattern
@@ -354,39 +477,7 @@ fn convert_type(ty: &Type, const_generics: &HashSet<String>) -> Result<ir::Ty, P
                 let elem_ty = convert_type(&arr.elem, const_generics)?;
 
                 // Extract length
-                let len = match &arr.len {
-                    Expr::Lit(expr_lit) => {
-                        if let syn::Lit::Int(lit_int) = &expr_lit.lit {
-                            let value =
-                                lit_int.base10_parse::<usize>().map_err(|_| ParseError {
-                                    message: "Invalid array length".to_string(),
-                                })?;
-                            ArrayLen::Const(value)
-                        } else {
-                            return Err(ParseError {
-                                message: "Expected integer literal for array length".to_string(),
-                            });
-                        }
-                    }
-                    Expr::Path(expr_path) => {
-                        let ident = expr_path.path.segments.last().unwrap().ident.to_string();
-                        if const_generics.contains(&ident) {
-                            ArrayLen::Symbol(ident)
-                        } else {
-                            return Err(ParseError {
-                                message: format!(
-                                    "Unsupported array length expression (unknown const generic): {}",
-                                    ident
-                                ),
-                            });
-                        }
-                    }
-                    _ => {
-                        return Err(ParseError {
-                            message: "Unsupported array length expression".to_string(),
-                        });
-                    }
-                };
+                let len = parse_array_length(&arr.len, const_generics)?;
 
                 if is_mut {
                     Ok(ir::Ty::RefUniq {

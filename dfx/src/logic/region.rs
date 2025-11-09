@@ -204,18 +204,21 @@ impl RegionModel for Region {
     }
 }
 
-fn format_idx(idx: &Idx) -> String {
-    match idx {
-        Idx::Const(n) => n.to_string(),
-        Idx::Var(v) => v.clone(),
-        Idx::Add(a, b) => format!("({} + {})", format_idx(a), format_idx(b)),
-        Idx::Sub(a, b) => format!("({} - {})", format_idx(a), format_idx(b)),
+impl fmt::Display for Idx {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Idx::Const(n) => write!(f, "{}", n),
+            Idx::Var(v) => write!(f, "{}", v),
+            Idx::Add(a, b) => write!(f, "({} + {})", a, b),
+            Idx::Sub(a, b) => write!(f, "({} - {})", a, b),
+            Idx::Mul(a, b) => write!(f, "({} * {})", a, b),
+        }
     }
 }
 
 impl fmt::Display for Interval {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}..{})", format_idx(&self.lo), format_idx(&self.hi))
+        write!(f, "[{}..{})", &self.lo, &self.hi)
     }
 }
 

@@ -2,8 +2,8 @@
 
 use dfx::logic::cap::{Cap, Delta};
 use dfx::logic::region::{Interval, Region};
-use dfx::logic::semantic::solver::{Atom, Idx, Phi};
 use dfx::logic::semantic::PhiSolver;
+use dfx::logic::semantic::solver::{Atom, Idx, Phi};
 use dfx::logic::syntactic::solver::BasicSolver;
 
 fn const_idx(n: i64) -> Idx {
