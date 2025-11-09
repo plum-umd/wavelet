@@ -1352,30 +1352,37 @@ are used according to the typing rules.
 
 ### `L0` Configuration
 
-An `L0` configuration is a tuple $(\Pi, E, \sigma, S, \delta)$ where
+An `L0` configuration is a tuple $(\Pi, E, \sigma, S, \delta, K)$ where
 
 - $\Pi$ is the function definition context
 - $E$ is the current expression being evaluated
 - $\sigma$ is the regular variable environment mapping variables to values
 - $S$ is the store mapping array names to array values
-- $\delta$ tracks the shared and unique accessess to arrays so far
+- $\delta$ tracks the read and write accessess to arrays so far
+- $K$ is the call stack, a list of continuation frames
+
+A continuation frame has the form $(\vec{y}, E_{cont}, \sigma_{ret}, \delta_{ret})$ where:
+- $\vec{y}$ are the variables to bind the return values to
+- $E_{cont}$ is the expression to continue with after the call returns
+- $\sigma_{ret}$ is the environment to restore upon return
+- $\delta_{ret}$ is the capability state to restore upon return (for fenced calls)
 
 If we have a function definition $\texttt{def } f(\vec{x} : \vec{\tau}_i, \; \overrightarrow{A : 
   \mathsf{uniq@}R \Vert \mathsf{shrd@} R'}) \to \vec{\tau}_o \texttt{ = } E$,
   the initial configuration for evaluating a call to `f` with arguments
-  $\vec{v_i}$ and capability $\vec{U}$, where
-  $\overrightarrow{\mathsf{uniq@}R[\vec{x} \mapsto \vec{v_i}] \Vert
-  \mathsf{shrd@}R'[\vec{x} \mapsto \vec{v_i}]} \le \vec{U}$,
+  $\vec{v_i}$ and capability $\Delta_{init}$, where
+  $\overrightarrow{A \mapsto \mathsf{uniq@}R[\vec{x} \mapsto \vec{v_i}] \Vert
+  \mathsf{shrd@}R'[\vec{x} \mapsto \vec{v_i}]} \le \Delta_{init}$,
    is
 
 $$
-(\Pi, E, [\vec{x} \mapsto \vec{v_i}], \vec{A} \mapsto [...], \overrightarrow{A \mapsto \mathsf{wt@}\varnothing \Vert \mathsf{rd@}\varnothing})
+(\Pi, E, [\vec{x} \mapsto \vec{v_i}], \vec{A} \mapsto [...], \overrightarrow{A \mapsto \mathsf{wt@}\varnothing \Vert \mathsf{rd@}\varnothing}, [])
 $$  
 
 ### Small-step Operational Semantics
 
 $$
-(\Pi, E, \sigma, S, \delta) \;\to\; (\Pi, E', \sigma', S', \delta')
+(\Pi, E, \sigma, S, \delta, K) \;\to\; (\Pi, E', \sigma', S', \delta', K')
 $$
 
 **Var:**
@@ -1384,7 +1391,7 @@ $$
 \frac{
   \sigma(x) = v
 }{
-  (\Pi, x, \sigma, S, \delta) \;\to\; (\Pi, v, \sigma, S, \delta)
+  (\Pi, x, \sigma, S, \delta, K) \;\to\; (\Pi, v, \sigma, S, \delta, K)
 }
 $$
 
@@ -1395,8 +1402,8 @@ $$
   \sigma(\vec{x}) = \vec{v_i} \quad
   \texttt{op}(\vec{v_i}) = \vec{v_o}
 }{
-  (\Pi, \texttt{let } \vec{y} \texttt{ = } \texttt{op}(\vec{x}); \; E, \sigma, S, \delta)
-  \;\to\; (\Pi, E, \sigma[\vec{y} \mapsto \vec{v_o}], S, \delta)
+  (\Pi, \texttt{let } \vec{y} \texttt{ = } \texttt{op}(\vec{x}); \; E, \sigma, S, \delta, K)
+  \;\to\; (\Pi, E, \sigma[\vec{y} \mapsto \vec{v_o}], S, \delta, K)
 }
 $$
 
@@ -1405,15 +1412,15 @@ $$
 $$
 \frac{
   \begin{gather*}
-  \sigma(i) = n \quad S(A) = [a_0, \ldots, a_{N-1}] \quad a_n = v \quad
+  \sigma(i) = n \quad 0 \leq n < N \quad S(A)[n] = v \\
   \delta(A) = \mathsf{wt@}R \Vert \mathsf{rd@}R' \quad
-  0 \leq n < N \quad n \notin R
+  n \notin R
   \\
   \delta' = \delta[A \mapsto \mathsf{wt@}R \Vert \mathsf{rd@}R' \cup \{n\}]
   \end{gather*}
 }{
-  (\Pi, \texttt{let } y \texttt{ = } \texttt{load}(A, i); \; E, \sigma, S, \delta)
-  \;\to\; (\Pi, E, \sigma[y \mapsto v], S, \delta')
+  (\Pi, \texttt{let } y \texttt{ = } \texttt{load}(A, i); \; E, \sigma, S, \delta, K)
+  \;\to\; (\Pi, E, \sigma[y \mapsto v], S, \delta', K)
 }
 $$
 
@@ -1422,15 +1429,16 @@ $$
 $$
 \frac{
   \begin{gather*}
-  \sigma(i) = n \quad \sigma(v) = a_n' \quad S(A) = [a_0, \ldots, a_{N-1}] \quad
-  \delta(A) = \mathsf{wt@}R \Vert \mathsf{rd@}R' \quad
-  0 \leq n < N \quad n \notin R \cup R' \\
-  S' = S[A \mapsto [a_0, \ldots, a_{n-1}, a_n', a_{n+1}, \ldots, a_{N-1}]] \\
+  \sigma(i) = n  \quad
+  0 \leq n < N  \quad \sigma(v) = a_n' \\
+  \delta(A) = \mathsf{wt@}R \Vert \mathsf{rd@}R' \quad n \notin R \cup R' \\
+  S' = S[A \mapsto [a_0, \ldots, a_{n-1}, a_n', a_{n+1}, \ldots, a_{N-1}]]
+  \\
   \delta' = \delta[A \mapsto \mathsf{wt@}R \cup \{n\} \Vert \mathsf{rd@}R']
   \end{gather*}
 }{
-  (\Pi, \texttt{let } \_ \texttt{ = } \texttt{store}(A, i, v); \; E, \sigma, S, \delta)
-  \;\to\; (\Pi, E, \sigma, S', \delta')
+  (\Pi, \texttt{let } \_ \texttt{ = } \texttt{store}(A, i, v); \; E, \sigma, S, \delta, K)
+  \;\to\; (\Pi, E, \sigma, S', \delta', K)
 }
 $$
 
@@ -1439,13 +1447,14 @@ $$
 $$
 \frac{
   \begin{gather*}
-  \sigma(i) = n \quad S(A) = [a_0, \ldots, a_{N-1}] \quad a_n = v \quad
+\sigma(i) = n \quad 0 \leq n < N \quad S(A)[n] = v \\
   \delta(A) = \mathsf{wt@}R \Vert \mathsf{rd@}R' \quad
-  0 \leq n < N \quad n \notin R
+  n \notin R
+  \\
   \end{gather*}
 }{
-  (\Pi, \texttt{let } y \texttt{ = } \text{load}(A, i) \text{ ---} \; E, \sigma, S, \delta)
-  \;\to\; (\Pi, E, \sigma[y \mapsto v], S, \delta)
+  (\Pi, \texttt{let } y \texttt{ = } \text{load}(A, i) \text{ ---} \; E, \sigma, S, \delta, K)
+  \;\to\; (\Pi, E, \sigma[y \mapsto v], S, \delta, K)
 }
 $$
 
@@ -1454,14 +1463,15 @@ $$
 $$
 \frac{
   \begin{gather*}
-  \sigma(i) = n \quad \sigma(v) = a_n' \quad S(A) = [a_0, \ldots, a_{N-1}] \quad
-  \delta(A) = \mathsf{wt@}R \Vert \mathsf{rd@}R' \quad
-  0 \leq n < N \quad n \notin R \cup R' \\
+  \sigma(i) = n  \quad
+  0 \leq n < N  \quad \sigma(v) = a_n' \\
+  \delta(A) = \mathsf{wt@}R \Vert \mathsf{rd@}R' \quad n \notin R \cup R' \\
   S' = S[A \mapsto [a_0, \ldots, a_{n-1}, a_n', a_{n+1}, \ldots, a_{N-1}]]
+  \\
   \end{gather*}
 }{
-  (\Pi, \texttt{let } \_ \texttt{ = } \text{store}(A, i, v) \text{ ---} \; E, \sigma, S, \delta)
-  \;\to\; (\Pi, E, \sigma, S', \delta)
+  (\Pi, \texttt{let } \_ \texttt{ = } \text{store}(A, i, v) \text{ ---} \; E, \sigma, S, \delta, K)
+  \;\to\; (\Pi, E, \sigma, S', \delta, K)
 }
 $$
 
@@ -1471,8 +1481,8 @@ $$
 \frac{
   \sigma(x) = \texttt{true} \quad
 }{
-  (\Pi, \texttt{if } x \; \{ E_1 \} \texttt{ else } \{ E_2 \}, \sigma, S, \delta)
-  \;\to\; (\Pi, E_1, \sigma, S, \delta)
+  (\Pi, \texttt{if } x \; \{ E_1 \} \texttt{ else } \{ E_2 \}, \sigma, S, \delta, K)
+  \;\to\; (\Pi, E_1, \sigma, S, \delta, K)
 }
 $$
 
@@ -1480,8 +1490,8 @@ $$
 \frac{
   \sigma(x) = \texttt{false} \quad
 }{
-  (\Pi, \texttt{if } x \; \{ E_1 \} \texttt{ else } \{ E_2 \}, \sigma, S, \delta)
-  \;\to\; (\Pi, E_2, \sigma, S, \delta)
+  (\Pi, \texttt{if } x \; \{ E_1 \} \texttt{ else } \{ E_2 \}, \sigma, S, \delta, K)
+  \;\to\; (\Pi, E_2, \sigma, S, \delta, K)
 }
 $$
 
@@ -1490,13 +1500,73 @@ $$
 $$
 \frac{
   \begin{gather*}
-  \Pi(f) = \texttt{def } f(\vec{x} : \vec{\tau}_i, \; \overrightarrow{A : 
+  \Pi(f) = \texttt{def } f(\vec{x} : \vec{\tau}_i, \; \overrightarrow{A :
   \mathsf{uniq@}R \Vert \mathsf{shrd@} R'}) \to \vec{\tau}_o \texttt{ = } E_f \\
   \sigma(\vec{i}) = \vec{v_i} \quad
   \end{gather*}
 }{
-  (\Pi, f(\vec{i}, \vec{A}), \sigma, S, \delta)
-  \;\to\; (\Pi, E_f, [\vec{x} \mapsto \vec{v_i}], S, 
-  \delta)
+  (\Pi, f(\vec{i}, \vec{A}), \sigma, S, \delta, K)
+  \;\to\; (\Pi, E_f, [\vec{x} \mapsto \vec{v_i}], S,
+  \delta, K)
+}
+$$
+
+**Non-tail Call:**
+
+$$
+\frac{
+  \begin{gather*}
+  \Pi(f) = \texttt{def } f(\vec{x} : \vec{\tau}_i, \; \overrightarrow{A :
+  \mathsf{uniq@}R \Vert \mathsf{shrd@} R'}) \to \vec{\tau}_o \texttt{ = } E_f \\
+  \sigma(\vec{i}) = \vec{v_i} \quad
+  K' = (\vec{y}, E_{cont}, \sigma, \texttt{none}) :: K
+  \end{gather*}
+}{
+  (\Pi, \texttt{let } \vec{y} \texttt{ = } f(\vec{i}, \vec{A}); \; E_{cont}, \sigma, S, \delta, K)
+  \;\to\; (\Pi, E_f, [\vec{x} \mapsto \vec{v_i}], S, \delta, K')
+}
+$$
+
+**Non-tail Call-fence:**
+
+$$
+\frac{
+  \begin{gather*}
+  \Pi(f) = \texttt{def } f(\vec{x} : \vec{\tau}_i, \; \overrightarrow{A :
+  \mathsf{uniq@}R \Vert \mathsf{shrd@} R'}) \to \vec{\tau}_o \texttt{ = } E_f \\
+  \sigma(\vec{i}) = \vec{v_i} \quad
+  K' = (\vec{y}, E_{cont}, \sigma, \texttt{some }\delta) :: K
+  \end{gather*}
+}{
+  (\Pi, \texttt{let } \vec{y} \texttt{ = } f(\vec{i}, \vec{A}) \text{ ---} \; E_{cont}, \sigma, S, \delta, K)
+  \;\to\; (\Pi, E_f, [\vec{x} \mapsto \vec{v_i}], S, \delta, K')
+}
+$$
+
+**Return:**
+
+$$
+\frac{
+  \begin{gather*}
+  \sigma(\vec{y}_{ret}) = \vec{v}_{ret} \quad
+  K = (\vec{y}, E_{cont}, \sigma_{ret}, \texttt{none}) :: K_{rest}
+  \end{gather*}
+}{
+  (\Pi, \vec{y}_{ret}, \sigma, S, \delta, K)
+  \;\to\; (\Pi, E_{cont}, \sigma_{ret}[\vec{y} \mapsto \vec{v}_{ret}], S, \delta, K_{rest})
+}
+$$
+
+**Return-restore:**
+
+$$
+\frac{
+  \begin{gather*}
+  \sigma(\vec{y}_{ret}) = \vec{v}_{ret} \quad
+  K = (\vec{y}, E_{cont}, \sigma_{ret}, \texttt{some }\delta_{ret}) :: K_{rest}
+  \end{gather*}
+}{
+  (\Pi, \vec{y}_{ret}, \sigma, S, \delta, K)
+  \;\to\; (\Pi, E_{cont}, \sigma_{ret}[\vec{y} \mapsto \vec{v}_{ret}], S, \delta_{ret}, K_{rest})
 }
 $$
