@@ -1309,8 +1309,7 @@ fn check_ghost_tail_with_two_joinsplits(
             ghost_need,
             ghost_left,
         } => {
-            // Process first JoinSplit
-            let (left1, right1, inputs1) = match join_stmt1 {
+            let (left1, _right1, inputs1) = match join_stmt1 {
                 GhostStmt::JoinSplit {
                     left,
                     right,
@@ -1320,8 +1319,7 @@ fn check_ghost_tail_with_two_joinsplits(
             };
             let joined_perm1 = ctx.join_perms(inputs1)?;
 
-            // Process second JoinSplit
-            let (left2, right2, inputs2) = match join_stmt2 {
+            let (left2, _right2, inputs2) = match join_stmt2 {
                 GhostStmt::JoinSplit {
                     left,
                     right,
@@ -1331,7 +1329,6 @@ fn check_ghost_tail_with_two_joinsplits(
             };
             let joined_perm2 = ctx.join_perms(inputs2)?;
 
-            // Verify ghost_need and ghost_left match the JoinSplits
             if ghost_need.0 != left1.0 {
                 return Err(format!(
                     "TailCall ghost_need {} does not match first JoinSplit left {}",
@@ -1345,21 +1342,19 @@ fn check_ghost_tail_with_two_joinsplits(
                 ));
             }
 
-            // Look up the callee's signature
             let sig = ctx
                 .get_signature(&func.0)
-                .ok_or_else(|| format!("Tail call to unknown function {}", func.0))?;
+                .ok_or_else(|| format!("TailCall to unknown function {}", func.0))?;
 
             if sig.params.len() != args.len() {
                 return Err(format!(
-                    "Tail call to {} expects {} arguments but received {}",
+                    "TailCall to {} expects {} arguments but received {}",
                     func.0,
                     sig.params.len(),
                     args.len()
                 ));
             }
 
-            // Build index substitutions
             let mut idx_substitutions: Vec<(String, Idx)> = Vec::new();
             for ((param_var, ty), arg) in sig.params.iter().zip(args.iter()) {
                 if ty.is_int() {
@@ -1368,7 +1363,6 @@ fn check_ghost_tail_with_two_joinsplits(
             }
             idx_substitutions.sort_by(|a, b| a.0.cmp(&b.0));
 
-            // Substitute parameters in the callee's required permissions
             let required_sync =
                 substitute_perm_expr_with_maps(&sig.initial_perms.0, &idx_substitutions);
             let required_garb =
@@ -1387,7 +1381,6 @@ fn check_ghost_tail_with_two_joinsplits(
                 ));
             }
 
-            // Check that ghost_need (joined_perm1) provides required_sync
             let mut available_sync = joined_perm1
                 .collect_permissions(&ctx.phi, &ctx.solver)
                 .ok_or_else(|| {
@@ -1395,49 +1388,81 @@ fn check_ghost_tail_with_two_joinsplits(
                 })?;
             let needed_sync = required_sync
                 .collect_permissions(&ctx.phi, &ctx.solver)
-                .ok_or_else(|| "Required p_sync permissions could not be normalised".to_string())?;
+                .ok_or_else(|| {
+                    "Required p_sync permissions could not be normalised".to_string()
+                })?;
             for need in &needed_sync {
                 if !consume_permission(&mut available_sync, need, &ctx.phi, &ctx.solver) {
                     return Err(format!(
-                        "Tail call to {} cannot provide required permission for p_sync",
+                        "TailCall to {} cannot provide required permission for p_sync",
                         func.0
                     ));
                 }
             }
-            let remainder_sync_expr = permissions_to_expr(available_sync);
-            if !remainder_sync_expr.is_valid(&ctx.phi, &ctx.solver) {
+            if !available_sync.is_empty() {
                 return Err(format!(
-                    "Remaining permissions after consuming p_sync for {} are invalid",
+                    "TailCall to {} leaves extra permission for p_sync after consumption",
                     func.0
                 ));
             }
-            ctx.bind_perm(right1, remainder_sync_expr);
 
-            // Check that ghost_left (joined_perm2) provides required_garb
             let mut available_garb = joined_perm2
                 .collect_permissions(&ctx.phi, &ctx.solver)
                 .ok_or_else(|| {
-                    "Joined permissions for second JoinSplit could not be normalised".to_string()
+                    "Joined permissions for second JoinSplit could not be normalised"
+                        .to_string()
                 })?;
             let needed_garb = required_garb
                 .collect_permissions(&ctx.phi, &ctx.solver)
-                .ok_or_else(|| "Required p_garb permissions could not be normalised".to_string())?;
+                .ok_or_else(|| {
+                    "Required p_garb permissions could not be normalised".to_string()
+                })?;
             for need in &needed_garb {
                 if !consume_permission(&mut available_garb, need, &ctx.phi, &ctx.solver) {
                     return Err(format!(
-                        "Tail call to {} cannot provide required permission for p_garb",
+                        "TailCall to {} cannot provide required permission for p_garb",
                         func.0
                     ));
                 }
             }
-            let remainder_garb_expr = permissions_to_expr(available_garb);
-            if !remainder_garb_expr.is_valid(&ctx.phi, &ctx.solver) {
+            if !available_garb.is_empty() {
                 return Err(format!(
-                    "Remaining permissions after consuming p_garb for {} are invalid",
+                    "TailCall to {} leaves extra permission for p_garb after consumption",
                     func.0
                 ));
             }
-            ctx.bind_perm(right2, remainder_garb_expr);
+
+            let entry_perms = ctx.current_fn_entry_perms().ok_or_else(|| {
+                "TailCall encountered without recorded entry permissions".to_string()
+            })?;
+
+            let tail_total =
+                PermExpr::union(vec![joined_perm1.clone(), joined_perm2.clone()]);
+            let expected_total =
+                PermExpr::union(vec![entry_perms.0.clone(), entry_perms.1.clone()]);
+
+            let tail_flat = tail_total
+                .collect_permissions(&ctx.phi, &ctx.solver)
+                .ok_or_else(|| "TailCall permissions could not be normalised".to_string())?;
+            let mut expected_flat = expected_total
+                .collect_permissions(&ctx.phi, &ctx.solver)
+                .ok_or_else(|| "Entry permissions could not be normalised".to_string())?;
+
+            for perm_piece in &tail_flat {
+                if !consume_permission(&mut expected_flat, perm_piece, &ctx.phi, &ctx.solver) {
+                    return Err(format!(
+                        "TailCall permissions contain {:?} which was not present at function entry",
+                        perm_piece
+                    ));
+                }
+            }
+
+            if !expected_flat.is_empty() {
+                return Err(
+                    "TailCall permissions are missing resources that were provided at function entry"
+                        .to_string(),
+                );
+            }
 
             Ok(())
         }
