@@ -686,6 +686,21 @@ $$
 (\mathsf{shrd}, \mathsf{uniq}) \cdot (\varnothing, \varnothing) \equiv (\mathsf{shrd}, \mathsf{uniq})
 $$
 
+**Partial Order and Difference**
+
+```lean
+def c₁ ≤ c₂ := c₁.shrd ⊆ (c₂.shrd ∪ c₂.uniq) ∧ c₁.uniq ⊆ c₂.uniq
+
+def c₁ \ c₂ :=
+  if c₂ ≤ c₁ then
+    some
+      { shrd := c₁.shrd,
+        uniq := c₁.uniq \ (c₂.shrd ∪ c₂.uniq),
+      }
+  else
+    none
+```
+
 <!-- - Two unique capability `&uniq{R1} [int; N]` `&uniq{R2} [int; N]` compose with disjoint union, iff their regions are disjoint ($R_1 \; \cap \; R_2 = \varnothing$)
 - We write $R_1 \; \cdot \; R_2$ (instead of $R_1 \; \uplus \; R_2$) to
   resemble PCM
@@ -984,7 +999,7 @@ $$
   \begin{gather*}
   \Gamma(i) = \texttt{int} \quad
   \Delta = \Delta' \cdot A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
-  \Phi \vDash 0 \leq i < \texttt{N} \land i \in  R \cup R' \quad \\
+  \Phi \vDash 0 \leq i < \texttt{N} \land \mathsf{shrd@}\{i\} \subseteq  \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
   \Gamma[y \mapsto \texttt{int}] ; \Delta' \cdot A \mapsto \mathsf{uniq@}R
   \Vert \mathsf{shrd@}R' \; \setminus \; \mathsf{shrd@}\{i\}
   \;\vdash_{\Phi}\;
@@ -1004,7 +1019,7 @@ $$
   \Gamma(i) = \texttt{int} \quad
   \Gamma \vdash v : \texttt{int} \quad
   \Delta = \Delta' \cdot A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
-  \Phi \vDash 0 \leq i < \texttt{N} \land i \in  R \quad \\
+  \Phi \vDash 0 \leq i < \texttt{N} \land \mathsf{uniq@}\{i\} \subseteq  \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
   \Gamma ; \Delta' \cdot A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@}R'
   \; \setminus \; \mathsf{uniq@}\{i\}
   \;\vdash_{\Phi}\;
@@ -1024,7 +1039,7 @@ $$
   \begin{gather*}
   \Gamma(i) = \texttt{int} \quad
   \Delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
-  \Phi \vdash 0 \leq i < \texttt{N} \land i \in R \cup R'\\
+  \Phi \vdash 0 \leq i < \texttt{N} \land \mathsf{shrd@}\{i\} \subseteq  \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
   \Gamma[y \mapsto \text{int}] ; \Delta
   \;\vdash_{\Phi}\;
 E : \tau_E
@@ -1043,7 +1058,7 @@ $$
   \Gamma(i) = \texttt{int} \quad
   \Gamma \vdash v : \texttt{int} \\
   \Delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
-  \Phi \vdash 0 \leq i < \texttt{N} \land i \in R\\
+  \Phi \vdash 0 \leq i < \texttt{N} \land \mathsf{uniq@}\{i\} \subseteq  \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \\
   \Gamma ; \Delta
   \;\vdash_{\Phi}\;
 E : \tau_E
@@ -1081,13 +1096,14 @@ $$
   \Gamma(\vec{i}) = \vec{\tau}_i \quad
   \Delta = \Delta' \;\cdot\; \overrightarrow{A \mapsto \mathsf{uniq@}\Rho \Vert
   \mathsf{shrd@}\Rho'} \\
-  \Phi \vDash R[\vec{x} \mapsto \vec{i}] \subseteq \Rho \land R'[\vec{x} \mapsto \vec{i}] \subseteq \Rho'\\
+  \Phi \vDash \overrightarrow{\mathsf{uniq@}R[\vec{x} \mapsto \vec{i}] \Vert
+  \mathsf{shrd@}R'[\vec{x} \mapsto \vec{i}] \subseteq \mathsf{uniq@}\Rho \Vert
+  \mathsf{shrd@}\Rho'} \\
   % \Delta(\vec{Y}) <: \overline{\mathsf{\&uniq}\{R'[\vec{x} \mapsto \vec{y}]\}
   % [\texttt{int}; \texttt{ N}]} \quad 
   \Gamma[\vec{y} \mapsto \vec{\tau}_o] ; \Delta' \;\cdot\; \overrightarrow{A
-  \mapsto \mathsf{uniq@}\Rho \setminus R[\vec{x} \mapsto \vec{i}]
-   \Vert
-  \mathsf{shrd@}\Rho'}
+  \mapsto \mathsf{uniq@}\Rho \Vert \mathsf{shrd@}\Rho' \; \setminus
+  \mathsf{uniq@}R[\vec{x} \mapsto \vec{i}] \Vert \mathsf{shrd@}R'[\vec{x} \mapsto \vec{i}]}
    \;\vdash_{\Phi}\; E : \tau_E
   \end{gather*}
 }{
@@ -1097,6 +1113,31 @@ $$
 $$
 
 > TODO: pre-and post-condition for function call?
+
+**Function Call-fence:**
+
+$$
+\frac{
+  \begin{gather*}
+  (f \text{ defined}) \\
+  \texttt{def } f(\vec{x} : \vec{\tau}_i, \; \overrightarrow{A : 
+  \mathsf{uniq@}R \Vert \mathsf{shrd@} R'}) \to \vec{\tau}_o \texttt{ = } E_f\\
+  % \Gamma(\vec{y}) <: \overline{\tau_{in}} \quad \\
+  \Gamma(\vec{i}) = \vec{\tau}_i \quad
+  \Delta(A) = \overrightarrow{\mathsf{uniq@}\Rho \Vert
+  \mathsf{shrd@}\Rho'} \\
+  \Phi \vDash \overrightarrow{\mathsf{uniq@}R[\vec{x} \mapsto \vec{i}] \Vert
+  \mathsf{shrd@}R'[\vec{x} \mapsto \vec{i}] \subseteq \mathsf{uniq@}\Rho \Vert
+  \mathsf{shrd@}\Rho'} \\
+  % \Delta(\vec{Y}) <: \overline{\mathsf{\&uniq}\{R'[\vec{x} \mapsto \vec{y}]\}
+  % [\texttt{int}; \texttt{ N}]} \quad 
+  \Gamma[\vec{y} \mapsto \vec{\tau}_o] ; \Delta \;\vdash_{\Phi}\; E : \tau_E
+  \end{gather*}
+}{
+  \Gamma ; \Delta \;\vdash_{\Phi}\; 
+  \texttt{let } \vec{y} \texttt{ = } f(\vec{i}, \vec{A}); \; E : \tau_E
+}
+$$
 
 **Tail Call:**
 
