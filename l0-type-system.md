@@ -522,14 +522,15 @@ E ::= & \;\mid\; \texttt{let } y \texttt{ = } v; \; E \\
 v ::= & \;\; n \;\mid\; \texttt{true} \;\mid\; \texttt{false} \\
 R ::= & \;\; \emptyset \;\mid\;  \{rexp\} \;\mid\; R \cup R' \;\mid\; R \setminus
 R' \\
-rexp ::= & \;\; n \;\mid\; x \;\mid\; rexp + rexp \;\mid\; rexp - rexp \;\mid\; n * rexp \\
+rexp ::= & \;\; n \;\mid\; x \;\mid\; rexp + rexp \;\mid\; rexp - rexp \;\mid\;
+n * rexp \;\mid\; rexp..rexp \\
 \end{aligned}
 
 $$
 
 - `f` and `A` are globally unique identifiers for functions and arrays
 - We write `{n1, n2, ..., nk}` for the finite set `{n1} ∪ {n2} ∪ ... ∪ {nk}`
-- We write `{n..x}` for the finite set `{n} ∪ {n+1} ∪ ... ∪ {x-1}`
+- We write `{n..m}` for the finite set `{x | n ≤ x < m}`
 - When we have `A : uniq@{0..N}`, it's equivalent to `A : uniq@{0..N}||shrd@{}`
   (likewise for `shrd`)
 
@@ -981,11 +982,10 @@ $$
 $$
 \frac{
   \begin{gather*}
-  \Gamma(A) = [\texttt{int}; \texttt{ N}] \quad
   \Gamma(i) = \texttt{int} \quad
   \Delta(A) = \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
   \Phi \vDash 0 \leq i < \texttt{N} \land i \in  R' \quad \\
-  \Gamma[y \mapsto \texttt{int}] ; \Delta \;\vdash_{\Phi \land (y = A[i])}\;
+  \Gamma[y \mapsto \texttt{int}] ; \Delta \;\vdash_{\Phi}\;
 E : \tau_E
   \end{gather*}
 }{
@@ -999,13 +999,12 @@ $$
 $$
 \frac{
   \begin{gather*}
-  \Gamma(A) = [\texttt{int}; \texttt{ N}] \quad
   \Gamma(i) = \texttt{int} \quad
   \Delta = \Delta' \cdot A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
   \Phi \vDash 0 \leq i < \texttt{N} \land i \in  R \quad \\
   \Gamma[y \mapsto \texttt{int}] ; \Delta' \;\cdot\; A \mapsto \mathsf{uniq@}R
   \setminus \{i\}  \Vert \mathsf{shrd@}R'
-  \;\vdash_{\Phi \land (y = A[i])}\;
+  \;\vdash_{\Phi}\;
 E : \tau_E
   \end{gather*}
 }{
@@ -1019,14 +1018,13 @@ $$
 $$
 \frac{
   \begin{gather*}
-  \Gamma(A) = [\texttt{int}; \texttt{ N}] \quad
   \Gamma(i) = \texttt{int} \quad
   \Gamma \vdash v : \texttt{int} \quad
   \Delta = \Delta' \;\cdot\; A \mapsto \mathsf{uniq@}R \Vert \mathsf{shrd@}R' \quad \\
   \Phi \vDash 0 \leq i < \texttt{N} \land i \in  R \quad \\
   \Gamma ; \Delta'' \;\cdot\; A \mapsto \mathsf{uniq@}R
   \setminus \{i\}  \Vert \mathsf{shrd@}R'
-  \;\vdash_{\Phi \land (A[i]=v)}\;
+  \;\vdash_{\Phi}\;
 E : \tau_E
   \end{gather*}
 }{
@@ -1041,11 +1039,10 @@ $$
 $$
 \frac{
   \begin{gather*}
-  \Gamma(A) = [\texttt{int}; \texttt{ N}] \quad
   \Gamma(i) = \texttt{int} \quad
   \Phi \vdash 0 \leq i < \texttt{N} \\
   \Gamma[y \mapsto \text{int}] ; \Delta
-  \;\vdash_{\Phi \land (y = A[i])}\;
+  \;\vdash_{\Phi}\;
 E : \tau_E
   \end{gather*}
 }{
@@ -1059,12 +1056,11 @@ $$
 $$
 \frac{
   \begin{gather*}
-  \Gamma(A) = [\texttt{int}; \texttt{ N}] \quad
   \Gamma(i) = \texttt{int} \quad
   \Gamma \vdash v : \texttt{int} \\
   \Phi \vdash 0 \leq i < \texttt{N} \\
   \Gamma ; \Delta
-  \;\vdash_{\Phi \land (A[i]=v)}\;
+  \;\vdash_{\Phi}\;
 E : \tau_E
   \end{gather*}
 }{
@@ -1072,6 +1068,8 @@ E : \tau_E
   \texttt{let } \_ \texttt{ = } \texttt{store}(A, i, v) \text{ ---} \; E : \tau_E
 }
 $$
+
+> TODO: Track separation logic predicates in $\Phi$ for `load` and `store`?
 
 **Conditional:**
 
@@ -1098,8 +1096,7 @@ $$
   \Gamma(\vec{i}) = \vec{\tau}_i \quad
   \Delta = \Delta' \;\cdot\; \overrightarrow{A \mapsto \mathsf{uniq@}\Rho \Vert
   \mathsf{shrd@}\Rho'} \\
-  \Phi \vDash R[\vec{x} \mapsto \vec{i}] \subseteq \Rho \quad
-  \Phi \vDash R'[\vec{x} \mapsto \vec{i}] \subseteq \Rho'\\
+  \Phi \vDash R[\vec{x} \mapsto \vec{i}] \subseteq \Rho \land R'[\vec{x} \mapsto \vec{i}] \subseteq \Rho'\\
   % \Delta(\vec{Y}) <: \overline{\mathsf{\&uniq}\{R'[\vec{x} \mapsto \vec{y}]\}
   % [\texttt{int}; \texttt{ N}]} \quad 
   \Gamma[\vec{y} \mapsto \vec{\tau}_o] ; \Delta' \;\cdot\; \overrightarrow{A
@@ -1128,8 +1125,7 @@ $$
   \Gamma(\vec{i}) = \vec{\tau}_i \quad
   \Delta = \Delta' \;\cdot\; \overrightarrow{A \mapsto \mathsf{uniq@}\Rho \Vert
   \mathsf{shrd@}\Rho'} \\
-  \Phi \vDash R[\vec{x} \mapsto \vec{i}] \subseteq \Rho \quad
-  \Phi \vDash R'[\vec{x} \mapsto \vec{i}] \subseteq \Rho'
+  \Phi \vDash R[\vec{x} \mapsto \vec{i}] \subseteq \Rho \land R'[\vec{x} \mapsto \vec{i}] \subseteq \Rho'
   % \Delta(\vec{Y}) <: \overline{\mathsf{\&uniq}\{R'[\vec{x} \mapsto \vec{y}]\}
   % [\texttt{int}; \texttt{ N}]} 
   \end{gather*}
@@ -1172,3 +1168,151 @@ $$
 
 - [ ]  Experiment with some Verus embedding?
 - [ ]  Another IR — Parallel L0 (free of data-races) -->
+
+### Example Typing Derivation
+
+```python
+decl A: [u32; 32]
+
+def increment(i: u32, A: uniq@{i..32}||shrd@{}) -> unit =
+  let c = i < 32;
+  if c {
+    let val = load(i, A)
+    ---
+    let _ = store(i, A, val + 1);
+    let j = i + 1;
+    increment(j, A)
+  } else {
+    ()
+  }
+```
+
+**Typing derivation for the function body**
+
+$$
+\frac{
+  \begin{gather*}
+  <_{\text{u32}} : (\texttt{u32}, \texttt{u32}) \to \texttt{bool} \quad 
+  \frac{
+    (i \mapsto \texttt{u32})(i) = \texttt{u32}
+  }{
+  ... \; ; \; ... \;\vdash_{\top}\; i : \texttt{u32}
+  } \quad
+  \frac{
+  }{
+  ... \; ; \; ... \;\vdash_{\top}\; 32 : \texttt{u32}
+  }
+  \quad
+  \frac{ 
+    \begin{gather*}
+    \frac{
+    (i \mapsto \texttt{u32}, c \mapsto \texttt{bool})(c) = \texttt{bool}
+  }{
+  ... \; ; \; ... \;\vdash_{c = (i < 32)}\; c : \texttt{bool}
+  } \quad
+    D_{if}
+    \quad
+    \frac{}{
+  ... \; ; \; ... \;\vdash_{c = (i < 32) \land \lnot c}\; () : \texttt{unit}
+    }
+    \end{gather*}
+  }{
+    i \mapsto \texttt{u32}, c \mapsto \texttt{bool} \; ; \; ...
+      \;\vdash_{c = (i < 32)}\;
+  \texttt{if } c \; \{ ... \} \texttt{ else } \{ () \} : \texttt{unit}
+  }
+  \end{gather*}
+}{
+  i \mapsto \texttt{u32} \; ; \; A \mapsto \mathsf{uniq@}\{i..32\}
+  \Vert
+  \mathsf{shrd@}\emptyset
+  \;\vdash_{\top}\;
+  \texttt{let } c \texttt{ = } i < 32; \;
+  \texttt{if } c \; \{ ... \} \texttt{ else } \{ () \} : \texttt{unit}
+}
+$$
+
+where $D_{if}$ is:
+
+$$
+\frac{
+  \begin{gather*}
+  \frac{
+    ...
+  }{
+  ...
+  \vdash_{...}\; 
+   i : \texttt{u32}
+  }
+  \quad
+  c = (i < 32) \land c \vDash 0 \leq i < 32 
+  \quad
+  \frac{
+    \begin{gather*}
+    \frac{
+    ...
+  }{
+  ...
+  \vdash_{...}\; 
+   i : \texttt{u32}
+  } \quad
+  \frac{
+    ...
+  }{
+  ... \vdash_{...}\; 
+   val + 1 : \texttt{u32}
+  }
+  \quad
+  ... \vDash ... \land i \in \{i..32\}
+  \quad
+  D_{rec}
+    \end{gather*}
+  }{
+    ..., val \mapsto \texttt{u32} ; \; A \mapsto \mathsf{uniq@}\{i..32\}
+    \Vert \mathsf{shrd@}\emptyset
+    \;\vdash_{...}\;
+    \texttt{let } \_ \texttt{ = } \texttt{store}(A, i, val + 1) ;\; ... : \texttt{unit}
+  }
+  \end{gather*}
+}{
+  i \mapsto \texttt{u32}, c \mapsto \texttt{bool} \; ; \;
+  A \mapsto \mathsf{uniq@}\{i..32\}
+  \Vert
+  \mathsf{shrd@}\emptyset
+  \;\vdash_{c = (i < 32) \land c}\;
+  \texttt{let } val \texttt{ = } \texttt{load}(A, i) \text{ ---} \;
+  ... \; \texttt{store} ... \; ;
+  \texttt{increment} ...
+  : \texttt{unit}
+}
+$$
+
+where $D_{rec}$ is:
+
+$$
+\quad
+  \frac{
+    \begin{gather*}
+    \texttt{def increment}(i: \texttt{u32}, A: \mathsf{uniq@}\{i..32\} \Vert \mathsf{shrd@}\{\}) \to \texttt{unit} = ... \\
+    \frac{...}{... \vdash (i + 1) : \texttt{u32}} \quad
+    \frac{
+      \begin{gather*}
+      \frac{...}{... \vdash j : \texttt{u32}} \quad
+      c = (i < 32) \land c \land (j = i + 1) \vDash 
+      \{(i+1)..32\} \subseteq \{j..32\} \land \emptyset \subseteq \emptyset
+      \end{gather*}
+    }{
+      ..., j \mapsto \texttt{u32} ; \;
+      A \mapsto \mathsf{uniq@}\{(i+1)..32\} \Vert \mathsf{shrd@}\emptyset
+      \;\vdash_{... \land (j = i + 1)}\;
+      \texttt{increment}(j, A) : \texttt{unit}
+    }
+    \end{gather*}
+  }{
+  ... ; \; A \mapsto \mathsf{uniq@}\{i..32\}\setminus \{i\}
+    \Vert \mathsf{shrd@}\emptyset
+  \;\vdash_{...}\;
+  \texttt{let } j \texttt{ = } i + 1; \;
+   \texttt{increment}(j, A) : \texttt{unit}
+  }
+$$
