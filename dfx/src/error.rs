@@ -49,7 +49,8 @@ impl TypeError {
     /// Helper to convert a type into a readable string for error messages.
     pub fn type_name(ty: &crate::ir::Ty) -> String {
         match ty {
-            crate::ir::Ty::Int => "int".to_string(),
+            crate::ir::Ty::Int(crate::ir::Signedness::Signed) => "int".to_string(),
+            crate::ir::Ty::Int(crate::ir::Signedness::Unsigned) => "uint".to_string(),
             crate::ir::Ty::Bool => "bool".to_string(),
             crate::ir::Ty::Unit => "unit".to_string(),
             crate::ir::Ty::RefShrd { elem, len } => {

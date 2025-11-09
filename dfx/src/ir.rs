@@ -36,11 +36,17 @@ impl From<usize> for ArrayLen {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Signedness {
+    Signed,
+    Unsigned,
+}
+
 /// Types in the language.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Ty {
     /// Integer type.
-    Int,
+    Int(Signedness),
     /// Boolean type.
     Bool,
     /// Unit type.
@@ -54,7 +60,15 @@ pub enum Ty {
 impl Ty {
     /// Check if this type is an integer type.
     pub fn is_int(&self) -> bool {
-        matches!(self, Ty::Int)
+        matches!(self, Ty::Int(_))
+    }
+
+    /// Return the signedness for integer types.
+    pub fn signedness(&self) -> Option<Signedness> {
+        match self {
+            Ty::Int(sign) => Some(*sign),
+            _ => None,
+        }
     }
 }
 

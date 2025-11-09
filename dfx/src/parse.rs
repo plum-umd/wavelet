@@ -24,13 +24,21 @@
 //! ```
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use syn::{self, Attribute, Expr, FnArg, ItemFn, Pat, Stmt, Type};
 
-use crate::ir::{self, ArrayLen, FnDef, FnName, Op, Tail, Var};
+use crate::ir::{self, ArrayLen, FnDef, FnName, Op, Signedness, Tail, Var};
 use crate::logic::cap::CapPattern;
 use crate::logic::region::Region;
 use crate::logic::semantic::solver::Idx;
+
+static LITERAL_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+fn fresh_literal_name(base: &str) -> String {
+    let id = LITERAL_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{}_{}", base, id)
+}
 
 /// Parse error for the frontend.
 #[derive(Debug)]
@@ -407,7 +415,7 @@ pub fn parse_fn_def(input: &str) -> Result<FnDef, ParseError> {
 
     // Add const generics as scalar parameters (needed for comparisons like i < N)
     for name in const_generic_names {
-        scalar_params.push((Var(name), ir::Ty::Int));
+        scalar_params.push((Var(name), ir::Ty::Int(Signedness::Unsigned)));
     }
 
     // Combine: scalars first, then arrays (required by type checker)
@@ -462,7 +470,8 @@ fn convert_type(ty: &Type, const_generics: &HashSet<String>) -> Result<ir::Ty, P
         Type::Path(type_path) => {
             let ident = &type_path.path.segments.last().unwrap().ident;
             match ident.to_string().as_str() {
-                "u32" | "i32" | "usize" | "isize" => Ok(ir::Ty::Int),
+                "u32" | "usize" => Ok(ir::Ty::Int(Signedness::Unsigned)),
+                "i32" | "isize" => Ok(ir::Ty::Int(Signedness::Signed)),
                 "bool" => Ok(ir::Ty::Bool),
                 _ => Err(ParseError {
                     message: format!("Unknown type: {}", ident),
@@ -711,13 +720,25 @@ fn try_parse_as_op(
             }))
         }
         Expr::Call(call_expr) => {
-            // Function call
-            let func_name = extract_func_name(&call_expr.func)?;
-            let args: Vec<Var> = call_expr
-                .args
-                .iter()
-                .map(|arg| Ok(Var(extract_var_from_expr(arg)?)))
-                .collect::<Result<Vec<_>, ParseError>>()?;
+            // Function call (with optional turbofish generics). Reorder arguments so
+            // that scalar values precede arrays, and append const-generic parameters
+            // to match the checker’s expected layout.
+            let (func_name, generic_args) = extract_func_name_and_generics(&call_expr.func)?;
+
+            let mut scalar_args = Vec::new();
+            let mut array_args = Vec::new();
+            for arg in &call_expr.args {
+                let var_name = extract_var_from_expr(arg)?;
+                if array_lens.contains_key(&var_name) {
+                    array_args.push(Var(var_name));
+                } else {
+                    scalar_args.push(Var(var_name));
+                }
+            }
+
+            let mut args = scalar_args;
+            args.extend(generic_args.into_iter().map(Var));
+            args.extend(array_args);
 
             Ok(Some(ir::Stmt::LetCall {
                 vars: vec![Var(result_var)],
@@ -920,8 +941,14 @@ fn extract_var_from_expr(expr: &Expr) -> Result<String, ParseError> {
             // For literals, we need to create a temporary variable
             // In practice, the caller should handle this
             match &expr_lit.lit {
-                syn::Lit::Int(lit_int) => Ok(format!("_lit_{}", lit_int.base10_digits())),
-                syn::Lit::Bool(lit_bool) => Ok(format!("_lit_{}", lit_bool.value)),
+                syn::Lit::Int(lit_int) => {
+                    let base = format!("_lit_{}", lit_int.base10_digits());
+                    Ok(fresh_literal_name(&base))
+                }
+                syn::Lit::Bool(lit_bool) => {
+                    let base = format!("_lit_{}", lit_bool.value);
+                    Ok(fresh_literal_name(&base))
+                }
                 _ => Err(ParseError {
                     message: "Unsupported literal in expression".to_string(),
                 }),
@@ -930,20 +957,6 @@ fn extract_var_from_expr(expr: &Expr) -> Result<String, ParseError> {
         Expr::Paren(paren_expr) => extract_var_from_expr(&paren_expr.expr),
         _ => Err(ParseError {
             message: format!("Expected variable, got: {:?}", expr),
-        }),
-    }
-}
-
-/// Extract function name from call expression
-fn extract_func_name(expr: &Expr) -> Result<String, ParseError> {
-    match expr {
-        Expr::Path(expr_path) => {
-            // Handle both `func` and `func::<T>` (turbofish)
-            let ident = &expr_path.path.segments.last().unwrap().ident;
-            Ok(ident.to_string())
-        }
-        _ => Err(ParseError {
-            message: "Expected function name".to_string(),
         }),
     }
 }

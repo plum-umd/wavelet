@@ -152,7 +152,7 @@ macro_rules! parser_case {
 }
 
 macro_rules! fixture_parser_test {
-    ($test_name:ident, file = $file:expr, entry = $entry:expr, extra = [$($extra:expr),* $(,)?], backends = [$($backend:expr),+ $(,)?] $(,)?) => {
+    ($test_name:ident, file = $file:expr, entry = $entry:expr, extra = [$($extra:expr),* $(,)?], options = $opts:expr, backends = [$($backend:expr),+ $(,)?] $(,)?) => {
         #[test]
         fn $test_name() {
             let defs = parse_fixture(include_str!($file));
@@ -169,15 +169,42 @@ macro_rules! fixture_parser_test {
                     .clone();
                 registry.insert(def);
             )*
-            let options: CheckOptions = CheckOptions::default();
+            let options: CheckOptions = $opts;
             let allowed_backends = [$( $backend ),+];
             with_backends!((name, logic) => {
                 if allowed_backends.contains(&name) {
+                    // Check extra functions
+                    $(
+                        let extra_def = defs.get($extra).unwrap();
+                        let extra_result = check_fn_with_options(extra_def, &registry, logic, options);
+                        assert!(extra_result.is_ok(), "{name} backend failed for {}: {:?}", $extra, extra_result.err());
+                    )*
+                    // Check entry function
                     let result = check_fn_with_options(&top_def, &registry, logic, options);
                     assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
                 }
             });
         }
+    };
+    ($test_name:ident, file = $file:expr, entry = $entry:expr, extra = [$($extra:expr),* $(,)?], backends = [$($backend:expr),+ $(,)?] $(,)?) => {
+        fixture_parser_test!(
+            $test_name,
+            file = $file,
+            entry = $entry,
+            extra = [$($extra),*],
+            options = CheckOptions::default(),
+            backends = [$($backend),+],
+        );
+    };
+    ($test_name:ident, file = $file:expr, entry = $entry:expr, extra = [$($extra:expr),* $(,)?], options = $opts:expr $(,)?) => {
+        fixture_parser_test!(
+            $test_name,
+            file = $file,
+            entry = $entry,
+            extra = [$($extra),*],
+            options = $opts,
+            backends = ["semantic", "syntactic"],
+        );
     };
     ($test_name:ident, file = $file:expr, entry = $entry:expr, extra = [$($extra:expr),* $(,)?]) => {
         fixture_parser_test!(
@@ -185,6 +212,7 @@ macro_rules! fixture_parser_test {
             file = $file,
             entry = $entry,
             extra = [$($extra),*],
+            options = CheckOptions::default(),
             backends = ["semantic", "syntactic"],
         );
     };
@@ -307,7 +335,11 @@ fixture_parser_test!(
     test_nn_fc_with_parser,
     file = "test_files/nn_fc.rs",
     entry = "nn_fc",
-    extra = ["row_dot", "rec_rows"],
+    extra = ["row_dot", "rec_rows", "clamp_i16"],
+    options = CheckOptions {
+        verbose: false,
+        log_solver_queries: false,
+    },
     backends = ["semantic"]
 );
 
@@ -316,5 +348,9 @@ fixture_parser_test!(
     file = "test_files/dmv.rs",
     entry = "dmv",
     extra = ["cal_dot_product", "mv_mul"],
-    backends = ["semantic"]
+    options = CheckOptions {
+        verbose: false,
+        log_solver_queries: false,
+    },
+    backends = ["semantic"],
 );

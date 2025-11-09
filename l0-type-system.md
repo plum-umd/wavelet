@@ -1213,6 +1213,138 @@ def increment(i: u32, A: uniq@{i..32}||shrd@{}) -> unit =
   }
 ```
 
+
+
+**Typing derivation for the function body**
+
+$$
+\frac{
+  \begin{gather*}
+  <_{\text{u32}} : (\texttt{u32}, \texttt{u32}) \to \texttt{bool} \quad 
+  \frac{
+    (i \mapsto \texttt{u32})(i) = \texttt{u32}
+  }{
+  ... \; ; \; ... \;\vdash_{\top}\; i : \texttt{u32}
+  } \quad
+  \frac{
+  }{
+  ... \; ; \; ... \;\vdash_{\top}\; 32 : \texttt{u32}
+  }
+  \quad
+  \frac{ 
+    \begin{gather*}
+    \frac{
+    (i \mapsto \texttt{u32}, c \mapsto \texttt{bool})(c) = \texttt{bool}
+  }{
+  ... \; ; \; ... \;\vdash_{c = (i < 32)}\; c : \texttt{bool}
+  } \quad
+    D_{if}
+    \quad
+    \frac{}{
+  ... \; ; \; ... \;\vdash_{c = (i < 32) \land \lnot c}\; () : \texttt{unit}
+    }
+    \end{gather*}
+  }{
+    i \mapsto \texttt{u32}, c \mapsto \texttt{bool} \; ; \; ...
+      \;\vdash_{c = (i < 32)}\;
+  \texttt{if } c \; \{ ... \} \texttt{ else } \{ () \} : \texttt{unit}
+  }
+  \end{gather*}
+}{
+  i \mapsto \texttt{u32} \; ; \; A \mapsto \mathsf{uniq@}\{i..32\}
+  \Vert
+  \mathsf{shrd@}\emptyset
+  \;\vdash_{\top}\;
+  \texttt{let } c \texttt{ = } i < 32; \;
+  \texttt{if } c \; \{ ... \} \texttt{ else } \{ () \} : \texttt{unit}
+}
+$$
+
+where $D_{if}$ is:
+
+$$
+\frac{
+  \begin{gather*}
+  \frac{
+    ...
+  }{
+  ...
+  \vdash_{...}\; 
+   i : \texttt{u32}
+  }
+  \quad
+  c = (i < 32) \land c \vDash 0 \leq i < 32 
+  \quad
+  \frac{
+    \begin{gather*}
+    \frac{
+    ...
+  }{
+  ...
+  \vdash_{...}\; 
+   i : \texttt{u32}
+  } \quad
+  \frac{
+    ...
+  }{
+  ... \vdash_{...}\; 
+   val + 1 : \texttt{u32}
+  }
+  \quad
+  ... \vDash ... \land i \in \{i..32\}
+  \quad
+  D_{rec}
+    \end{gather*}
+  }{
+    ..., val \mapsto \texttt{u32} ; \; A \mapsto \mathsf{uniq@}\{i..32\}
+    \Vert \mathsf{shrd@}\emptyset
+    \;\vdash_{...}\;
+    \texttt{let } \_ \texttt{ = } \texttt{store}(A, i, val + 1) ;\; ... : \texttt{unit}
+  }
+  \end{gather*}
+}{
+  i \mapsto \texttt{u32}, c \mapsto \texttt{bool} \; ; \;
+  A \mapsto \mathsf{uniq@}\{i..32\}
+  \Vert
+  \mathsf{shrd@}\emptyset
+  \;\vdash_{c = (i < 32) \land c}\;
+  \texttt{let } val \texttt{ = } \texttt{load}(A, i) \text{ ---} \;
+  ... \; \texttt{store} ... \; ;
+  \texttt{increment} ...
+  : \texttt{unit}
+}
+$$
+
+where $D_{rec}$ is:
+
+$$
+\quad
+  \frac{
+    \begin{gather*}
+    \texttt{def increment}(i: \texttt{u32}, A: \mathsf{uniq@}\{i..32\} \Vert \mathsf{shrd@}\{\}) \to \texttt{unit} = ... \\
+    \frac{...}{... \vdash (i + 1) : \texttt{u32}} \quad
+    \frac{
+      \begin{gather*}
+      \frac{...}{... \vdash j : \texttt{u32}} \quad
+      c = (i < 32) \land c \land (j = i + 1) \vDash 
+      \{(i+1)..32\} \subseteq \{j..32\} \land \emptyset \subseteq \emptyset
+      \end{gather*}
+    }{
+      ..., j \mapsto \texttt{u32} ; \;
+      A \mapsto \mathsf{uniq@}\{(i+1)..32\} \Vert \mathsf{shrd@}\emptyset
+      \;\vdash_{... \land (j = i + 1)}\;
+      \texttt{increment}(j, A) : \texttt{unit}
+    }
+    \end{gather*}
+  }{
+  ... ; \; A \mapsto \mathsf{uniq@}\{i..32\}\setminus \{i\}
+    \Vert \mathsf{shrd@}\emptyset
+  \;\vdash_{...}\;
+  \texttt{let } j \texttt{ = } i + 1; \;
+   \texttt{increment}(j, A) : \texttt{unit}
+  }
+$$
+
 ```python
 decl A: [u32; 32]
 
@@ -1371,8 +1503,6 @@ fn cal_dot_product<const M: usize, const N: usize>(
 
 Sum elements of an array from `i` to `N`:
 
-**Capability**
-
 ```rust
 // `A: &[u32; N]@{i..N} ` represents read-only (shared) permission for `A` from `i` (inclusive) to `N` (exclusive)
 fn sum<const N: usize>(i: u32, A: &[u32; N]@{i..N}, a: u32) -> u32 =
@@ -1384,21 +1514,6 @@ fn sum<const N: usize>(i: u32, A: &[u32; N]@{i..N}, a: u32) -> u32 =
     sum(j, A, val + a) // 1. substitution in fun sig: `A |-> shrd@{i..N}[j/i] = A |-> shrd@{j..N}`
                       // 2. current Δ: A |-> shrd@{i..N}
                       // Φ ⊨ A |-> shrd@{j..N} ≤ Δ (according to some concrete program logic that proves this, i.e. j > i)
-  } else {
-    a
-  }
-```
-
-**Ghost Permission**
-
-```rust
-fn sum<const N: usize>(i: u32, A: &[u32; N], p0: shrd@A{i..N}, a: u32) -> u32 =
-  let p1, p2 = jnsplt([]); // p0: shrd@A{i..N}, 
-  let c, p3 = lt(i, N, p1);
-  if c {
-    let val = load(i, A);
-    let j = i + 1;
-    sum(j, A, val + a)
   } else {
     a
   }
@@ -1749,136 +1864,293 @@ fn cal_dot_product<const M: usize, const N: usize>(
 }
 ```
 
+### Ghost Permission
 
-**Typing derivation for the function body**
+We'd like to synthesize a ghost-permission decorated version of the above
+programs (once they are type-checked under the capability-based type system),
+where ghost permissions are explicitly passed around like regular variables.
 
-$$
-\frac{
-  \begin{gather*}
-  <_{\text{u32}} : (\texttt{u32}, \texttt{u32}) \to \texttt{bool} \quad 
-  \frac{
-    (i \mapsto \texttt{u32})(i) = \texttt{u32}
-  }{
-  ... \; ; \; ... \;\vdash_{\top}\; i : \texttt{u32}
-  } \quad
-  \frac{
-  }{
-  ... \; ; \; ... \;\vdash_{\top}\; 32 : \texttt{u32}
+Specifically, what we want is ghost variable with fine-grained fractional permissions.
+This is used to "compile" the fences (`---`) inserted by the programmer to
+`join` operations with ghost permissions, which would be further compiled down
+to concrete dataflow ordering operators to enforce memory ordering.
+
+New IR:
+
+```
+E ::= let p2, p3 = jnsplt([p1...]); E
+    | let v, p2 = pureop(args..., p1); E
+    | let v, p2 = const(n, p1); E
+    | let v, p2 = load(i, A, p1); E
+    | let p2 = store(i, A, value, p1); E
+    | let v, p2 = f(args..., A, p1, p0); E 
+    | f(args..., A, p1, p0); // tail call
+    | if c { E } else { E } // if-else at tail position
+    | ret(x, p1) // return
+
+def ::= fn f(args..., A..., p1, p0) -> (ret, p') = E
+
+prog ::= def; ...; def
+```
+
+Where `p`, `p1`, `p2`, ... are ghost variables representing
+a PCM structure over memory locations and their (fractional) permissions.
+Note that every operator now takes an extra ghost permission argument `p1` 
+(function calls take two: one for needed permissions, one for leftover
+permissions, see below),
+as well as returning an extra ghost permission `p2`.
+Also note that fences (`---`) are removed, as ordering is now enforced by data
+dependencies on ghost permissions.
+
+```lean
+class PCM (C : Type u) where
+  add : C → C → C
+  zero : C
+  valid : C → Prop
+
+namespace PCM
+
+infixl:60 " ⊔ " => add
+prefix:40 "✓ " => valid
+
+def disjoint [PCM C] (a b : C) : Prop := ✓ a ⊔ b
+
+def framePreserving [PCM C] (a b : C) : Prop :=
+  ∀ c, ✓ a ⊔ c → ✓ b ⊔ c
+
+def sum [PCM C] (xs : List C) : C :=
+  xs.foldl (· ⊔ ·) zero
+
+infix:50 " ⊥ " => disjoint
+infix:50 " ⟹ " => framePreserving
+
+instance [PCM C] : LE C where
+  le a b := ∃ c, b = a ⊔ c
+
+noncomputable def sub [PCM C] (a b : C) (hle : b ≤ a) : C :=
+  hle.choose
+
+class Lawful (R : Type u) [inst : PCM R] where
+  add_comm : ∀ {a b : R}, a ⊔ b = b ⊔ a
+  add_assoc : ∀ {a b c : R}, (a ⊔ b) ⊔ c = a ⊔ (b ⊔ c)
+  add_ident : ∀ {a : R}, a ⊔ inst.zero = a
+  valid_add : ∀ {a b : R}, ✓ a ⊔ b → ✓ a
+  valid_zero : ✓ inst.zero
+
+variable {Loc : Type u}
+
+abbrev FractionPerm (Loc : Type u) := Loc → NNRat
+
+instance (Loc : Type u) : PCM (FractionPerm Loc) where
+  add a b := λ ℓ => a ℓ + b ℓ
+  zero := λ _ => 0
+  valid a := ∀ ℓ, (a ℓ : ℚ) ≤ 1
+```
+
+In our setting, the abstract `Loc` is instantiated as symbolic array locations
+like `A{i}`, `A{i+1}`, `A{i..N}`, `B{j}`, etc.
+
+- Spec for `jnsplt`: `jnsplt([p1, p2, ..., pn]) -> (q1, q2)` such that 
+`p1 ⊔ p2 ⊔ ... ⊔ pn = q1 ⊔ q2`
+
+> We have the axiom that `p1, p2, ..., pn ⊣⊢ p1 ⊔ p2 ⊔ ... ⊔ pn`, i.e., the list of permissions
+> is equivalent to their sum.
+
+- Spec for pure ops (e.g., `lt`, `add`): `pureop(args..., p) -> (result, p')` such
+that `p = p' = 0.0`
+- Spec for constants: `const(p) -> (value, p')` such that `p = p' = 0.0`
+- Spec for `load`: `load(i, A, p) -> (value, p')` such that `p = p' = f@A{i}` where `f` is some fraction `0 < f <= 1.0`
+- Spec for `store`: `store(i, A, value, p) -> p'` such that
+`p = p' = 1.0@A{i}`
+- Spec for function calls: `f(args..., A..., p1, p0) -> (result, p')` such that `p1` contains
+all needed permissions for `A...` as specified in the function signature, and
+`p0` contains some leftover permissions with the invariant that 
+
+**Synthesizing Strategy**
+
+We separate "remained" ghost permissions (leftover context) 
+from "needed" ghost permissions (synchronization context).
+
+- For each capability specified at the function signature, we have
+  - `A |-> uniq@{i..N}`  → `p0 = 1.0@A{i..N}`
+  - `A |-> shrd@{i..N}`  → `p0 = frac@A{i..N}` where `0 < frac < 1.0`
+  - If there are multiple array capabilities, we sum up their permissions to get `p0`:
+    - e.g., `A |-> uniq@{i..N}, B |-> shrd@{j..M}` → `p0 = 1.0@A{i..N} ⊔ frac@B{j..M}` 
+- For `let v = pureop(args); E`, we do
+  - `let p1, p2 = jnsplt([]);` // split empty permissions to get `0.0` permissions
+  - `let v, p3 = pureop(args, p1);` // use `p1` (0.0) to call pureop, get back `p3` (0.0)
+  - continue with `E` (with `p2` added to sync context and `p3` to leftover context)
+- For `let v = load(i, A); E`, we do
+  - `let p1, p2 = jnsplt([perms from sync ctx]);` // split permissions to get `f@A{i}` for some `0 < f <= 1.0`
+  - `let v, p3 = load(i, A, p1);` // use `p1` to call load, get back `p3` (same as `p1`)
+  - continue with `E` (with `p2` added to sync context and `p3` to leftover context)
+- For `let _ = store(i, A, v); E`, we do
+  - `let p1, p2 = jnsplt([perms from sync ctx]);` // split permissions to get `1.0@A{i}`
+  - `let p3 = store(i, A, v, p1);` // use `p1` to call store, get back `p3` (same as `p1`)
+  - continue with `E` (with `p2` added to sync context and `p3` to leftover context)
+- For `let v = load(i, A) --- E`, we do
+  - `let p1, p2 = jnsplt([perms from sync ctx]);` // split permissions to get `f@A{i}` for some `0 < f <= 1.0`
+  - `let v, p3 = load(i, A, p1);` // use `p1` to call load, get back `p3` (same as `p1`)
+  - continue with `E` (with **both `p2` and `p3`** added to sync context)
+  - (similar for `store`)
+- For tail call `f(args, A);`, we do
+  - `let p1, p2 = jnsplt([perms from sync ctx]);` // split permissions to get needed permissions for `A`
+  - `f(args, A, p1);` // use `p1` to call f
+  - (no leftover context needed as it's tail call)
+
+```rust
+fn sum<const N: usize>(i: u32, A: &[u32; N], p0: shrd@A{i..N}, a: u32) -> u32 =
+  // sync ctx: p0, lft ctx: eps
+  let p1, p2 = jnsplt([p0]); // p1: eps, p2: shrd@A{i..N}
+  let c, p3 = lt(i, N, p1);
+  if c {
+    // sync ctx: p2, lft ctx: p3
+    let p4, p5 = jnsplt([p2]); // p4: shrd/2@A{i}, p5: shrd/2@A{i} ⊔ shrd@A{i+1..N}
+    let val, p6 = load(i, A, p4);
+    // sync ctx: p5, lft ctx: p3 ⊔ p6
+    let p7, p8 = jnsplt([p5]); // p7: eps, p8: shrd/2@A{i} ⊔ shrd@A{i+1..N}
+    let one, p9 = const(1, p7);
+    // sync ctx: p8, lft ctx: p3 ⊔ p6 ⊔ p9
+    let p10, p11 = jnsplt([p8]); // p10: eps, p11: shrd/2@A{i} ⊔ shrd@A{i+1..N}
+    let j, p12 = add(i, 1, p10);
+    // sync ctx: p11, lft ctx: p3 ⊔ p6 ⊔ p9 ⊔ p12
+    let p13, p14 = jnsplt([p11]); // p13: shrd@A{i+1..N}, p14: shrd/2@A{i}
+    sum(j, A, val + a, p13)
+  } else {
+    a
   }
-  \quad
-  \frac{ 
-    \begin{gather*}
-    \frac{
-    (i \mapsto \texttt{u32}, c \mapsto \texttt{bool})(c) = \texttt{bool}
-  }{
-  ... \; ; \; ... \;\vdash_{c = (i < 32)}\; c : \texttt{bool}
-  } \quad
-    D_{if}
-    \quad
-    \frac{}{
-  ... \; ; \; ... \;\vdash_{c = (i < 32) \land \lnot c}\; () : \texttt{unit}
-    }
-    \end{gather*}
-  }{
-    i \mapsto \texttt{u32}, c \mapsto \texttt{bool} \; ; \; ...
-      \;\vdash_{c = (i < 32)}\;
-  \texttt{if } c \; \{ ... \} \texttt{ else } \{ () \} : \texttt{unit}
+```
+
+```rust
+fn increment<const N: usize>(i: u32, A: &mut [u32; N], p0: 1.0@A{i..N}) =
+  // sync ctx: p0, lft ctx: []
+  let p1, p2 = jnsplt([]); 
+  let c, p3 = lt(i, N, p1);
+  if c {
+    let p4, p5 = jnsplt([p0]); // p4: 1/2@A{i}, p5: 1/2@A{i} ⊔ 1.0@A{i+1..N}
+    let val, p6 = load(i, A, p4);
+    ---
+    // sync ctx: p2 ⊔ p5 ⊔ p6, lft ctx: p3 (note: p6 is also added to sync ctx here)
+    let p7, p8 = jnsplt([]);
+    let new_val, p9 = add(val, 1, p7);
+    let p10, p11 = jnsplt([p5, p6]); // p10: 1.0@A{i}, p11: 1.0@A{i+1..N}
+    let p12 = store(i, A, new_val, p10);
+    // sync ctx: p2 ⊔ p8 ⊔ p11, lft ctx: p3 ⊔ p9 ⊔ p12
+    let p13, p14 = jnsplt([]);
+    let j, p13 = add(i, 1, p13);
+    // sync ctx: p2 ⊔ p8 ⊔ p11 ⊔ p14, lft ctx: p3 ⊔ p9 ⊔ p12 ⊔ p13
+    let p15, p16 = jnsplt([p11]); // p15: 1.0@A{i+1..N}, p16: 0.0@A{i+1..N}
+    increment(j, A, p15)
+  } else {
+    ()
   }
-  \end{gather*}
-}{
-  i \mapsto \texttt{u32} \; ; \; A \mapsto \mathsf{uniq@}\{i..32\}
-  \Vert
-  \mathsf{shrd@}\emptyset
-  \;\vdash_{\top}\;
-  \texttt{let } c \texttt{ = } i < 32; \;
-  \texttt{if } c \; \{ ... \} \texttt{ else } \{ () \} : \texttt{unit}
+```
+
+```rust
+fn raw<const N: usize>(i: u32, A: &mut [u32; N], p0: 1.0@A{i-1..N}) = 
+  if i < N {
+    let p1, p2 = jnsplt([p0]); // p1: 1/2@A{i-1}, p2: 1/2@A{i-1} ⊔ 1.0@A{i..N}
+    let v, p3 = load(i, A, p1);
+    // sync ctx: p2, lft ctx: p3
+    let p4, p5 = jnsplt([p2]); // p4: 1.0@A{i}, p5: 1/2@A{i-1} ⊔ 1.0@A{i+1..N}
+    let p6 = store(i-1, A, v, p4);
+    ---
+    // sync ctx: p5 ⊔ p6, lft ctx: p3
+    let p7, p8 = jnsplt([p5, p6]); // p7: 1.0@A{i..N}, p8: 1/2@A{i-1}
+    raw(i + 1, A, p7)
+  } else {
+    ()
+  }
+```
+
+```rust
+fn war<const N: usize>(j: u32, B: &mut [u32; N], p0: 1.0@B{j..N}) =
+  if j < N-1 {
+    let p1, p2 = jnsplt([p0]); // p1: 1/2@B{j+1}, p2: 1/2@B{j+1} ⊔ 1.0@B{j} ⊔ 1.0@B{j+2..N}
+    let v, p3 = load(j+1, B, p1);
+    ---
+    // sync ctx: p2 ⊔ p3, lft ctx: []
+    let p4, p5 = jnsplt([p2]); // p4: 1.0@B{j}, p5: 1/2@B{j+1} ⊔ 1.0@B{j+2..N}
+    let p6 = store(j, B, v, p4);
+    // sync ctx: p3 ⊔ p5, lft ctx: p6
+    let p7, p8 = jnsplt([p3, p5]); // p7: 1.0@B{j+1..N}, p8: 0.0@B{j+1}
+    war(j + 1, B, p7)
+  } else {
+    ()
+  }
+```
+
+```rust
+fn waw<const N: usize>(j: u32, C: &mut [u32; N], p0: 1.0@C{j..N}) =
+  if j < N-1 {
+    let p1, p2 = jnsplt([p0]); // p1: 1.0@C{j}, p2: 1.0@C{j+1..N}
+    let p3 = store(j, C, j, p1);
+    // sync ctx: p2, lft ctx: p3
+    let p4, p5 = jnsplt([p2]); // p4: 1.0@C{j+1}, p5: 1.0@C{j+2..N}
+    let p6 = store(j+1, C, 5, p4);
+    ---
+    // sync ctx: p5 ⊔ p6, lft ctx: p3
+    let p7, p8 = jnsplt([p5, p6]); // p7: 1.0@C{j+1..N}, p8: 0.0@C{j+1}
+    waw(j + 1, C, p7)
+  } else {
+    ()
+  }
+```
+
+```rust
+fn dmv<const M: usize, const N: usize>(
+  a: &[u32; M * N]@{0..M*N},
+  x: &[u32; N]@{0..N},
+  y: &mut [u32; M]@{0..M},
+  p0: shrd@a{0..M*N} ⊔ shrd@x{0..N} ⊔ uniq@y{0..M},
+) {
+  mv_mul::<M, N>(0, a, x, y, p0);
 }
-$$
 
-where $D_{if}$ is:
-
-$$
-\frac{
-  \begin{gather*}
-  \frac{
-    ...
-  }{
-  ...
-  \vdash_{...}\; 
-   i : \texttt{u32}
+fn mv_mul<const M: usize, const N: usize>(
+  idx: usize,
+  a: &[u32; M * N]@{idx*N..M*N},
+  x: &[u32; N]@{0..N},
+  y: &mut [u32; M]@{idx..M},
+  p0: shrd@a{idx*N..M*N} ⊔ shrd@x{0..N} ⊔ uniq@y{idx..M},
+) {
+  let c = idx < M;
+  if c {
+    let p1, p2 = jnsplt([p0]); // p1: shrd/2@a{idx*N..idx*N+N} ⊔ shrd/2@x{0..N}, p2: shrd/2@a{idx*N..idx*N+N} ⊔ shrd/2@x{0..N} ⊔ shrd@a{(idx+1)*N..M*N} ⊔ uniq@y{idx..M}
+    let dot_product = cal_dot_product::<M, N>(0, idx, a, x, 0, p1);
+    let _ = store(idx, y, dot_product);
+    let k = idx + 1;
+    mv_mul::<M, N>(k, a, x, y);
+  } else {
+    ()
   }
-  \quad
-  c = (i < 32) \land c \vDash 0 \leq i < 32 
-  \quad
-  \frac{
-    \begin{gather*}
-    \frac{
-    ...
-  }{
-  ...
-  \vdash_{...}\; 
-   i : \texttt{u32}
-  } \quad
-  \frac{
-    ...
-  }{
-  ... \vdash_{...}\; 
-   val + 1 : \texttt{u32}
-  }
-  \quad
-  ... \vDash ... \land i \in \{i..32\}
-  \quad
-  D_{rec}
-    \end{gather*}
-  }{
-    ..., val \mapsto \texttt{u32} ; \; A \mapsto \mathsf{uniq@}\{i..32\}
-    \Vert \mathsf{shrd@}\emptyset
-    \;\vdash_{...}\;
-    \texttt{let } \_ \texttt{ = } \texttt{store}(A, i, val + 1) ;\; ... : \texttt{unit}
-  }
-  \end{gather*}
-}{
-  i \mapsto \texttt{u32}, c \mapsto \texttt{bool} \; ; \;
-  A \mapsto \mathsf{uniq@}\{i..32\}
-  \Vert
-  \mathsf{shrd@}\emptyset
-  \;\vdash_{c = (i < 32) \land c}\;
-  \texttt{let } val \texttt{ = } \texttt{load}(A, i) \text{ ---} \;
-  ... \; \texttt{store} ... \; ;
-  \texttt{increment} ...
-  : \texttt{unit}
 }
-$$
 
-where $D_{rec}$ is:
-
-$$
-\quad
-  \frac{
-    \begin{gather*}
-    \texttt{def increment}(i: \texttt{u32}, A: \mathsf{uniq@}\{i..32\} \Vert \mathsf{shrd@}\{\}) \to \texttt{unit} = ... \\
-    \frac{...}{... \vdash (i + 1) : \texttt{u32}} \quad
-    \frac{
-      \begin{gather*}
-      \frac{...}{... \vdash j : \texttt{u32}} \quad
-      c = (i < 32) \land c \land (j = i + 1) \vDash 
-      \{(i+1)..32\} \subseteq \{j..32\} \land \emptyset \subseteq \emptyset
-      \end{gather*}
-    }{
-      ..., j \mapsto \texttt{u32} ; \;
-      A \mapsto \mathsf{uniq@}\{(i+1)..32\} \Vert \mathsf{shrd@}\emptyset
-      \;\vdash_{... \land (j = i + 1)}\;
-      \texttt{increment}(j, A) : \texttt{unit}
-    }
-    \end{gather*}
-  }{
-  ... ; \; A \mapsto \mathsf{uniq@}\{i..32\}\setminus \{i\}
-    \Vert \mathsf{shrd@}\emptyset
-  \;\vdash_{...}\;
-  \texttt{let } j \texttt{ = } i + 1; \;
-   \texttt{increment}(j, A) : \texttt{unit}
+fn cal_dot_product<const M: usize, const N: usize>(
+  j: usize,
+  i: usize,
+  a: &[u32; M * N]@{i*N..i*N+N},
+  x: &[u32; N]@{j..N},
+  acc: u32,
+  p0: shrd@a{i*N..i*N+N} ⊔ shrd@x{j..N},
+) -> u32 {
+  let c = j < N;
+  if c {
+    let index = i * N + j;
+    let p1, p2 = jnsplt([p0]); // p1: shrd/2@a{i*N+j}, p2: shrd/2@a{i*N+j} ⊔ shrd@a{i*N..i*N+N}\{i*N+j} ⊔ shrd@x{j..N}
+    let a_val, p3 = load(index, a, p1);
+    // sync ctx: p2, lft ctx: p3
+    let p4, p5 = jnsplt([p2]); // p4: shrd/2@x{j}, p5: shrd/2@x{j} ⊔ shrd/2@a{i*N+j} ⊔ shrd@a{i*N..i*N+N}\{i*N+j} ⊔ shrd@x{j+1..N}
+    let x_val, p6 = load(j, x, p4);
+    // sync ctx: p5, lft ctx: p3 ⊔ p6
+    let k = j + 1;
+    let p7, p8 = jnsplt([p5]); // p7: shrd/2@a{i*N..i*N+N} ⊔ shrd/2@x{j+1..N}, p8: p5 \ p7
+    cal_dot_product::<M, N>(k, i, a, x, acc + a_val * x_val, p7)
+  } else {
+    acc
   }
-$$
+}
+```
 
 ## Operational Semantics
 

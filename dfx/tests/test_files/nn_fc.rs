@@ -6,10 +6,8 @@ fn row_dot<const R: usize, const C: usize>(
     src: &[i32; C],
     acc: i32,
 ) -> i32 {
-    let done = j == C;
-    if done {
-        acc
-    } else {
+    let cond = j < C;
+    if cond {
         let base = i * C;
         let idx = base + j;
         let s_val = src[j];
@@ -19,6 +17,8 @@ fn row_dot<const R: usize, const C: usize>(
         let one = 1;
         let next = j + one;
         row_dot::<R, C>(i, next, weight, src, new_acc)
+    } else {
+        acc
     }
 }
 
@@ -46,10 +46,8 @@ fn rec_rows<const R: usize, const C: usize>(
     dest: &mut [i32; R],
     shift: usize,
 ) {
-    let done = i == R;
-    if done {
-        ()
-    } else {
+    let cond = i < R;
+    if cond {
         let dot = row_dot::<R, C>(i, 0, weight, src, 0);
         let shifted = dot >> shift;
         let clamped = clamp_i16(shifted);
@@ -57,6 +55,8 @@ fn rec_rows<const R: usize, const C: usize>(
         let one = 1;
         let next = i + one;
         rec_rows::<R, C>(next, weight, src, dest, shift)
+    } else {
+        ()
     }
 }
 

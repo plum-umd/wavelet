@@ -5,9 +5,9 @@ use std::fmt;
 
 use crate::env::{Ctx, FnRegistry};
 use crate::error::TypeError;
-use crate::ir::{Expr, FnDef, Op, Program, Stmt, Tail, Ty, Val, Var};
+use crate::ir::{Expr, FnDef, Op, Program, Signedness, Stmt, Tail, Ty, Val, Var};
 use crate::logic::CapabilityLogic;
-use crate::logic::cap::{Cap, Delta, RegionModel};
+use crate::logic::cap::{Cap, CapPattern, Delta, RegionModel};
 use crate::logic::region::Region;
 use crate::logic::semantic::Interval;
 use crate::logic::semantic::solver::{Atom, Idx, Phi};
@@ -102,6 +102,68 @@ fn or(lhs: Atom, rhs: Atom) -> Atom {
 
 fn not(atom: Atom) -> Atom {
     Atom::Not(Box::new(atom))
+}
+
+fn combine_signedness(a: Signedness, b: Signedness) -> Signedness {
+    match (a, b) {
+        (Signedness::Unsigned, Signedness::Unsigned) => Signedness::Unsigned,
+        _ => Signedness::Signed,
+    }
+}
+
+impl<'logic, L: CapabilityLogic> Ctx<'logic, L>
+where
+    L::Region: RegionModel,
+{
+    fn bind_var(&mut self, var: &Var, ty: Ty) {
+        if let Ty::Int(Signedness::Unsigned) = ty {
+            self.phi
+                .push(Atom::Le(Idx::Const(0), Idx::Var(var.0.clone())));
+        }
+        self.gamma.insert(var.clone(), ty);
+    }
+
+    fn ensure_literal_binding(&mut self, var: &Var) -> Result<(), TypeError> {
+        if self.gamma.0.contains_key(&var.0) {
+            return Ok(());
+        }
+        if let Some(rest) = var.0.strip_prefix("_lit_") {
+            let (value_part, _) = rest.rsplit_once('_').unwrap_or((rest, ""));
+            if let Ok(value) = value_part.parse::<i64>() {
+                let ty = if value >= 0 {
+                    Ty::Int(Signedness::Unsigned)
+                } else {
+                    Ty::Int(Signedness::Signed)
+                };
+                self.bind_var(var, ty);
+                self.phi
+                    .push(Atom::Eq(Idx::Var(var.0.clone()), Idx::Const(value)));
+                return Ok(());
+            }
+            if value_part == "true" {
+                self.bind_var(var, Ty::Bool);
+                self.phi.push(bool_atom(&var.0));
+                return Ok(());
+            }
+            if value_part == "false" {
+                self.bind_var(var, Ty::Bool);
+                self.phi.push(not(bool_atom(&var.0)));
+                return Ok(());
+            }
+        }
+        if var.0 == "_unit_literal" || var.0 == "_unit_ret" {
+            self.bind_var(var, Ty::Unit);
+            return Ok(());
+        }
+        Err(TypeError::UndeclaredVar(var.0.clone()))
+    }
+
+    fn ty_of(&mut self, var: &Var) -> Result<Ty, TypeError> {
+        if !self.gamma.0.contains_key(&var.0) {
+            self.ensure_literal_binding(var)?;
+        }
+        self.gamma.get(var)
+    }
 }
 
 fn render_cap<L: CapabilityLogic>(logic: &L, phi: &Phi, cap: &Cap<L::Region>) -> String
@@ -428,7 +490,7 @@ where
     logic.set_query_logging(options.log_solver_queries);
     let mut ctx = Ctx::new(logic, options.verbose);
     for (var, ty) in &def.params {
-        ctx.gamma.insert(var.clone(), ty.clone());
+        ctx.bind_var(var, ty.clone());
     }
     // Initialise capability environment from the function’s cap pattern.
     for cap_pat in &def.caps {
@@ -543,11 +605,17 @@ where
         Stmt::LetVal { var, val } => {
             // Determine literal type and bind it.
             let ty = match val {
-                Val::Int(_) => Ty::Int,
+                Val::Int(n) => {
+                    if *n >= 0 {
+                        Ty::Int(Signedness::Unsigned)
+                    } else {
+                        Ty::Int(Signedness::Signed)
+                    }
+                }
                 Val::Bool(_) => Ty::Bool,
                 Val::Unit => Ty::Unit,
             };
-            ctx.gamma.insert(var.clone(), ty);
+            ctx.bind_var(var, ty);
             match val {
                 Val::Int(n) => ctx
                     .phi
@@ -568,13 +636,16 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    let x_ty = ctx.gamma.get(&vars[0])?;
-                    let y_ty = ctx.gamma.get(&vars[1])?;
+                    let x_ty = ctx.ty_of(&vars[0])?;
+                    let y_ty = ctx.ty_of(&vars[1])?;
                     if !x_ty.is_int() || !y_ty.is_int() {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
                         });
                     }
+                    let x_sign = x_ty.signedness().unwrap();
+                    let y_sign = y_ty.signedness().unwrap();
+                    let result_sign = combine_signedness(x_sign, y_sign);
                     // Add fact to Phi for Add/Sub/Mul operations.
                     let x_idx = Idx::Var(vars[0].0.clone());
                     let y_idx = Idx::Var(vars[1].0.clone());
@@ -588,7 +659,7 @@ where
                     if !matches!(op, Op::Div) {
                         ctx.phi.push(Atom::Eq(result_idx, rhs));
                     }
-                    ctx.gamma.insert(vars[2].clone(), Ty::Int);
+                    ctx.bind_var(&vars[2], Ty::Int(result_sign));
                     log_after_statement(ctx, stmt);
                     Ok(())
                 }
@@ -598,14 +669,14 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    let x_ty = ctx.gamma.get(&vars[0])?;
-                    let y_ty = ctx.gamma.get(&vars[1])?;
+                    let x_ty = ctx.ty_of(&vars[0])?;
+                    let y_ty = ctx.ty_of(&vars[1])?;
                     if !matches!(x_ty, Ty::Bool) || !matches!(y_ty, Ty::Bool) {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
                         });
                     }
-                    ctx.gamma.insert(vars[2].clone(), Ty::Bool);
+                    ctx.bind_var(&vars[2], Ty::Bool);
                     let lhs_atom = bool_atom(&vars[0].0);
                     let rhs_atom = bool_atom(&vars[1].0);
                     let res_atom = bool_atom(&vars[2].0);
@@ -621,14 +692,14 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    let x_ty = ctx.gamma.get(&vars[0])?;
-                    let y_ty = ctx.gamma.get(&vars[1])?;
+                    let x_ty = ctx.ty_of(&vars[0])?;
+                    let y_ty = ctx.ty_of(&vars[1])?;
                     if !matches!(x_ty, Ty::Bool) || !matches!(y_ty, Ty::Bool) {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
                         });
                     }
-                    ctx.gamma.insert(vars[2].clone(), Ty::Bool);
+                    ctx.bind_var(&vars[2], Ty::Bool);
                     let lhs_atom = bool_atom(&vars[0].0);
                     let rhs_atom = bool_atom(&vars[1].0);
                     let res_atom = bool_atom(&vars[2].0);
@@ -644,14 +715,17 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    let x_ty = ctx.gamma.get(&vars[0])?;
-                    let y_ty = ctx.gamma.get(&vars[1])?;
+                    let x_ty = ctx.ty_of(&vars[0])?;
+                    let y_ty = ctx.ty_of(&vars[1])?;
                     if !x_ty.is_int() || !y_ty.is_int() {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
                         });
                     }
-                    ctx.gamma.insert(vars[2].clone(), Ty::Int);
+                    let x_sign = x_ty.signedness().unwrap();
+                    let y_sign = y_ty.signedness().unwrap();
+                    let result_sign = combine_signedness(x_sign, y_sign);
+                    ctx.bind_var(&vars[2], Ty::Int(result_sign));
                     log_after_statement(ctx, stmt);
                     Ok(())
                 }
@@ -661,14 +735,15 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    let x_ty = ctx.gamma.get(&vars[0])?;
-                    let y_ty = ctx.gamma.get(&vars[1])?;
+                    let x_ty = ctx.ty_of(&vars[0])?;
+                    let y_ty = ctx.ty_of(&vars[1])?;
                     if !x_ty.is_int() || !y_ty.is_int() {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
                         });
                     }
-                    ctx.gamma.insert(vars[2].clone(), Ty::Int);
+                    let x_sign = x_ty.signedness().unwrap();
+                    ctx.bind_var(&vars[2], Ty::Int(x_sign));
                     log_after_statement(ctx, stmt);
                     Ok(())
                 }
@@ -678,8 +753,8 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    let x_ty = ctx.gamma.get(&vars[0])?;
-                    let y_ty = ctx.gamma.get(&vars[1])?;
+                    let x_ty = ctx.ty_of(&vars[0])?;
+                    let y_ty = ctx.ty_of(&vars[1])?;
                     if !x_ty.is_int() || !y_ty.is_int() {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
@@ -698,7 +773,7 @@ where
                         .push(implies(result_atom.clone(), comparison.clone()));
                     ctx.phi
                         .push(implies(not(result_atom.clone()), not(comparison)));
-                    ctx.gamma.insert(vars[2].clone(), Ty::Bool);
+                    ctx.bind_var(&vars[2], Ty::Bool);
                     log_after_statement(ctx, stmt);
                     Ok(())
                 }
@@ -708,17 +783,17 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    let x_ty = ctx.gamma.get(&vars[0])?;
-                    let y_ty = ctx.gamma.get(&vars[1])?;
+                    let x_ty = ctx.ty_of(&vars[0])?;
+                    let y_ty = ctx.ty_of(&vars[1])?;
                     if x_ty != y_ty {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
                         });
                     }
-                    ctx.gamma.insert(vars[2].clone(), Ty::Bool);
+                    ctx.bind_var(&vars[2], Ty::Bool);
                     let result_atom = bool_atom(&vars[2].0);
                     match x_ty {
-                        Ty::Int => {
+                        Ty::Int(_) => {
                             let eq_atom =
                                 Atom::Eq(Idx::Var(vars[0].0.clone()), Idx::Var(vars[1].0.clone()));
                             ctx.phi.push(implies(result_atom.clone(), eq_atom.clone()));
@@ -746,13 +821,13 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    let x_ty = ctx.gamma.get(&vars[0])?;
+                    let x_ty = ctx.ty_of(&vars[0])?;
                     if !x_ty.is_int() {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
                         });
                     }
-                    ctx.gamma.insert(vars[1].clone(), Ty::Int);
+                    ctx.bind_var(&vars[1], x_ty.clone());
                     log_after_statement(ctx, stmt);
                     Ok(())
                 }
@@ -769,16 +844,18 @@ where
                         });
                     }
                     // Index must be int.
-                    let idx_ty = ctx.gamma.get(index)?;
+                    let idx_ty = ctx.ty_of(index)?;
                     if !idx_ty.is_int() {
                         return Err(TypeError::InvalidOp {
                             op: "load index type".into(),
                         });
                     }
                     // Array must be a reference to the correct length.
-                    let arr_ty = ctx.gamma.get(array)?;
-                    let arr_len = match arr_ty {
-                        Ty::RefShrd { len, .. } | Ty::RefUniq { len, .. } => len.clone(),
+                    let arr_ty = ctx.ty_of(array)?;
+                    let (arr_len, elem_ty) = match arr_ty {
+                        Ty::RefShrd { elem, len } | Ty::RefUniq { elem, len } => {
+                            (len.clone(), elem.as_ref().clone())
+                        }
                         _ => {
                             return Err(TypeError::InvalidOp {
                                 op: "load non array".into(),
@@ -828,7 +905,7 @@ where
                     }
                     // Bind result.
                     let dest = &vars[0];
-                    ctx.gamma.insert(dest.clone(), Ty::Int);
+                    ctx.bind_var(dest, elem_ty);
                     log_after_statement(ctx, stmt);
                     Ok(())
                 }
@@ -846,23 +923,35 @@ where
                         });
                     }
                     // Types of index and value.
-                    let idx_ty = ctx.gamma.get(index)?;
-                    let val_ty = ctx.gamma.get(value)?;
-                    if !idx_ty.is_int() || !val_ty.is_int() {
+                    let idx_ty = ctx.ty_of(index)?;
+                    if !idx_ty.is_int() {
                         return Err(TypeError::InvalidOp {
-                            op: "store index/value type".into(),
+                            op: "store index type".into(),
                         });
                     }
-                    // Array type.
-                    let arr_ty = ctx.gamma.get(array)?;
-                    let arr_len = match arr_ty {
-                        Ty::RefUniq { len, .. } | Ty::RefShrd { len, .. } => len.clone(),
+                    let arr_ty = ctx.ty_of(array)?;
+                    let (arr_len, elem_ty) = match arr_ty {
+                        Ty::RefUniq { elem, len } | Ty::RefShrd { elem, len } => {
+                            (len.clone(), elem.as_ref().clone())
+                        }
                         _ => {
                             return Err(TypeError::InvalidOp {
                                 op: "store non array".into(),
                             });
                         }
                     };
+                    let val_ty = ctx.ty_of(value)?;
+                    if val_ty != elem_ty {
+                        match (&val_ty, &elem_ty) {
+                            (Ty::Int(val_sign), Ty::Int(elem_sign))
+                                if combine_signedness(*val_sign, *elem_sign) == *elem_sign => {}
+                            _ => {
+                                return Err(TypeError::InvalidOp {
+                                    op: "store value type".into(),
+                                });
+                            }
+                        }
+                    }
                     let op_len = len.clone();
                     if arr_len != op_len {
                         return Err(TypeError::InvalidOp {
@@ -943,12 +1032,19 @@ where
             }
             for (i, (param_var, param_ty)) in value_params.iter().enumerate() {
                 let arg_var = &args[i];
-                let arg_ty = ctx.gamma.get(arg_var)?;
+                let mut arg_ty = ctx.ty_of(arg_var)?;
                 if arg_ty != *param_ty {
-                    return Err(TypeError::TypeMismatch {
-                        expected: TypeError::type_name(param_ty),
-                        found: TypeError::type_name(&arg_ty),
-                    });
+                    let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param_ty, Ty::Int(_));
+                    if both_int && arg_var.0.starts_with("_lit_") {
+                        ctx.bind_var(arg_var, param_ty.clone());
+                        arg_ty = param_ty.clone();
+                    }
+                    if arg_ty != *param_ty {
+                        return Err(TypeError::TypeMismatch {
+                            expected: TypeError::type_name(param_ty),
+                            found: TypeError::type_name(&arg_ty),
+                        });
+                    }
                 }
                 // Record substitution for index expressions.
                 subst_map.insert(param_var.0.clone(), arg_var.0.clone());
@@ -1013,7 +1109,7 @@ where
                     ),
                 });
             }
-            ctx.gamma.insert(vars[0].clone(), fn_def.returns.clone());
+            ctx.bind_var(&vars[0], fn_def.returns.clone());
             log_after_statement(ctx, stmt);
             Ok(())
         }
@@ -1030,14 +1126,14 @@ where
     L::Region: RegionModel,
 {
     match tail {
-        Tail::RetVar(var) => ctx.gamma.get(var),
+        Tail::RetVar(var) => ctx.ty_of(var),
         Tail::IfElse {
             cond,
             then_e,
             else_e,
         } => {
             // Condition must be boolean.
-            let cond_ty = ctx.gamma.get(cond)?;
+            let cond_ty = ctx.ty_of(cond)?;
             if !matches!(cond_ty, Ty::Bool) {
                 return Err(TypeError::InvalidOp {
                     op: "if condition type".into(),
@@ -1065,6 +1161,13 @@ where
             let ty_then = infer_expr_type(&mut ctx_th, then_e, registry)?;
             let ty_else = infer_expr_type(&mut ctx_el, else_e, registry)?;
             if ty_then != ty_else {
+                if ty_then.is_int() && ty_else.is_int() {
+                    let combined = Ty::Int(combine_signedness(
+                        ty_then.signedness().unwrap(),
+                        ty_else.signedness().unwrap(),
+                    ));
+                    return Ok(combined);
+                }
                 return Err(TypeError::TypeMismatch {
                     expected: TypeError::type_name(&ty_then),
                     found: TypeError::type_name(&ty_else),
@@ -1102,12 +1205,19 @@ where
             }
             for (i, (param_var, param_ty)) in value_params.iter().enumerate() {
                 let arg_var = &args[i];
-                let arg_ty = ctx.gamma.get(arg_var)?;
+                let mut arg_ty = ctx.ty_of(arg_var)?;
                 if arg_ty != *param_ty {
-                    return Err(TypeError::TypeMismatch {
-                        expected: TypeError::type_name(param_ty),
-                        found: TypeError::type_name(&arg_ty),
-                    });
+                    let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param_ty, Ty::Int(_));
+                    if both_int && arg_var.0.starts_with("_lit_") {
+                        ctx.bind_var(arg_var, param_ty.clone());
+                        arg_ty = param_ty.clone();
+                    }
+                    if arg_ty != *param_ty {
+                        return Err(TypeError::TypeMismatch {
+                            expected: TypeError::type_name(param_ty),
+                            found: TypeError::type_name(&arg_ty),
+                        });
+                    }
                 }
                 // Record substitution for index expressions.
                 subst_map.insert(param_var.0.clone(), arg_var.0.clone());
