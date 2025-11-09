@@ -55,6 +55,7 @@ inductive Label (Op : Type u) V m n [Arity Op] where
   | input (vals : Vector V m)
   | output (vals : Vector V n)
   | τ
+  deriving Repr
 
 @[simp]
 def Label.isSilent [Arity Op] : Label Op V m n → Bool

@@ -38,3 +38,12 @@ def resolve (ed : ExceptDec ε p) : Except ε Unit :=
   | .error (e, _) => .error e
 
 end ExceptDec
+
+namespace Option
+
+def toExcept {ε α} (o : Option α) (e : ε) : Except ε α :=
+  match o with
+  | some x => .ok x
+  | none => .error e
+
+end Option

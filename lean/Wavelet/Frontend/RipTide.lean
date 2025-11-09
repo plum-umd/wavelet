@@ -1,8 +1,12 @@
+import Wavelet.Data.Except
 import Wavelet.Dataflow.Proc
 import Wavelet.Dataflow.Plot
+import Wavelet.Dataflow.Interpreter
 import Wavelet.Semantics.OpInterp
 import Wavelet.Determinacy.OpSpec
 import Wavelet.Compile.Rewrite.Defs
+
+import Wavelet.Frontend.Dataflow
 
 import Wavelet.Frontend.Seq
 
@@ -59,42 +63,48 @@ instance : InterpConsts Value where
   isClonable _ := true
   bool_clonable := by simp
 
-structure State (Loc : Type u) : Type u where
-  memory : Loc → Value → Value
+structure State (Loc : Type u) [DecidableEq Loc] [Hashable Loc] : Type u where
+  -- memory : Loc → Value → Option Value
+  memory : Std.HashMap Loc (Std.HashMap Value Value)
 
-def State.init : State Loc := { memory := λ _ _ => 0 }
+def State.init [DecidableEq Loc] [Hashable Loc] : State Loc
+  := { memory := .emptyWithCapacity }
 
-def State.load (s : State Loc) (loc : Loc) (addr : Value) : Value :=
-  s.memory loc addr
+def State.load [DecidableEq Loc] [Hashable Loc]
+  (s : State Loc) (loc : Loc) (addr : Value) : Option Value :=
+  s.memory.get? loc >>= (·.get? addr)
 
-def State.store [DecidableEq Loc]
+def State.store [DecidableEq Loc] [Hashable Loc]
   (s : State Loc) (loc : Loc) (addr : Value) (val : Value) : State Loc :=
   { s with
-    memory := Function.update s.memory loc
-      (Function.update (s.memory loc) addr val) }
+    memory := s.memory.insert loc
+      ((s.memory.getD loc .emptyWithCapacity).insert addr val) }
 
-inductive InterpOp [DecidableEq Loc] : Lts (State Loc) (RespLabel (SyncOp Loc) Value) where
-  | interp_add
-    {inputs : Vector Value 2}
-    {outputs : Vector Value 1} :
-    outputs[0] = inputs[0] + inputs[1] →
-    InterpOp s (.respond .add inputs outputs) s
-  -- TODO: other pure operators
-  | interp_load
-    {inputs : Vector Value 1}
-    {outputs : Vector Value 1} :
-    outputs[0] = s.memory loc inputs[0] →
-    InterpOp s (.respond (SyncOp.load loc) inputs outputs) s
-  | interp_store
-    {inputs : Vector Value 2} :
-    InterpOp s (.respond (SyncOp.store loc) inputs #v[0])
-      (s.store loc inputs[0] inputs[1])
+instance instOpInterpM [DecidableEq Loc] [Hashable Loc] :
+  OpInterpM (SyncOp Loc) Value (StateT (State Loc) Option) where
+  interp
+    | .add, (inputs : Vector Value 2) => return #v[inputs[0] + inputs[1]]
+    | .mul, (inputs : Vector Value 2) => return #v[inputs[0] * inputs[1]]
+    | .lt, (inputs : Vector Value 2) => return #v[if inputs[0] < inputs[1] then 1 else 0]
+    | .load loc, (inputs : Vector Value 1) => return #v[← (← get).load loc inputs[0]]
+    | .store loc, (inputs : Vector Value 2) => do
+      modify (λ s => s.store loc inputs[0] inputs[1])
+      return #v[0]
+    -- TODO: other pure operators
+    | _, _ => failure
 
-def opInterp [DecidableEq Loc] :
+/-- Converts the monadic interpretation to a relation. -/
+inductive SyncOp.Step [DecidableEq Loc] [Hashable Loc] :
+  Lts (State Loc) (RespLabel (SyncOp Loc) Value) where
+  | step :
+    (instOpInterpM.interp op inputVals).run s = some (outputVals, s') →
+    Step s (.respond op inputVals outputVals) s'
+
+def opInterp [DecidableEq Loc] [Hashable Loc] :
   OpInterp (SyncOp Loc) Value := {
     S := State Loc,
     init := State.init,
-    lts := InterpOp,
+    lts := SyncOp.Step,
   }
 
 /-- TODO: Actually define the pre/post conditions. -/
@@ -132,6 +142,86 @@ instance [Lean.ToJson Loc] : Lean.ToJson (WithSpec (RipTide.SyncOp Loc) RipTide.
       json% { "op": $(op) }
     | WithSpec.join k l _ =>
       json% { "join": { "toks": $(k), "deps": $(l) } }
+
+instance : Lean.FromJson Value where
+  fromJson? json := json.getInt?
+
+instance : Lean.ToJson Value where
+  toJson v := Lean.Json.num v
+
+instance [DecidableEq Loc] [Hashable Loc] [Lean.FromJson Loc] : Lean.FromJson (State Loc) where
+  fromJson? json := do
+    (← json.getArr?).foldlM (λ state entry => do
+      let loc ← entry.getObjValAs? Loc "loc"
+      let vals ← entry.getObjValAs? (List (Value × Value)) "values"
+      return vals.foldl (λ state (addr, val) => state.store loc addr val) state)
+      ⟨.emptyWithCapacity⟩
+
+instance [DecidableEq Loc] [Hashable Loc] [Lean.ToJson Loc] : Lean.ToJson (State Loc) where
+  toJson s :=
+    Lean.ToJson.toJson <| s.memory.toArray.map (λ (loc, vals) =>
+      let values := vals.toArray.map (λ item : Value × Value =>
+        json% [ $(item.1), $(item.2) ])
+      json% {
+        "loc": $(loc),
+        "values": $(values)
+      })
+
+/-- Test inputs. -/
+structure TestVector Loc [DecidableEq Loc] [Hashable Loc] where
+  inputs : List Value
+  state : State Loc
+  deriving Lean.FromJson, Lean.ToJson
+
+/-- Run the test vector on the given process until termination. -/
+partial def TestVector.run
+  [DecidableEq χ] [Repr χ] [DecidableEq Loc] [Hashable Loc] [Repr Loc]
+  [Lean.ToJson Loc] [Lean.ToJson χ]
+  (tv : TestVector Loc)
+  (proc : Dataflow.Proc (SyncOp Loc) χ Value m n) :
+    Except String (List Value × State Loc) := do
+  let c := Dataflow.Config.init proc
+  let st := tv.state
+  let inputs ← (tv.inputs.toVectorDyn m : Option _).toExcept
+    s!"test vector has incorrect number of inputs: expected {m}, got {tv.inputs.length}"
+  let c := c.pushInputs inputs
+  let inst₁ : OpInterpM (SyncOp Loc) Value (StateT (State Loc) Option) := instOpInterpM
+  let inst₂ : Monad (StateT (State Loc) Option) := by infer_instance
+  let rec loop (tr : List (Nat × Label (SyncOp Loc) Value m n)) c st : Except String
+    (
+      List (Nat × Label (SyncOp Loc) Value m n) ×
+      Dataflow.Config (SyncOp Loc) χ Value m n ×
+      State Loc
+    ) := do
+    let nextSteps := @Dataflow.Config.step _ χ _ _ _ _ inst₁ inst₂ _ _ _ c
+    match nextSteps with
+    | [] => pure (tr, c, st)
+    | (idx, m) :: _ =>
+      let atom ← (c.proc.atoms[idx]?).toExcept s!"invalid operator index {idx}"
+      let rawAtom : RawAtomicProc (SyncOp Loc) χ Value := ↑atom
+      -- dbg_trace s!"step {tr.length + 1}: executing operator index {idx} : {Lean.ToJson.toJson rawAtom}"
+      let ((lbl, c'), st') ← (m.run st).toExcept
+        s!"execution encountered a runtime error at operator index {idx} : {Lean.ToJson.toJson rawAtom}"
+      let tr' := tr ++ [(idx, lbl)]
+      loop tr' c' st'
+  let (tr, c, st) ← loop [] c st
+  -- dbg_trace s!"trace: {repr tr}"
+  let (outputs, c) ← c.popOutputs.toExcept
+    s!"output channels not ready at termination"
+
+  -- Checks if all channels are empty
+  for atom in c.proc.atoms do
+    let rawAtom : RawAtomicProc (SyncOp Loc) χ Value := ↑atom
+    for name in atom.inputs do
+      let buf := c.chans name
+      if ¬ buf.isEmpty then
+        throw s!"channel {repr name} (input of {Lean.ToJson.toJson rawAtom}) not empty at termination: {buf}"
+    for name in atom.outputs do
+      let buf := c.chans name
+      if ¬ buf.isEmpty then
+        throw s!"channel {repr name} (output of {Lean.ToJson.toJson rawAtom}) not empty at termination: {buf}"
+
+  return (outputs.toList, st)
 
 section Examples
 

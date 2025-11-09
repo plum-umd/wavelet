@@ -17,6 +17,7 @@ def Option.unwrapIO {α} (o : Option α) (msg : String) : IO α :=
 inductive OutputFormat where
   | json
   | dot
+  | none
   deriving Repr
 
 def trace (msg : String) : IO Unit := do
@@ -27,9 +28,11 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- CLI option parsing
   let inputPath := p.positionalArg! "input" |>.as! String
   let outputPath? := p.flag? "output" |>.map (·.as! String)
+  let testsPath? := p.flag? "tests" |>.map (·.as! String)
   let format ← match p.flag! "format" |>.as! String with
     | "json" => pure OutputFormat.json
     | "dot"  => pure OutputFormat.dot
+    | "none" => pure OutputFormat.none
     | fmt    => throw <| IO.userError s!"unknown output format: {fmt}"
   let enablePermOut := p.hasFlag "perm-out"
   let enableStats := p.hasFlag "stats"
@@ -42,9 +45,12 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let input ← IO.FS.readFile inputPath
   let json ← (Lean.Json.parse input).unwrapIO "failed to parse JSON input"
 
+  let Loc := String
+  let FnName := String
+  let Var := String
+
   let RawT := RawProg
-    (WithCall (WithSpec (RipTide.SyncOp String) RipTide.opSpec) String)
-    String
+    (WithCall (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) FnName) Var
   let rawProg : RawT ← (Lean.FromJson.fromJson? json).unwrapIO "failed to decode JSON input as RawProg"
   let prog ← (rawProg.toProg (V := RipTide.Value)).unwrapIO "failed to convert RawProg to Prog"
 
@@ -73,7 +79,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
 
     -- Some optimizations
     let P χ := Proc
-      (RipTide.SyncOp String) χ RipTide.Value
+      (RipTide.SyncOp Loc) χ RipTide.Value
       (prog.sigs last).ι
       (if ¬ enablePermOut then (prog.sigs last).ω - 1 else (prog.sigs last).ω)
     let proc : P Nat :=
@@ -88,7 +94,9 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
 
     trace s!"applying op selection and optimizations..."
     let (numRws, stats, proc) := Rewrite.applyUntilFailNat
-      (naryLowering <|> deadCodeElim <|> RipTide.operatorSel) proc
+      -- (naryLowering <|> RipTide.operatorSel)
+      (naryLowering <|> deadCodeElim <|> RipTide.operatorSel)
+      proc
     trace s!"{numRws} rewrites. graph size: {proc.atoms.length} ops"
 
     if enableStats then
@@ -109,6 +117,22 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
       |>.length
     trace s!"non-trivial operators: {numNonTrivial}"
 
+    -- If a test file is specified, read and run the tests
+    if let some testsPath := testsPath? then
+      trace s!"running tests from {testsPath}..."
+      let testsInput ← IO.FS.readFile testsPath
+      let testsJson ← (Lean.Json.parse testsInput).unwrapIO s!"failed to parse JSON from {testsPath}"
+      let testVecs : List (RipTide.TestVector Loc) ←
+        (Lean.FromJson.fromJson? testsJson).unwrapIO s!"failed to parse test vectors from {testsPath}"
+      trace s!"loaded {testVecs.length} test vector(s)"
+      for (i, testVec) in testVecs.mapIdx (·, ·) do
+        trace s!"  running test vector {i}..."
+        match testVec.run proc with
+        | .ok (outputVals, finalState) =>
+          trace s!"    outputs: {outputVals}; final state: {Lean.ToJson.toJson finalState}"
+        | .error err =>
+          trace s!"    failed: {err}"
+
     match format with
     | .dot =>
       -- Dump graph as DOT
@@ -119,6 +143,8 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
       let rawProc := RawProc.fromProc proc
       let output := Lean.ToJson.toJson rawProc
       writeOutput (Lean.Json.pretty output)
+    | .none =>
+      trace "no output format selected"
     return 0
   else
     trace "no function provided"
@@ -130,10 +156,11 @@ def compileCmd := `[Cli|
 
     FLAGS:
       o, output    : String ; "Path to output final dataflow graph in JSON (Default: stdout)"
-      f, format    : String ; "Output format [json|dot]"
+      f, format    : String ; "Output format [json|dot|none]"
       "perm-out"            ; "Enable permission output which might increase graph size"
       stats                 ; "Print various statistics"
       "omit-forks"          ; "Omit fork operators in the DOT graph"
+      "tests"      : String ; "A JSON file including test vectors for the final dataflow graph"
 
     ARGS:
       input        : String ; "Input sequential program in JSON"
