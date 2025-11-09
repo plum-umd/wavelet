@@ -5,10 +5,8 @@ use dfx::check::{CheckOptions, check_fn_with_options};
 use dfx::env::FnRegistry;
 use dfx::ir::FnDef;
 use dfx::logic::syntactic::SyntacticLogic;
-use dfx::parse::parse_fn_def;
-use quote::quote;
+use dfx::parse_program;
 use std::collections::HashMap;
-use syn::{Item, parse_file};
 
 // Define the fence macro as a no-op for parsing
 #[allow(unused_macros)]
@@ -17,22 +15,25 @@ macro_rules! fence {
 }
 
 fn parse_fixture(code: &str) -> HashMap<String, FnDef> {
-    let file = parse_file(code).expect("Failed to parse fixture file");
-    file.items
+    let program = parse_program(code).expect("Failed to parse fixture file");
+    program
+        .defs
         .into_iter()
-        .filter_map(|item| {
-            if let Item::Fn(item_fn) = item {
-                let name = item_fn.sig.ident.to_string();
-                let tokens = quote!(#item_fn);
-                let rendered = tokens.to_string();
-                let fn_def = parse_fn_def(&rendered)
-                    .unwrap_or_else(|err| panic!("Failed to parse function `{}`: {:?}", name, err));
-                Some((name, fn_def))
-            } else {
-                None
-            }
+        .map(|def| {
+            let key = def.name.clone().0;
+            (key, def)
         })
         .collect()
+}
+
+fn parse_fn_by_name(code: &str, fn_name: &str) -> FnDef {
+    let program =
+        parse_program(code).unwrap_or_else(|err| panic!("Failed to parse program: {:?}", err));
+    program
+        .defs
+        .into_iter()
+        .find(|def| def.name.0 == fn_name)
+        .unwrap_or_else(|| panic!("Missing function `{}` in input", fn_name))
 }
 
 macro_rules! with_backends {
@@ -55,13 +56,7 @@ macro_rules! single_fn_parser_test_ok {
         #[test]
         fn $test_name() {
             let code = include_str!($file);
-            let fn_def = parse_fn_def(code).unwrap_or_else(|err| {
-                panic!(
-                    "Failed to parse function `{}`: {:?}",
-                    $fn_name,
-                    err
-                )
-            });
+            let fn_def = parse_fn_by_name(code, $fn_name);
             let mut registry = FnRegistry::default();
             registry.insert(fn_def.clone());
             let options: CheckOptions = $opts;
@@ -78,13 +73,7 @@ macro_rules! single_fn_parser_test_err {
         #[test]
         fn $test_name() {
             let code = include_str!($file);
-            let fn_def = parse_fn_def(code).unwrap_or_else(|err| {
-                panic!(
-                    "Failed to parse function `{}`: {:?}",
-                    $fn_name,
-                    err
-                )
-            });
+            let fn_def = parse_fn_by_name(code, $fn_name);
             let mut registry = FnRegistry::default();
             registry.insert(fn_def.clone());
             let options: CheckOptions = $opts;

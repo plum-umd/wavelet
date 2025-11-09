@@ -28,7 +28,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use syn::{self, Attribute, Expr, FnArg, ItemFn, Pat, Stmt, Type};
 
-use crate::ir::{self, ArrayLen, FnDef, FnName, Op, Signedness, Tail, Var};
+use crate::ir::{self, ArrayLen, FnDef, FnName, Op, Program, Signedness, Tail, Var};
 use crate::logic::cap::CapPattern;
 use crate::logic::region::Region;
 use crate::logic::semantic::solver::Idx;
@@ -452,6 +452,26 @@ pub fn parse_fn_def(input: &str) -> Result<FnDef, ParseError> {
         returns: return_ty,
         body,
     })
+}
+
+/// Parse a source string containing one or more function definitions into a [`Program`].
+///
+/// Functions that are not annotated with capabilities are still included; non-function
+/// items are ignored. Any parsing error from one of the functions aborts the whole
+/// process and returns the corresponding [`ParseError`].
+pub fn parse_program(input: &str) -> Result<Program, ParseError> {
+    let file = syn::parse_file(input)?;
+    let mut program = Program::new();
+
+    for item in file.items {
+        if let syn::Item::Fn(item_fn) = item {
+            let tokens = quote::quote!(#item_fn).to_string();
+            let fn_def = parse_fn_def(&tokens)?;
+            program.add_fn(fn_def);
+        }
+    }
+
+    Ok(program)
 }
 
 /// Extract variable name from pattern

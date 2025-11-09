@@ -1,11 +1,17 @@
 use std::collections::BTreeMap;
 
-use crate::ghost::pcm::{Permission, RegionCtx};
+use crate::ghost::{
+    ir::GhostVar,
+    pcm::{FracPerm, RegionCtx, normalise_permissions},
+};
 
-/// Permission environment indexed by array identifiers.
+/// Denotes `1.0@A{i..N}`, `shrd@B{0..M}` etc.
+pub type ArrFracPerm = (String, FracPerm);
+
+/// Permission environment indexed by permission vars.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PermissionEnv {
-    pub map: BTreeMap<String, Permission>,
+    pub map: BTreeMap<GhostVar, Vec<ArrFracPerm>>,
 }
 
 impl PermissionEnv {
@@ -17,53 +23,106 @@ impl PermissionEnv {
     }
 
     /// Insert or replace a permission associated with an array.
-    pub fn insert(&mut self, array: String, perm: Permission, ctx: RegionCtx<'_>) {
-        let perm = perm.normalised(ctx);
-        if perm.is_empty() {
-            self.map.remove(&array);
-        } else {
-            self.map.insert(array, perm);
+    pub fn insert(
+        &mut self,
+        var: GhostVar,
+        array_name: String,
+        perm: FracPerm,
+        ctx: RegionCtx<'_>,
+    ) {
+        let perms = normalise_permissions(vec![perm], ctx);
+        let entry = self.map.entry(var).or_insert_with(Vec::new);
+
+        // Remove existing permission for this array name
+        entry.retain(|(name, _)| name != &array_name);
+
+        // Add new permissions if not empty
+        for p in perms {
+            if !p.is_zero() {
+                entry.push((array_name.clone(), p));
+            }
         }
+
+        // Clean up empty vectors
+        self.map.retain(|_, v| !v.is_empty());
     }
 
-    /// Fetch permission associated with an array.
-    pub fn get(&self, array: &str) -> Option<&Permission> {
-        self.map.get(array)
+    /// Fetch permission associated with a specific array name under a ghost variable.
+    pub fn get(&self, var: &GhostVar, array_name: &str) -> Option<&FracPerm> {
+        self.map
+            .get(var)?
+            .iter()
+            .find(|(name, _)| name == array_name)
+            .map(|(_, perm)| perm)
     }
 
-    /// Returns the permission associated with `array`, or an empty permission if absent.
-    pub fn get_or_empty(&self, array: &str) -> Permission {
-        self.map.get(array).cloned().unwrap_or_else(Permission::empty)
+    /// Returns the permission associated with `array_name` under `var`, or an empty permission if absent.
+    pub fn get_or_empty(&self, var: &GhostVar, array_name: &str) -> FracPerm {
+        self.get(var, array_name).cloned().unwrap_or_else(|| {
+            FracPerm::zero(crate::logic::semantic::region_set::RegionSetExpr::empty())
+        })
     }
 
-    /// Add (join) a permission into the environment entry for `array`.
-    pub fn add_permission(&mut self, array: &str, perm: Permission, ctx: RegionCtx<'_>) {
-        if perm.is_empty() {
+    /// Add (join) a permission into the environment entry for `array_name` under `var`.
+    pub fn add_permission(
+        &mut self,
+        var: &GhostVar,
+        array_name: &str,
+        perm: FracPerm,
+        ctx: RegionCtx<'_>,
+    ) {
+        if perm.is_zero() {
             return;
         }
-        let perm = perm.normalised(ctx);
-        let entry = self.map.entry(array.to_owned()).or_insert_with(Permission::empty);
-        *entry = entry.join(&perm, ctx);
-        if entry.is_empty() {
-            self.map.remove(array);
+
+        let entry = self.map.entry(var.clone()).or_insert_with(Vec::new);
+
+        // Find existing permission for this array name
+        if let Some((_, existing_perm)) = entry.iter_mut().find(|(name, _)| name == array_name) {
+            // Combine the two permissions and normalize
+            let combined = normalise_permissions(vec![existing_perm.clone(), perm], ctx);
+            if combined.is_empty() {
+                // Remove this array from the vector
+                entry.retain(|(name, _)| name != array_name);
+            } else if combined.len() == 1 {
+                *existing_perm = combined.into_iter().next().unwrap();
+            } else {
+                // Multiple permissions after normalization - just keep the first one
+                *existing_perm = combined.into_iter().next().unwrap();
+            }
+        } else {
+            // No existing permission for this array name, add it
+            entry.push((array_name.to_string(), perm));
         }
+
+        // Clean up empty vectors
+        self.map.retain(|_, v| !v.is_empty());
     }
 
     /// Point-wise join of two permission environments.
     pub fn join(&self, other: &PermissionEnv, ctx: RegionCtx<'_>) -> PermissionEnv {
         let mut result = self.clone();
-        for (array, perm) in &other.map {
-            result.add_permission(array, perm.clone(), ctx);
+        for (var, arr_perms) in &other.map {
+            for (array_name, perm) in arr_perms {
+                result.add_permission(var, array_name, perm.clone(), ctx);
+            }
         }
         result
     }
 
     /// Check whether `self <= other` in the point-wise PCM ordering.
     pub fn leq(&self, other: &PermissionEnv, ctx: RegionCtx<'_>) -> bool {
-        for (array, perm) in &self.map {
-            let rhs = other.map.get(array).cloned().unwrap_or_else(Permission::empty);
-            if !perm.leq(&rhs, ctx) {
-                return false;
+        for (var, arr_perms) in &self.map {
+            for (array_name, perm) in arr_perms {
+                let rhs = other.get(var, array_name).cloned().unwrap_or_else(|| {
+                    FracPerm::zero(crate::logic::semantic::region_set::RegionSetExpr::empty())
+                });
+                // Check if perm <= rhs by trying to compute rhs - perm
+                if crate::ghost::pcm::subtract_permissions(&[rhs.clone()], &[perm.clone()], ctx)
+                    .is_none()
+                {
+                    return false;
+                }
             }
         }
         true
@@ -75,17 +134,32 @@ impl PermissionEnv {
             return None;
         }
         let mut result = PermissionEnv::new();
-        for (array, perm) in &self.map {
-            let sub = other.map.get(array).cloned().unwrap_or_else(Permission::empty);
-            if let Some(diff) = perm.diff(&sub, ctx) {
-                result.insert(array.clone(), diff, ctx);
-            } else {
-                return None;
+        for (var, arr_perms) in &self.map {
+            for (array_name, perm) in arr_perms {
+                let sub = other.get(var, array_name).cloned().unwrap_or_else(|| {
+                    FracPerm::zero(crate::logic::semantic::region_set::RegionSetExpr::empty())
+                });
+                let diff = crate::ghost::pcm::subtract_permissions(&[perm.clone()], &[sub], ctx)?;
+                if !diff.is_empty() {
+                    if diff.len() == 1 {
+                        result.insert(
+                            var.clone(),
+                            array_name.clone(),
+                            diff.into_iter().next().unwrap(),
+                            ctx,
+                        );
+                    } else {
+                        // Multiple permissions after subtraction - shouldn't happen for simple subtractions
+                        return None;
+                    }
+                }
             }
         }
-        for (array, perm) in &other.map {
-            if !self.map.contains_key(array) && !perm.is_empty() {
-                return None;
+        for (var, arr_perms) in &other.map {
+            for (array_name, perm) in arr_perms {
+                if self.get(var, array_name).is_none() && !perm.is_zero() {
+                    return None;
+                }
             }
         }
         Some(result)
@@ -100,7 +174,8 @@ impl PermissionEnv {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ghost::pcm::{rational, PermChunk, RegionCtx};
+    use crate::ghost::ir::GhostVar;
+    use crate::ghost::pcm::{Coeff, Frac, NNRat, Numerator, RegionCtx};
     use crate::logic::semantic::region_set::RegionSetExpr;
     use crate::logic::semantic::solver::{Atom, Idx, Phi, SmtSolver};
 
@@ -108,8 +183,15 @@ mod tests {
         RegionSetExpr::interval(Idx::Const(lo), Idx::Const(hi))
     }
 
-    fn perm(coeff_num: i64, coeff_den: i64, lo: i64, hi: i64) -> Permission {
-        Permission::singleton(PermChunk::new(rational(coeff_num, coeff_den), interval(lo, hi)))
+    fn rational(num: usize, den: usize) -> Coeff {
+        NNRat::Atomic(Frac {
+            numer: Numerator::Const(num),
+            denom: den,
+        })
+    }
+
+    fn perm(coeff_num: usize, coeff_den: usize, lo: i64, hi: i64) -> FracPerm {
+        FracPerm::new(rational(coeff_num, coeff_den), interval(lo, hi))
     }
 
     fn ctx<'a>(phi: &'a Phi, solver: &'a SmtSolver) -> RegionCtx<'a> {
@@ -122,14 +204,17 @@ mod tests {
         let solver = SmtSolver::new();
         let ctx = ctx(&phi, &solver);
         let mut left = PermissionEnv::new();
-        left.insert("A".into(), perm(1, 2, 0, 4), ctx);
+        left.insert(GhostVar("v1".into()), "A".into(), perm(1, 2, 0, 4), ctx);
         let mut right = PermissionEnv::new();
-        right.insert("A".into(), perm(1, 2, 0, 4), ctx);
-        right.insert("B".into(), perm(1, 4, 1, 3), ctx);
+        right.insert(GhostVar("v1".into()), "A".into(), perm(1, 2, 0, 4), ctx);
+        right.insert(GhostVar("v1".into()), "B".into(), perm(1, 4, 1, 3), ctx);
 
         let joined = left.join(&right, ctx);
-        assert_eq!(joined.get("A").unwrap().chunks()[0].coeff, rational(1, 1));
-        assert!(joined.get("B").is_some());
+        assert_eq!(
+            joined.get(&GhostVar("v1".into()), "A").unwrap().coeff,
+            rational(1, 1)
+        );
+        assert!(joined.get(&GhostVar("v1".into()), "B").is_some());
     }
 
     #[test]
@@ -138,11 +223,14 @@ mod tests {
         let solver = SmtSolver::new();
         let ctx = ctx(&phi, &solver);
         let mut base = PermissionEnv::new();
-        base.insert("A".into(), perm(3, 4, 0, 4), ctx);
+        base.insert(GhostVar("v1".into()), "A".into(), perm(3, 4, 0, 4), ctx);
         let mut sub = PermissionEnv::new();
-        sub.insert("A".into(), perm(1, 2, 0, 4), ctx);
+        sub.insert(GhostVar("v1".into()), "A".into(), perm(1, 2, 0, 4), ctx);
         let diff = base.diff(&sub, ctx).expect("diff should succeed");
-        assert_eq!(diff.get("A").unwrap().chunks()[0].coeff, rational(1, 4));
+        assert_eq!(
+            diff.get(&GhostVar("v1".into()), "A").unwrap().coeff,
+            rational(1, 4)
+        );
     }
 
     #[test]
@@ -151,9 +239,9 @@ mod tests {
         let solver = SmtSolver::new();
         let ctx = ctx(&phi, &solver);
         let mut base = PermissionEnv::new();
-        base.insert("A".into(), perm(1, 4, 0, 2), ctx);
+        base.insert(GhostVar("v1".into()), "A".into(), perm(1, 4, 0, 2), ctx);
         let mut sub = PermissionEnv::new();
-        sub.insert("A".into(), perm(1, 2, 0, 2), ctx);
+        sub.insert(GhostVar("v1".into()), "A".into(), perm(1, 2, 0, 2), ctx);
         assert!(base.diff(&sub, ctx).is_none());
     }
 
@@ -163,9 +251,9 @@ mod tests {
         let solver = SmtSolver::new();
         let ctx = ctx(&phi, &solver);
         let mut strong = PermissionEnv::new();
-        strong.insert("A".into(), perm(3, 4, 0, 4), ctx);
+        strong.insert(GhostVar("v1".into()), "A".into(), perm(3, 4, 0, 4), ctx);
         let mut weak = PermissionEnv::new();
-        weak.insert("A".into(), perm(1, 4, 0, 4), ctx);
+        weak.insert(GhostVar("v1".into()), "A".into(), perm(1, 4, 0, 4), ctx);
         assert!(weak.leq(&strong, ctx));
         assert!(!strong.leq(&weak, ctx));
     }
@@ -176,9 +264,12 @@ mod tests {
         let solver = SmtSolver::new();
         let ctx = ctx(&phi, &solver);
         let mut env = PermissionEnv::new();
-        env.add_permission("A", perm(1, 4, 0, 4), ctx);
-        env.add_permission("A", perm(1, 4, 0, 4), ctx);
-        assert_eq!(env.get("A").unwrap().chunks()[0].coeff, rational(1, 2));
+        env.add_permission(&GhostVar("v1".into()), "A", perm(1, 4, 0, 4), ctx);
+        env.add_permission(&GhostVar("v1".into()), "A", perm(1, 4, 0, 4), ctx);
+        assert_eq!(
+            env.get(&GhostVar("v1".into()), "A").unwrap().coeff,
+            rational(1, 2)
+        );
     }
 
     #[test]
@@ -190,20 +281,21 @@ mod tests {
         let composite_region = RegionSetExpr::union(vec![interval(0, 2), interval(2, 4)]);
         let mut env = PermissionEnv::new();
         env.insert(
+            GhostVar("v1".into()),
             "A".into(),
-            Permission::singleton(PermChunk::new(rational(1, 4), composite_region.clone())),
+            FracPerm::new(rational(1, 4), composite_region.clone()),
             ctx,
         );
         env.add_permission(
+            &GhostVar("v1".into()),
             "A",
-            Permission::singleton(PermChunk::new(rational(1, 4), interval(0, 4))),
+            FracPerm::new(rational(1, 4), interval(0, 4)),
             ctx,
         );
 
-        let perm = env.get("A").unwrap();
-        assert_eq!(perm.chunks().len(), 1);
-        assert_eq!(perm.chunks()[0].coeff, rational(1, 2));
-        assert_eq!(perm.chunks()[0].region, interval(0, 4));
+        let perm = env.get(&GhostVar("v1".into()), "A").unwrap();
+        assert_eq!(perm.coeff, rational(1, 2));
+        assert_eq!(perm.region, interval(0, 4));
     }
 
     #[test]
@@ -226,18 +318,19 @@ mod tests {
 
         let mut env = PermissionEnv::new();
         env.insert(
+            GhostVar("v1".into()),
             "A".into(),
-            Permission::singleton(PermChunk::new(rational(1, 3), region_i)),
+            FracPerm::new(rational(1, 3), region_i),
             ctx,
         );
         env.add_permission(
+            &GhostVar("v1".into()),
             "A",
-            Permission::singleton(PermChunk::new(rational(1, 3), region_i_plus)),
+            FracPerm::new(rational(1, 3), region_i_plus),
             ctx,
         );
 
-        let perm = env.get("A").unwrap();
-        assert_eq!(perm.chunks().len(), 1);
-        assert_eq!(perm.chunks()[0].coeff, rational(2, 3));
+        let perm = env.get(&GhostVar("v1".into()), "A").unwrap();
+        assert_eq!(perm.coeff, rational(2, 3));
     }
 }

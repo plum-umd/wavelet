@@ -2029,7 +2029,7 @@ fn sum_aux<const N: usize>(i: u32, A: &[u32; N], a: u32, p0: shrd@A{i..N}, p_lft
   let c, p3 = lt(i, N, p1);
   if c {
     // sync ctx: p2, lft ctx: p_lft ⊔ p3
-    let p4, p5 = jnsplt([p2]); // p4: shrd/2@A{i}, p5: shrd/2@A{i} ⊔ shrd@A{i+1..N}
+    let p4, p5 = jnsplt([p2]); // p4: shrd/2@A{i}, p5: shrd/2@A{i} ⊔ shrd@A{i..N \ i}
     let val, p6 = load(i, A, p4);
     // sync ctx: p5, lft ctx: p_lft ⊔ p3 ⊔ p6
     let p7, p8 = jnsplt([p5]); // p7: eps, p8: shrd/2@A{i} ⊔ shrd@A{i+1..N}
@@ -2042,6 +2042,28 @@ fn sum_aux<const N: usize>(i: u32, A: &[u32; N], a: u32, p0: shrd@A{i..N}, p_lft
     // sync ctx: p13, lft ctx: p_lft ⊔ p3 ⊔ p6 ⊔ p9 ⊔ p12 ⊔ p14 (note: unlike previous cases, p14 is also added to lft ctx here as we have a *tail call* after this)
     let p15, p16 = jnsplt([p_lft, p3, p6, p9, p12, p14]); // p15: p_lft ⊔ p3 ⊔ p6 ⊔ p9 ⊔ p12 ⊔ p14 = shrd@A{0..N \ i..N} ⊔ shrd@A{i}, p16: eps
     sum_aux(j, A, val + a, p13, p15)
+  } else {
+    let p_ret, p_eps = jnsplt([p0, p1]); // p_ret: shrd@A{0..N}, p_eps: eps
+    (a, p_ret)
+  }
+
+fn sum_aux_<const N: usize>(i: u32, A: &[u32; N], a: u32, p0: shrd@A{i..N}, p_lft: shrd@A{0..N \ i..N}) -> (u32, shrd@A{0..N}) =
+  // sync ctx: p0, lft ctx: p_lft
+  let c, p1 = lt(i, N);
+  if c {
+    // sync ctx: p0, lft ctx: p_lft ⊔ p1
+    let p2, p3 = jnsplt([p0]); // p2: shrd/2@A{i}, p3: shrd/2@A{i} ⊔ shrd@A{i..N \ i}
+    let val, p4 = load(i, A, p2);
+    // sync ctx: p3, lft ctx: p_lft ⊔ p1 ⊔ p4
+    let p5, p6 = jnsplt([p3]); // p5: eps, p6: shrd/2@A{i} ⊔ shrd@A{i+1..N}
+    let one, p7 = const(1, p5);
+    // sync ctx: p6, lft ctx: p_lft ⊔ p1 ⊔ p4 ⊔ p7
+    let j, p8 = add(i, one);
+    // sync ctx: p6, lft ctx: p_lft ⊔ p1 ⊔ p4 ⊔ p7 ⊔ p8
+    let p9, p10 = jnsplt([p6]); // p9: shrd@A{i+1..N}, p10: shrd/2@A{i}
+    // sync ctx: p9, lft ctx: p_lft ⊔ p3 ⊔ p6 ⊔ p7 ⊔ p8 ⊔ p10 (note: unlike previous cases, p10 is also added to lft ctx here as we have a *tail call* after this)
+    let p11, p12 = jnsplt([p_lft, p3, p6, p7, p8, p10]); // p11: p_lft ⊔ p3 ⊔ p6 ⊔ p7 ⊔ p8 ⊔ p10 = shrd@A{0..N \ i..N} ⊔ shrd@A{i},	p12: eps
+    sum_aux_(j, A, val + a, p9, p11)
   } else {
     let p_ret, p_eps = jnsplt([p0, p1]); // p_ret: shrd@A{0..N}, p_eps: eps
     (a, p_ret)
@@ -2103,7 +2125,7 @@ fn sum_then_clear<const N: usize>(A: &mut [u32; N], p0: 1.0@A{0..N}, p1: eps) ->
   let p2, p3 = jnsplt([p0]); // p2: 0.5@A{0..N}, p3: 0.5@A{0..N}
   let p4, p5 = jnsplt([p1]); // p4: eps, p5: eps
   let (s, p6) = sum::<N>(A, p2, p4); // p6: 0.5@A{0..N} ⊔ eps
-  ---
+  // ---
   // sync ctx: p3 ⊔ p6 (p6 because of the fence), lft ctx: p5
   let p7, p8 = jnsplt([p3, p6]); // p7: 1.0@A{0..N}, p8: eps
   let p9, p10 = jnsplt([p5, p8]); // p9: eps, p10: eps

@@ -1,205 +1,454 @@
-use std::collections::BTreeMap;
+use crate::Val;
+use crate::ghost::ir::{GhostExpr, GhostFnDef, GhostProgram, GhostStmt, GhostTail, GhostVar};
+use crate::ir::{Expr, FnDef, FnName, Op, Program, Stmt, Tail, Var};
 
-use crate::ghost::ir::GhostProgram;
-use crate::ghost::pcm::{Coeff, Permission, PermChunk, RegionCtx, rational};
-use crate::ghost::permission::PermissionEnv;
-use crate::ir::{ArrayLen, FnDef, Program, Signedness, Ty};
-use crate::logic::semantic::region_set::RegionSetExpr;
-use crate::logic::semantic::solver::{Atom, Idx, Phi, SmtSolver};
-use crate::logic::CapabilityLogic;
-
-/// Initial permission state for a lowered function.
-#[cfg_attr(not(test), allow(dead_code))]
-#[derive(Clone, Debug)]
-struct InitialPermissions {
-    phi: Phi,
-    sync: PermissionEnv,
-    leftover: PermissionEnv,
-}
-
-/// Synthesize a ghost-level program from the typed IR. Currently a stub while
-/// the lowering pipeline is being implemented.
-pub fn synthesize_ghost_program<L: CapabilityLogic>(prog: &Program, logic: &L) -> GhostProgram
-where
-    L::Region: crate::logic::cap::RegionModel<Solver = SmtSolver>,
-{
+/// Synthesize a ghost-level program from the typed IR.
+pub fn synthesize_ghost_program(prog: &Program) -> GhostProgram {
+    let mut ghost = GhostProgram::new();
     for def in &prog.defs {
-        let _ = compute_initial_permissions(def, logic);
+        ghost.add_fn(lower_fn(def));
     }
-    GhostProgram::new()
+    ghost
 }
 
-fn compute_initial_permissions<L: CapabilityLogic>(def: &FnDef, logic: &L) -> InitialPermissions
-where
-    L::Region: crate::logic::cap::RegionModel<Solver = SmtSolver>,
-{
-    let mut phi = Phi::default();
-    let mut gamma: BTreeMap<String, Ty> = BTreeMap::new();
-    for (var, ty) in &def.params {
-        gamma.insert(var.0.clone(), ty.clone());
-        if let Ty::Int(Signedness::Unsigned) = ty {
-            phi.push(Atom::Le(Idx::Const(0), Idx::Var(var.0.clone())));
+fn lower_fn(fn_def: &FnDef) -> GhostFnDef {
+    let mut lowerer = FunctionLowerer::new();
+
+    let (ghost_params, initial_ctx) = if fn_def.caps.is_empty() {
+        (Vec::new(), PermCtx::default())
+    } else {
+        let sync = GhostVar("p0".into());
+        let leftover = GhostVar("p_lft".into());
+        (
+            vec![sync.clone(), leftover.clone()],
+            PermCtx::with(vec![sync], vec![leftover]),
+        )
+    };
+
+    let body = lowerer.lower_expr(&fn_def.body, initial_ctx);
+
+    GhostFnDef {
+        name: fn_def.name.clone(),
+        params: fn_def.params.clone(),
+        ghost_params,
+        returns: fn_def.returns.clone(),
+        body,
+    }
+}
+
+#[derive(Clone, Default)]
+struct PermCtx {
+    sync: Vec<GhostVar>,
+    leftover: Vec<GhostVar>,
+}
+
+impl PermCtx {
+    fn with(sync: Vec<GhostVar>, leftover: Vec<GhostVar>) -> Self {
+        Self { sync, leftover }
+    }
+
+    fn sync_inputs(&self) -> Vec<GhostVar> {
+        self.sync.clone()
+    }
+
+    fn leftover_inputs(&self) -> Vec<GhostVar> {
+        self.leftover.clone()
+    }
+
+    fn all_inputs(&self) -> Vec<GhostVar> {
+        let mut inputs = self.sync.clone();
+        inputs.extend(self.leftover.clone());
+        inputs
+    }
+}
+
+struct FunctionLowerer {
+    names: GhostNameGenerator,
+}
+
+impl FunctionLowerer {
+    fn new() -> Self {
+        Self {
+            names: GhostNameGenerator::new(1),
         }
     }
 
-    let solver = logic.solver();
-    let ctx = RegionCtx { phi: &phi, solver };
-    let mut sync = PermissionEnv::new();
-    let mut leftover = PermissionEnv::new();
+    fn lower_expr(&mut self, expr: &Expr, mut ctx: PermCtx) -> GhostExpr {
+        let mut stmts = Vec::new();
+        for stmt in &expr.stmts {
+            self.lower_stmt(stmt, &mut stmts, &mut ctx);
+        }
+        let tail = self.lower_tail(&expr.tail, &mut stmts, ctx);
+        GhostExpr::new(stmts, tail)
+    }
 
-    for cap in &def.caps {
-        if let Some(entry_ty) = gamma.get(&cap.array) {
-            if let Some((full_region, array_name)) = full_region_for_array(&cap.array, entry_ty) {
-                if let Some(region) = &cap.uniq {
-                    let region_expr = RegionSetExpr::from_region(region);
-                    let uniq_perm = permission_from_region(rational(1, 1), region_expr.clone(), ctx);
-                    sync.add_permission(&array_name, uniq_perm, ctx);
+    fn lower_stmt(&mut self, stmt: &Stmt, builder: &mut Vec<GhostStmt>, ctx: &mut PermCtx) {
+        match stmt {
+            Stmt::LetVal { var, val } => self.lower_const(var, val, builder, ctx),
+            Stmt::LetOp { vars, op } => self.lower_op(vars, op, builder, ctx),
+            Stmt::LetCall {
+                vars,
+                func,
+                args,
+                fence,
+            } => self.lower_call(vars, func, args, *fence, builder, ctx),
+        }
+    }
 
-                    let complement = complement_region(&full_region, &region_expr, ctx);
-                    let uniq_left = permission_from_region(rational(1, 1), complement, ctx);
-                    leftover.add_permission(&array_name, uniq_left, ctx);
+    fn lower_tail(&mut self, tail: &Tail, builder: &mut Vec<GhostStmt>, ctx: PermCtx) -> GhostTail {
+        match tail {
+            Tail::RetVar(var) => {
+                let inputs = ctx.all_inputs();
+                let (ret_perm, _eps) = self.join_split(builder, inputs);
+                GhostTail::Return {
+                    value: var.clone(),
+                    perm: ret_perm,
                 }
-                if let Some(region) = &cap.shrd {
-                    let region_expr = RegionSetExpr::from_region(region);
-                    let shrd_perm = permission_from_region(rational(1, 1), region_expr.clone(), ctx);
-                    sync.add_permission(&array_name, shrd_perm, ctx);
+            }
+            Tail::TailCall { func, args } => {
+                let mut ctx = ctx;
+                let (need_perm, left_perm) = self.split_sync(builder, &mut ctx);
+                // for tail calls, we "garbage collect" any leftover permissions
+                ctx.leftover.push(left_perm);
 
-                    let complement = complement_region(&full_region, &region_expr, ctx);
-                    let shrd_left = permission_from_region(rational(1, 1), complement, ctx);
-                    leftover.add_permission(&array_name, shrd_left, ctx);
+                let (left_perm, _) = self.join_split(builder, ctx.leftover_inputs());
+
+                GhostTail::TailCall {
+                    func: func.clone(),
+                    args: args.clone(),
+                    ghost_need: need_perm,
+                    ghost_left: left_perm,
+                }
+            }
+            Tail::IfElse {
+                cond,
+                then_e,
+                else_e,
+            } => {
+                let then_expr = self.lower_expr(then_e, ctx.clone());
+                let else_expr = self.lower_expr(else_e, ctx);
+                GhostTail::IfElse {
+                    cond: cond.clone(),
+                    then_expr: Box::new(then_expr),
+                    else_expr: Box::new(else_expr),
                 }
             }
         }
     }
 
-    InitialPermissions { phi, sync, leftover }
-}
+    fn lower_const(&mut self, var: &Var, val: &Val, builder: &mut Vec<GhostStmt>, ctx: &mut PermCtx) {
+        let (ghost_in, _) = self.split_sync(builder, ctx);
+        let ghost_out = self.fresh();
+        builder.push(GhostStmt::Const {
+            value: val.clone(),
+            output: var.clone(),
+            ghost_in,
+            ghost_out: ghost_out.clone(),
+        });
+        ctx.leftover.push(ghost_out);
+    }
 
-fn permission_from_region(coeff: Coeff, region: RegionSetExpr, ctx: RegionCtx<'_>) -> Permission {
-    let chunk = PermChunk::new(coeff, region);
-    Permission::singleton(chunk).normalised(ctx)
-}
-
-fn complement_region(full: &RegionSetExpr, target: &RegionSetExpr, ctx: RegionCtx<'_>) -> RegionSetExpr {
-    RegionSetExpr::difference(full.clone(), target.clone()).simplify(ctx.phi, ctx.solver)
-}
-
-fn full_region_for_array(array: &str, ty: &Ty) -> Option<(RegionSetExpr, String)> {
-    match ty {
-        Ty::RefShrd { len, .. } | Ty::RefUniq { len, .. } => {
-            let hi = idx_from_array_len(len);
-            let full = RegionSetExpr::interval(Idx::Const(0), hi);
-            Some((full, array.to_string()))
+    fn lower_op(&mut self, vars: &[Var], op: &Op, builder: &mut Vec<GhostStmt>, ctx: &mut PermCtx) {
+        match op {
+            Op::Load {
+                array,
+                index,
+                fence,
+                ..
+            } => {
+                let (ghost_in, _) = self.split_sync(builder, ctx);
+                let ghost_out = self.fresh();
+                builder.push(GhostStmt::Load {
+                    output: vars.first().cloned().expect("load must produce an output"),
+                    array: array.clone(),
+                    index: index.clone(),
+                    ghost_in,
+                    ghost_out: ghost_out.clone(),
+                });
+                if *fence {
+                    ctx.sync.push(ghost_out);
+                } else {
+                    ctx.leftover.push(ghost_out);
+                }
+            }
+            Op::Store {
+                array,
+                index,
+                value,
+                fence,
+                ..
+            } => {
+                let (ghost_in, _) = self.split_sync(builder, ctx);
+                let ghost_out = self.fresh();
+                builder.push(GhostStmt::Store {
+                    array: array.clone(),
+                    index: index.clone(),
+                    value: value.clone(),
+                    ghost_in,
+                    ghost_out: ghost_out.clone(),
+                });
+                if *fence {
+                    ctx.sync.push(ghost_out);
+                } else {
+                    ctx.leftover.push(ghost_out);
+                }
+            }
+            _ => {
+                // NOTE: pureop needs no token and output a zero token
+                // let (ghost_in, _) = self.split_sync(builder, ctx);
+                let ghost_out = self.fresh();
+                builder.push(GhostStmt::Pure {
+                    inputs: pure_inputs(vars),
+                    output: pure_output(vars),
+                    op: op.clone(),
+                    ghost_out: ghost_out.clone(),
+                });
+                ctx.leftover.push(ghost_out);
+            }
         }
-        _ => None,
+    }
+
+    fn lower_call(
+        &mut self,
+        vars: &[Var],
+        func: &FnName,
+        args: &[Var],
+        fence: bool,
+        builder: &mut Vec<GhostStmt>,
+        ctx: &mut PermCtx,
+    ) {
+        let (need_perm, _) = self.split_sync(builder, ctx);
+
+        let inputs = ctx.leftover_inputs();
+        let (left_perm, right_perm) = self.join_split(builder, inputs);
+        ctx.leftover = vec![right_perm.clone()];
+
+        let ret_perm = self.fresh();
+        builder.push(GhostStmt::Call {
+            outputs: vars.to_vec(),
+            func: func.clone(),
+            args: args.to_vec(),
+            ghost_need: need_perm.clone(),
+            ghost_left: left_perm.clone(),
+            ghost_ret: ret_perm.clone(),
+        });
+
+        if fence {
+            ctx.sync.push(ret_perm);
+        } else {
+            ctx.leftover.push(ret_perm);
+        }
+    }
+
+    fn split_sync(
+        &mut self,
+        builder: &mut Vec<GhostStmt>,
+        ctx: &mut PermCtx,
+    ) -> (GhostVar, GhostVar) {
+        let (left, right) = self.join_split(builder, ctx.sync_inputs());
+        ctx.sync = vec![right.clone()];
+        (left, right)
+    }
+
+    fn join_split(
+        &mut self,
+        builder: &mut Vec<GhostStmt>,
+        inputs: Vec<GhostVar>,
+    ) -> (GhostVar, GhostVar) {
+        let left = self.fresh();
+        let right = self.fresh();
+        builder.push(GhostStmt::JoinSplit {
+            left: left.clone(),
+            right: right.clone(),
+            inputs,
+        });
+        (left, right)
+    }
+
+    fn fresh(&mut self) -> GhostVar {
+        self.names.fresh()
     }
 }
 
-fn idx_from_array_len(len: &ArrayLen) -> Idx {
-    match len {
-        ArrayLen::Const(n) => Idx::Const(*n as i64),
-        ArrayLen::Symbol(name) => Idx::Var(name.clone()),
+struct GhostNameGenerator {
+    next: usize,
+}
+
+impl GhostNameGenerator {
+    fn new(start: usize) -> Self {
+        Self { next: start }
     }
+
+    fn fresh(&mut self) -> GhostVar {
+        let name = format!("p{}", self.next);
+        self.next += 1;
+        GhostVar(name)
+    }
+}
+
+// all except the last
+fn pure_inputs(vars: &[Var]) -> Vec<Var> {
+    vars[..vars.len() - 1].to_vec()
+}
+
+fn pure_output(vars: &[Var]) -> Var {
+    vars.last().cloned().expect("pure op must have an output")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ghost::pcm::RegionCtx;
-    use crate::ir::{FnName, Var};
-    use crate::logic::cap::CapPattern;
-    use crate::logic::region::Region;
-    use crate::logic::semantic::region_set::check_equivalent;
-    use crate::logic::semantic::{RegionSetExpr, SemanticLogic};
+    use crate::parse::parse_program;
+    use std::fs;
+    use std::path::Path;
 
-    fn solver_ctx<'a>(phi: &'a Phi, logic: &'a SemanticLogic) -> RegionCtx<'a> {
-        RegionCtx {
-            phi,
-            solver: logic.solver(),
+    fn lower_fixture(src: &str, fn_name: &str) -> GhostFnDef {
+        let program = parse_program(src).expect("fixture should parse");
+        let ghost = synthesize_ghost_program(&program);
+        ghost
+            .defs
+            .into_iter()
+            .find(|def| def.name.0 == fn_name)
+            .expect("function should be lowered")
+    }
+
+    #[test]
+    fn lowers_sum() {
+        let ghost_fn = lower_fixture(include_str!("../../tests/test_files/sum.rs"), "sum");
+        println!("Lowered ghost function:\n{}", ghost_fn);
+
+        assert_eq!(
+            ghost_fn.ghost_params,
+            vec![GhostVar("p0".into()), GhostVar("p_lft".into())]
+        );
+
+        assert!(
+            ghost_fn.body.stmts.iter().any(|stmt| matches!(
+                stmt,
+                GhostStmt::Pure {
+                    op: Op::LessThan,
+                    ..
+                }
+            )),
+            "expected a guard comparison to lower to a pure less-than op"
+        );
+
+        let (cond, then_expr, else_expr) = match &ghost_fn.body.tail {
+            GhostTail::IfElse {
+                cond,
+                then_expr,
+                else_expr,
+            } => (cond, then_expr, else_expr),
+            other => panic!("unexpected top-level tail: {other:?}"),
+        };
+
+        assert_eq!(cond, &Var("c".into()));
+
+        let has_load = then_expr
+            .stmts
+            .iter()
+            .any(|stmt| matches!(stmt, GhostStmt::Load { .. }));
+        assert!(
+            has_load,
+            "expected lowering to emit a load in the then branch"
+        );
+
+        let add_count = then_expr
+            .stmts
+            .iter()
+            .filter(|stmt| matches!(stmt, GhostStmt::Pure { op: Op::Add, .. }))
+            .count();
+        assert!(
+            add_count >= 2,
+            "expected two additions in the then branch; found {add_count}"
+        );
+
+        match &then_expr.tail {
+            GhostTail::TailCall { func, .. } => assert_eq!(func.0, "sum"),
+            other => panic!("unexpected then tail: {other:?}"),
         }
-    }
 
-    fn bin_ty() -> Ty {
-        Ty::Int(Signedness::Unsigned)
-    }
-
-    fn array_ty(len: ArrayLen) -> Ty {
-        Ty::RefShrd {
-            elem: Box::new(Ty::Int(Signedness::Unsigned)),
-            len,
+        match &else_expr.tail {
+            GhostTail::Return { .. } => {}
+            other => panic!("unexpected else tail: {other:?}"),
         }
     }
 
     #[test]
-    fn compute_initial_permissions_shared() {
-        let logic = SemanticLogic::new();
-        let region = Region::from_bounded(Idx::Var("i".into()), Idx::Var("N".into()));
-        let def = FnDef {
-            name: FnName("sum_aux".into()),
-            params: vec![
-                (Var("i".into()), bin_ty()),
-                (Var("N".into()), bin_ty()),
-                (Var("A".into()), array_ty(ArrayLen::Symbol("N".into()))),
-            ],
-            caps: vec![CapPattern {
-                array: "A".into(),
-                uniq: None,
-                shrd: Some(region.clone()),
-            }],
-            returns: Ty::Int(Signedness::Unsigned),
-            body: crate::ir::Expr::new(vec![], crate::ir::Tail::RetVar(Var("i".into()))),
+    fn lowers_zero_out() {
+        let ghost_fn = lower_fixture(
+            include_str!("../../tests/test_files/zero_out.rs"),
+            "zero_out",
+        );
+
+        println!("Lowered ghost function:\n{}", ghost_fn);
+
+        assert_eq!(
+            ghost_fn.ghost_params,
+            vec![GhostVar("p0".into()), GhostVar("p_lft".into())]
+        );
+
+        let (then_expr, else_expr) = match &ghost_fn.body.tail {
+            GhostTail::IfElse {
+                then_expr,
+                else_expr,
+                ..
+            } => (then_expr, else_expr),
+            other => panic!("unexpected top-level tail: {other:?}"),
         };
 
-        let init = compute_initial_permissions(&def, &logic);
-        let ctx = solver_ctx(&init.phi, &logic);
+        let const_count = then_expr
+            .stmts
+            .iter()
+            .filter(|stmt| matches!(stmt, GhostStmt::Const { .. }))
+            .count();
+        assert!(
+            const_count >= 2,
+            "expected constants for zero and one; found {const_count}"
+        );
 
-        let sync = init.sync.get("A").expect("sync permission for A");
-        assert_eq!(sync.chunks().len(), 1);
-        assert_eq!(sync.chunks()[0].coeff, rational(1, 1));
-        let expected_region = RegionSetExpr::from_region(&region);
-        assert!(check_equivalent(ctx.phi, &sync.chunks()[0].region, &expected_region, ctx.solver));
+        let has_store = then_expr
+            .stmts
+            .iter()
+            .any(|stmt| matches!(stmt, GhostStmt::Store { .. }));
+        assert!(
+            has_store,
+            "expected lowering to emit a store in the then branch"
+        );
 
-        let leftover = init.leftover.get("A").expect("leftover permission for A");
-        let full_region = RegionSetExpr::interval(Idx::Const(0), Idx::Var("N".into()));
-        let expected_left = RegionSetExpr::difference(full_region, expected_region).simplify(ctx.phi, ctx.solver);
-        assert!(check_equivalent(ctx.phi, &leftover.chunks()[0].region, &expected_left, ctx.solver));
+        match &then_expr.tail {
+            GhostTail::TailCall { func, .. } => assert_eq!(func.0, "zero_out"),
+            other => panic!("unexpected then tail: {other:?}"),
+        }
+
+        match &else_expr.tail {
+            GhostTail::Return { .. } => {}
+            other => panic!("unexpected else tail: {other:?}"),
+        }
     }
 
     #[test]
-    fn compute_initial_permissions_unique() {
-        let logic = SemanticLogic::new();
-        let region = Region::from_bounded(Idx::Var("start".into()), Idx::Var("N".into()));
-        let def = FnDef {
-            name: FnName("mk_all_zero_aux".into()),
-            params: vec![
-                (Var("start".into()), bin_ty()),
-                (Var("N".into()), bin_ty()),
-                (Var("A".into()), Ty::RefUniq {
-                    elem: Box::new(Ty::Int(Signedness::Unsigned)),
-                    len: ArrayLen::Symbol("N".into()),
-                }),
-            ],
-            caps: vec![CapPattern {
-                array: "A".into(),
-                uniq: Some(region.clone()),
-                shrd: None,
-            }],
-            returns: Ty::Unit,
-            body: crate::ir::Expr::new(vec![], crate::ir::Tail::RetVar(Var("start".into()))),
-        };
+    fn lowers_all_fixtures() {
+        let fixtures_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("test_files");
 
-        let init = compute_initial_permissions(&def, &logic);
-        let ctx = solver_ctx(&init.phi, &logic);
+        for entry in fs::read_dir(&fixtures_dir).expect("fixtures directory should exist") {
+            let entry = entry.expect("fixture dir entry should be readable");
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+                continue;
+            }
 
-        let sync = init.sync.get("A").expect("sync permission for A");
-        assert_eq!(sync.chunks().len(), 1);
-        assert_eq!(sync.chunks()[0].coeff, rational(1, 1));
-        let expected_region = RegionSetExpr::from_region(&region);
-        assert!(check_equivalent(ctx.phi, &sync.chunks()[0].region, &expected_region, ctx.solver));
+            let source = fs::read_to_string(&path)
+                .unwrap_or_else(|err| panic!("failed to read {:?}: {err}", path));
+            let program = parse_program(&source)
+                .unwrap_or_else(|err| panic!("failed to parse {:?}: {err}", path));
+            let ghost = synthesize_ghost_program(&program);
 
-        let leftover = init.leftover.get("A").expect("leftover permission for A");
-        let full_region = RegionSetExpr::interval(Idx::Const(0), Idx::Var("N".into()));
-        let expected_left = RegionSetExpr::difference(full_region, expected_region).simplify(ctx.phi, ctx.solver);
-        assert!(check_equivalent(ctx.phi, &leftover.chunks()[0].region, &expected_left, ctx.solver));
+            for ghost_fn in ghost.defs {
+                println!("Lowered ghost function:\n{}", ghost_fn);
+            }
+        }
     }
 }
