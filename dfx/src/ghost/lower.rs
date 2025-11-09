@@ -4,6 +4,8 @@ use crate::ir::{Expr, FnDef, FnName, Op, Program, Stmt, Tail, Var};
 
 /// Synthesize a ghost-level program from the typed IR.
 pub fn synthesize_ghost_program(prog: &Program) -> GhostProgram {
+    let mut prog = prog.clone();
+    prog.desugar_tail_calls();
     let mut ghost = GhostProgram::new();
     for def in &prog.defs {
         ghost.add_fn(lower_fn(def));
@@ -14,9 +16,7 @@ pub fn synthesize_ghost_program(prog: &Program) -> GhostProgram {
 fn lower_fn(fn_def: &FnDef) -> GhostFnDef {
     let mut lowerer = FunctionLowerer::new();
 
-    let (ghost_params, initial_ctx) = if fn_def.caps.is_empty() {
-        (Vec::new(), PermCtx::default())
-    } else {
+    let (ghost_params, initial_ctx) = {
         let sync = GhostVar("p_sync".into());
         let leftover = GhostVar("p_garb".into());
         (
@@ -207,15 +207,16 @@ impl FunctionLowerer {
                 ..
             } => {
                 let (ghost_in, _) = self.split_sync(builder, ctx);
-                let ghost_out = self.fresh();
+                let ghost_out_real = self.fresh();
+                let ghost_out_dummy = self.fresh_with_prefix("__store_dummy_");
                 builder.push(GhostStmt::Store {
                     array: array.clone(),
                     index: index.clone(),
                     value: value.clone(),
                     ghost_in,
-                    ghost_out: ghost_out.clone(),
+                    ghost_out: (ghost_out_dummy, ghost_out_real.clone()),
                 });
-                ctx.restore.push(ghost_out);
+                ctx.restore.push(ghost_out_real);
             }
             _ => {
                 // NOTE: pureop needs no token and output a zero token
@@ -295,6 +296,10 @@ impl FunctionLowerer {
     fn fresh(&mut self) -> GhostVar {
         self.names.fresh()
     }
+
+    fn fresh_with_prefix(&mut self, prefix: &str) -> GhostVar {
+        self.names.fresh_with_prefix(prefix)
+    }
 }
 
 struct GhostNameGenerator {
@@ -308,6 +313,12 @@ impl GhostNameGenerator {
 
     fn fresh(&mut self) -> GhostVar {
         let name = format!("p{}", self.next);
+        self.next += 1;
+        GhostVar(name)
+    }
+
+    fn fresh_with_prefix(&mut self, prefix: &str) -> GhostVar {
+        let name = format!("{}{}", prefix, self.next);
         self.next += 1;
         GhostVar(name)
     }

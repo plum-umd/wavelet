@@ -215,8 +215,7 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
                 },
             });
             let args = vec![index.0.clone(), value.0.clone(), ghost_in.0.clone()];
-            let dummy_output = "__store_dummy".to_string(); // store now outputs a dummy value
-            let outputs = vec![dummy_output, ghost_out.0.clone()];
+            let outputs = vec![ghost_out.0.0.clone(), ghost_out.1.0.clone()];
             Ok(RawExpr::Op {
                 op,
                 args,
@@ -398,6 +397,9 @@ pub enum SyncOp {
     Lshr,
     Eq,
     Lt,
+    Le,
+    And,
+    Or,
     Load { loc: String },
     Store { loc: String },
     Sel,
@@ -420,6 +422,9 @@ impl Serialize for SyncOp {
             SyncOp::Lshr => serializer.serialize_str("lshr"),
             SyncOp::Eq => serializer.serialize_str("eq"),
             SyncOp::Lt => serializer.serialize_str("lt"),
+            SyncOp::Le => serializer.serialize_str("le"),
+            SyncOp::And => serializer.serialize_str("and"),
+            SyncOp::Or => serializer.serialize_str("or"),
             SyncOp::Sel => serializer.serialize_str("sel"),
             SyncOp::Const { value } => {
                 let mut map = serializer.serialize_map(Some(1))?;
@@ -451,10 +456,13 @@ fn map_sync_op(op: &Op) -> Result<SyncOp, ExportError> {
         Op::Sub => Ok(SyncOp::Sub),
         Op::Mul => Ok(SyncOp::Mul),
         Op::Div => Ok(SyncOp::Div),
+        Op::And => Ok(SyncOp::And),
+        Op::Or => Ok(SyncOp::Or),
         Op::Shl => Ok(SyncOp::Shl),
         Op::Shr => Ok(SyncOp::Ashr),
         Op::Equal => Ok(SyncOp::Eq),
         Op::LessThan => Ok(SyncOp::Lt),
+        Op::LessEqual => Ok(SyncOp::Le),
         _ => Err(ExportError::Unsupported(
             "pure operation not yet supported for serialization",
         )),

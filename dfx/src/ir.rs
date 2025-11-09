@@ -440,3 +440,311 @@ impl Default for Program {
         Self::new()
     }
 }
+
+impl Program {
+    /// Desugar tail calls to other functions into let-call followed by returns.
+    /// This transforms `f(x, y)` at tail position into `let ret = f(x, y); return ret`.
+    pub fn desugar_tail_calls(&mut self) {
+        for def in &mut self.defs {
+            def.desugar_tail_calls();
+        }
+    }
+}
+
+impl FnDef {
+    pub fn desugar_tail_calls(&mut self) {
+        let fn_name = &self.name;
+        self.body.desugar_tail_calls(fn_name);
+    }
+}
+
+impl Expr {
+    fn desugar_tail_calls(&mut self, current_fn: &FnName) {
+        for stmt in &mut self.stmts {
+            stmt.desugar_tail_calls(current_fn);
+        }
+        self.tail.desugar_tail_calls(current_fn);
+
+        // Check if the tail is a non-recursive tail call
+        if let Tail::TailCall { func, args } = &self.tail {
+            if func != current_fn {
+                let ret_var = self.fresh_var("_tail_ret");
+                
+                // TailCall -> LetCall + RetVar
+                let call_stmt = Stmt::LetCall {
+                    vars: vec![ret_var.clone()],
+                    func: func.clone(),
+                    args: args.clone(),
+                    fence: false,
+                };
+                
+                self.stmts.push(call_stmt);
+                self.tail = Tail::RetVar(ret_var);
+            }
+        }
+    }
+
+    fn fresh_var(&self, base: &str) -> Var {
+        let mut used_vars = std::collections::HashSet::new();
+        self.collect_vars(&mut used_vars);
+        
+        let mut candidate = Var(base.to_string());
+        let mut counter = 0;
+        
+        while used_vars.contains(&candidate) {
+            counter += 1;
+            candidate = Var(format!("{}_{}", base, counter));
+        }
+        
+        candidate
+    }
+
+    fn collect_vars(&self, vars: &mut std::collections::HashSet<Var>) {
+        for stmt in &self.stmts {
+            stmt.collect_vars(vars);
+        }
+        self.tail.collect_vars(vars);
+    }
+}
+
+impl Stmt {
+    fn desugar_tail_calls(&mut self, _current_fn: &FnName) {
+    }
+
+    fn collect_vars(&self, vars: &mut std::collections::HashSet<Var>) {
+        match self {
+            Stmt::LetVal { var, .. } => {
+                vars.insert(var.clone());
+            }
+            Stmt::LetOp { vars: vs, op, .. } => {
+                for v in vs {
+                    vars.insert(v.clone());
+                }
+                op.collect_vars(vars);
+            }
+            Stmt::LetCall { vars: vs, args, .. } => {
+                for v in vs {
+                    vars.insert(v.clone());
+                }
+                for arg in args {
+                    vars.insert(arg.clone());
+                }
+            }
+        }
+    }
+}
+
+impl Tail {
+    fn desugar_tail_calls(&mut self, current_fn: &FnName) {
+        match self {
+            Tail::IfElse { then_e, else_e, .. } => {
+                then_e.desugar_tail_calls(current_fn);
+                else_e.desugar_tail_calls(current_fn);
+            }
+            Tail::RetVar(_) | Tail::TailCall { .. } => {
+            }
+        }
+    }
+
+    fn collect_vars(&self, vars: &mut std::collections::HashSet<Var>) {
+        match self {
+            Tail::RetVar(var) => {
+                vars.insert(var.clone());
+            }
+            Tail::IfElse {
+                cond,
+                then_e,
+                else_e,
+            } => {
+                vars.insert(cond.clone());
+                then_e.collect_vars(vars);
+                else_e.collect_vars(vars);
+            }
+            Tail::TailCall { args, .. } => {
+                for arg in args {
+                    vars.insert(arg.clone());
+                }
+            }
+        }
+    }
+}
+
+impl Op {
+    fn collect_vars(&self, vars: &mut std::collections::HashSet<Var>) {
+        match self {
+            Op::Load { array, index, .. } => {
+                vars.insert(array.clone());
+                vars.insert(index.clone());
+            }
+            Op::Store {
+                array,
+                index,
+                value,
+                ..
+            } => {
+                vars.insert(array.clone());
+                vars.insert(index.clone());
+                vars.insert(value.clone());
+            }
+            _ => {
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_desugar_tail_call() {
+        // Create a simple program with a non-recursive tail call
+        // fn foo() { bar(); }
+        let foo_body = Expr::new(
+            vec![],
+            Tail::TailCall {
+                func: FnName("bar".into()),
+                args: vec![Var("x".into()), Var("y".into())],
+            },
+        );
+        
+        let mut foo_def = FnDef {
+            name: FnName("foo".into()),
+            params: vec![
+                (Var("x".into()), Ty::Int(Signedness::Signed)),
+                (Var("y".into()), Ty::Int(Signedness::Signed)),
+            ],
+            caps: vec![],
+            returns: Ty::Int(Signedness::Signed),
+            body: foo_body,
+        };
+        
+        // Desugar
+        foo_def.desugar_tail_calls();
+        
+        // Check that the tail call was transformed
+        assert_eq!(foo_def.body.stmts.len(), 1);
+        
+        match &foo_def.body.stmts[0] {
+            Stmt::LetCall { vars, func, args, .. } => {
+                assert_eq!(vars.len(), 1);
+                assert_eq!(func.0, "bar");
+                assert_eq!(args.len(), 2);
+            }
+            _ => panic!("Expected LetCall statement"),
+        }
+        
+        match &foo_def.body.tail {
+            Tail::RetVar(var) => {
+                assert!(var.0.starts_with("_tail_ret"));
+            }
+            _ => panic!("Expected RetVar tail"),
+        }
+    }
+
+    #[test]
+    fn test_preserves_recursive_tail_call() {
+        // Create a recursive function
+        // fn factorial(n) { if n == 0 { 1 } else { factorial(n-1) } }
+        let recursive_body = Expr::new(
+            vec![],
+            Tail::TailCall {
+                func: FnName("factorial".into()),
+                args: vec![Var("n".into())],
+            },
+        );
+        
+        let mut factorial_def = FnDef {
+            name: FnName("factorial".into()),
+            params: vec![(Var("n".into()), Ty::Int(Signedness::Signed))],
+            caps: vec![],
+            returns: Ty::Int(Signedness::Signed),
+            body: recursive_body,
+        };
+        
+        // Desugar
+        factorial_def.desugar_tail_calls();
+        
+        // Check that the recursive tail call was NOT transformed
+        assert_eq!(factorial_def.body.stmts.len(), 0);
+        
+        match &factorial_def.body.tail {
+            Tail::TailCall { func, .. } => {
+                assert_eq!(func.0, "factorial");
+            }
+            _ => panic!("Expected TailCall to be preserved"),
+        }
+    }
+
+    #[test]
+    fn test_desugar_nested_in_if_else() {
+        // fn foo(cond) { if cond { bar() } else { baz() } }
+        let then_branch = Expr::new(
+            vec![],
+            Tail::TailCall {
+                func: FnName("bar".into()),
+                args: vec![],
+            },
+        );
+        
+        let else_branch = Expr::new(
+            vec![],
+            Tail::TailCall {
+                func: FnName("baz".into()),
+                args: vec![],
+            },
+        );
+        
+        let foo_body = Expr::new(
+            vec![],
+            Tail::IfElse {
+                cond: Var("cond".into()),
+                then_e: Box::new(then_branch),
+                else_e: Box::new(else_branch),
+            },
+        );
+        
+        let mut foo_def = FnDef {
+            name: FnName("foo".into()),
+            params: vec![(Var("cond".into()), Ty::Bool)],
+            caps: vec![],
+            returns: Ty::Unit,
+            body: foo_body,
+        };
+        
+        // Desugar
+        foo_def.desugar_tail_calls();
+        
+        // Check that tail calls in both branches were transformed
+        match &foo_def.body.tail {
+            Tail::IfElse { then_e, else_e, .. } => {
+                assert_eq!(then_e.stmts.len(), 1);
+                assert_eq!(else_e.stmts.len(), 1);
+                
+                match (&then_e.tail, &else_e.tail) {
+                    (Tail::RetVar(_), Tail::RetVar(_)) => {},
+                    _ => panic!("Expected both branches to end with RetVar"),
+                }
+            }
+            _ => panic!("Expected IfElse tail"),
+        }
+    }
+    
+    #[test]
+    fn test_fresh_var_avoids_conflicts() {
+        let expr = Expr::new(
+            vec![
+                Stmt::LetVal {
+                    var: Var("_tail_ret".into()),
+                    val: Val::Int(42),
+                    fence: false,
+                },
+            ],
+            Tail::RetVar(Var("_tail_ret".into())),
+        );
+        
+        let fresh = expr.fresh_var("_tail_ret");
+        assert_ne!(fresh.0, "_tail_ret");
+        assert!(fresh.0.starts_with("_tail_ret_"));
+    }
+}
