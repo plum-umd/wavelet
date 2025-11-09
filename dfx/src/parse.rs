@@ -618,6 +618,7 @@ fn parse_block(
         stmts.push(ir::Stmt::LetVal {
             var: unit_var.clone(),
             val: ir::Val::Unit,
+            fence: false,
         });
         Tail::RetVar(unit_var)
     };
@@ -647,13 +648,9 @@ fn is_fence_marker(expr: &Expr) -> bool {
 /// Mark a statement as fenced
 fn mark_stmt_as_fenced(stmt: &mut ir::Stmt) {
     match stmt {
-        ir::Stmt::LetOp { op, .. } => match op {
-            Op::Load { fence, .. } => *fence = true,
-            Op::Store { fence, .. } => *fence = true,
-            _ => {}
-        },
-        ir::Stmt::LetCall { fence, .. } => *fence = true,
-        _ => {}
+        ir::Stmt::LetVal { fence, .. }
+        | ir::Stmt::LetOp { fence, .. }
+        | ir::Stmt::LetCall { fence, .. } => *fence = true,
     }
 }
 
@@ -677,6 +674,7 @@ fn parse_local(
             return Ok(ir::Stmt::LetVal {
                 var: Var(var_name),
                 val,
+                fence: false,
             });
         }
     }
@@ -720,6 +718,7 @@ fn try_parse_as_op(
             Ok(Some(ir::Stmt::LetOp {
                 vars: vec![Var(left), Var(right), Var(result_var)],
                 op,
+                fence: false,
             }))
         }
         Expr::Index(index_expr) => {
@@ -735,8 +734,8 @@ fn try_parse_as_op(
                     array: Var(array),
                     index: Var(index),
                     len,
-                    fence: false,
                 },
+                fence: false,
             }))
         }
         Expr::Call(call_expr) => {
@@ -839,8 +838,8 @@ fn parse_expr_stmt(
                     index: Var(index),
                     value: Var(value),
                     len,
-                    fence: false,
                 },
+                fence: false,
             });
         }
         // Regular variable assignment: x = expr
@@ -857,6 +856,7 @@ fn parse_expr_stmt(
                 return Ok(ir::Stmt::LetVal {
                     var: Var(var_name),
                     val,
+                    fence: false,
                 });
             }
         }

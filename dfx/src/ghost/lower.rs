@@ -84,8 +84,12 @@ impl FunctionLowerer {
 
     fn lower_stmt(&mut self, stmt: &Stmt, builder: &mut Vec<GhostStmt>, ctx: &mut PermCtx) {
         match stmt {
-            Stmt::LetVal { var, val } => self.lower_const(var, val, builder, ctx),
-            Stmt::LetOp { vars, op } => self.lower_op(vars, op, builder, ctx),
+            Stmt::LetVal { var, val, fence } => {
+                self.lower_const(var, val, *fence, builder, ctx)
+            }
+            Stmt::LetOp { vars, op, fence } => {
+                self.lower_op(vars, op, *fence, builder, ctx)
+            }
             Stmt::LetCall {
                 vars,
                 func,
@@ -140,6 +144,7 @@ impl FunctionLowerer {
         &mut self,
         var: &Var,
         val: &Val,
+        fenced: bool,
         builder: &mut Vec<GhostStmt>,
         ctx: &mut PermCtx,
     ) {
@@ -151,15 +156,25 @@ impl FunctionLowerer {
             ghost_in,
             ghost_out: ghost_out.clone(),
         });
-        ctx.leftover.push(ghost_out);
+        if fenced {
+            ctx.sync.push(ghost_out);
+        } else {
+            ctx.leftover.push(ghost_out);
+        }
     }
 
-    fn lower_op(&mut self, vars: &[Var], op: &Op, builder: &mut Vec<GhostStmt>, ctx: &mut PermCtx) {
+    fn lower_op(
+        &mut self,
+        vars: &[Var],
+        op: &Op,
+        fenced: bool,
+        builder: &mut Vec<GhostStmt>,
+        ctx: &mut PermCtx,
+    ) {
         match op {
             Op::Load {
                 array,
                 index,
-                fence,
                 ..
             } => {
                 let (ghost_in, _) = self.split_sync(builder, ctx);
@@ -171,7 +186,7 @@ impl FunctionLowerer {
                     ghost_in,
                     ghost_out: ghost_out.clone(),
                 });
-                if *fence {
+                if fenced {
                     ctx.sync.push(ghost_out);
                 } else {
                     ctx.leftover.push(ghost_out);
@@ -181,7 +196,6 @@ impl FunctionLowerer {
                 array,
                 index,
                 value,
-                fence,
                 ..
             } => {
                 let (ghost_in, _) = self.split_sync(builder, ctx);
@@ -193,7 +207,7 @@ impl FunctionLowerer {
                     ghost_in,
                     ghost_out: ghost_out.clone(),
                 });
-                if *fence {
+                if fenced {
                     ctx.sync.push(ghost_out);
                 } else {
                     ctx.leftover.push(ghost_out);
@@ -209,7 +223,11 @@ impl FunctionLowerer {
                     op: op.clone(),
                     ghost_out: ghost_out.clone(),
                 });
-                ctx.leftover.push(ghost_out);
+                if fenced {
+                    ctx.sync.push(ghost_out);
+                } else {
+                    ctx.leftover.push(ghost_out);
+                }
             }
         }
     }

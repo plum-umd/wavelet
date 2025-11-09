@@ -292,46 +292,48 @@ fn render_op(op: &Op, vars: &[Var]) -> String {
             array,
             index,
             len,
-            fence,
         } => {
-            let mut msg = format!(
+            format!(
                 "{} = {}[{}] (len {})",
                 vars[0].0,
                 array.0,
                 index.0,
                 render_array_len(len)
-            );
-            if *fence {
-                msg.push_str(" [fenced]");
-            }
-            msg
+            )
         }
         Op::Store {
             array,
             index,
             value,
             len,
-            fence,
         } => {
-            let mut msg = format!(
+            format!(
                 "store {} -> {}[{}] (len {})",
                 value.0,
                 array.0,
                 index.0,
                 render_array_len(len)
-            );
-            if *fence {
-                msg.push_str(" [fenced]");
-            }
-            msg
+            )
         }
     }
 }
 
 fn render_stmt(stmt: &Stmt) -> String {
     match stmt {
-        Stmt::LetVal { var, val } => format!("let {} = {}", var.0, render_val(val)),
-        Stmt::LetOp { vars, op } => render_op(op, vars),
+        Stmt::LetVal { var, val, fence } => {
+            let mut msg = format!("let {} = {}", var.0, render_val(val));
+            if *fence {
+                msg.push_str(" [fenced]");
+            }
+            msg
+        }
+        Stmt::LetOp { vars, op, fence } => {
+            let mut msg = render_op(op, vars);
+            if *fence {
+                msg.push_str(" [fenced]");
+            }
+            msg
+        }
         Stmt::LetCall {
             vars,
             func,
@@ -602,7 +604,7 @@ where
     L::Region: RegionModel,
 {
     match stmt {
-        Stmt::LetVal { var, val } => {
+    Stmt::LetVal { var, val, .. } => {
             // Determine literal type and bind it.
             let ty = match val {
                 Val::Int(n) => {
@@ -627,7 +629,8 @@ where
             log_after_statement(ctx, stmt);
             Ok(())
         }
-        Stmt::LetOp { vars, op } => {
+        Stmt::LetOp { vars, op, fence } => {
+            let fenced = *fence;
             match op {
                 Op::Add | Op::Sub | Op::Mul | Op::Div => {
                     // Binary integer arithmetic.  Expect two input vars and one output.
@@ -831,12 +834,7 @@ where
                     log_after_statement(ctx, stmt);
                     Ok(())
                 }
-                Op::Load {
-                    array,
-                    index,
-                    len,
-                    fence,
-                } => {
+                Op::Load { array, index, len } => {
                     // For a load we expect exactly one destination variable.
                     if vars.len() != 1 {
                         return Err(TypeError::InvalidOp {
@@ -893,7 +891,7 @@ where
                             ),
                         });
                     }
-                    if !*fence {
+                    if !fenced {
                         let mut delta_req = Delta::<L::Region>::default();
                         delta_req.0.insert(arr_name.clone(), req_cap.clone());
                         ctx.delta = ctx
@@ -914,7 +912,6 @@ where
                     index,
                     value,
                     len,
-                    fence,
                 } => {
                     // For a store we expect no destination variables.
                     if !vars.is_empty() {
@@ -982,7 +979,7 @@ where
                             ),
                         });
                     }
-                    if !*fence {
+                    if !fenced {
                         let mut delta_req = Delta::<L::Region>::default();
                         delta_req.0.insert(arr_name.clone(), req_cap.clone());
                         ctx.delta = ctx

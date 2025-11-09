@@ -269,7 +269,7 @@ parser_case!(
 parser_case!(
     test_raw_without_fence_fails,
     file = "test_files/raw_no_fence.rs",
-    fn = "raw",
+    fn = "raw_bad",
     expect = err,
     options = CheckOptions {
         verbose: true,
@@ -287,7 +287,7 @@ parser_case!(
 parser_case!(
     test_war_without_fence_fails,
     file = "test_files/war_no_fence.rs",
-    fn = "war",
+    fn = "war_bad",
     expect = err,
     options = CheckOptions {
         verbose: true,
@@ -305,7 +305,7 @@ parser_case!(
 parser_case!(
     test_waw_without_fence_fails,
     file = "test_files/waw_no_fence.rs",
-    fn = "waw",
+    fn = "waw_bad",
     expect = err,
     options = CheckOptions {
         verbose: true,

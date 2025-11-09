@@ -124,8 +124,6 @@ pub enum Op {
         index: Var,
         /// Length of the array.
         len: ArrayLen,
-        /// Whether this is a fenced operation (fence doesn't consume capability).
-        fence: bool,
     },
     /// Store to array.
     Store {
@@ -137,8 +135,6 @@ pub enum Op {
         value: Var,
         /// Length of the array.
         len: ArrayLen,
-        /// Whether this is a fenced operation (fence doesn't consume capability).
-        fence: bool,
     },
 }
 
@@ -146,9 +142,19 @@ pub enum Op {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Stmt {
     /// Bind a variable to a literal value.
-    LetVal { var: Var, val: Val },
+    LetVal {
+        var: Var,
+        val: Val,
+        /// Indicates that this binding is immediately followed by a `fence!()` marker.
+        fence: bool,
+    },
     /// Bind variables to the result of a primitive operation.
-    LetOp { vars: Vec<Var>, op: Op },
+    LetOp {
+        vars: Vec<Var>,
+        op: Op,
+        /// Indicates that this binding is immediately followed by a `fence!()` marker.
+        fence: bool,
+    },
     /// Bind variables to the result of a function call.
     LetCall {
         /// Result variables.
@@ -281,8 +287,14 @@ impl std::fmt::Display for Expr {
 impl std::fmt::Display for Stmt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Stmt::LetVal { var, val } => write!(f, "let {} = {};", var, val),
-            Stmt::LetOp { vars, op } => {
+            Stmt::LetVal { var, val, fence } => write!(
+                f,
+                "let {} = {}{};",
+                var,
+                if *fence { "@" } else { "" },
+                val
+            ),
+            Stmt::LetOp { vars, op, fence } => {
                 write!(f, "let ")?;
                 for (i, var) in vars.iter().enumerate() {
                     if i > 0 {
@@ -290,7 +302,7 @@ impl std::fmt::Display for Stmt {
                     }
                     write!(f, "{}", var)?;
                 }
-                write!(f, " = {};", op)
+                write!(f, " = {}{};", if *fence { "@" } else { "" }, op)
             }
             Stmt::LetCall {
                 vars,
@@ -369,12 +381,10 @@ impl std::fmt::Display for Op {
                 array,
                 index,
                 len,
-                fence,
             } => {
                 write!(
                     f,
-                    "{}{}[{}:{}]",
-                    if *fence { "@" } else { "" },
+                    "{}[{}:{}]",
                     array,
                     index,
                     len.display()
@@ -385,12 +395,10 @@ impl std::fmt::Display for Op {
                 index,
                 value,
                 len,
-                fence,
             } => {
                 write!(
                     f,
-                    "{}{}[{}:{}] = {}",
-                    if *fence { "@" } else { "" },
+                    "{}[{}:{}] = {}",
                     array,
                     index,
                     len.display(),

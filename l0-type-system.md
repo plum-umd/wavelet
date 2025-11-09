@@ -1590,6 +1590,15 @@ fn increment<const N: usize>(i: u32, A: &mut [u32; N]@{i..N}) =
 
 read-after-write (RAW)
 
+```c
+void prefix_sum_inplace(int *a, size_t n) {
+    // RAW: a[j] depends on a[j-1] *after* a[j-1] was written in the loop
+    for (size_t j = 1; j < n; ++j) {
+        a[j] = a[j] + a[j - 1];
+    }
+}
+```
+
 ```rust
 // for (j = 1; j < n; j++)
 //     S1: a[j] = a[j-1];
@@ -1864,6 +1873,20 @@ fn cal_dot_product<const M: usize, const N: usize>(
 }
 ```
 
+```rust
+fn diffusion_step<const N: usize>(grid: &mut [i32; N]) {
+    let mut i = 1;
+    while i + 1 < N {
+        let left = grid[i - 1];
+        let center = grid[i];
+        let right = grid[i + 1];
+        let avg = (left + center + right) / 3;
+        grid[i] = avg;
+        i = i + 1;
+    }
+}
+```
+
 ### Ghost Permission
 
 We'd like to synthesize a ghost-permission decorated version of the above
@@ -2066,6 +2089,25 @@ fn sum_aux_<const N: usize>(i: u32, A: &[u32; N], a: u32, p0: shrd@A{i..N}, p_lf
     sum_aux_(j, A, val + a, p9, p11)
   } else {
     let p_ret, p_eps = jnsplt([p0, p1]); // p_ret: shrd@A{0..N}, p_eps: eps
+    (a, p_ret)
+  }
+
+fn sum_aux_2<const N: usize>(i: u32, A: &[u32; N], a: u32, p0: shrd@A{i..N}, p_lft: shrd@A{0..N \ i..N}) -> (u32, shrd@A{0..N}) =
+  // ctx: p0, p_lft
+  let c, p1 = lt(i, N);
+  // ctx: p0, p_lft, p1
+  if c {
+    let p2, p3 = jnsplt([p0]);
+    // ctx: p_l
+    let val, p4 = load(i, A, p2);
+    let p5, p6 = jnsplt([p3]);
+    let one, p7 = const(1, p5);
+    let j, p8 = add(i, one);
+    let p9, p10 = jnsplt([p6]);
+    let p11, p12 = jnsplt([p_lft, p3, p6, p7, p8, p10]);
+    sum_aux_2(j, A, val + a, p9, p11)
+  } else {
+    let p_ret, p_eps = jnsplt([p0, p1]);
     (a, p_ret)
   }
 
