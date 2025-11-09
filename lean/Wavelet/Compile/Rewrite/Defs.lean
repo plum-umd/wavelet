@@ -421,7 +421,7 @@ def deadCodeElim
       let val ← .checkFromConst decider
       if let some val := InterpConsts.toBool val then
         if val = flavor then
-          return .mk "steer-const-true" [.order #v[decider, input] output]
+          return .mk "steer-const-true" [.order #v[input, decider] output]
         else
           return .mk "steer-const-false" [
             .sink #v[input],

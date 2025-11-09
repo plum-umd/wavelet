@@ -86,6 +86,11 @@ instance instOpInterpM [DecidableEq Loc] [Hashable Loc] :
     | .add, (inputs : Vector Value 2) => return #v[inputs[0] + inputs[1]]
     | .mul, (inputs : Vector Value 2) => return #v[inputs[0] * inputs[1]]
     | .lt, (inputs : Vector Value 2) => return #v[if inputs[0] < inputs[1] then 1 else 0]
+    | .ashr, (inputs : Vector Value 2) =>
+      let a : Int32 := inputs[0].toInt32
+      let b : Int32 := inputs[1].toInt32
+      let c := a >>> b
+      return #v[c.toInt]
     | .load loc, (inputs : Vector Value 1) => return #v[← (← get).load loc inputs[0]]
     | .store loc, (inputs : Vector Value 2) => do
       modify (λ s => s.store loc inputs[0] inputs[1])
@@ -203,9 +208,9 @@ partial def TestVector.run
     | (idx, m) :: _ =>
       let atom ← (c.proc.atoms[idx]?).toExcept s!"invalid operator index {idx}"
       let rawAtom : RawAtomicProc (SyncOp Loc) χ Value := ↑atom
-      -- dbg_trace s!"step {tr.length + 1}: executing operator index {idx} : {Lean.ToJson.toJson rawAtom}"
       let ((lbl, c'), st') ← (m.run st).toExcept
         s!"execution encountered a runtime error at operator index {idx} : {Lean.ToJson.toJson rawAtom}"
+      -- dbg_trace s!"### step {tr.length + 1} ###\n  operator index {idx}\n  atom: {Lean.ToJson.toJson rawAtom}\n  label: {repr lbl}"
       let tr' := tr ++ [(idx, lbl)]
       loop tr' c' st'
   let (tr, c, st) ← loop [] c st
