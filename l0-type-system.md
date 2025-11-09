@@ -314,7 +314,7 @@ fn increment<const N: usize>(i: u32, A: &uniq{i..N} [u32; N]) =
 										      // But store needs `A: &uniq{i} [u32; N]`
 										      // The compiler inserts a "fence" here (even though there's already a data dependency here)
     ---
-											    // And re-tyck s0 --- (s1 ; s2) under `A: &uniq{i..N} [T; N]` (similar to Dahlia)
+											    // And re-tyck (s0 --- s1) ; s2 under `A: &uniq{i..N} [T; N]` (similar to Dahlia)
     let _ = store(i, A, val + 1);
     increment(i + 1, A)
 											    // Now we have `A: &uniq{} [T; N]` (`&uniq{i+1..N} [T; N] ∩ &uniq{} [T; N]`)
