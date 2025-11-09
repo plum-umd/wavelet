@@ -1,9 +1,9 @@
-//! Capability algebra for the syntactic backend.
+//! Capability algebra for the semantic backend.
 
 use std::collections::BTreeMap;
 
-use super::phi::{Phi, PhiSolver};
 use super::region::Region;
+use super::{Phi, PhiSolver};
 
 /// A capability comprising read-only (`shrd`) and read-write (`uniq`) regions.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]

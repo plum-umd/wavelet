@@ -8,9 +8,12 @@
 //! allows the existing syntactic reasoning to co-exist with future
 //! SMT-backed implementations.
 
-use crate::logic::syntactic::cap::{Cap, Delta};
-use crate::logic::syntactic::phi::{Phi, PhiSolver};
+use crate::logic::cap::{Cap, Delta};
+use crate::logic::semantic::solver::{Phi, PhiSolver};
 
+pub mod cap;
+pub mod region;
+pub mod semantic;
 pub mod syntactic;
 
 /// Trait implemented by backends that provide reasoning for

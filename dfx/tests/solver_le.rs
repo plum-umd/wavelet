@@ -1,8 +1,8 @@
-use dfx::logic::syntactic::phi::{Atom, BasicSolver, Idx, Phi, PhiSolver};
+use dfx::logic::semantic::solver::{Atom, Idx, Phi, PhiSolver, SmtSolver};
 
 #[test]
 fn le_i_plus_one_leq_i_should_fail() {
-    let solver = BasicSolver;
+    let solver = SmtSolver::new();
     let mut phi = Phi::new();
     phi.push(Atom::Lt(Idx::Var("i".into()), Idx::Var("N".into())));
 

@@ -2,11 +2,11 @@
 
 use std::collections::BTreeMap;
 
-use crate::logic::syntactic::cap::Delta;
 use crate::error::TypeError;
 use crate::ir::{FnDef, FnName, Ty, Var};
 use crate::logic::CapabilityLogic;
-use crate::logic::syntactic::phi::{Atom, Phi};
+use crate::logic::cap::Delta;
+use crate::logic::semantic::solver::{Atom, Phi};
 
 /// Variable environment mapping variable names to their types.
 #[derive(Clone, Debug, Default)]

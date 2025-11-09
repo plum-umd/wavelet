@@ -2,14 +2,14 @@
 
 use std::collections::BTreeMap;
 
-use crate::logic::syntactic::{Interval, Phi};
-use crate::logic::syntactic::cap::{Cap, Delta};
 use crate::env::{BoolFact, Ctx, FnRegistry};
 use crate::error::TypeError;
-use crate::ir::{Expr, FnDef, Op, Program, Stmt, Tail, Ty, Val};
+use crate::ir::{Expr, FnDef, Op, Program, Stmt, Tail, Ty, Val, Var};
 use crate::logic::CapabilityLogic;
-use crate::logic::syntactic::phi::{Atom, Idx};
-use crate::logic::syntactic::region::Region;
+use crate::logic::cap::{Cap, Delta};
+use crate::logic::region::Region;
+use crate::logic::semantic::solver::{Atom, Idx};
+use crate::logic::semantic::{Interval, Phi};
 
 /// Substitute variable names in an index expression according to a map.
 fn substitute_idx(idx: &Idx, subst: &BTreeMap<String, String>) -> Idx {
@@ -54,12 +54,180 @@ pub struct CheckOptions {
     pub verbose: bool,
 }
 
+fn render_idx(idx: &Idx) -> String {
+    match idx {
+        Idx::Const(n) => n.to_string(),
+        Idx::Var(v) => v.clone(),
+        Idx::Add(a, b) => format!("({} + {})", render_idx(a), render_idx(b)),
+        Idx::Sub(a, b) => format!("({} - {})", render_idx(a), render_idx(b)),
+    }
+}
+
+fn render_atom(atom: &Atom) -> String {
+    match atom {
+        Atom::Le(a, b) => format!("{} <= {}", render_idx(a), render_idx(b)),
+        Atom::Lt(a, b) => format!("{} < {}", render_idx(a), render_idx(b)),
+        Atom::Eq(a, b) => format!("{} == {}", render_idx(a), render_idx(b)),
+        Atom::And(lhs, rhs) => format!("({}) && ({})", render_atom(lhs), render_atom(rhs)),
+        Atom::Not(inner) => format!("!({})", render_atom(inner)),
+    }
+}
+
+fn region_is_empty(region: &Region) -> bool {
+    region.iter().next().is_none()
+}
+
+fn render_region(region: &Region) -> String {
+    if region_is_empty(region) {
+        "<empty>".to_string()
+    } else {
+        region
+            .iter()
+            .map(|interval| interval.to_string())
+            .collect::<Vec<_>>()
+            .join(" | ")
+    }
+}
+
+fn render_cap(cap: &Cap) -> String {
+    let shrd_empty = region_is_empty(&cap.shrd);
+    let uniq_empty = region_is_empty(&cap.uniq);
+    match (shrd_empty, uniq_empty) {
+        (true, true) => "<empty>".to_string(),
+        (false, true) => format!("shrd: {}", render_region(&cap.shrd)),
+        (true, false) => format!("uniq: {}", render_region(&cap.uniq)),
+        (false, false) => format!(
+            "shrd: {}; uniq: {}",
+            render_region(&cap.shrd),
+            render_region(&cap.uniq)
+        ),
+    }
+}
+
+fn render_ty(ty: &Ty) -> String {
+    TypeError::type_name(ty)
+}
+
+fn render_val(val: &Val) -> String {
+    match val {
+        Val::Int(n) => n.to_string(),
+        Val::Bool(b) => b.to_string(),
+        Val::Unit => "()".to_string(),
+    }
+}
+
+fn render_array_len(len: &crate::ir::ArrayLen) -> String {
+    len.display()
+}
+
+fn render_op(op: &Op, vars: &[Var]) -> String {
+    match op {
+        Op::Add => format!("{} = {} + {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::Sub => format!("{} = {} - {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::Mul => format!("{} = {} * {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::Div => format!("{} = {} / {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::And => format!("{} = {} && {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::Or => format!("{} = {} || {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::LessThan => format!("{} = {} < {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::LessEqual => format!("{} = {} <= {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::Equal => format!("{} = {} == {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::IntoI32 => format!("{} = i32::from({})", vars[1].0, vars[0].0),
+        Op::Load {
+            array,
+            index,
+            len,
+            fence,
+        } => {
+            let mut msg = format!(
+                "{} = {}[{}] (len {})",
+                vars[0].0,
+                array.0,
+                index.0,
+                render_array_len(len)
+            );
+            if *fence {
+                msg.push_str(" [fenced]");
+            }
+            msg
+        }
+        Op::Store {
+            array,
+            index,
+            value,
+            len,
+            fence,
+        } => {
+            let mut msg = format!(
+                "store {} -> {}[{}] (len {})",
+                value.0,
+                array.0,
+                index.0,
+                render_array_len(len)
+            );
+            if *fence {
+                msg.push_str(" [fenced]");
+            }
+            msg
+        }
+    }
+}
+
+fn render_stmt(stmt: &Stmt) -> String {
+    match stmt {
+        Stmt::LetVal { var, val } => format!("let {} = {}", var.0, render_val(val)),
+        Stmt::LetOp { vars, op } => render_op(op, vars),
+        Stmt::LetCall {
+            vars,
+            func,
+            args,
+            fence,
+        } => {
+            let mut msg = String::new();
+            if vars.is_empty() {
+                msg.push_str("call ");
+            } else {
+                let dests = vars
+                    .iter()
+                    .map(|v| v.0.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                msg.push_str(&format!("let {} = ", dests));
+            }
+            let arg_list = args
+                .iter()
+                .map(|v| v.0.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            msg.push_str(&format!("{}({})", func.0, arg_list));
+            if *fence {
+                msg.push_str(" [fenced]");
+            }
+            msg
+        }
+    }
+}
+
+fn render_tail(tail: &Tail) -> String {
+    match tail {
+        Tail::RetVar(var) => format!("return {}", var.0),
+        Tail::IfElse { cond, .. } => format!("if {} {{ ... }} else {{ ... }}", cond.0),
+        Tail::TailCall { func, args } => {
+            let arg_list = args
+                .iter()
+                .map(|v| v.0.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("tail call {}({})", func.0, arg_list)
+        }
+    }
+}
+
 fn trace_context(ctx: &Ctx, stage: &str) {
     if !ctx.verbose {
         return;
     }
 
-    println!("=== {} ===", stage);
+    println!("\n=== {} ===", stage);
     print_context_contents(ctx);
 }
 
@@ -69,7 +237,7 @@ fn print_context_contents(ctx: &Ctx) {
     } else {
         println!("Gamma:");
         for (name, ty) in ctx.gamma.0.iter() {
-            println!("  {}: {:?}", name, ty);
+            println!("  {}: {}", name, render_ty(ty));
         }
     }
 
@@ -78,7 +246,7 @@ fn print_context_contents(ctx: &Ctx) {
     } else {
         println!("Delta:");
         for (name, cap) in ctx.delta.0.iter() {
-            println!("  {}: {:?}", name, cap);
+            println!("  {}: {}", name, render_cap(cap));
         }
     }
 
@@ -88,7 +256,7 @@ fn print_context_contents(ctx: &Ctx) {
     } else {
         println!("Phi:");
         for atom in atoms {
-            println!("  {:?}", atom);
+            println!("  {}", render_atom(atom));
         }
     }
 
@@ -97,9 +265,10 @@ fn print_context_contents(ctx: &Ctx) {
     } else {
         println!("Bool facts:");
         for (var, fact) in ctx.bool_facts.iter() {
-            println!("  {} => when true: {:?}", var, fact.when_true);
+            println!("  {}:", var);
+            println!("    when true: {}", render_atom(&fact.when_true));
             if let Some(neg) = &fact.when_false {
-                println!("             when false: {:?}", neg);
+                println!("    when false: {}", render_atom(neg));
             }
         }
     }
@@ -109,7 +278,7 @@ fn print_context_contents(ctx: &Ctx) {
 
 fn log_after_statement(ctx: &Ctx, stmt: &Stmt) {
     if ctx.verbose {
-        println!("After statement {:?}:", stmt);
+        println!("After {}:", render_stmt(stmt));
         print_context_contents(ctx);
     }
 }
@@ -195,13 +364,13 @@ fn check_expr(
     // Process statements sequentially.
     for stmt in &expr.stmts {
         if ctx.verbose {
-            println!("Processing statement: {:?}", stmt);
+            println!("Processing statement: {}", render_stmt(stmt));
         }
         check_stmt(ctx, stmt, registry)?;
     }
 
     if ctx.verbose {
-        println!("Evaluating tail: {:?}", expr.tail);
+        println!("Evaluating tail: {}", render_tail(&expr.tail));
         print_context_contents(ctx);
     }
 
@@ -209,7 +378,11 @@ fn check_expr(
     let ty = check_tail(ctx, &expr.tail, registry)?;
 
     if ctx.verbose {
-        println!("Tail {:?} produced type {:?}", expr.tail, ty);
+        println!(
+            "Tail {} produced type {}",
+            render_tail(&expr.tail),
+            render_ty(&ty)
+        );
         print_context_contents(ctx);
     }
 
@@ -229,13 +402,13 @@ fn infer_expr_type(ctx: &mut Ctx, expr: &Expr, registry: &FnRegistry) -> Result<
     // Process statements sequentially.
     for stmt in &expr.stmts {
         if ctx.verbose {
-            println!("Processing statement (infer): {:?}", stmt);
+            println!("Processing statement (infer): {}", render_stmt(stmt));
         }
         check_stmt(ctx, stmt, registry)?;
     }
 
     if ctx.verbose {
-        println!("Inferring tail: {:?}", expr.tail);
+        println!("Inferring tail: {}", render_tail(&expr.tail));
         print_context_contents(ctx);
     }
 
@@ -243,7 +416,11 @@ fn infer_expr_type(ctx: &mut Ctx, expr: &Expr, registry: &FnRegistry) -> Result<
     let ty = check_tail(ctx, &expr.tail, registry)?;
 
     if ctx.verbose {
-        println!("Inferred tail {:?} has type {:?}", expr.tail, ty);
+        println!(
+            "Inferred tail {} has type {}",
+            render_tail(&expr.tail),
+            render_ty(&ty)
+        );
         print_context_contents(ctx);
     }
 
@@ -264,10 +441,8 @@ fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), T
             ctx.bool_facts.remove(&var.0);
             // Add equality fact to Phi for integer constants.
             if let Val::Int(n) = val {
-                ctx.phi.push(Atom::Eq(
-                    Idx::Var(var.0.clone()),
-                    Idx::Const(*n),
-                ));
+                ctx.phi
+                    .push(Atom::Eq(Idx::Var(var.0.clone()), Idx::Const(*n)));
             }
             log_after_statement(ctx, stmt);
             Ok(())
@@ -453,26 +628,23 @@ fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), T
                     }
                     // Array must be a reference to the correct length.
                     let arr_ty = ctx.gamma.get(array)?;
-                    match arr_ty {
-                        Ty::RefShrd { len: arr_len, .. } => {
-                            if arr_len != *len {
-                                return Err(TypeError::InvalidOp {
-                                    op: "load length mismatch".into(),
-                                });
-                            }
-                        }
-                        Ty::RefUniq { len: arr_len, .. } => {
-                            if arr_len != *len {
-                                return Err(TypeError::InvalidOp {
-                                    op: "load length mismatch".into(),
-                                });
-                            }
-                        }
+                    let arr_len = match arr_ty {
+                        Ty::RefShrd { len, .. } | Ty::RefUniq { len, .. } => len.clone(),
                         _ => {
                             return Err(TypeError::InvalidOp {
                                 op: "load non array".into(),
                             });
                         }
+                    };
+                    let op_len = len.clone();
+                    if arr_len != op_len {
+                        return Err(TypeError::InvalidOp {
+                            op: format!(
+                                "load length mismatch (have {}, need {})",
+                                arr_len.display(),
+                                op_len.display()
+                            ),
+                        });
                     }
                     // Required region [idx, idx+1).
                     let lo = Idx::Var(index.0.clone());
@@ -528,26 +700,23 @@ fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), T
                     }
                     // Array type.
                     let arr_ty = ctx.gamma.get(array)?;
-                    match arr_ty {
-                        Ty::RefUniq { len: arr_len, .. } => {
-                            if arr_len != *len {
-                                return Err(TypeError::InvalidOp {
-                                    op: "store length mismatch".into(),
-                                });
-                            }
-                        }
-                        Ty::RefShrd { len: arr_len, .. } => {
-                            if arr_len != *len {
-                                return Err(TypeError::InvalidOp {
-                                    op: "store length mismatch".into(),
-                                });
-                            }
-                        }
+                    let arr_len = match arr_ty {
+                        Ty::RefUniq { len, .. } | Ty::RefShrd { len, .. } => len.clone(),
                         _ => {
                             return Err(TypeError::InvalidOp {
                                 op: "store non array".into(),
                             });
                         }
+                    };
+                    let op_len = len.clone();
+                    if arr_len != op_len {
+                        return Err(TypeError::InvalidOp {
+                            op: format!(
+                                "store length mismatch (have {}, need {})",
+                                arr_len.display(),
+                                op_len.display()
+                            ),
+                        });
                     }
                     let lo = Idx::Var(index.0.clone());
                     let hi = Idx::Add(Box::new(lo.clone()), Box::new(Idx::Const(1)));

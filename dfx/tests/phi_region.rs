@@ -1,8 +1,8 @@
 //! Tests for the symbolic logic and region operations.
 
-use dfx::logic::syntactic::cap::{Cap, Delta};
-use dfx::logic::syntactic::phi::{Atom, BasicSolver, Idx, Phi};
-use dfx::logic::syntactic::region::{Interval, Region};
+use dfx::logic::cap::{Cap, Delta};
+use dfx::logic::region::{Interval, Region};
+use dfx::logic::semantic::solver::{Atom, Idx, Phi, SmtSolver};
 
 fn const_idx(n: i64) -> Idx {
     Idx::Const(n)
@@ -14,7 +14,7 @@ fn var_idx(name: &str) -> Idx {
 
 #[test]
 fn test_region_subset_with_equalities() {
-    let solver = BasicSolver;
+    let solver = SmtSolver::new();
     let mut phi = Phi::new();
     // j = i + 1
     phi.push(Atom::Eq(
@@ -29,7 +29,7 @@ fn test_region_subset_with_equalities() {
 
 #[test]
 fn test_region_union_merges_adjacent() {
-    let solver = BasicSolver;
+    let solver = SmtSolver::new();
     let phi = Phi::new();
 
     let left = Region::from_bounded(const_idx(0), const_idx(5));
@@ -42,7 +42,7 @@ fn test_region_union_merges_adjacent() {
 
 #[test]
 fn test_region_diff_half_open_semantics() {
-    let solver = BasicSolver;
+    let solver = SmtSolver::new();
     let phi = Phi::new();
 
     let source = Region::from_bounded(const_idx(0), const_idx(10));
@@ -59,7 +59,7 @@ fn test_region_diff_half_open_semantics() {
 
 #[test]
 fn test_region_diff_unbounded_tail() {
-    let solver = BasicSolver;
+    let solver = SmtSolver::new();
     let phi = Phi::new();
 
     let source = Region::from_unbounded(const_idx(0));
@@ -72,7 +72,7 @@ fn test_region_diff_unbounded_tail() {
 
 #[test]
 fn test_region_diff_with_solver_equated_bounds() {
-    let solver = BasicSolver;
+    let solver = SmtSolver::new();
     let mut phi = Phi::new();
 
     phi.push(Atom::Eq(var_idx("i"), const_idx(0)));
@@ -95,7 +95,7 @@ fn test_region_diff_with_solver_equated_bounds() {
 
 #[test]
 fn test_region_diff_without_solver_proof_keeps_source() {
-    let solver = BasicSolver;
+    let solver = SmtSolver::new();
     let phi = Phi::new();
 
     let source = Region::from_bounded(var_idx("i"), const_idx(8));
@@ -108,7 +108,7 @@ fn test_region_diff_without_solver_proof_keeps_source() {
 
 #[test]
 fn test_region_diff_singleton_removal_advances_lower_bound() {
-    let solver = BasicSolver;
+    let solver = SmtSolver::new();
     let mut phi = Phi::new();
 
     phi.push(Atom::Eq(var_idx("i"), const_idx(4)));
@@ -131,7 +131,7 @@ fn test_region_diff_singleton_removal_advances_lower_bound() {
 
 #[test]
 fn test_cap_diff_consumes_unique_but_accumulates_shared() {
-    let solver = BasicSolver;
+    let solver = SmtSolver::new();
     let phi = Phi::new();
 
     let mut cap_total = Cap::default();
@@ -159,7 +159,7 @@ fn test_cap_diff_consumes_unique_but_accumulates_shared() {
 
 #[test]
 fn test_delta_diff_requires_subcapability() {
-    let solver = BasicSolver;
+    let solver = SmtSolver::new();
     let phi = Phi::new();
 
     let mut cap_total = Cap::default();

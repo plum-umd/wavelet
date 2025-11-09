@@ -3,29 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-/// An index expression used throughout the type system.  Indices are
-/// symbolic arithmetic expressions built from variables, constants and
-/// addition/subtraction.  Multiplication is deliberately absent to
-/// keep reasoning tractable; multiplication by a constant can be
-/// simulated by repeated addition.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Idx {
-    /// A constant index.
-    Const(i64),
-    /// A variable index (function parameters or local variables).
-    Var(String),
-    /// Sum of two indices.
-    Add(Box<Idx>, Box<Idx>),
-    /// Difference of two indices.
-    Sub(Box<Idx>, Box<Idx>),
-}
-
-impl Idx {
-    /// Create a constant index from a `usize`.
-    pub fn from_usize(n: usize) -> Self {
-        Idx::Const(n as i64)
-    }
-}
+use crate::logic::semantic::{Atom, Idx, Phi};
 
 /// Linearised form of an index expression: a mapping from variable
 /// names to coefficients plus a constant term.
@@ -104,60 +82,6 @@ pub fn linearise(idx: &Idx) -> Option<LinearExpr> {
     }
 }
 
-/// Logical atoms over index expressions.  Only simple relational
-/// predicates are supported.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Atom {
-    /// `a <= b`
-    Le(Idx, Idx),
-    /// `a < b`
-    Lt(Idx, Idx),
-    /// `a == b`
-    Eq(Idx, Idx),
-    /// Conjunction of two atoms.
-    And(Box<Atom>, Box<Atom>),
-    /// Negation of an atom.  The solver does not currently reason
-    /// about negations and will treat a negated atom as unknown.
-    Not(Box<Atom>),
-}
-
-/// A collection of logical atoms.  Semantically this is a big
-/// conjunction.
-#[derive(Clone, Debug, Default)]
-pub struct Phi {
-    atoms: Vec<Atom>,
-}
-
-impl Phi {
-    /// Create a new, empty `Phi`.
-    pub fn new() -> Self {
-        Self { atoms: Vec::new() }
-    }
-
-    /// Append a new atom to the context.
-    pub fn push(&mut self, atom: Atom) {
-        self.atoms.push(atom);
-    }
-
-    /// Iterate over all atoms contained in this context.
-    pub fn iter(&self) -> std::slice::Iter<'_, Atom> {
-        self.atoms.iter()
-    }
-}
-
-/// A simple solver for entailment queries over [`Phi`].
-pub trait PhiSolver {
-    /// Determine whether the given atom is entailed by the current
-    /// context.  Returning `true` means the atom holds under all
-    /// assignments satisfying the context; `false` means either the
-    /// atom does not follow or the solver is unable to prove it.
-    fn entails(&self, ctx: &Phi, atom: &Atom) -> bool;
-
-    /// Simplify an index expression by applying equalities from the
-    /// context.
-    fn simplify_idx(&self, ctx: &Phi, idx: &Idx) -> Idx;
-}
-
 /// A very basic solver which handles only direct equalities of the
 /// form `x = y + c` or `x = c`.
 pub struct BasicSolver;
@@ -209,8 +133,13 @@ impl BasicSolver {
     }
 }
 
-impl PhiSolver for BasicSolver {
-    fn entails(&self, ctx: &Phi, atom: &Atom) -> bool {
+impl crate::logic::semantic::PhiSolver for BasicSolver {
+    fn entails(
+        &self,
+        ctx: &crate::logic::semantic::Phi,
+        atom: &crate::logic::semantic::Atom,
+    ) -> bool {
+        use crate::logic::semantic::Atom;
         match atom {
             Atom::Le(a, b) => {
                 let eqs = BasicSolver::collect_equalities(ctx);
@@ -342,11 +271,5 @@ impl PhiSolver for BasicSolver {
             Atom::And(p, q) => self.entails(ctx, p) && self.entails(ctx, q),
             Atom::Not(_) => false,
         }
-    }
-
-    fn simplify_idx(&self, ctx: &Phi, idx: &Idx) -> Idx {
-        let eqs = BasicSolver::collect_equalities(ctx);
-        let mut seen = BTreeSet::new();
-        BasicSolver::rewrite_idx(idx, &eqs, &mut seen)
     }
 }

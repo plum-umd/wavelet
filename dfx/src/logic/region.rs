@@ -1,8 +1,10 @@
-//! Symbolic regions over index expressions for the syntactic backend.
+//! Symbolic regions over index expressions for the semantic backend.
 
 use std::fmt;
 
-use super::phi::{Idx, Phi, PhiSolver};
+use crate::logic::semantic::Atom;
+
+use crate::logic::semantic::solver::{Idx, Phi, PhiSolver};
 
 /// A half-open interval `[lo, hi)`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,9 +58,7 @@ impl Region {
             Some(cur) => {
                 let overlaps = match &cur.hi {
                     None => true,
-                    Some(hi_cur) => {
-                        solver.entails(phi, &super::phi::Atom::Le(next.lo.clone(), hi_cur.clone()))
-                    }
+                    Some(hi_cur) => solver.entails(phi, &Atom::Le(next.lo.clone(), hi_cur.clone())),
                 };
                 if overlaps {
                     match (&cur.hi, &next.hi) {
@@ -67,7 +67,7 @@ impl Region {
                             cur.hi = None;
                         }
                         (Some(hc), Some(hn)) => {
-                            if !solver.entails(phi, &super::phi::Atom::Le(hn.clone(), hc.clone())) {
+                            if !solver.entails(phi, &Atom::Le(hn.clone(), hc.clone())) {
                                 cur.hi = Some(hn.clone());
                             }
                         }
@@ -90,8 +90,7 @@ impl Region {
         loop {
             let next = match (peek_left, peek_right) {
                 (Some(lint), Some(rint)) => {
-                    let le = solver
-                        .entails(phi, &super::phi::Atom::Le(lint.lo.clone(), rint.lo.clone()));
+                    let le = solver.entails(phi, &Atom::Le(lint.lo.clone(), rint.lo.clone()));
                     if le {
                         let res = lint.clone();
                         peek_left = left.next();
@@ -135,39 +134,32 @@ impl Region {
                 let o_hi = &o.hi;
                 let cur_lo_lt_o_hi = match o_hi {
                     None => true,
-                    Some(ohi) => {
-                        solver.entails(phi, &super::phi::Atom::Lt(current.lo.clone(), ohi.clone()))
-                    }
+                    Some(ohi) => solver.entails(phi, &Atom::Lt(current.lo.clone(), ohi.clone())),
                 };
                 let o_lo_lt_cur_hi = match cur_hi {
                     None => true,
-                    Some(chi) => {
-                        solver.entails(phi, &super::phi::Atom::Lt(o.lo.clone(), chi.clone()))
-                    }
+                    Some(chi) => solver.entails(phi, &Atom::Lt(o.lo.clone(), chi.clone())),
                 };
                 let mut intervals_overlap = cur_lo_lt_o_hi && o_lo_lt_cur_hi;
                 if !intervals_overlap {
-                    let lo_within = solver
-                        .entails(phi, &super::phi::Atom::Le(current.lo.clone(), o.lo.clone()));
+                    let lo_within =
+                        solver.entails(phi, &Atom::Le(current.lo.clone(), o.lo.clone()));
                     let non_empty = match o_hi {
                         None => true,
-                        Some(ohi) => {
-                            solver.entails(phi, &super::phi::Atom::Lt(o.lo.clone(), ohi.clone()))
-                        }
+                        Some(ohi) => solver.entails(phi, &Atom::Lt(o.lo.clone(), ohi.clone())),
                     };
                     let hi_within = match (cur_hi, o_hi) {
                         (None, _) => true,
                         (Some(_), None) => false,
                         (Some(chi), Some(ohi)) => {
-                            solver.entails(phi, &super::phi::Atom::Le(ohi.clone(), chi.clone()))
+                            solver.entails(phi, &Atom::Le(ohi.clone(), chi.clone()))
                         }
                     };
                     intervals_overlap = lo_within && hi_within && non_empty;
                 }
 
                 if intervals_overlap {
-                    if solver.entails(phi, &super::phi::Atom::Lt(current.lo.clone(), o.lo.clone()))
-                    {
+                    if solver.entails(phi, &Atom::Lt(current.lo.clone(), o.lo.clone())) {
                         result.push(Interval {
                             lo: current.lo.clone(),
                             hi: Some(o.lo.clone()),
@@ -184,8 +176,7 @@ impl Region {
                         }
                         (Some(_), None) => continue 'outer,
                         (Some(chi), Some(ohi)) => {
-                            if solver.entails(phi, &super::phi::Atom::Le(ohi.clone(), chi.clone()))
-                            {
+                            if solver.entails(phi, &Atom::Le(ohi.clone(), chi.clone())) {
                                 current = Interval {
                                     lo: ohi.clone(),
                                     hi: Some(chi.clone()),
@@ -207,12 +198,12 @@ impl Region {
         for a in &self.intervals {
             let mut covered = false;
             for b in &other.intervals {
-                let lo_ok = solver.entails(phi, &super::phi::Atom::Le(b.lo.clone(), a.lo.clone()));
+                let lo_ok = solver.entails(phi, &Atom::Le(b.lo.clone(), a.lo.clone()));
                 let hi_ok = match (&a.hi, &b.hi) {
                     (_, None) => true,
                     (None, Some(_)) => false,
                     (Some(ahi), Some(bhi)) => {
-                        solver.entails(phi, &super::phi::Atom::Le(ahi.clone(), bhi.clone()))
+                        solver.entails(phi, &Atom::Le(ahi.clone(), bhi.clone()))
                     }
                 };
                 if lo_ok && hi_ok {
@@ -228,18 +219,31 @@ impl Region {
     }
 }
 
+fn format_idx(idx: &Idx) -> String {
+    match idx {
+        Idx::Const(n) => n.to_string(),
+        Idx::Var(v) => v.clone(),
+        Idx::Add(a, b) => format!("({} + {})", format_idx(a), format_idx(b)),
+        Idx::Sub(a, b) => format!("({} - {})", format_idx(a), format_idx(b)),
+    }
+}
+
 impl fmt::Display for Interval {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.hi {
-            Some(hi) => write!(f, "[{:?}..{:?})", self.lo, hi),
-            None => write!(f, "[{:?}..)", self.lo),
+            Some(hi) => write!(f, "[{}..{})", format_idx(&self.lo), format_idx(hi)),
+            None => write!(f, "[{}..)", format_idx(&self.lo)),
         }
     }
 }
 
 impl fmt::Display for Region {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let parts: Vec<String> = self.intervals.iter().map(|iv| iv.to_string()).collect();
-        write!(f, "{{{}}}", parts.join(" || "))
+        if self.intervals.is_empty() {
+            write!(f, "<empty>")
+        } else {
+            let parts: Vec<String> = self.intervals.iter().map(|iv| iv.to_string()).collect();
+            write!(f, "{{{}}}", parts.join(" | "))
+        }
     }
 }

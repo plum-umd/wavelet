@@ -1,6 +1,6 @@
-use dfx::logic::syntactic::cap::Cap;
-use dfx::logic::syntactic::phi::{Atom, BasicSolver, Idx, Phi};
-use dfx::logic::syntactic::region::Region;
+use dfx::logic::cap::Cap;
+use dfx::logic::region::Region;
+use dfx::logic::semantic::solver::{Atom, Idx, Phi, SmtSolver};
 
 fn var(name: &str) -> Idx {
     Idx::Var(name.into())
@@ -12,7 +12,7 @@ fn bounded(lo: Idx, hi: Idx) -> Region {
 
 #[test]
 fn load_then_store_should_fail_due_to_unique_consumption() {
-    let solver = BasicSolver;
+    let solver = SmtSolver::new();
     let mut phi = Phi::new();
     phi.push(Atom::Lt(var("i"), var("N")));
 

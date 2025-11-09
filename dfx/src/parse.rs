@@ -23,12 +23,14 @@
 //! }
 //! ```
 
+use std::collections::{HashMap, HashSet};
+
 use syn::{self, Attribute, Expr, FnArg, ItemFn, Pat, Stmt, Type};
 
-use crate::logic::syntactic::cap::CapPattern;
-use crate::ir::{self, FnDef, FnName, Op, Tail, Var};
-use crate::logic::syntactic::phi::Idx;
-use crate::logic::syntactic::region::Region;
+use crate::ir::{self, ArrayLen, FnDef, FnName, Op, Tail, Var};
+use crate::logic::cap::CapPattern;
+use crate::logic::region::Region;
+use crate::logic::semantic::solver::Idx;
 
 /// Parse error for the frontend.
 #[derive(Debug)]
@@ -252,14 +254,14 @@ pub fn parse_fn_def(input: &str) -> Result<FnDef, ParseError> {
     let fn_name = FnName(item_fn.sig.ident.to_string());
 
     // Extract const generics for array sizes
-    let mut const_generics = std::collections::HashMap::new();
+    let mut const_generics = HashSet::new();
     let mut const_generic_names = Vec::new();
     for param in &item_fn.sig.generics.params {
         if let syn::GenericParam::Const(c) = param {
             // Use a placeholder size of 10 for all const generics
             // The actual value doesn't matter for type checking, as we use symbolic reasoning
             let name = c.ident.to_string();
-            const_generics.insert(name.clone(), 10_usize);
+            const_generics.insert(name.clone());
             const_generic_names.push(name);
         }
     }
@@ -302,14 +304,15 @@ pub fn parse_fn_def(input: &str) -> Result<FnDef, ParseError> {
         .collect();
 
     // Collect array variable names for tail call reordering
-    let array_vars: std::collections::HashSet<String> = params
-        .iter()
-        .filter(|(_, ty)| matches!(ty, ir::Ty::RefShrd { .. } | ir::Ty::RefUniq { .. }))
-        .map(|(var, _)| var.0.clone())
-        .collect();
+    let mut array_lens: HashMap<String, ArrayLen> = HashMap::new();
+    for (var, ty) in &params {
+        if let ir::Ty::RefShrd { len, .. } | ir::Ty::RefUniq { len, .. } = ty {
+            array_lens.insert(var.0.clone(), len.clone());
+        }
+    }
 
-    // Parse body with const generics and array vars
-    let body = parse_block(&item_fn.block, &const_generics, &array_vars)?;
+    // Parse body with const generics and array metadata
+    let body = parse_block(&item_fn.block, &array_lens)?;
 
     Ok(FnDef {
         name: fn_name,
@@ -331,10 +334,7 @@ fn extract_var_name(pat: &Pat) -> Result<String, ParseError> {
 }
 
 /// Convert syn Type to our IR Type
-fn convert_type(
-    ty: &Type,
-    const_generics: &std::collections::HashMap<String, usize>,
-) -> Result<ir::Ty, ParseError> {
+fn convert_type(ty: &Type, const_generics: &HashSet<String>) -> Result<ir::Ty, ParseError> {
     match ty {
         Type::Path(type_path) => {
             let ident = &type_path.path.segments.last().unwrap().ident;
@@ -357,9 +357,11 @@ fn convert_type(
                 let len = match &arr.len {
                     Expr::Lit(expr_lit) => {
                         if let syn::Lit::Int(lit_int) = &expr_lit.lit {
-                            lit_int.base10_parse::<usize>().map_err(|_| ParseError {
-                                message: "Invalid array length".to_string(),
-                            })?
+                            let value =
+                                lit_int.base10_parse::<usize>().map_err(|_| ParseError {
+                                    message: "Invalid array length".to_string(),
+                                })?;
+                            ArrayLen::Const(value)
                         } else {
                             return Err(ParseError {
                                 message: "Expected integer literal for array length".to_string(),
@@ -367,8 +369,17 @@ fn convert_type(
                         }
                     }
                     Expr::Path(expr_path) => {
-                        let ident = &expr_path.path.segments.last().unwrap().ident;
-                        *const_generics.get(&ident.to_string()).unwrap_or(&10)
+                        let ident = expr_path.path.segments.last().unwrap().ident.to_string();
+                        if const_generics.contains(&ident) {
+                            ArrayLen::Symbol(ident)
+                        } else {
+                            return Err(ParseError {
+                                message: format!(
+                                    "Unsupported array length expression (unknown const generic): {}",
+                                    ident
+                                ),
+                            });
+                        }
                     }
                     _ => {
                         return Err(ParseError {
@@ -412,8 +423,7 @@ fn convert_type(
 /// Parse a block into an Expr
 fn parse_block(
     block: &syn::Block,
-    const_generics: &std::collections::HashMap<String, usize>,
-    array_vars: &std::collections::HashSet<String>,
+    array_lens: &HashMap<String, ArrayLen>,
 ) -> Result<ir::Expr, ParseError> {
     let mut stmts = Vec::new();
     let mut tail = None;
@@ -424,7 +434,7 @@ fn parse_block(
         match stmt {
             Stmt::Local(local) => {
                 // let binding
-                let ir_stmt = parse_local(local)?;
+                let ir_stmt = parse_local(local, array_lens)?;
                 stmts.push(ir_stmt);
             }
             Stmt::Macro(macro_stmt) => {
@@ -455,7 +465,7 @@ fn parse_block(
                     }
                 } else if semi.is_some() {
                     // Expression with semicolon - regular statement
-                    let ir_stmt = parse_expr_stmt(expr)?;
+                    let ir_stmt = parse_expr_stmt(expr, array_lens)?;
                     stmts.push(ir_stmt);
                 } else {
                     // Expression without semicolon - this is the tail (if last)
@@ -464,10 +474,10 @@ fn parse_block(
                         if matches!(expr, Expr::Tuple(t) if t.elems.is_empty()) {
                             // Don't set tail, let the default unit handling below kick in
                         } else {
-                            tail = Some(parse_tail_expr(expr, const_generics, array_vars)?);
+                            tail = Some(parse_tail_expr(expr, array_lens)?);
                         }
                     } else {
-                        let ir_stmt = parse_expr_stmt(expr)?;
+                        let ir_stmt = parse_expr_stmt(expr, array_lens)?;
                         stmts.push(ir_stmt);
                     }
                 }
@@ -495,6 +505,15 @@ fn parse_block(
     Ok(ir::Expr { stmts, tail })
 }
 
+fn lookup_array_len(
+    array_lens: &HashMap<String, ArrayLen>,
+    array: &str,
+) -> Result<ArrayLen, ParseError> {
+    array_lens.get(array).cloned().ok_or_else(|| ParseError {
+        message: format!("Unknown array variable: {}", array),
+    })
+}
+
 /// Check if expression is fence!()
 fn is_fence_marker(expr: &Expr) -> bool {
     if let Expr::Macro(expr_macro) = expr {
@@ -519,14 +538,17 @@ fn mark_stmt_as_fenced(stmt: &mut ir::Stmt) {
 }
 
 /// Parse a local statement (let binding)
-fn parse_local(local: &syn::Local) -> Result<ir::Stmt, ParseError> {
+fn parse_local(
+    local: &syn::Local,
+    array_lens: &HashMap<String, ArrayLen>,
+) -> Result<ir::Stmt, ParseError> {
     let var_name = extract_var_name(&local.pat)?;
 
     if let Some(init) = &local.init {
         let expr = &init.expr;
 
         // Check what kind of expression this is
-        if let Some(op_stmt) = try_parse_as_op(var_name.clone(), expr)? {
+        if let Some(op_stmt) = try_parse_as_op(var_name.clone(), expr, array_lens)? {
             return Ok(op_stmt);
         }
 
@@ -545,7 +567,11 @@ fn parse_local(local: &syn::Local) -> Result<ir::Stmt, ParseError> {
 }
 
 /// Try to parse expression as an operation
-fn try_parse_as_op(result_var: String, expr: &Expr) -> Result<Option<ir::Stmt>, ParseError> {
+fn try_parse_as_op(
+    result_var: String,
+    expr: &Expr,
+    array_lens: &HashMap<String, ArrayLen>,
+) -> Result<Option<ir::Stmt>, ParseError> {
     match expr {
         Expr::Binary(bin_expr) => {
             let left = extract_var_from_expr(&bin_expr.left)?;
@@ -576,9 +602,7 @@ fn try_parse_as_op(result_var: String, expr: &Expr) -> Result<Option<ir::Stmt>, 
             let array = extract_var_from_expr(&index_expr.expr)?;
             let index = extract_var_from_expr(&index_expr.index)?;
 
-            // We need to know the array length - for now use a placeholder
-            // In a real implementation, we'd track this from the type context
-            let len = 10; // TODO: get from type context
+            let len = lookup_array_len(array_lens, &array)?;
 
             Ok(Some(ir::Stmt::LetOp {
                 vars: vec![Var(result_var)],
@@ -635,7 +659,10 @@ fn try_parse_as_val(expr: &Expr) -> Result<Option<ir::Val>, ParseError> {
 }
 
 /// Parse expression as statement (e.g., assignments)
-fn parse_expr_stmt(expr: &Expr) -> Result<ir::Stmt, ParseError> {
+fn parse_expr_stmt(
+    expr: &Expr,
+    array_lens: &HashMap<String, ArrayLen>,
+) -> Result<ir::Stmt, ParseError> {
     // Check for array assignment: A[i] = val
     if let Expr::Assign(assign_expr) = expr {
         if let Expr::Index(index_expr) = &*assign_expr.left {
@@ -653,7 +680,7 @@ fn parse_expr_stmt(expr: &Expr) -> Result<ir::Stmt, ParseError> {
                 _ => extract_var_from_expr(&assign_expr.right)?,
             };
 
-            let len = 10; // TODO: get from type context
+            let len = lookup_array_len(array_lens, &array)?;
 
             return Ok(ir::Stmt::LetOp {
                 vars: vec![],
@@ -671,7 +698,7 @@ fn parse_expr_stmt(expr: &Expr) -> Result<ir::Stmt, ParseError> {
             let var_name = extract_var_from_expr(&assign_expr.left)?;
 
             // Check if right side is an operation
-            if let Some(stmt) = try_parse_as_op(var_name.clone(), &assign_expr.right)? {
+            if let Some(stmt) = try_parse_as_op(var_name.clone(), &assign_expr.right, array_lens)? {
                 return Ok(stmt);
             }
 
@@ -701,17 +728,16 @@ fn parse_expr_stmt(expr: &Expr) -> Result<ir::Stmt, ParseError> {
 /// Parse tail expression (if, return, tail call)
 fn parse_tail_expr(
     expr: &Expr,
-    const_generics: &std::collections::HashMap<String, usize>,
-    array_vars: &std::collections::HashSet<String>,
+    array_lens: &HashMap<String, ArrayLen>,
 ) -> Result<Tail, ParseError> {
     match expr {
         Expr::If(if_expr) => {
             let cond = extract_var_from_expr(&if_expr.cond)?;
-            let then_branch = parse_block(&if_expr.then_branch, const_generics, array_vars)?;
+            let then_branch = parse_block(&if_expr.then_branch, array_lens)?;
 
             let else_branch = if let Some((_, else_expr)) = &if_expr.else_branch {
                 if let Expr::Block(block_expr) = &**else_expr {
-                    parse_block(&block_expr.block, const_generics, array_vars)?
+                    parse_block(&block_expr.block, array_lens)?
                 } else {
                     return Err(ParseError {
                         message: "Expected block in else branch".to_string(),
@@ -741,7 +767,7 @@ fn parse_tail_expr(
                 let var_name = extract_var_from_expr(arg)?;
 
                 // Check if this variable is an array using the array_vars set
-                if array_vars.contains(&var_name) {
+                if array_lens.contains_key(&var_name) {
                     array_args.push(Var(var_name));
                 } else {
                     scalar_args.push(Var(var_name));

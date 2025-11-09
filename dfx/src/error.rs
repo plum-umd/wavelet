@@ -1,6 +1,5 @@
 //! Error types for the `dfx` type checker.
 
-
 use thiserror::Error;
 
 /// High level error produced when type checking a program.
@@ -48,13 +47,13 @@ impl TypeError {
             crate::ir::Ty::Bool => "bool".to_string(),
             crate::ir::Ty::Unit => "unit".to_string(),
             crate::ir::Ty::Array { elem, len } => {
-                format!("[{}; {}]", TypeError::type_name(elem), len)
+                format!("[{}; {}]", TypeError::type_name(elem), len.display())
             }
             crate::ir::Ty::RefShrd { elem, len } => {
-                format!("&[{}; {}]", TypeError::type_name(elem), len)
+                format!("&[{}; {}]", TypeError::type_name(elem), len.display())
             }
             crate::ir::Ty::RefUniq { elem, len } => {
-                format!("&mut [{}; {}]", TypeError::type_name(elem), len)
+                format!("&mut [{}; {}]", TypeError::type_name(elem), len.display())
             }
         }
     }

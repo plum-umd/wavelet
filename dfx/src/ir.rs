@@ -1,6 +1,6 @@
 //! Intermediate representation for the restricted language.
 
-use crate::logic::syntactic::cap::CapPattern;
+use crate::logic::cap::CapPattern;
 
 /// A variable name.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -9,6 +9,32 @@ pub struct Var(pub String);
 /// A function name.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FnName(pub String);
+
+/// Length of a fixed-size array.  Either a concrete literal length or
+/// a symbolic identifier originating from a const generic parameter.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ArrayLen {
+    /// Statically known constant length.
+    Const(usize),
+    /// Symbolic length (e.g. a const generic parameter `N`).
+    Symbol(String),
+}
+
+impl ArrayLen {
+    /// Return a human-readable representation used in error messages.
+    pub fn display(&self) -> String {
+        match self {
+            ArrayLen::Const(n) => n.to_string(),
+            ArrayLen::Symbol(name) => name.clone(),
+        }
+    }
+}
+
+impl From<usize> for ArrayLen {
+    fn from(len: usize) -> Self {
+        ArrayLen::Const(len)
+    }
+}
 
 /// Types in the language.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,11 +46,11 @@ pub enum Ty {
     /// Unit type.
     Unit,
     /// Fixed-size array type.
-    Array { elem: Box<Ty>, len: usize },
+    Array { elem: Box<Ty>, len: ArrayLen },
     /// Shared reference to a fixed-size array.
-    RefShrd { elem: Box<Ty>, len: usize },
+    RefShrd { elem: Box<Ty>, len: ArrayLen },
     /// Unique (mutable) reference to a fixed-size array.
-    RefUniq { elem: Box<Ty>, len: usize },
+    RefUniq { elem: Box<Ty>, len: ArrayLen },
 }
 
 impl Ty {
@@ -75,7 +101,7 @@ pub enum Op {
         /// Index variable.
         index: Var,
         /// Length of the array.
-        len: usize,
+        len: ArrayLen,
         /// Whether this is a fenced operation (fence doesn't consume capability).
         fence: bool,
     },
@@ -88,7 +114,7 @@ pub enum Op {
         /// Value variable to store.
         value: Var,
         /// Length of the array.
-        len: usize,
+        len: ArrayLen,
         /// Whether this is a fenced operation (fence doesn't consume capability).
         fence: bool,
     },

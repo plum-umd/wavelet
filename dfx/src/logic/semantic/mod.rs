@@ -1,31 +1,30 @@
 pub mod solver;
 
-use super::cap::{Cap, CapPattern, Delta};
-use super::semantic::solver::{Phi, PhiSolver};
-use solver::BasicSolver;
+pub use super::cap::{Cap, CapPattern, Delta};
+pub use super::region::{Interval, Region};
+pub use solver::{Atom, Idx, Phi, PhiSolver, SmtSolver};
 
 use crate::logic::CapabilityLogic;
 
-/// Default backend mirroring the historical syntactic reasoning.
-pub struct SyntacticLogic {
-    solver: BasicSolver,
+/// SMT-backed capability logic implementation.
+#[derive(Default)]
+pub struct SemanticLogic {
+    solver: SmtSolver,
 }
 
-impl SyntacticLogic {
+impl SemanticLogic {
     pub fn new() -> Self {
         Self {
-            solver: BasicSolver,
+            solver: SmtSolver::new(),
         }
     }
-}
 
-impl Default for SyntacticLogic {
-    fn default() -> Self {
-        Self::new()
+    pub fn with_solver(solver: SmtSolver) -> Self {
+        Self { solver }
     }
 }
 
-impl CapabilityLogic for SyntacticLogic {
+impl CapabilityLogic for SemanticLogic {
     fn solver(&self) -> &dyn PhiSolver {
         &self.solver
     }
