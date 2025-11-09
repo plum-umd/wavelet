@@ -312,4 +312,9 @@ theorem sim_interp
     intros s₁ _ s₂ h
     exact hsim.sim_prop _ _ h
 
+/-- A monad interpretation of operators (mostly used in executing dataflow graphs) -/
+class OpInterpM.{u, v, w}
+  (Op : Type u) (V : Type v) (M : Type v → Type w) [Arity Op] : Type (max u v w) where
+  interp : (op : Op) → Vector V (Arity.ι op) → M (Vector V (Arity.ω op))
+
 end Wavelet.Semantics
