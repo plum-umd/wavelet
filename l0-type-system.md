@@ -1898,7 +1898,7 @@ a PCM structure over memory locations and their (fractional) permissions.
 Note that every operator now takes an extra ghost permission argument `p1` 
 (function calls take two: one for needed permissions, one for leftover
 permissions, see below),
-as well as returning an extra ghost permission `p2`.
+as well as having an extra ghost permission return `p2`.
 Also note that fences (`---`) are removed, as ordering is now enforced by data
 dependencies on ghost permissions.
 
@@ -1950,75 +1950,164 @@ instance (Loc : Type u) : PCM (FractionPerm Loc) where
 In our setting, the abstract `Loc` is instantiated as symbolic array locations
 like `A{i}`, `A{i+1}`, `A{i..N}`, `B{j}`, etc.
 
+#### Axioms/Specs for operators
+
+> We have the axiom that `[p1, p2, ..., pn] ⊣⊢ p1 ⊔ p2 ⊔ ... ⊔ pn`, i.e., the list of permissions
+> is equivalent to their sum.
+> Additionally, we have the axiom that `0.0@_{_} ⊣⊢ eps` and `_@_{} ⊣⊢ eps`, i.e.,
+> zero fractional permissions and permissions over empty region are equivalent to the empty permission.
+
 - Spec for `jnsplt`: `jnsplt([p1, p2, ..., pn]) -> (q1, q2)` such that 
 `p1 ⊔ p2 ⊔ ... ⊔ pn = q1 ⊔ q2`
-
-> We have the axiom that `p1, p2, ..., pn ⊣⊢ p1 ⊔ p2 ⊔ ... ⊔ pn`, i.e., the list of permissions
-> is equivalent to their sum.
-
 - Spec for pure ops (e.g., `lt`, `add`): `pureop(args..., p) -> (result, p')` such
-that `p = p' = 0.0`
-- Spec for constants: `const(p) -> (value, p')` such that `p = p' = 0.0`
+that `p = p' = eps` (empty permission)
+- Spec for constants: `const(p) -> (value, p')` such that `p = p' = eps` (empty permission)
 - Spec for `load`: `load(i, A, p) -> (value, p')` such that `p = p' = f@A{i}` where `f` is some fraction `0 < f <= 1.0`
 - Spec for `store`: `store(i, A, value, p) -> p'` such that
 `p = p' = 1.0@A{i}`
 - Spec for function calls: `f(args..., A..., p1, p0) -> (result, p')` such that `p1` contains
-all needed permissions for `A...` as specified in the function signature, and
-`p0` contains some leftover permissions with the invariant that 
+all needed permissions (of `A...`) for the function body, and
+`p0` contains some leftover permissions (of `A...`) with the invariant that
+`p1 ⊔ p0` equals the full spatial permissions of `A...` (i.e., `{0..N}` for each
+array `A` of size `N`). To reclaim the
+ghost permissions after calling this function, we additionally have the
+post-condition that `p' = p1 ⊔ p0`.
+In this sense, a function always requires the **full spatial permissions** of
+its array arguments, and returns them all back.
 
-**Synthesizing Strategy**
+#### Synthesizing Strategy
 
 We separate "remained" ghost permissions (leftover context) 
 from "needed" ghost permissions (synchronization context).
 
 - For each capability specified at the function signature, we have
-  - `A |-> uniq@{i..N}`  → `p0 = 1.0@A{i..N}`
-  - `A |-> shrd@{i..N}`  → `p0 = frac@A{i..N}` where `0 < frac < 1.0`
+  - `A |-> uniq@{i..N}`  → `p0 = 1.0@A{i..N}, p_lft = 1.0@A{0..N \ i..N}`
+  - `A |-> shrd@{i..N}`  → `p0 = frac@A{i..N}, p_lft = frac@A{0..N \ i..N}` where `0 < frac < 1.0`
   - If there are multiple array capabilities, we sum up their permissions to get `p0`:
-    - e.g., `A |-> uniq@{i..N}, B |-> shrd@{j..M}` → `p0 = 1.0@A{i..N} ⊔ frac@B{j..M}` 
+    - e.g., `A |-> uniq@{i..N}, B |-> shrd@{j..M}` → `p0 = 1.0@A{i..N} ⊔ frac@B{j..M}, p_lft = 1.0@A{0..N \ i..N} ⊔ frac@B{0..M \ j..M}`
+  - At the function entry, we have
+    - sync context: `p0`
+    - leftover context: `p_lft`
+  - For function return, we always have
+    - `... -> ret` → `... -> (ret, p')` where `p' = p0 ⊔ p_lft` (reclaim all permissions)
 - For `let v = pureop(args); E`, we do
-  - `let p1, p2 = jnsplt([]);` // split empty permissions to get `0.0` permissions
-  - `let v, p3 = pureop(args, p1);` // use `p1` (0.0) to call pureop, get back `p3` (0.0)
-  - continue with `E` (with `p2` added to sync context and `p3` to leftover context)
+  - `let p1, p2 = jnsplt([p0]);`, // join and split *sync permissions* to get
+    `p1 = eps` (with `p1` used for op call, `p2` added to sync context)
+  - `let v, p3 = pureop(args, p1);` // use `p1` (eps) to call pureop, get back `p3` (eps)
+  - continue with `E` (with `p3` added to leftover context)
 - For `let v = load(i, A); E`, we do
-  - `let p1, p2 = jnsplt([perms from sync ctx]);` // split permissions to get `f@A{i}` for some `0 < f <= 1.0`
+  - `let p1, p2 = jnsplt([perms from sync ctx]);` // join and split *sync permissions* to get `f@A{i}` for some `0 < f <= 1.0` (with `p1` used for load, `p2` added to sync context)
   - `let v, p3 = load(i, A, p1);` // use `p1` to call load, get back `p3` (same as `p1`)
-  - continue with `E` (with `p2` added to sync context and `p3` to leftover context)
+  - continue with `E` (with `p3` added to leftover context)
 - For `let _ = store(i, A, v); E`, we do
-  - `let p1, p2 = jnsplt([perms from sync ctx]);` // split permissions to get `1.0@A{i}`
+  - `let p1, p2 = jnsplt([perms from sync ctx]);` // join and split *sync permissions* to get `1.0@A{i}` (with `p1` used for store, `p2` added to sync context)
   - `let p3 = store(i, A, v, p1);` // use `p1` to call store, get back `p3` (same as `p1`)
-  - continue with `E` (with `p2` added to sync context and `p3` to leftover context)
-- For `let v = load(i, A) --- E`, we do
-  - `let p1, p2 = jnsplt([perms from sync ctx]);` // split permissions to get `f@A{i}` for some `0 < f <= 1.0`
-  - `let v, p3 = load(i, A, p1);` // use `p1` to call load, get back `p3` (same as `p1`)
-  - continue with `E` (with **both `p2` and `p3`** added to sync context)
-  - (similar for `store`)
+  - continue with `E` (with `p3` added to leftover context)
+- For fenced load and store, we do
+  - Everything same as above except that we continue with `E`
+    (with `p3` added to *sync context*, as indicated by the fence)
 - For tail call `f(args, A);`, we do
-  - `let p1, p2 = jnsplt([perms from sync ctx]);` // split permissions to get needed permissions for `A`
-  - `f(args, A, p1);` // use `p1` to call f
-  - (no leftover context needed as it's tail call)
+  - `let p1, p2 = jnsplt([perms from sync ctx]);` // join and split *sync permissions* to get needed permissions for `A` in `f` (with `p1` used for call, `p2` added to *leftover context*)
+  - `let p3, p4 = jnsplt([ALL perms from leftover ctx]);` // join
+    *leftover permissions* to get leftover permissions for `A` in `f` (with `p3`
+    used for call, `p4` added to leftover context, though `p4` should always be `eps` for tail call)
+  - `f(args, A, p1, p3);` // tail call with needed and leftover permissions
+- For non-tail call `let v = f(args, A); E`, we do
+  - `let p1, p2 = jnsplt([perms from sync ctx]);` // join and split *sync permissions* to get needed permissions for `A` in `f` (with `p1` used for call, `p2` added to sync context)
+  - `let p3, p4 = jnsplt([perms from leftover ctx]);` // join and split
+    *leftover permissions* to get leftover permissions for `A` in `f` (with `p3` used for call, `p4` added to leftover context)
+  - `let v, p5 = f(args, A, p1, p3);` // call with needed and leftover permissions, get back `p5`
+  - continue with `E` (with `p5` added to leftover context)
+- For fenced non-tail call `let v = f(args, A) --- E`, we do
+  - Everything same as above except that we continue with `E`
+    (with `p5` added to *sync context*, as indicated by the fence)
 
 ```rust
-fn sum<const N: usize>(i: u32, A: &[u32; N], p0: shrd@A{i..N}, a: u32) -> u32 =
-  // sync ctx: p0, lft ctx: eps
+fn sum_aux<const N: usize>(i: u32, A: &[u32; N], a: u32, p0: shrd@A{i..N}, p_lft: shrd@A{0..N \ i..N}) -> (u32, shrd@A{0..N}) =
+  // sync ctx: p0, lft ctx: p_lft
   let p1, p2 = jnsplt([p0]); // p1: eps, p2: shrd@A{i..N}
   let c, p3 = lt(i, N, p1);
   if c {
-    // sync ctx: p2, lft ctx: p3
+    // sync ctx: p2, lft ctx: p_lft ⊔ p3
     let p4, p5 = jnsplt([p2]); // p4: shrd/2@A{i}, p5: shrd/2@A{i} ⊔ shrd@A{i+1..N}
     let val, p6 = load(i, A, p4);
-    // sync ctx: p5, lft ctx: p3 ⊔ p6
+    // sync ctx: p5, lft ctx: p_lft ⊔ p3 ⊔ p6
     let p7, p8 = jnsplt([p5]); // p7: eps, p8: shrd/2@A{i} ⊔ shrd@A{i+1..N}
     let one, p9 = const(1, p7);
-    // sync ctx: p8, lft ctx: p3 ⊔ p6 ⊔ p9
+    // sync ctx: p8, lft ctx: p_lft ⊔ p3 ⊔ p6 ⊔ p9
     let p10, p11 = jnsplt([p8]); // p10: eps, p11: shrd/2@A{i} ⊔ shrd@A{i+1..N}
-    let j, p12 = add(i, 1, p10);
-    // sync ctx: p11, lft ctx: p3 ⊔ p6 ⊔ p9 ⊔ p12
+    let j, p12 = add(i, one, p10);
+    // sync ctx: p11, lft ctx: p_lft ⊔ p3 ⊔ p6 ⊔ p9 ⊔ p12 
     let p13, p14 = jnsplt([p11]); // p13: shrd@A{i+1..N}, p14: shrd/2@A{i}
-    sum(j, A, val + a, p13)
+    // sync ctx: p13, lft ctx: p_lft ⊔ p3 ⊔ p6 ⊔ p9 ⊔ p12 ⊔ p14 (note: unlike previous cases, p14 is also added to lft ctx here as we have a *tail call* after this)
+    let p15, p16 = jnsplt([p_lft, p3, p6, p9, p12, p14]); // p15: p_lft ⊔ p3 ⊔ p6 ⊔ p9 ⊔ p12 ⊔ p14 = shrd@A{0..N \ i..N} ⊔ shrd@A{i}, p16: eps
+    sum_aux(j, A, val + a, p13, p15)
   } else {
-    a
+    let p_ret, p_eps = jnsplt([p0, p1]); // p_ret: shrd@A{0..N}, p_eps: eps
+    (a, p_ret)
   }
+
+fn sum<const N: usize>(A: &[u32; N], p0: shrd@A{0..N}, p1: eps) -> (u32, shrd@A{0..N}) =
+  // sync ctx: p0, lft ctx: p1
+  let p2, p3 = jnsplt([p0]); // p2: eps, p3: shrd@A{0..N}
+  let zero_0, p4 = const(0, p2);
+  // sync ctx: p3, lft ctx: p1 ⊔ p4
+  let p5, p6 = jnsplt([p3]); // p5: eps, p6: shrd@A{0..N}
+  let zero_1, p7 = const(0, p5);
+  // sync ctx: p6, lft ctx: p1 ⊔ p4 ⊔ p7
+  let p8, p9 = jnsplt([p6]); // p8: shrd@A{0..N}, p9: eps
+  let p10, p11 = jnsplt([p1, p4, p7, p9]); // p10: p1 ⊔ p4 ⊔ p7 ⊔ p9 = eps = shrd@A{0..N \ 0..N}, p11: eps
+  sum_aux(0, A, 0, p8, p10)
+```
+
+```rust
+fn mk_all_zero_aux<const N: usize>(i: u32, A: &mut [u32; N], p0: 1.0A@{i..N}, p_lft: 1.0A@{0..N \ i..N}) -> ((), 1.0A@{0..N}) =
+  // sync ctx: p0, lft ctx: p_lft
+  let p1, p2 = jnsplt([p0]); // p1: eps, p2: 1.0A@{i..N}
+  let c, p3 = lt(i, N, p1);
+  if c {
+    // sync ctx: p2, lft ctx: p_lft ⊔ p3
+    let p4, p5 = jnsplt([p2]); // p4: eps, p5: 1.0A@{i..N}
+    let zero, p6 = const(0, p4);
+    // sync ctx: p5, lft ctx: p_lft ⊔ p3 ⊔ p6
+    let p7, p8 = jnsplt([p5]); // p7: 1.0@A{i}, p8: 1.0@A{i+1..N}
+    let p9 = store(i, A, zero, p7);
+    // sync ctx: p8, lft ctx: p_lft ⊔ p3 ⊔ p6 ⊔ p9
+    let p10, p11 = jnsplt([p8]); // p10: eps, p11: 1.0@A{i+1..N}
+    let one, p12 = const(1, p10);
+    // sync ctx: p11, lft ctx: p_lft ⊔ p3 ⊔ p6 ⊔ p9 ⊔ p12
+    let p13, p14 = jnsplt([p11]); // p13: eps, p14: 1.0@A{i+1..N}
+    let j, p15 = add(i, one, p13);
+    // sync ctx: p14, lft ctx: p_lft ⊔ p3 ⊔ p6 ⊔ p9 ⊔ p12 ⊔ p15
+    let p16, p17 = jnsplt([p14]); // p16: 1.0@A{i+1..N}, p17: eps
+    let p18, p19 = jnsplt([p_lft, p3, p6, p9, p12, p15, p17]); // p18: p_lft ⊔ p3 ⊔ p6 ⊔ p9 ⊔ p12 ⊔ p15 ⊔ p17 = 1.0A@{0..N \ i..N} ⊔ 1.0@A{i}, p19: eps
+    mk_all_zero_aux(j, A, p16, p18)
+  } else {
+    let p_ret, p_eps = jnsplt([p0, p1]); // p_ret: 1.0A@{0..N}, p_eps: eps
+    ((), p_ret)
+  }
+
+fn mk_all_zero<const N: usize>(A: &mut [u32; N], p0: 1.0A@{0..N}, p1: eps) -> ((), 1.0A@{0..N}) =
+  // sync ctx: p0, lft ctx: p1
+  let p2, p3 = jnsplt([p0]); // p2: eps, p3: 1.0A@{0..N}
+  let zero, p4 = const(0, p2);
+  // sync ctx: p3, lft ctx: p1 ⊔ p4
+  let p5, p6 = jnsplt([p3]); // p5: 1.0A@{0..N}, p6: eps
+  let p7, p8 = jnsplt([p1, p4, p6]); // p7: p1 ⊔ p4 ⊔ p6 = eps = 1.0A@{0..N \ 0..N}, p8: eps
+  mk_all_zero_aux(0, A, zero, p5, p7)
+```
+
+```rust
+fn sum_then_clear<const N: usize>(A: &mut [u32; N], p0: 1.0@A{0..N}, p1: eps) -> (u32, 1.0@A{0..N}) =
+  // sync ctx: p0, lft ctx: p1
+  let p2, p3 = jnsplt([p0]); // p2: 0.5@A{0..N}, p3: 0.5@A{0..N}
+  let p4, p5 = jnsplt([p1]); // p4: eps, p5: eps
+  let (s, p6) = sum::<N>(A, p2, p4); // p6: 0.5@A{0..N} ⊔ eps
+  ---
+  // sync ctx: p3 ⊔ p6 (p6 because of the fence), lft ctx: p5
+  let p7, p8 = jnsplt([p3, p6]); // p7: 1.0@A{0..N}, p8: eps
+  let p9, p10 = jnsplt([p5, p8]); // p9: eps, p10: eps
+  mk_all_zero::<N>(A, p7, p9)
 ```
 
 ```rust
