@@ -1,6 +1,6 @@
 pub mod solver;
 
-use super::cap::{Cap, CapPattern, Delta};
+use super::cap::{Cap, Delta};
 use super::semantic::solver::{Phi, PhiSolver};
 use solver::BasicSolver;
 

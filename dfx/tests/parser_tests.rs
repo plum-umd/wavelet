@@ -4,6 +4,7 @@ use dfx::SemanticLogic;
 use dfx::check::{CheckOptions, check_fn_with_options};
 use dfx::env::FnRegistry;
 use dfx::ir::FnDef;
+use dfx::logic::CapabilityLogic;
 use dfx::parse::parse_fn_def;
 use quote::quote;
 use std::collections::HashMap;
@@ -34,6 +35,20 @@ fn parse_fixture(code: &str) -> HashMap<String, FnDef> {
         .collect()
 }
 
+fn for_each_backend<F>(mut f: F)
+where
+    F: FnMut(&str, &dyn CapabilityLogic),
+{
+    let backends: Vec<(&str, Box<dyn CapabilityLogic>)> = vec![
+        ("semantic", Box::new(SemanticLogic::default())),
+        // ("syntactic", Box::new(SyntacticLogic::default())),
+    ];
+
+    for (name, logic) in backends {
+        f(name, logic.as_ref());
+    }
+}
+
 #[test]
 fn test_sum_with_parser() {
     let code = include_str!("test_files/sum.rs");
@@ -44,10 +59,18 @@ fn test_sum_with_parser() {
     let mut registry = FnRegistry::default();
     registry.0.insert("sum".to_string(), fn_def.clone());
 
-    let logic = SemanticLogic::default();
-
-    let result = check_fn_with_options(&fn_def, &registry, &logic, CheckOptions { verbose: false });
-    assert!(result.is_ok(), "Type checking failed: {:?}", result.err());
+    for_each_backend(|name, logic| {
+        let result = check_fn_with_options(
+            &fn_def,
+            &registry,
+            logic,
+            CheckOptions {
+                verbose: false,
+                ..Default::default()
+            },
+        );
+        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
+    });
 }
 
 #[test]
@@ -60,10 +83,18 @@ fn test_zero_out_with_parser() {
     let mut registry = FnRegistry::default();
     registry.0.insert("zero_out".to_string(), fn_def.clone());
 
-    let logic = SemanticLogic::default();
-
-    let result = check_fn_with_options(&fn_def, &registry, &logic, CheckOptions { verbose: true });
-    assert!(result.is_ok(), "Type checking failed: {:?}", result.err());
+    for_each_backend(|name, logic| {
+        let result = check_fn_with_options(
+            &fn_def,
+            &registry,
+            logic,
+            CheckOptions {
+                verbose: true,
+                ..Default::default()
+            },
+        );
+        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
+    });
 }
 
 #[test]
@@ -76,10 +107,18 @@ fn test_copy_array_with_parser() {
     let mut registry = FnRegistry::default();
     registry.0.insert("copy_array".to_string(), fn_def.clone());
 
-    let logic = SemanticLogic::default();
-
-    let result = check_fn_with_options(&fn_def, &registry, &logic, CheckOptions { verbose: true });
-    assert!(result.is_ok(), "Type checking failed: {:?}", result.err());
+    for_each_backend(|name, logic| {
+        let result = check_fn_with_options(
+            &fn_def,
+            &registry,
+            logic,
+            CheckOptions {
+                verbose: true,
+                ..Default::default()
+            },
+        );
+        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
+    });
 }
 
 #[test]
@@ -92,11 +131,19 @@ fn test_increment_with_parser() {
     let mut registry = FnRegistry::default();
     registry.0.insert("increment".to_string(), fn_def.clone());
 
-    let logic = SemanticLogic::default();
-
-    let result = check_fn_with_options(&fn_def, &registry, &logic, CheckOptions { verbose: true });
-    // With fence, this should now pass - the fence prevents capability consumption
-    assert!(result.is_ok(), "Type checking failed: {:?}", result.err());
+    for_each_backend(|name, logic| {
+        let result = check_fn_with_options(
+            &fn_def,
+            &registry,
+            logic,
+            CheckOptions {
+                verbose: true,
+                ..Default::default()
+            },
+        );
+        // With fence, this should now pass - the fence prevents capability consumption
+        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
+    });
 }
 
 #[test]
@@ -112,15 +159,23 @@ fn test_increment_without_fence_fails() {
         .0
         .insert("increment_bad".to_string(), fn_def.clone());
 
-    let logic = SemanticLogic::default();
-
-    let result = check_fn_with_options(&fn_def, &registry, &logic, CheckOptions { verbose: false });
-    println!("Result: {:?}", result);
-    // This should fail due to capability mismatch
-    assert!(
-        result.is_err(),
-        "Expected type checking to fail without fence"
-    );
+    for_each_backend(|name, logic| {
+        let result = check_fn_with_options(
+            &fn_def,
+            &registry,
+            logic,
+            CheckOptions {
+                verbose: false,
+                ..Default::default()
+            },
+        );
+        println!("Result ({name}): {:?}", result);
+        // This should fail due to capability mismatch
+        assert!(
+            result.is_err(),
+            "Expected type checking to fail without fence ({name})"
+        );
+    });
 }
 
 #[test]
@@ -131,9 +186,18 @@ fn test_raw_with_fence() {
     let mut registry = FnRegistry::default();
     registry.0.insert("raw".to_string(), fn_def.clone());
 
-    let logic = SemanticLogic::default();
-    let result = check_fn_with_options(&fn_def, &registry, &logic, CheckOptions { verbose: true });
-    assert!(result.is_ok(), "Type checking failed: {:?}", result.err());
+    for_each_backend(|name, logic| {
+        let result = check_fn_with_options(
+            &fn_def,
+            &registry,
+            logic,
+            CheckOptions {
+                verbose: true,
+                log_solver_queries: false,
+            },
+        );
+        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
+    });
 }
 
 #[test]
@@ -144,12 +208,22 @@ fn test_raw_without_fence_fails() {
     let mut registry = FnRegistry::default();
     registry.0.insert("raw".to_string(), fn_def.clone());
 
-    let logic = SemanticLogic::default();
-    let result = check_fn_with_options(&fn_def, &registry, &logic, CheckOptions { verbose: true });
-    assert!(
-        result.is_err(),
-        "Expected type checking to fail without fence"
-    );
+    for_each_backend(|name, logic| {
+        let result = check_fn_with_options(
+            &fn_def,
+            &registry,
+            logic,
+            CheckOptions {
+                verbose: true,
+                ..Default::default()
+            },
+        );
+        assert!(
+            result.is_err(),
+            "Expected type checking to fail without fence ({name}), got {:?}",
+            result.err()
+        );
+    });
 }
 
 #[test]
@@ -160,9 +234,18 @@ fn test_war_with_fence() {
     let mut registry = FnRegistry::default();
     registry.0.insert("war".to_string(), fn_def.clone());
 
-    let logic = SemanticLogic::default();
-    let result = check_fn_with_options(&fn_def, &registry, &logic, CheckOptions { verbose: false });
-    assert!(result.is_ok(), "Type checking failed: {:?}", result.err());
+    for_each_backend(|name, logic| {
+        let result = check_fn_with_options(
+            &fn_def,
+            &registry,
+            logic,
+            CheckOptions {
+                verbose: false,
+                ..Default::default()
+            },
+        );
+        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
+    });
 }
 
 #[test]
@@ -173,13 +256,22 @@ fn test_war_without_fence() {
     let mut registry = FnRegistry::default();
     registry.0.insert("war".to_string(), fn_def.clone());
 
-    let logic = SemanticLogic::default();
-    let result = check_fn_with_options(&fn_def, &registry, &logic, CheckOptions { verbose: true });
-    assert!(
-        result.is_err(),
-        "Expected type checking to fail without fence, got {:?}",
-        result.err()
-    );
+    for_each_backend(|name, logic| {
+        let result = check_fn_with_options(
+            &fn_def,
+            &registry,
+            logic,
+            CheckOptions {
+                verbose: true,
+                ..Default::default()
+            },
+        );
+        assert!(
+            result.is_err(),
+            "Expected type checking to fail without fence ({name}), got {:?}",
+            result.err()
+        );
+    });
 }
 
 #[test]
@@ -190,9 +282,18 @@ fn test_waw_with_fence() {
     let mut registry = FnRegistry::default();
     registry.0.insert("waw".to_string(), fn_def.clone());
 
-    let logic = SemanticLogic::default();
-    let result = check_fn_with_options(&fn_def, &registry, &logic, CheckOptions { verbose: false });
-    assert!(result.is_ok(), "Type checking failed: {:?}", result.err());
+    for_each_backend(|name, logic| {
+        let result = check_fn_with_options(
+            &fn_def,
+            &registry,
+            logic,
+            CheckOptions {
+                verbose: false,
+                ..Default::default()
+            },
+        );
+        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
+    });
 }
 
 #[test]
@@ -203,13 +304,22 @@ fn test_waw_without_fence() {
     let mut registry = FnRegistry::default();
     registry.0.insert("waw".to_string(), fn_def.clone());
 
-    let logic = SemanticLogic::default();
-    let result = check_fn_with_options(&fn_def, &registry, &logic, CheckOptions { verbose: true });
-    assert!(
-        result.is_err(),
-        "Expected type checking to fail without fence, got {:?}",
-        result.err()
-    );
+    for_each_backend(|name, logic| {
+        let result = check_fn_with_options(
+            &fn_def,
+            &registry,
+            logic,
+            CheckOptions {
+                verbose: true,
+                ..Default::default()
+            },
+        );
+        assert!(
+            result.is_err(),
+            "Expected type checking to fail without fence ({name}), got {:?}",
+            result.err()
+        );
+    });
 }
 
 #[test]
@@ -230,10 +340,18 @@ fn test_nn_relu_with_parser() {
         .insert("nn_relu_aux".to_string(), aux_def.clone());
     registry.0.insert("nn_relu".to_string(), top_def.clone());
 
-    let logic = SemanticLogic::default();
-    let result =
-        check_fn_with_options(&top_def, &registry, &logic, CheckOptions { verbose: false });
-    assert!(result.is_ok(), "Type checking failed: {:?}", result.err());
+    for_each_backend(|name, logic| {
+        let result = check_fn_with_options(
+            &top_def,
+            &registry,
+            logic,
+            CheckOptions {
+                verbose: false,
+                ..Default::default()
+            },
+        );
+        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
+    });
 }
 
 #[test]
@@ -258,9 +376,18 @@ fn test_nn_fc_with_parser() {
         .insert("rec_rows".to_string(), rec_rows_def.clone());
     registry.0.insert("nn_fc".to_string(), fc_def.clone());
 
-    let logic = SemanticLogic::default();
-    let result = check_fn_with_options(&fc_def, &registry, &logic, CheckOptions { verbose: false });
-    assert!(result.is_ok(), "Type checking failed: {:?}", result.err());
+    for_each_backend(|name, logic| {
+        let result = check_fn_with_options(
+            &fc_def,
+            &registry,
+            logic,
+            CheckOptions {
+                verbose: false,
+                ..Default::default()
+            },
+        );
+        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
+    });
 }
 
 #[test]
@@ -283,8 +410,16 @@ fn test_dmv_with_parser() {
     registry.0.insert("mv_mul".to_string(), mv_def.clone());
     registry.0.insert("dmv".to_string(), dmv_def.clone());
 
-    let logic = SemanticLogic::default();
-    let result =
-        check_fn_with_options(&dmv_def, &registry, &logic, CheckOptions { verbose: false });
-    assert!(result.is_ok(), "Type checking failed: {:?}", result.err());
+    for_each_backend(|name, logic| {
+        let result = check_fn_with_options(
+            &dmv_def,
+            &registry,
+            logic,
+            CheckOptions {
+                verbose: false,
+                ..Default::default()
+            },
+        );
+        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
+    });
 }

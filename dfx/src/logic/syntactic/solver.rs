@@ -1,9 +1,135 @@
 //! Lightweight logic for reasoning about index expressions used by the
 //! syntactic capability backend.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::logic::semantic::{Atom, Idx, Phi};
+
+#[derive(Default)]
+struct BoolClosure {
+    true_vars: HashSet<String>,
+    false_vars: HashSet<String>,
+    derived_atoms: Vec<Atom>,
+}
+
+impl BoolClosure {
+    fn new() -> Self {
+        Self {
+            true_vars: HashSet::new(),
+            false_vars: HashSet::new(),
+            derived_atoms: Vec::new(),
+        }
+    }
+
+    fn from_ctx(ctx: &Phi) -> Self {
+        let mut closure = Self::new();
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for atom in ctx.iter() {
+                if closure.absorb_from_context(atom) {
+                    changed = true;
+                }
+            }
+        }
+        closure
+    }
+
+    fn absorb_from_context(&mut self, atom: &Atom) -> bool {
+        match atom {
+            Atom::Le(_, _) | Atom::Lt(_, _) | Atom::Eq(_, _) => false,
+            _ => self.absorb(atom),
+        }
+    }
+
+    fn absorb(&mut self, atom: &Atom) -> bool {
+        match atom {
+            Atom::BoolVar(name) => self.true_vars.insert(name.clone()),
+            Atom::Not(inner) => match inner.as_ref() {
+                Atom::BoolVar(name) => self.false_vars.insert(name.clone()),
+                _ => self.record_arithmetic(atom),
+            },
+            Atom::And(lhs, rhs) => {
+                let mut changed = false;
+                changed |= self.absorb(lhs);
+                changed |= self.absorb(rhs);
+                changed
+            }
+            Atom::Or(lhs, rhs) => match (self.eval_bool(lhs), self.eval_bool(rhs)) {
+                (Some(true), _) => self.absorb(lhs),
+                (_, Some(true)) => self.absorb(rhs),
+                (Some(false), _) => self.absorb(rhs),
+                (_, Some(false)) => self.absorb(lhs),
+                _ => false,
+            },
+            Atom::Implies(lhs, rhs) => match self.eval_bool(lhs) {
+                Some(true) => self.absorb(rhs),
+                _ => false,
+            },
+            Atom::Le(_, _) | Atom::Lt(_, _) | Atom::Eq(_, _) => self.record_arithmetic(atom),
+        }
+    }
+
+    fn eval_bool(&self, atom: &Atom) -> Option<bool> {
+        match atom {
+            Atom::BoolVar(name) => {
+                if self.true_vars.contains(name) {
+                    Some(true)
+                } else if self.false_vars.contains(name) {
+                    Some(false)
+                } else {
+                    None
+                }
+            }
+            Atom::Not(inner) => self.eval_bool(inner).map(|v| !v),
+            Atom::And(lhs, rhs) => {
+                let left = self.eval_bool(lhs);
+                let right = self.eval_bool(rhs);
+                if left == Some(false) || right == Some(false) {
+                    Some(false)
+                } else if left == Some(true) && right == Some(true) {
+                    Some(true)
+                } else {
+                    None
+                }
+            }
+            Atom::Or(lhs, rhs) => {
+                let left = self.eval_bool(lhs);
+                let right = self.eval_bool(rhs);
+                if left == Some(true) || right == Some(true) {
+                    Some(true)
+                } else if left == Some(false) && right == Some(false) {
+                    Some(false)
+                } else {
+                    None
+                }
+            }
+            Atom::Implies(lhs, rhs) => {
+                let left = self.eval_bool(lhs);
+                let right = self.eval_bool(rhs);
+                match (left, right) {
+                    (Some(false), _) => Some(true),
+                    (_, Some(true)) => Some(true),
+                    (Some(true), Some(false)) => Some(false),
+                    (Some(true), None) => None,
+                    (None, Some(false)) => None,
+                    (None, None) => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn record_arithmetic(&mut self, atom: &Atom) -> bool {
+        if self.derived_atoms.iter().any(|existing| existing == atom) {
+            false
+        } else {
+            self.derived_atoms.push(atom.clone());
+            true
+        }
+    }
+}
 
 /// Linearised form of an index expression: a mapping from variable
 /// names to coefficients plus a constant term.
@@ -26,14 +152,6 @@ impl LinearExpr {
             }
         }
         sum
-    }
-
-    /// Negate the linear expression.
-    fn neg(self) -> LinearExpr {
-        LinearExpr {
-            coeffs: self.coeffs.iter().map(|(k, v)| (k.clone(), -*v)).collect(),
-            constant: -self.constant,
-        }
     }
 }
 
@@ -140,9 +258,24 @@ impl crate::logic::semantic::PhiSolver for BasicSolver {
         atom: &crate::logic::semantic::Atom,
     ) -> bool {
         use crate::logic::semantic::Atom;
+
+        let closure = BoolClosure::from_ctx(ctx);
+        if let Some(result) = closure.eval_bool(atom) {
+            return result;
+        }
+
+        let ctx_cow = if closure.derived_atoms.is_empty() {
+            Cow::Borrowed(ctx)
+        } else {
+            let mut extended = ctx.clone();
+            extended.atoms.extend(closure.derived_atoms.clone());
+            Cow::Owned(extended)
+        };
+        let ctx_ref = ctx_cow.as_ref();
+
         match atom {
             Atom::Le(a, b) => {
-                let eqs = BasicSolver::collect_equalities(ctx);
+                let eqs = BasicSolver::collect_equalities(ctx_ref);
                 let mut seen = BTreeSet::new();
                 let a_rew = BasicSolver::rewrite_idx(a, &eqs, &mut seen);
                 let mut seen = BTreeSet::new();
@@ -156,7 +289,7 @@ impl crate::logic::semantic::PhiSolver for BasicSolver {
                     if diff.values().all(|c| *c == 0) {
                         return diff_const <= 0;
                     }
-                    for fact in ctx.iter() {
+                    for fact in ctx_ref.iter() {
                         match fact {
                             Atom::Lt(fx, fy) => {
                                 let mut seen = BTreeSet::new();
@@ -222,7 +355,7 @@ impl crate::logic::semantic::PhiSolver for BasicSolver {
                 false
             }
             Atom::Lt(a, b) => {
-                let eqs = BasicSolver::collect_equalities(ctx);
+                let eqs = BasicSolver::collect_equalities(ctx_ref);
                 let mut seen = BTreeSet::new();
                 let a_rew = BasicSolver::rewrite_idx(a, &eqs, &mut seen);
                 let mut seen = BTreeSet::new();
@@ -237,7 +370,7 @@ impl crate::logic::semantic::PhiSolver for BasicSolver {
                         return diff_const < 0;
                     }
                 }
-                for fact in ctx.iter() {
+                for fact in ctx_ref.iter() {
                     if let Atom::Lt(fx, fy) = fact {
                         let mut seen = BTreeSet::new();
                         let fx_rew = BasicSolver::rewrite_idx(fx, &eqs, &mut seen);
@@ -251,7 +384,7 @@ impl crate::logic::semantic::PhiSolver for BasicSolver {
                 false
             }
             Atom::Eq(a, b) => {
-                let eqs = BasicSolver::collect_equalities(ctx);
+                let eqs = BasicSolver::collect_equalities(ctx_ref);
                 let mut seen = BTreeSet::new();
                 let a_rew = BasicSolver::rewrite_idx(a, &eqs, &mut seen);
                 let mut seen = BTreeSet::new();
@@ -268,8 +401,7 @@ impl crate::logic::semantic::PhiSolver for BasicSolver {
                 }
                 false
             }
-            Atom::And(p, q) => self.entails(ctx, p) && self.entails(ctx, q),
-            Atom::Not(_) => false,
+            _ => false,
         }
     }
 }

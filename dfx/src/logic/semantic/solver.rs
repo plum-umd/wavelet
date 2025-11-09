@@ -1,6 +1,13 @@
 //! SMT-based reasoning for proposition contexts.
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fmt,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use smtlib::prelude::Sorted;
 use smtlib::{Bool, Int, SatResult, Solver, Storage, backend::z3_binary::Z3Binary};
@@ -39,8 +46,14 @@ pub enum Atom {
     Lt(Idx, Idx),
     /// `a == b`
     Eq(Idx, Idx),
+    /// Named boolean variable.
+    BoolVar(String),
     /// Conjunction of two atoms.
     And(Box<Atom>, Box<Atom>),
+    /// Disjunction of two atoms.
+    Or(Box<Atom>, Box<Atom>),
+    /// Implication between atoms (`lhs => rhs`).
+    Implies(Box<Atom>, Box<Atom>),
     /// Negation of an atom.
     Not(Box<Atom>),
 }
@@ -77,10 +90,10 @@ pub trait PhiSolver {
 }
 
 /// SMT-backed solver that delegates to Z3 through the `smtlib` crate.
-#[derive(Clone, Debug)]
 pub struct SmtSolver {
     z3_path: String,
     timeout_ms: Option<u64>,
+    log_queries: Arc<AtomicBool>,
 }
 
 impl SmtSolver {
@@ -90,6 +103,7 @@ impl SmtSolver {
         Self {
             z3_path: "z3".into(),
             timeout_ms: None,
+            log_queries: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -98,6 +112,7 @@ impl SmtSolver {
         Self {
             z3_path: path.into(),
             timeout_ms: None,
+            log_queries: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -107,11 +122,36 @@ impl SmtSolver {
         self.timeout_ms = Some(timeout_ms);
         self
     }
+
+    /// Enable or disable dumping of SMT queries to stdout.
+    pub fn set_query_logging(&self, enabled: bool) {
+        self.log_queries.store(enabled, Ordering::SeqCst);
+    }
 }
 
 impl Default for SmtSolver {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Clone for SmtSolver {
+    fn clone(&self) -> Self {
+        Self {
+            z3_path: self.z3_path.clone(),
+            timeout_ms: self.timeout_ms,
+            log_queries: Arc::clone(&self.log_queries),
+        }
+    }
+}
+
+impl fmt::Debug for SmtSolver {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SmtSolver")
+            .field("z3_path", &self.z3_path)
+            .field("timeout_ms", &self.timeout_ms)
+            .field("log_queries", &self.log_queries.load(Ordering::Relaxed))
+            .finish()
     }
 }
 
@@ -140,25 +180,65 @@ impl PhiSolver for SmtSolver {
         }
 
         let mut encoder = Encoder::new(&storage);
+        let logging = self.log_queries.load(Ordering::Relaxed);
+        let mut smt_trace = Vec::new();
+        if logging {
+            smt_trace.push("; z3 entailment query".to_string());
+            smt_trace.push("; assumptions".to_string());
+        }
         for assumption in ctx.iter() {
             let term = encoder.encode_atom(assumption);
+            if logging {
+                smt_trace.push(format!("(assert {})", term));
+            }
             if let Err(err) = solver.assert(term) {
                 eprintln!("failed to assert assumption: {err}");
+                if logging {
+                    smt_trace.push(format!("; solver error while asserting assumption: {err}"));
+                    for line in smt_trace {
+                        println!("{line}");
+                    }
+                }
                 return false;
             }
         }
 
-        let negated = encoder.encode_atom(&Atom::Not(Box::new(atom.clone())));
+        let negated_atom = Atom::Not(Box::new(atom.clone()));
+        let negated = encoder.encode_atom(&negated_atom);
+        if logging {
+            smt_trace.push(format!("(assert {}) ; negated goal", negated));
+            smt_trace.push("(check-sat)".to_string());
+        }
+
+        let mut sat_outcome: Option<String> = None;
         match solver.scope(|solver| {
             solver.assert(negated)?;
-            match solver.check_sat()? {
+            let outcome = solver.check_sat()?;
+            sat_outcome = Some(format!("{:?}", outcome));
+            match outcome {
                 SatResult::Unsat => Ok(true),
                 _ => Ok(false),
             }
         }) {
-            Ok(result) => result,
+            Ok(result) => {
+                if logging {
+                    if let Some(outcome) = sat_outcome {
+                        smt_trace.push(format!("; result: {outcome}"));
+                    }
+                    for line in smt_trace {
+                        println!("{line}");
+                    }
+                }
+                result
+            }
             Err(err) => {
                 eprintln!("solver failure while checking entailment: {err}");
+                if logging {
+                    smt_trace.push(format!("; solver failure: {err}"));
+                    for line in smt_trace {
+                        println!("{line}");
+                    }
+                }
                 false
             }
         }
@@ -167,14 +247,16 @@ impl PhiSolver for SmtSolver {
 
 struct Encoder<'st> {
     storage: &'st Storage,
-    vars: HashMap<String, Int<'st>>,
+    int_vars: HashMap<String, Int<'st>>,
+    bool_vars: HashMap<String, Bool<'st>>,
 }
 
 impl<'st> Encoder<'st> {
     fn new(storage: &'st Storage) -> Self {
         Self {
             storage,
-            vars: HashMap::new(),
+            int_vars: HashMap::new(),
+            bool_vars: HashMap::new(),
         }
     }
 
@@ -182,7 +264,7 @@ impl<'st> Encoder<'st> {
         match idx {
             Idx::Const(n) => Int::new(self.storage, *n),
             Idx::Var(name) => *self
-                .vars
+                .int_vars
                 .entry(name.clone())
                 .or_insert_with(|| Int::new_const(self.storage, name).into()),
             Idx::Add(lhs, rhs) => {
@@ -196,6 +278,13 @@ impl<'st> Encoder<'st> {
                 l - r
             }
         }
+    }
+
+    fn encode_bool_var(&mut self, name: &str) -> Bool<'st> {
+        *self
+            .bool_vars
+            .entry(name.to_string())
+            .or_insert_with(|| Bool::new_const(self.storage, name).into())
     }
 
     fn encode_atom(&mut self, atom: &Atom) -> Bool<'st> {
@@ -215,7 +304,10 @@ impl<'st> Encoder<'st> {
                 let r = self.encode_idx(rhs);
                 l._eq(r)
             }
+            Atom::BoolVar(name) => self.encode_bool_var(name),
             Atom::And(lhs, rhs) => self.encode_atom(lhs) & self.encode_atom(rhs),
+            Atom::Or(lhs, rhs) => self.encode_atom(lhs) | self.encode_atom(rhs),
+            Atom::Implies(lhs, rhs) => self.encode_atom(lhs).implies(self.encode_atom(rhs)),
             Atom::Not(inner) => !self.encode_atom(inner),
         }
     }

@@ -41,4 +41,8 @@ pub trait CapabilityLogic {
 
     /// Compute the environment difference `available \ required`.
     fn delta_diff(&self, phi: &Phi, available: &Delta, required: &Delta) -> Option<Delta>;
+
+    /// Enable or disable logging of solver queries.  Backends that do
+    /// not emit SMT queries can ignore this hook.
+    fn set_query_logging(&self, _enabled: bool) {}
 }

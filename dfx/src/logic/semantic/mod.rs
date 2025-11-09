@@ -44,4 +44,8 @@ impl CapabilityLogic for SemanticLogic {
     fn delta_diff(&self, phi: &Phi, available: &Delta, required: &Delta) -> Option<Delta> {
         available.diff(required, phi, &self.solver)
     }
+
+    fn set_query_logging(&self, enabled: bool) {
+        self.solver.set_query_logging(enabled);
+    }
 }

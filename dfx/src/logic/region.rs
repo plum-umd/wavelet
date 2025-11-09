@@ -10,16 +10,12 @@ use crate::logic::semantic::solver::{Idx, Phi, PhiSolver};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Interval {
     pub lo: Idx,
-    pub hi: Option<Idx>,
+    pub hi: Idx,
 }
 
 impl Interval {
     pub fn bounded(lo: Idx, hi: Idx) -> Self {
-        Self { lo, hi: Some(hi) }
-    }
-
-    pub fn unbounded(lo: Idx) -> Self {
-        Self { lo, hi: None }
+        Self { lo, hi }
     }
 }
 
@@ -36,12 +32,6 @@ impl Region {
         }
     }
 
-    pub fn from_unbounded(lo: Idx) -> Self {
-        Self {
-            intervals: vec![Interval::unbounded(lo)],
-        }
-    }
-
     pub fn from_intervals(intervals: Vec<Interval>) -> Self {
         Self { intervals }
     }
@@ -50,39 +40,28 @@ impl Region {
         self.intervals.iter()
     }
 
+    // explain the union operation implementation
     pub fn union(&self, other: &Region, phi: &Phi, solver: &dyn PhiSolver) -> Region {
         let mut intervals = Vec::new();
-        let push_interval = |curr: &mut Option<Interval>,
-                             dst: &mut Vec<Interval>,
-                             next: Interval| match curr {
-            Some(cur) => {
-                let overlaps = match &cur.hi {
-                    None => true,
-                    Some(hi_cur) => solver.entails(phi, &Atom::Le(next.lo.clone(), hi_cur.clone())),
-                };
-                if overlaps {
-                    match (&cur.hi, &next.hi) {
-                        (None, _) => {}
-                        (Some(_), None) => {
-                            cur.hi = None;
+        let mut curr: Option<Interval> = None;
+        let push_interval =
+            |curr: &mut Option<Interval>, dst: &mut Vec<Interval>, next: Interval| {
+                if let Some(cur) = curr.as_mut() {
+                    let overlaps = solver.entails(phi, &Atom::Le(next.lo.clone(), cur.hi.clone()));
+                    if overlaps {
+                        if solver.entails(phi, &Atom::Le(cur.hi.clone(), next.hi.clone())) {
+                            cur.hi = next.hi.clone();
                         }
-                        (Some(hc), Some(hn)) => {
-                            if !solver.entails(phi, &Atom::Le(hn.clone(), hc.clone())) {
-                                cur.hi = Some(hn.clone());
-                            }
-                        }
+                    } else {
+                        let cur_clone = cur.clone();
+                        dst.push(cur_clone);
+                        *cur = next;
                     }
                 } else {
-                    dst.push(cur.clone());
                     *curr = Some(next);
                 }
-            }
-            None => {
-                *curr = Some(next);
-            }
-        };
+            };
 
-        let mut curr = None;
         let mut left = self.intervals.iter();
         let mut right = other.intervals.iter();
         let mut peek_left = left.next();
@@ -130,65 +109,33 @@ impl Region {
         'outer: for s in &self.intervals {
             let mut current = s.clone();
             for o in &other.intervals {
-                let cur_hi = &current.hi;
-                let o_hi = &o.hi;
-                let cur_lo_lt_o_hi = match o_hi {
-                    None => true,
-                    Some(ohi) => solver.entails(phi, &Atom::Lt(current.lo.clone(), ohi.clone())),
-                };
-                let o_lo_lt_cur_hi = match cur_hi {
-                    None => true,
-                    Some(chi) => solver.entails(phi, &Atom::Lt(o.lo.clone(), chi.clone())),
-                };
-                let mut intervals_overlap = cur_lo_lt_o_hi && o_lo_lt_cur_hi;
-                if !intervals_overlap {
+                let mut overlaps = solver.entails(phi, &Atom::Lt(current.lo.clone(), o.hi.clone()))
+                    && solver.entails(phi, &Atom::Lt(o.lo.clone(), current.hi.clone()));
+
+                if !overlaps {
                     let lo_within =
                         solver.entails(phi, &Atom::Le(current.lo.clone(), o.lo.clone()));
-                    let non_empty = match o_hi {
-                        None => true,
-                        Some(ohi) => solver.entails(phi, &Atom::Lt(o.lo.clone(), ohi.clone())),
-                    };
-                    let hi_within = match (cur_hi, o_hi) {
-                        (None, _) => true,
-                        (Some(_), None) => false,
-                        (Some(chi), Some(ohi)) => {
-                            solver.entails(phi, &Atom::Le(ohi.clone(), chi.clone()))
-                        }
-                    };
-                    intervals_overlap = lo_within && hi_within && non_empty;
+                    let hi_within =
+                        solver.entails(phi, &Atom::Le(o.hi.clone(), current.hi.clone()));
+                    let non_empty = solver.entails(phi, &Atom::Lt(o.lo.clone(), o.hi.clone()));
+                    overlaps = lo_within && hi_within && non_empty;
                 }
 
-                if intervals_overlap {
-                    if solver.entails(phi, &Atom::Lt(current.lo.clone(), o.lo.clone())) {
-                        result.push(Interval {
-                            lo: current.lo.clone(),
-                            hi: Some(o.lo.clone()),
-                        });
-                    }
-                    match (&current.hi, &o.hi) {
-                        (None, None) => continue 'outer,
-                        (None, Some(ohi)) => {
-                            current = Interval {
-                                lo: ohi.clone(),
-                                hi: None,
-                            };
-                            continue;
-                        }
-                        (Some(_), None) => continue 'outer,
-                        (Some(chi), Some(ohi)) => {
-                            if solver.entails(phi, &Atom::Le(ohi.clone(), chi.clone())) {
-                                current = Interval {
-                                    lo: ohi.clone(),
-                                    hi: Some(chi.clone()),
-                                };
-                                continue;
-                            } else {
-                                continue 'outer;
-                            }
-                        }
-                    }
+                if !overlaps {
+                    continue;
                 }
+
+                if solver.entails(phi, &Atom::Lt(current.lo.clone(), o.lo.clone())) {
+                    result.push(Interval::bounded(current.lo.clone(), o.lo.clone()));
+                }
+
+                if solver.entails(phi, &Atom::Le(current.hi.clone(), o.hi.clone())) {
+                    continue 'outer;
+                }
+
+                current = Interval::bounded(o.hi.clone(), current.hi.clone());
             }
+
             result.push(current);
         }
         Region { intervals: result }
@@ -199,13 +146,7 @@ impl Region {
             let mut covered = false;
             for b in &other.intervals {
                 let lo_ok = solver.entails(phi, &Atom::Le(b.lo.clone(), a.lo.clone()));
-                let hi_ok = match (&a.hi, &b.hi) {
-                    (_, None) => true,
-                    (None, Some(_)) => false,
-                    (Some(ahi), Some(bhi)) => {
-                        solver.entails(phi, &Atom::Le(ahi.clone(), bhi.clone()))
-                    }
-                };
+                let hi_ok = solver.entails(phi, &Atom::Le(a.hi.clone(), b.hi.clone()));
                 if lo_ok && hi_ok {
                     covered = true;
                     break;
@@ -230,10 +171,7 @@ fn format_idx(idx: &Idx) -> String {
 
 impl fmt::Display for Interval {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.hi {
-            Some(hi) => write!(f, "[{}..{})", format_idx(&self.lo), format_idx(hi)),
-            None => write!(f, "[{}..)", format_idx(&self.lo)),
-        }
+        write!(f, "[{}..{})", format_idx(&self.lo), format_idx(&self.hi))
     }
 }
 

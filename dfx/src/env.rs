@@ -6,7 +6,7 @@ use crate::error::TypeError;
 use crate::ir::{FnDef, FnName, Ty, Var};
 use crate::logic::CapabilityLogic;
 use crate::logic::cap::Delta;
-use crate::logic::semantic::solver::{Atom, Phi};
+use crate::logic::semantic::solver::Phi;
 
 /// Variable environment mapping variable names to their types.
 #[derive(Clone, Debug, Default)]
@@ -35,15 +35,8 @@ pub struct Ctx<'logic> {
     pub gamma: Gamma,
     pub delta: Delta,
     pub phi: Phi,
-    pub bool_facts: BTreeMap<String, BoolFact>,
     pub logic: &'logic dyn CapabilityLogic,
     pub verbose: bool,
-}
-
-#[derive(Clone, Debug)]
-pub struct BoolFact {
-    pub when_true: Atom,
-    pub when_false: Option<Atom>,
 }
 
 impl<'logic> Ctx<'logic> {
@@ -53,7 +46,6 @@ impl<'logic> Ctx<'logic> {
             gamma: Gamma::default(),
             delta: Delta::default(),
             phi: Phi::default(),
-            bool_facts: BTreeMap::new(),
             logic,
             verbose,
         }

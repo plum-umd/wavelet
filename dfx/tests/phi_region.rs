@@ -2,7 +2,8 @@
 
 use dfx::logic::cap::{Cap, Delta};
 use dfx::logic::region::{Interval, Region};
-use dfx::logic::semantic::solver::{Atom, Idx, Phi, SmtSolver};
+use dfx::logic::semantic::solver::{Atom, Idx, Phi, PhiSolver, SmtSolver};
+use dfx::logic::syntactic::solver::BasicSolver;
 
 fn const_idx(n: i64) -> Idx {
     Idx::Const(n)
@@ -58,16 +59,43 @@ fn test_region_diff_half_open_semantics() {
 }
 
 #[test]
-fn test_region_diff_unbounded_tail() {
+fn test_region_diff_removal_exhausts_source() {
     let solver = SmtSolver::new();
     let phi = Phi::new();
 
-    let source = Region::from_unbounded(const_idx(0));
-    let remove = Region::from_bounded(const_idx(0), const_idx(5));
+    let source = Region::from_bounded(const_idx(0), const_idx(10));
+    let remove = Region::from_bounded(const_idx(0), const_idx(15));
     let diff = source.diff(&remove, &phi, &solver);
 
-    let expected = Region::from_unbounded(const_idx(5));
-    assert_eq!(diff, expected);
+    assert_eq!(diff, Region::default());
+}
+
+#[test]
+fn basic_solver_does_not_entail_unjustified_leq() {
+    let solver = BasicSolver;
+    let mut phi = Phi::new();
+
+    let one = Idx::Var("one".into());
+    phi.push(Atom::Eq(one.clone(), Idx::Const(1)));
+    phi.push(Atom::Eq(
+        Idx::Var("jp1".into()),
+        Idx::Add(Box::new(Idx::Var("j".into())), Box::new(one.clone())),
+    ));
+    phi.push(Atom::Eq(
+        Idx::Var("k".into()),
+        Idx::Add(Box::new(Idx::Var("j".into())), Box::new(one.clone())),
+    ));
+
+    let lhs = Idx::Add(Box::new(Idx::Var("jp1".into())), Box::new(Idx::Const(1)));
+    let rhs = Idx::Var("k".into());
+    assert!(!solver.entails(&phi, &Atom::Le(lhs, rhs)));
+
+    let available = Region::from_bounded(
+        Idx::Add(Box::new(Idx::Var("jp1".into())), Box::new(Idx::Const(1))),
+        Idx::Var("N".into()),
+    );
+    let required = Region::from_bounded(Idx::Var("k".into()), Idx::Var("N".into()));
+    assert!(!required.is_subregion_of(&available, &phi, &solver));
 }
 
 #[test]

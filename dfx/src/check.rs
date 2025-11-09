@@ -2,14 +2,14 @@
 
 use std::collections::BTreeMap;
 
-use crate::env::{BoolFact, Ctx, FnRegistry};
+use crate::env::{Ctx, FnRegistry};
 use crate::error::TypeError;
 use crate::ir::{Expr, FnDef, Op, Program, Stmt, Tail, Ty, Val, Var};
 use crate::logic::CapabilityLogic;
 use crate::logic::cap::{Cap, Delta};
 use crate::logic::region::Region;
+use crate::logic::semantic::Interval;
 use crate::logic::semantic::solver::{Atom, Idx};
-use crate::logic::semantic::{Interval, Phi};
 
 /// Substitute variable names in an index expression according to a map.
 fn substitute_idx(idx: &Idx, subst: &BTreeMap<String, String>) -> Idx {
@@ -38,7 +38,7 @@ fn substitute_region(region: &Region, subst: &BTreeMap<String, String>) -> Regio
     let mut intervals = Vec::new();
     for interval in region.iter() {
         let new_lo = substitute_idx(&interval.lo, subst);
-        let new_hi = interval.hi.as_ref().map(|hi| substitute_idx(hi, subst));
+        let new_hi = substitute_idx(&interval.hi, subst);
         intervals.push(Interval {
             lo: new_lo,
             hi: new_hi,
@@ -52,6 +52,8 @@ fn substitute_region(region: &Region, subst: &BTreeMap<String, String>) -> Regio
 pub struct CheckOptions {
     /// Emit detailed traces of the type checking context as it evolves.
     pub verbose: bool,
+    /// When true, log SMT queries issued to Z3.
+    pub log_solver_queries: bool,
 }
 
 fn render_idx(idx: &Idx) -> String {
@@ -68,9 +70,32 @@ fn render_atom(atom: &Atom) -> String {
         Atom::Le(a, b) => format!("{} <= {}", render_idx(a), render_idx(b)),
         Atom::Lt(a, b) => format!("{} < {}", render_idx(a), render_idx(b)),
         Atom::Eq(a, b) => format!("{} == {}", render_idx(a), render_idx(b)),
+        Atom::BoolVar(name) => name.clone(),
         Atom::And(lhs, rhs) => format!("({}) && ({})", render_atom(lhs), render_atom(rhs)),
+        Atom::Or(lhs, rhs) => format!("({}) || ({})", render_atom(lhs), render_atom(rhs)),
+        Atom::Implies(lhs, rhs) => format!("({}) => ({})", render_atom(lhs), render_atom(rhs)),
         Atom::Not(inner) => format!("!({})", render_atom(inner)),
     }
+}
+
+fn bool_atom(name: &str) -> Atom {
+    Atom::BoolVar(name.to_string())
+}
+
+fn implies(lhs: Atom, rhs: Atom) -> Atom {
+    Atom::Implies(Box::new(lhs), Box::new(rhs))
+}
+
+fn and(lhs: Atom, rhs: Atom) -> Atom {
+    Atom::And(Box::new(lhs), Box::new(rhs))
+}
+
+fn or(lhs: Atom, rhs: Atom) -> Atom {
+    Atom::Or(Box::new(lhs), Box::new(rhs))
+}
+
+fn not(atom: Atom) -> Atom {
+    Atom::Not(Box::new(atom))
 }
 
 fn region_is_empty(region: &Region) -> bool {
@@ -260,19 +285,6 @@ fn print_context_contents(ctx: &Ctx) {
         }
     }
 
-    if ctx.bool_facts.is_empty() {
-        println!("Bool facts: <empty>");
-    } else {
-        println!("Bool facts:");
-        for (var, fact) in ctx.bool_facts.iter() {
-            println!("  {}:", var);
-            println!("    when true: {}", render_atom(&fact.when_true));
-            if let Some(neg) = &fact.when_false {
-                println!("    when false: {}", render_atom(neg));
-            }
-        }
-    }
-
     println!();
 }
 
@@ -280,16 +292,6 @@ fn log_after_statement(ctx: &Ctx, stmt: &Stmt) {
     if ctx.verbose {
         println!("After {}:", render_stmt(stmt));
         print_context_contents(ctx);
-    }
-}
-
-fn push_atom(phi: &mut Phi, atom: Atom) {
-    match atom {
-        Atom::And(lhs, rhs) => {
-            push_atom(phi, *lhs);
-            push_atom(phi, *rhs);
-        }
-        other => phi.push(other),
     }
 }
 
@@ -333,6 +335,7 @@ pub fn check_fn_with_options(
     options: CheckOptions,
 ) -> Result<(), TypeError> {
     // Initialise context with parameter types.
+    logic.set_query_logging(options.log_solver_queries);
     let mut ctx = Ctx::new(logic, options.verbose);
     for (var, ty) in &def.params {
         ctx.gamma.insert(var.clone(), ty.clone());
@@ -438,11 +441,13 @@ fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), T
                 Val::Unit => Ty::Unit,
             };
             ctx.gamma.insert(var.clone(), ty);
-            ctx.bool_facts.remove(&var.0);
-            // Add equality fact to Phi for integer constants.
-            if let Val::Int(n) = val {
-                ctx.phi
-                    .push(Atom::Eq(Idx::Var(var.0.clone()), Idx::Const(*n)));
+            match val {
+                Val::Int(n) => ctx
+                    .phi
+                    .push(Atom::Eq(Idx::Var(var.0.clone()), Idx::Const(*n))),
+                Val::Bool(true) => ctx.phi.push(bool_atom(&var.0)),
+                Val::Bool(false) => ctx.phi.push(not(bool_atom(&var.0))),
+                Val::Unit => {}
             }
             log_after_statement(ctx, stmt);
             Ok(())
@@ -476,7 +481,6 @@ fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), T
                         ctx.phi.push(Atom::Eq(result_idx, rhs));
                     }
                     ctx.gamma.insert(vars[2].clone(), Ty::Int);
-                    ctx.bool_facts.remove(&vars[2].0);
                     log_after_statement(ctx, stmt);
                     Ok(())
                 }
@@ -494,24 +498,12 @@ fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), T
                         });
                     }
                     ctx.gamma.insert(vars[2].clone(), Ty::Bool);
-                    let combined_fact = match (
-                        ctx.bool_facts.get(&vars[0].0),
-                        ctx.bool_facts.get(&vars[1].0),
-                    ) {
-                        (Some(lhs), Some(rhs)) => Some(BoolFact {
-                            when_true: Atom::And(
-                                Box::new(lhs.when_true.clone()),
-                                Box::new(rhs.when_true.clone()),
-                            ),
-                            when_false: None,
-                        }),
-                        _ => None,
-                    };
-                    if let Some(fact) = combined_fact {
-                        ctx.bool_facts.insert(vars[2].0.clone(), fact);
-                    } else {
-                        ctx.bool_facts.remove(&vars[2].0);
-                    }
+                    let lhs_atom = bool_atom(&vars[0].0);
+                    let rhs_atom = bool_atom(&vars[1].0);
+                    let res_atom = bool_atom(&vars[2].0);
+                    let conjunction = and(lhs_atom.clone(), rhs_atom.clone());
+                    ctx.phi.push(implies(res_atom.clone(), conjunction.clone()));
+                    ctx.phi.push(implies(conjunction, res_atom));
                     log_after_statement(ctx, stmt);
                     Ok(())
                 }
@@ -529,7 +521,12 @@ fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), T
                         });
                     }
                     ctx.gamma.insert(vars[2].clone(), Ty::Bool);
-                    ctx.bool_facts.remove(&vars[2].0);
+                    let lhs_atom = bool_atom(&vars[0].0);
+                    let rhs_atom = bool_atom(&vars[1].0);
+                    let res_atom = bool_atom(&vars[2].0);
+                    let disjunction = or(lhs_atom.clone(), rhs_atom.clone());
+                    ctx.phi.push(implies(res_atom.clone(), disjunction.clone()));
+                    ctx.phi.push(implies(disjunction, res_atom));
                     log_after_statement(ctx, stmt);
                     Ok(())
                 }
@@ -549,25 +546,16 @@ fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), T
                     // Record the comparison as a fact in Phi.
                     let x_idx = Idx::Var(vars[0].0.clone());
                     let y_idx = Idx::Var(vars[1].0.clone());
-                    ctx.bool_facts.remove(&vars[2].0);
-                    let (true_atom, false_atom) = match op {
-                        Op::LessThan => (
-                            Atom::Lt(x_idx.clone(), y_idx.clone()),
-                            Atom::Le(y_idx.clone(), x_idx.clone()),
-                        ),
-                        Op::LessEqual => (
-                            Atom::Le(x_idx.clone(), y_idx.clone()),
-                            Atom::Lt(y_idx.clone(), x_idx.clone()),
-                        ),
+                    let comparison = match op {
+                        Op::LessThan => Atom::Lt(x_idx, y_idx),
+                        Op::LessEqual => Atom::Le(x_idx, y_idx),
                         _ => unreachable!(),
                     };
-                    ctx.bool_facts.insert(
-                        vars[2].0.clone(),
-                        BoolFact {
-                            when_true: true_atom,
-                            when_false: Some(false_atom),
-                        },
-                    );
+                    let result_atom = bool_atom(&vars[2].0);
+                    ctx.phi
+                        .push(implies(result_atom.clone(), comparison.clone()));
+                    ctx.phi
+                        .push(implies(not(result_atom.clone()), not(comparison)));
                     ctx.gamma.insert(vars[2].clone(), Ty::Bool);
                     log_after_statement(ctx, stmt);
                     Ok(())
@@ -586,7 +574,27 @@ fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), T
                         });
                     }
                     ctx.gamma.insert(vars[2].clone(), Ty::Bool);
-                    ctx.bool_facts.remove(&vars[2].0);
+                    let result_atom = bool_atom(&vars[2].0);
+                    match x_ty {
+                        Ty::Int => {
+                            let eq_atom =
+                                Atom::Eq(Idx::Var(vars[0].0.clone()), Idx::Var(vars[1].0.clone()));
+                            ctx.phi.push(implies(result_atom.clone(), eq_atom.clone()));
+                            ctx.phi
+                                .push(implies(not(result_atom.clone()), not(eq_atom)));
+                        }
+                        Ty::Bool => {
+                            let lhs_atom = bool_atom(&vars[0].0);
+                            let rhs_atom = bool_atom(&vars[1].0);
+                            let both_true = and(lhs_atom.clone(), rhs_atom.clone());
+                            let both_false = and(not(lhs_atom.clone()), not(rhs_atom.clone()));
+                            let eq_formula = or(both_true, both_false);
+                            ctx.phi
+                                .push(implies(result_atom.clone(), eq_formula.clone()));
+                            ctx.phi.push(implies(eq_formula, result_atom));
+                        }
+                        _ => {}
+                    }
                     log_after_statement(ctx, stmt);
                     Ok(())
                 }
@@ -603,7 +611,6 @@ fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), T
                         });
                     }
                     ctx.gamma.insert(vars[1].clone(), Ty::Int);
-                    ctx.bool_facts.remove(&vars[1].0);
                     log_after_statement(ctx, stmt);
                     Ok(())
                 }
@@ -673,7 +680,6 @@ fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), T
                     // Bind result.
                     let dest = &vars[0];
                     ctx.gamma.insert(dest.clone(), Ty::Int);
-                    ctx.bool_facts.remove(&dest.0);
                     log_after_statement(ctx, stmt);
                     Ok(())
                 }
@@ -846,7 +852,6 @@ fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), T
                 });
             }
             ctx.gamma.insert(vars[0].clone(), fn_def.returns.clone());
-            ctx.bool_facts.remove(&vars[0].0);
             log_after_statement(ctx, stmt);
             Ok(())
         }
@@ -874,28 +879,19 @@ fn check_tail(ctx: &mut Ctx, tail: &Tail, registry: &FnRegistry) -> Result<Ty, T
                 gamma: ctx.gamma.clone(),
                 delta: ctx.delta.clone(),
                 phi: ctx.phi.clone(),
-                bool_facts: ctx.bool_facts.clone(),
                 logic: ctx.logic,
                 verbose: ctx.verbose,
             };
-            // Add the assumption that cond is true in the then branch.
-            if let Some(fact) = ctx.bool_facts.get(&cond.0) {
-                push_atom(&mut ctx_th.phi, fact.when_true.clone());
-            }
+            ctx_th.phi.push(bool_atom(&cond.0));
 
             let mut ctx_el = Ctx {
                 gamma: ctx.gamma.clone(),
                 delta: ctx.delta.clone(),
                 phi: ctx.phi.clone(),
-                bool_facts: ctx.bool_facts.clone(),
                 logic: ctx.logic,
                 verbose: ctx.verbose,
             };
-            if let Some(fact) = ctx.bool_facts.get(&cond.0) {
-                if let Some(neg) = &fact.when_false {
-                    push_atom(&mut ctx_el.phi, neg.clone());
-                }
-            }
+            ctx_el.phi.push(not(bool_atom(&cond.0)));
             // Type check both branches, allowing them to infer their return types.
             let ty_then = infer_expr_type(&mut ctx_th, then_e, registry)?;
             let ty_else = infer_expr_type(&mut ctx_el, else_e, registry)?;
