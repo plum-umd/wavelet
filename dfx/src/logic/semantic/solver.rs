@@ -14,6 +14,8 @@ use smtlib::{Bool, Int, SatResult, Solver, Storage, backend::z3_binary::Z3Binary
 
 use smtlib::terms::StaticSorted;
 
+use crate::logic::cap::RegionModel;
+
 /// An index expression used throughout the type system. Indices are
 /// symbolic arithmetic expressions built from variables, constants and
 /// addition/subtraction.
@@ -84,6 +86,8 @@ impl Phi {
 
 /// A solver for entailment queries over [`Phi`].
 pub trait PhiSolver {
+    type Region: RegionModel;
+
     /// Determine whether the given atom is entailed by the current
     /// context.
     fn entails(&self, ctx: &Phi, atom: &Atom) -> bool;
@@ -127,6 +131,18 @@ impl SmtSolver {
     pub fn set_query_logging(&self, enabled: bool) {
         self.log_queries.store(enabled, Ordering::SeqCst);
     }
+
+    pub(crate) fn z3_path(&self) -> &str {
+        &self.z3_path
+    }
+
+    pub(crate) fn timeout_ms(&self) -> Option<u64> {
+        self.timeout_ms
+    }
+
+    pub(crate) fn is_query_logging_enabled(&self) -> bool {
+        self.log_queries.load(Ordering::Relaxed)
+    }
 }
 
 impl Default for SmtSolver {
@@ -156,6 +172,8 @@ impl fmt::Debug for SmtSolver {
 }
 
 impl PhiSolver for SmtSolver {
+    type Region = super::region_set::RegionSetExpr;
+
     fn entails(&self, ctx: &Phi, atom: &Atom) -> bool {
         let storage = Storage::new();
         let backend = match Z3Binary::new(&self.z3_path) {

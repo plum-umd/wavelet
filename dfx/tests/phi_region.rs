@@ -2,7 +2,8 @@
 
 use dfx::logic::cap::{Cap, Delta};
 use dfx::logic::region::{Interval, Region};
-use dfx::logic::semantic::solver::{Atom, Idx, Phi, PhiSolver, SmtSolver};
+use dfx::logic::semantic::solver::{Atom, Idx, Phi};
+use dfx::logic::semantic::PhiSolver;
 use dfx::logic::syntactic::solver::BasicSolver;
 
 fn const_idx(n: i64) -> Idx {
@@ -15,7 +16,7 @@ fn var_idx(name: &str) -> Idx {
 
 #[test]
 fn test_region_subset_with_equalities() {
-    let solver = SmtSolver::new();
+    let solver = BasicSolver;
     let mut phi = Phi::new();
     // j = i + 1
     phi.push(Atom::Eq(
@@ -30,7 +31,7 @@ fn test_region_subset_with_equalities() {
 
 #[test]
 fn test_region_union_merges_adjacent() {
-    let solver = SmtSolver::new();
+    let solver = BasicSolver;
     let phi = Phi::new();
 
     let left = Region::from_bounded(const_idx(0), const_idx(5));
@@ -43,7 +44,7 @@ fn test_region_union_merges_adjacent() {
 
 #[test]
 fn test_region_diff_half_open_semantics() {
-    let solver = SmtSolver::new();
+    let solver = BasicSolver;
     let phi = Phi::new();
 
     let source = Region::from_bounded(const_idx(0), const_idx(10));
@@ -60,7 +61,7 @@ fn test_region_diff_half_open_semantics() {
 
 #[test]
 fn test_region_diff_removal_exhausts_source() {
-    let solver = SmtSolver::new();
+    let solver = BasicSolver;
     let phi = Phi::new();
 
     let source = Region::from_bounded(const_idx(0), const_idx(10));
@@ -100,7 +101,7 @@ fn basic_solver_does_not_entail_unjustified_leq() {
 
 #[test]
 fn test_region_diff_with_solver_equated_bounds() {
-    let solver = SmtSolver::new();
+    let solver = BasicSolver;
     let mut phi = Phi::new();
 
     phi.push(Atom::Eq(var_idx("i"), const_idx(0)));
@@ -123,7 +124,7 @@ fn test_region_diff_with_solver_equated_bounds() {
 
 #[test]
 fn test_region_diff_without_solver_proof_keeps_source() {
-    let solver = SmtSolver::new();
+    let solver = BasicSolver;
     let phi = Phi::new();
 
     let source = Region::from_bounded(var_idx("i"), const_idx(8));
@@ -136,7 +137,7 @@ fn test_region_diff_without_solver_proof_keeps_source() {
 
 #[test]
 fn test_region_diff_singleton_removal_advances_lower_bound() {
-    let solver = SmtSolver::new();
+    let solver = BasicSolver;
     let mut phi = Phi::new();
 
     phi.push(Atom::Eq(var_idx("i"), const_idx(4)));
@@ -159,13 +160,13 @@ fn test_region_diff_singleton_removal_advances_lower_bound() {
 
 #[test]
 fn test_cap_diff_consumes_unique_but_accumulates_shared() {
-    let solver = SmtSolver::new();
+    let solver = BasicSolver;
     let phi = Phi::new();
 
-    let mut cap_total = Cap::default();
+    let mut cap_total = Cap::<Region>::default();
     cap_total.uniq = Region::from_bounded(const_idx(0), const_idx(10));
 
-    let mut cap_use = Cap::default();
+    let mut cap_use = Cap::<Region>::default();
     cap_use.shrd = Region::from_bounded(const_idx(1), const_idx(3));
     cap_use.uniq = Region::from_bounded(const_idx(2), const_idx(4));
 
@@ -187,25 +188,25 @@ fn test_cap_diff_consumes_unique_but_accumulates_shared() {
 
 #[test]
 fn test_delta_diff_requires_subcapability() {
-    let solver = SmtSolver::new();
+    let solver = BasicSolver;
     let phi = Phi::new();
 
-    let mut cap_total = Cap::default();
+    let mut cap_total = Cap::<Region>::default();
     cap_total.uniq = Region::from_bounded(const_idx(0), const_idx(10));
 
-    let mut cap_inside = Cap::default();
+    let mut cap_inside = Cap::<Region>::default();
     cap_inside.uniq = Region::from_bounded(const_idx(2), const_idx(4));
 
-    let mut cap_outside = Cap::default();
+    let mut cap_outside = Cap::<Region>::default();
     cap_outside.uniq = Region::from_bounded(const_idx(8), const_idx(12));
 
-    let mut delta_total = Delta::default();
+    let mut delta_total = Delta::<Region>::default();
     delta_total.0.insert("A".into(), cap_total.clone());
 
-    let mut delta_inside = Delta::default();
+    let mut delta_inside = Delta::<Region>::default();
     delta_inside.0.insert("A".into(), cap_inside);
 
-    let mut delta_outside = Delta::default();
+    let mut delta_outside = Delta::<Region>::default();
     delta_outside.0.insert("A".into(), cap_outside);
 
     let diff_ok = delta_total

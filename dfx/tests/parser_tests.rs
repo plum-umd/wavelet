@@ -4,8 +4,8 @@ use dfx::SemanticLogic;
 use dfx::check::{CheckOptions, check_fn_with_options};
 use dfx::env::FnRegistry;
 use dfx::ir::FnDef;
-use dfx::logic::CapabilityLogic;
 use dfx::parse::parse_fn_def;
+use dfx::logic::syntactic::SyntacticLogic;
 use quote::quote;
 use std::collections::HashMap;
 use syn::{Item, parse_file};
@@ -35,391 +35,274 @@ fn parse_fixture(code: &str) -> HashMap<String, FnDef> {
         .collect()
 }
 
-fn for_each_backend<F>(mut f: F)
-where
-    F: FnMut(&str, &dyn CapabilityLogic),
-{
-    let backends: Vec<(&str, Box<dyn CapabilityLogic>)> = vec![
-        ("semantic", Box::new(SemanticLogic::default())),
-        // ("syntactic", Box::new(SyntacticLogic::default())),
-    ];
+macro_rules! with_backends {
+    (($name:ident, $logic:ident) => $body:block) => {
+        {
+            let $name = "semantic";
+            let semantic_logic = SemanticLogic::default();
+            let $logic = &semantic_logic;
+            $body
+        }
+        {
+            let $name = "syntactic";
+            let syntactic_logic = SyntacticLogic::default();
+            let $logic = &syntactic_logic;
+            $body
+        }
+    };
+}
 
-    for (name, logic) in backends {
-        f(name, logic.as_ref());
+macro_rules! single_fn_parser_test_ok {
+    ($test_name:ident, $file:expr, $fn_name:expr, $opts:expr) => {
+        #[test]
+        fn $test_name() {
+            let code = include_str!($file);
+            let fn_def = parse_fn_def(code).unwrap_or_else(|err| {
+                panic!(
+                    "Failed to parse function `{}`: {:?}",
+                    $fn_name,
+                    err
+                )
+            });
+            let mut registry = FnRegistry::default();
+            registry.insert(fn_def.clone());
+            let options: CheckOptions = $opts;
+            with_backends!((name, logic) => {
+                let result = check_fn_with_options(&fn_def, &registry, logic, options);
+                assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
+            });
+        }
+    };
+}
+
+macro_rules! single_fn_parser_test_err {
+    ($test_name:ident, $file:expr, $fn_name:expr, $opts:expr, $debug:expr) => {
+        #[test]
+        fn $test_name() {
+            let code = include_str!($file);
+            let fn_def = parse_fn_def(code).unwrap_or_else(|err| {
+                panic!(
+                    "Failed to parse function `{}`: {:?}",
+                    $fn_name,
+                    err
+                )
+            });
+            let mut registry = FnRegistry::default();
+            registry.insert(fn_def.clone());
+            let options: CheckOptions = $opts;
+            with_backends!((name, logic) => {
+                let result = check_fn_with_options(&fn_def, &registry, logic, options);
+                if $debug {
+                    println!("Result ({name}): {:?}", result);
+                }
+                assert!(
+                    result.is_err(),
+                    "Expected type checking to fail ({name}), got {:?}",
+                    result
+                );
+            });
+        }
+    };
+}
+
+macro_rules! parser_case {
+    ($test_name:ident, file = $file:expr, fn = $fn_name:expr, expect = ok, options = $opts:expr $(,)?) => {
+        single_fn_parser_test_ok!($test_name, $file, $fn_name, $opts);
+    };
+    ($test_name:ident, file = $file:expr, fn = $fn_name:expr, expect = ok $(,)?) => {
+        parser_case!(
+            $test_name,
+            file = $file,
+            fn = $fn_name,
+            expect = ok,
+            options = CheckOptions::default()
+        );
+    };
+    ($test_name:ident, file = $file:expr, fn = $fn_name:expr, expect = err, options = $opts:expr, debug = $debug:expr $(,)?) => {
+        single_fn_parser_test_err!($test_name, $file, $fn_name, $opts, $debug);
+    };
+    ($test_name:ident, file = $file:expr, fn = $fn_name:expr, expect = err, options = $opts:expr $(,)?) => {
+        parser_case!(
+            $test_name,
+            file = $file,
+            fn = $fn_name,
+            expect = err,
+            options = $opts,
+            debug = false
+        );
+    };
+    ($test_name:ident, file = $file:expr, fn = $fn_name:expr, expect = err, debug = $debug:expr $(,)?) => {
+        parser_case!(
+            $test_name,
+            file = $file,
+            fn = $fn_name,
+            expect = err,
+            options = CheckOptions::default(),
+            debug = $debug
+        );
+    };
+    ($test_name:ident, file = $file:expr, fn = $fn_name:expr, expect = err $(,)?) => {
+        parser_case!(
+            $test_name,
+            file = $file,
+            fn = $fn_name,
+            expect = err,
+            options = CheckOptions::default(),
+            debug = false
+        );
+    };
+}
+
+macro_rules! fixture_parser_test {
+    ($test_name:ident, file = $file:expr, entry = $entry:expr, extra = [$($extra:expr),* $(,)?]) => {
+        #[test]
+        fn $test_name() {
+            let defs = parse_fixture(include_str!($file));
+            let mut registry = FnRegistry::default();
+            let top_def = defs
+                .get($entry)
+                .unwrap_or_else(|| panic!("Missing {} in fixture", $entry))
+                .clone();
+            registry.insert(top_def.clone());
+            $(
+                let def = defs
+                    .get($extra)
+                    .unwrap_or_else(|| panic!("Missing {} in fixture", $extra))
+                    .clone();
+                registry.insert(def);
+            )*
+            let options: CheckOptions = CheckOptions::default();
+            with_backends!((name, logic) => {
+                let result = check_fn_with_options(&top_def, &registry, logic, options);
+                assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
+            });
+        }
+    };
+}
+
+parser_case!(
+    test_sum,
+    file = "test_files/sum.rs",
+    fn = "sum",
+    expect = ok
+);
+
+parser_case!(
+    test_zero_out,
+    file = "test_files/zero_out.rs",
+    fn = "zero_out",
+    expect = ok,
+    options = CheckOptions {
+        verbose: true,
+        ..Default::default()
     }
-}
+);
 
-#[test]
-fn test_sum_with_parser() {
-    let code = include_str!("test_files/sum.rs");
+parser_case!(
+    test_copy_array,
+    file = "test_files/copy_array.rs",
+    fn = "copy_array",
+    expect = ok,
+    options = CheckOptions {
+        verbose: true,
+        ..Default::default()
+    }
+);
 
-    let fn_def = parse_fn_def(code).expect("Failed to parse function");
+parser_case!(
+    test_increment,
+    file = "test_files/increment.rs",
+    fn = "increment",
+    expect = ok,
+    options = CheckOptions {
+        verbose: true,
+        ..Default::default()
+    }
+);
 
-    // Add function to registry for recursive calls
-    let mut registry = FnRegistry::default();
-    registry.0.insert("sum".to_string(), fn_def.clone());
+parser_case!(
+    test_increment_without_fence_fails,
+    file = "test_files/increment_bad.rs",
+    fn = "increment_bad",
+    expect = err,
+    debug = true
+);
 
-    for_each_backend(|name, logic| {
-        let result = check_fn_with_options(
-            &fn_def,
-            &registry,
-            logic,
-            CheckOptions {
-                verbose: false,
-                ..Default::default()
-            },
-        );
-        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
-    });
-}
+parser_case!(
+    test_raw_with_fence,
+    file = "test_files/raw.rs",
+    fn = "raw",
+    expect = ok,
+    options = CheckOptions {
+        verbose: true,
+        log_solver_queries: false,
+    }
+);
 
-#[test]
-fn test_zero_out_with_parser() {
-    let code = include_str!("test_files/zero_out.rs");
+parser_case!(
+    test_raw_without_fence_fails,
+    file = "test_files/raw_no_fence.rs",
+    fn = "raw",
+    expect = err,
+    options = CheckOptions {
+        verbose: true,
+        ..Default::default()
+    }
+);
 
-    let fn_def = parse_fn_def(code).expect("Failed to parse function");
+parser_case!(
+    test_war_with_fence,
+    file = "test_files/war.rs",
+    fn = "war",
+    expect = ok
+);
 
-    // Add function to registry for recursive calls
-    let mut registry = FnRegistry::default();
-    registry.0.insert("zero_out".to_string(), fn_def.clone());
+parser_case!(
+    test_war_without_fence_fails,
+    file = "test_files/war_no_fence.rs",
+    fn = "war",
+    expect = err,
+    options = CheckOptions {
+        verbose: true,
+        ..Default::default()
+    }
+);
 
-    for_each_backend(|name, logic| {
-        let result = check_fn_with_options(
-            &fn_def,
-            &registry,
-            logic,
-            CheckOptions {
-                verbose: true,
-                ..Default::default()
-            },
-        );
-        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
-    });
-}
+parser_case!(
+    test_waw_with_fence,
+    file = "test_files/waw.rs",
+    fn = "waw",
+    expect = ok
+);
 
-#[test]
-fn test_copy_array_with_parser() {
-    let code = include_str!("test_files/copy_array.rs");
+parser_case!(
+    test_waw_without_fence_fails,
+    file = "test_files/waw_no_fence.rs",
+    fn = "waw",
+    expect = err,
+    options = CheckOptions {
+        verbose: true,
+        ..Default::default()
+    }
+);
 
-    let fn_def = parse_fn_def(code).expect("Failed to parse function");
+fixture_parser_test!(
+    test_nn_relu_with_parser,
+    file = "test_files/nn_relu.rs",
+    entry = "nn_relu",
+    extra = ["nn_relu_aux"]
+);
 
-    // Add function to registry for recursive calls
-    let mut registry = FnRegistry::default();
-    registry.0.insert("copy_array".to_string(), fn_def.clone());
+fixture_parser_test!(
+    test_nn_fc_with_parser,
+    file = "test_files/nn_fc.rs",
+    entry = "nn_fc",
+    extra = ["row_dot", "rec_rows"]
+);
 
-    for_each_backend(|name, logic| {
-        let result = check_fn_with_options(
-            &fn_def,
-            &registry,
-            logic,
-            CheckOptions {
-                verbose: true,
-                ..Default::default()
-            },
-        );
-        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
-    });
-}
-
-#[test]
-fn test_increment_with_parser() {
-    let code = include_str!("test_files/increment.rs");
-
-    let fn_def = parse_fn_def(code).expect("Failed to parse function");
-
-    // Add function to registry for recursive calls
-    let mut registry = FnRegistry::default();
-    registry.0.insert("increment".to_string(), fn_def.clone());
-
-    for_each_backend(|name, logic| {
-        let result = check_fn_with_options(
-            &fn_def,
-            &registry,
-            logic,
-            CheckOptions {
-                verbose: true,
-                ..Default::default()
-            },
-        );
-        // With fence, this should now pass - the fence prevents capability consumption
-        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
-    });
-}
-
-#[test]
-fn test_increment_without_fence_fails() {
-    // This test verifies that without fence, the read-modify-write pattern fails
-    let code = include_str!("test_files/increment_bad.rs");
-
-    let fn_def = parse_fn_def(code).expect("Failed to parse function");
-
-    // Add function to registry for recursive calls
-    let mut registry = FnRegistry::default();
-    registry
-        .0
-        .insert("increment_bad".to_string(), fn_def.clone());
-
-    for_each_backend(|name, logic| {
-        let result = check_fn_with_options(
-            &fn_def,
-            &registry,
-            logic,
-            CheckOptions {
-                verbose: false,
-                ..Default::default()
-            },
-        );
-        println!("Result ({name}): {:?}", result);
-        // This should fail due to capability mismatch
-        assert!(
-            result.is_err(),
-            "Expected type checking to fail without fence ({name})"
-        );
-    });
-}
-
-#[test]
-fn test_raw_with_fence() {
-    let code = include_str!("test_files/raw.rs");
-
-    let fn_def = parse_fn_def(code).expect("Failed to parse function");
-    let mut registry = FnRegistry::default();
-    registry.0.insert("raw".to_string(), fn_def.clone());
-
-    for_each_backend(|name, logic| {
-        let result = check_fn_with_options(
-            &fn_def,
-            &registry,
-            logic,
-            CheckOptions {
-                verbose: true,
-                log_solver_queries: false,
-            },
-        );
-        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
-    });
-}
-
-#[test]
-fn test_raw_without_fence_fails() {
-    let code = include_str!("test_files/raw_no_fence.rs");
-
-    let fn_def = parse_fn_def(code).expect("Failed to parse function");
-    let mut registry = FnRegistry::default();
-    registry.0.insert("raw".to_string(), fn_def.clone());
-
-    for_each_backend(|name, logic| {
-        let result = check_fn_with_options(
-            &fn_def,
-            &registry,
-            logic,
-            CheckOptions {
-                verbose: true,
-                ..Default::default()
-            },
-        );
-        assert!(
-            result.is_err(),
-            "Expected type checking to fail without fence ({name}), got {:?}",
-            result.err()
-        );
-    });
-}
-
-#[test]
-fn test_war_with_fence() {
-    let code = include_str!("test_files/war.rs");
-
-    let fn_def = parse_fn_def(code).expect("Failed to parse function");
-    let mut registry = FnRegistry::default();
-    registry.0.insert("war".to_string(), fn_def.clone());
-
-    for_each_backend(|name, logic| {
-        let result = check_fn_with_options(
-            &fn_def,
-            &registry,
-            logic,
-            CheckOptions {
-                verbose: false,
-                ..Default::default()
-            },
-        );
-        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
-    });
-}
-
-#[test]
-fn test_war_without_fence() {
-    let code = include_str!("test_files/war_no_fence.rs");
-
-    let fn_def = parse_fn_def(code).expect("Failed to parse function");
-    let mut registry = FnRegistry::default();
-    registry.0.insert("war".to_string(), fn_def.clone());
-
-    for_each_backend(|name, logic| {
-        let result = check_fn_with_options(
-            &fn_def,
-            &registry,
-            logic,
-            CheckOptions {
-                verbose: true,
-                ..Default::default()
-            },
-        );
-        assert!(
-            result.is_err(),
-            "Expected type checking to fail without fence ({name}), got {:?}",
-            result.err()
-        );
-    });
-}
-
-#[test]
-fn test_waw_with_fence() {
-    let code = include_str!("test_files/waw.rs");
-
-    let fn_def = parse_fn_def(code).expect("Failed to parse function");
-    let mut registry = FnRegistry::default();
-    registry.0.insert("waw".to_string(), fn_def.clone());
-
-    for_each_backend(|name, logic| {
-        let result = check_fn_with_options(
-            &fn_def,
-            &registry,
-            logic,
-            CheckOptions {
-                verbose: false,
-                ..Default::default()
-            },
-        );
-        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
-    });
-}
-
-#[test]
-fn test_waw_without_fence() {
-    let code = include_str!("test_files/waw_no_fence.rs");
-
-    let fn_def = parse_fn_def(code).expect("Failed to parse function");
-    let mut registry = FnRegistry::default();
-    registry.0.insert("waw".to_string(), fn_def.clone());
-
-    for_each_backend(|name, logic| {
-        let result = check_fn_with_options(
-            &fn_def,
-            &registry,
-            logic,
-            CheckOptions {
-                verbose: true,
-                ..Default::default()
-            },
-        );
-        assert!(
-            result.is_err(),
-            "Expected type checking to fail without fence ({name}), got {:?}",
-            result.err()
-        );
-    });
-}
-
-#[test]
-fn test_nn_relu_with_parser() {
-    let defs = parse_fixture(include_str!("test_files/nn_relu.rs"));
-    let aux_def = defs
-        .get("nn_relu_aux")
-        .expect("Missing nn_relu_aux in fixture")
-        .clone();
-    let top_def = defs
-        .get("nn_relu")
-        .expect("Missing nn_relu in fixture")
-        .clone();
-
-    let mut registry = FnRegistry::default();
-    registry
-        .0
-        .insert("nn_relu_aux".to_string(), aux_def.clone());
-    registry.0.insert("nn_relu".to_string(), top_def.clone());
-
-    for_each_backend(|name, logic| {
-        let result = check_fn_with_options(
-            &top_def,
-            &registry,
-            logic,
-            CheckOptions {
-                verbose: false,
-                ..Default::default()
-            },
-        );
-        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
-    });
-}
-
-#[test]
-fn test_nn_fc_with_parser() {
-    let defs = parse_fixture(include_str!("test_files/nn_fc.rs"));
-    let row_dot_def = defs
-        .get("row_dot")
-        .expect("Missing row_dot in fixture")
-        .clone();
-    let rec_rows_def = defs
-        .get("rec_rows")
-        .expect("Missing rec_rows in fixture")
-        .clone();
-    let fc_def = defs.get("nn_fc").expect("Missing nn_fc in fixture").clone();
-
-    let mut registry = FnRegistry::default();
-    registry
-        .0
-        .insert("row_dot".to_string(), row_dot_def.clone());
-    registry
-        .0
-        .insert("rec_rows".to_string(), rec_rows_def.clone());
-    registry.0.insert("nn_fc".to_string(), fc_def.clone());
-
-    for_each_backend(|name, logic| {
-        let result = check_fn_with_options(
-            &fc_def,
-            &registry,
-            logic,
-            CheckOptions {
-                verbose: false,
-                ..Default::default()
-            },
-        );
-        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
-    });
-}
-
-#[test]
-fn test_dmv_with_parser() {
-    let defs = parse_fixture(include_str!("test_files/dmv.rs"));
-    let dot_def = defs
-        .get("cal_dot_product")
-        .expect("Missing cal_dot_product in fixture")
-        .clone();
-    let mv_def = defs
-        .get("mv_mul")
-        .expect("Missing mv_mul in fixture")
-        .clone();
-    let dmv_def = defs.get("dmv").expect("Missing dmv in fixture").clone();
-
-    let mut registry = FnRegistry::default();
-    registry
-        .0
-        .insert("cal_dot_product".to_string(), dot_def.clone());
-    registry.0.insert("mv_mul".to_string(), mv_def.clone());
-    registry.0.insert("dmv".to_string(), dmv_def.clone());
-
-    for_each_backend(|name, logic| {
-        let result = check_fn_with_options(
-            &dmv_def,
-            &registry,
-            logic,
-            CheckOptions {
-                verbose: false,
-                ..Default::default()
-            },
-        );
-        assert!(result.is_ok(), "{name} backend failed: {:?}", result.err());
-    });
-}
+fixture_parser_test!(
+    test_dmv_with_parser,
+    file = "test_files/dmv.rs",
+    entry = "dmv",
+    extra = ["cal_dot_product", "mv_mul"]
+);

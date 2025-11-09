@@ -45,8 +45,6 @@ pub enum Ty {
     Bool,
     /// Unit type.
     Unit,
-    /// Fixed-size array type.
-    Array { elem: Box<Ty>, len: ArrayLen },
     /// Shared reference to a fixed-size array.
     RefShrd { elem: Box<Ty>, len: ArrayLen },
     /// Unique (mutable) reference to a fixed-size array.

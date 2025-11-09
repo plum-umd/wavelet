@@ -31,17 +31,17 @@ impl Gamma {
 /// The type checker context.  Contains the variable environment
 /// (`Gamma`), the capability environment (`Delta`), the proposition
 /// context (`Phi`), and a reference to a solver implementation.
-pub struct Ctx<'logic> {
+pub struct Ctx<'logic, L: CapabilityLogic> {
     pub gamma: Gamma,
-    pub delta: Delta,
+    pub delta: Delta<L::Region>,
     pub phi: Phi,
-    pub logic: &'logic dyn CapabilityLogic,
+    pub logic: &'logic L,
     pub verbose: bool,
 }
 
-impl<'logic> Ctx<'logic> {
+impl<'logic, L: CapabilityLogic> Ctx<'logic, L> {
     /// Create a new empty context with a given capability logic backend.
-    pub fn new(logic: &'logic dyn CapabilityLogic, verbose: bool) -> Self {
+    pub fn new(logic: &'logic L, verbose: bool) -> Self {
         Self {
             gamma: Gamma::default(),
             delta: Delta::default(),

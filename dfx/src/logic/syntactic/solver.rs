@@ -252,6 +252,8 @@ impl BasicSolver {
 }
 
 impl crate::logic::semantic::PhiSolver for BasicSolver {
+    type Region = crate::logic::region::Region;
+
     fn entails(
         &self,
         ctx: &crate::logic::semantic::Phi,

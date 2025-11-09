@@ -46,9 +46,6 @@ impl TypeError {
             crate::ir::Ty::Int => "int".to_string(),
             crate::ir::Ty::Bool => "bool".to_string(),
             crate::ir::Ty::Unit => "unit".to_string(),
-            crate::ir::Ty::Array { elem, len } => {
-                format!("[{}; {}]", TypeError::type_name(elem), len.display())
-            }
             crate::ir::Ty::RefShrd { elem, len } => {
                 format!("&[{}; {}]", TypeError::type_name(elem), len.display())
             }

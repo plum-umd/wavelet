@@ -6,10 +6,10 @@ use crate::env::{Ctx, FnRegistry};
 use crate::error::TypeError;
 use crate::ir::{Expr, FnDef, Op, Program, Stmt, Tail, Ty, Val, Var};
 use crate::logic::CapabilityLogic;
-use crate::logic::cap::{Cap, Delta};
+use crate::logic::cap::{Cap, Delta, RegionModel};
 use crate::logic::region::Region;
 use crate::logic::semantic::Interval;
-use crate::logic::semantic::solver::{Atom, Idx};
+use crate::logic::semantic::solver::{Atom, Idx, Phi};
 
 /// Substitute variable names in an index expression according to a map.
 fn substitute_idx(idx: &Idx, subst: &BTreeMap<String, String>) -> Idx {
@@ -98,34 +98,18 @@ fn not(atom: Atom) -> Atom {
     Atom::Not(Box::new(atom))
 }
 
-fn region_is_empty(region: &Region) -> bool {
-    region.iter().next().is_none()
-}
-
-fn render_region(region: &Region) -> String {
-    if region_is_empty(region) {
-        "<empty>".to_string()
-    } else {
-        region
-            .iter()
-            .map(|interval| interval.to_string())
-            .collect::<Vec<_>>()
-            .join(" | ")
-    }
-}
-
-fn render_cap(cap: &Cap) -> String {
-    let shrd_empty = region_is_empty(&cap.shrd);
-    let uniq_empty = region_is_empty(&cap.uniq);
+fn render_cap<L: CapabilityLogic>(logic: &L, phi: &Phi, cap: &Cap<L::Region>) -> String
+where
+    L::Region: RegionModel,
+{
+    let solver = logic.solver();
+    let shrd_empty = cap.shrd.is_empty(phi, solver);
+    let uniq_empty = cap.uniq.is_empty(phi, solver);
     match (shrd_empty, uniq_empty) {
         (true, true) => "<empty>".to_string(),
-        (false, true) => format!("shrd: {}", render_region(&cap.shrd)),
-        (true, false) => format!("uniq: {}", render_region(&cap.uniq)),
-        (false, false) => format!(
-            "shrd: {}; uniq: {}",
-            render_region(&cap.shrd),
-            render_region(&cap.uniq)
-        ),
+        (false, true) => format!("shrd: {}", cap.shrd.display()),
+        (true, false) => format!("uniq: {}", cap.uniq.display()),
+        (false, false) => format!("shrd: {}; uniq: {}", cap.shrd.display(), cap.uniq.display()),
     }
 }
 
@@ -247,7 +231,10 @@ fn render_tail(tail: &Tail) -> String {
     }
 }
 
-fn trace_context(ctx: &Ctx, stage: &str) {
+fn trace_context<L: CapabilityLogic>(ctx: &Ctx<L>, stage: &str)
+where
+    L::Region: RegionModel,
+{
     if !ctx.verbose {
         return;
     }
@@ -256,7 +243,10 @@ fn trace_context(ctx: &Ctx, stage: &str) {
     print_context_contents(ctx);
 }
 
-fn print_context_contents(ctx: &Ctx) {
+fn print_context_contents<L: CapabilityLogic>(ctx: &Ctx<L>)
+where
+    L::Region: RegionModel,
+{
     if ctx.gamma.0.is_empty() {
         println!("Gamma: <empty>");
     } else {
@@ -271,7 +261,7 @@ fn print_context_contents(ctx: &Ctx) {
     } else {
         println!("Delta:");
         for (name, cap) in ctx.delta.0.iter() {
-            println!("  {}: {}", name, render_cap(cap));
+            println!("  {}: {}", name, render_cap(ctx.logic, &ctx.phi, cap));
         }
     }
 
@@ -288,7 +278,10 @@ fn print_context_contents(ctx: &Ctx) {
     println!();
 }
 
-fn log_after_statement(ctx: &Ctx, stmt: &Stmt) {
+fn log_after_statement<L: CapabilityLogic>(ctx: &Ctx<L>, stmt: &Stmt)
+where
+    L::Region: RegionModel,
+{
     if ctx.verbose {
         println!("After {}:", render_stmt(stmt));
         print_context_contents(ctx);
@@ -296,11 +289,14 @@ fn log_after_statement(ctx: &Ctx, stmt: &Stmt) {
 }
 
 /// Check an entire program with the supplied options.
-pub fn check_program_with_options(
+pub fn check_program_with_options<L: CapabilityLogic>(
     prog: &Program,
-    logic: &dyn CapabilityLogic,
+    logic: &L,
     options: CheckOptions,
-) -> Result<(), TypeError> {
+) -> Result<(), TypeError>
+where
+    L::Region: RegionModel,
+{
     // Build a registry of function definitions for lookups.
     let mut registry = FnRegistry::default();
     for def in &prog.defs {
@@ -314,26 +310,35 @@ pub fn check_program_with_options(
 
 /// Check an entire program.  Currently this simply iterates over
 /// definitions and checks each in isolation.
-pub fn check_program(prog: &Program, logic: &dyn CapabilityLogic) -> Result<(), TypeError> {
+pub fn check_program<L: CapabilityLogic>(prog: &Program, logic: &L) -> Result<(), TypeError>
+where
+    L::Region: RegionModel,
+{
     check_program_with_options(prog, logic, CheckOptions::default())
 }
 
 /// Check a single function definition.
-pub fn check_fn(
+pub fn check_fn<L: CapabilityLogic>(
     def: &FnDef,
     registry: &FnRegistry,
-    logic: &dyn CapabilityLogic,
-) -> Result<(), TypeError> {
+    logic: &L,
+) -> Result<(), TypeError>
+where
+    L::Region: RegionModel,
+{
     check_fn_with_options(def, registry, logic, CheckOptions::default())
 }
 
 /// Check a single function definition with explicit options.
-pub fn check_fn_with_options(
+pub fn check_fn_with_options<L: CapabilityLogic>(
     def: &FnDef,
     registry: &FnRegistry,
-    logic: &dyn CapabilityLogic,
+    logic: &L,
     options: CheckOptions,
-) -> Result<(), TypeError> {
+) -> Result<(), TypeError>
+where
+    L::Region: RegionModel,
+{
     // Initialise context with parameter types.
     logic.set_query_logging(options.log_solver_queries);
     let mut ctx = Ctx::new(logic, options.verbose);
@@ -342,7 +347,7 @@ pub fn check_fn_with_options(
     }
     // Initialise capability environment from the function’s cap pattern.
     for cap_pat in &def.caps {
-        let cap = cap_pat.instantiate(&ctx.phi, ctx.logic.solver());
+        let cap = cap_pat.initialize::<L::Region>();
         ctx.delta.0.insert(cap_pat.array.clone(), cap);
     }
     trace_context(&ctx, "Initial context after parameter and capability setup");
@@ -356,12 +361,15 @@ pub fn check_fn_with_options(
 }
 
 /// Check an expression and ensure it produces a value of the expected type.
-fn check_expr(
-    ctx: &mut Ctx,
+fn check_expr<L: CapabilityLogic>(
+    ctx: &mut Ctx<L>,
     expr: &Expr,
     expected: &Ty,
     registry: &FnRegistry,
-) -> Result<(), TypeError> {
+) -> Result<(), TypeError>
+where
+    L::Region: RegionModel,
+{
     trace_context(ctx, "Entering expression");
 
     // Process statements sequentially.
@@ -399,7 +407,14 @@ fn check_expr(
 }
 
 /// Infer the type of an expression (for use in if-else branches).
-fn infer_expr_type(ctx: &mut Ctx, expr: &Expr, registry: &FnRegistry) -> Result<Ty, TypeError> {
+fn infer_expr_type<L: CapabilityLogic>(
+    ctx: &mut Ctx<L>,
+    expr: &Expr,
+    registry: &FnRegistry,
+) -> Result<Ty, TypeError>
+where
+    L::Region: RegionModel,
+{
     trace_context(ctx, "Inferring expression type");
 
     // Process statements sequentially.
@@ -431,7 +446,14 @@ fn infer_expr_type(ctx: &mut Ctx, expr: &Expr, registry: &FnRegistry) -> Result<
 }
 
 /// Check a single statement.
-fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), TypeError> {
+fn check_stmt<L: CapabilityLogic>(
+    ctx: &mut Ctx<L>,
+    stmt: &Stmt,
+    registry: &FnRegistry,
+) -> Result<(), TypeError>
+where
+    L::Region: RegionModel,
+{
     match stmt {
         Stmt::LetVal { var, val } => {
             // Determine literal type and bind it.
@@ -657,18 +679,18 @@ fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), T
                     let lo = Idx::Var(index.0.clone());
                     let hi = Idx::Add(Box::new(lo.clone()), Box::new(Idx::Const(1)));
                     let region = Region::from_bounded(lo.clone(), hi);
-                    let mut req_cap = Cap::default();
-                    req_cap.shrd = region.clone();
+                    let mut req_cap = Cap::<L::Region>::default();
+                    req_cap.shrd = <L::Region as RegionModel>::from_region(&region);
                     let arr_name = &array.0;
                     let have_cap = ctx.delta.0.get(arr_name).cloned().unwrap_or_default();
                     if !ctx.logic.cap_leq(&ctx.phi, &req_cap, &have_cap) {
                         return Err(TypeError::InsufficientCapability {
                             array: arr_name.clone(),
-                            region: format!("{:?}", region),
+                            region: region.to_string(),
                         });
                     }
                     if !*fence {
-                        let mut delta_req = Delta::default();
+                        let mut delta_req = Delta::<L::Region>::default();
                         delta_req.0.insert(arr_name.clone(), req_cap.clone());
                         ctx.delta = ctx
                             .logic
@@ -727,18 +749,18 @@ fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), T
                     let lo = Idx::Var(index.0.clone());
                     let hi = Idx::Add(Box::new(lo.clone()), Box::new(Idx::Const(1)));
                     let region = Region::from_bounded(lo.clone(), hi);
-                    let mut req_cap = Cap::default();
-                    req_cap.uniq = region.clone();
+                    let mut req_cap = Cap::<L::Region>::default();
+                    req_cap.uniq = <L::Region as RegionModel>::from_region(&region);
                     let arr_name = &array.0;
                     let have_cap = ctx.delta.0.get(arr_name).cloned().unwrap_or_default();
                     if !ctx.logic.cap_leq(&ctx.phi, &req_cap, &have_cap) {
                         return Err(TypeError::InsufficientCapability {
                             array: arr_name.clone(),
-                            region: format!("{:?}", region),
+                            region: region.to_string(),
                         });
                     }
                     if !*fence {
-                        let mut delta_req = Delta::default();
+                        let mut delta_req = Delta::<L::Region>::default();
                         delta_req.0.insert(arr_name.clone(), req_cap.clone());
                         ctx.delta = ctx
                             .logic
@@ -810,15 +832,17 @@ fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), T
             }
 
             // Instantiate and check each capability pattern.
-            let mut required_delta = Delta::default();
+            let mut required_delta = Delta::<L::Region>::default();
             for (cap_pat, arg_var) in fn_def.caps.iter().zip(array_args.iter()) {
                 // Substitute indices in the capability pattern.
-                let mut instantiated_cap = Cap::default();
+                let mut instantiated_cap = Cap::<L::Region>::default();
                 if let Some(uniq_region) = &cap_pat.uniq {
-                    instantiated_cap.uniq = substitute_region(uniq_region, &subst_map);
+                    let substituted = substitute_region(uniq_region, &subst_map);
+                    instantiated_cap.uniq = <L::Region as RegionModel>::from_region(&substituted);
                 }
                 if let Some(shrd_region) = &cap_pat.shrd {
-                    instantiated_cap.shrd = substitute_region(shrd_region, &subst_map);
+                    let substituted = substitute_region(shrd_region, &subst_map);
+                    instantiated_cap.shrd = <L::Region as RegionModel>::from_region(&substituted);
                 }
 
                 required_delta.0.insert(arg_var.0.clone(), instantiated_cap);
@@ -859,7 +883,14 @@ fn check_stmt(ctx: &mut Ctx, stmt: &Stmt, registry: &FnRegistry) -> Result<(), T
 }
 
 /// Check a tail expression and return its type.
-fn check_tail(ctx: &mut Ctx, tail: &Tail, registry: &FnRegistry) -> Result<Ty, TypeError> {
+fn check_tail<L: CapabilityLogic>(
+    ctx: &mut Ctx<L>,
+    tail: &Tail,
+    registry: &FnRegistry,
+) -> Result<Ty, TypeError>
+where
+    L::Region: RegionModel,
+{
     match tail {
         Tail::RetVar(var) => ctx.gamma.get(var),
         Tail::IfElse {
@@ -956,15 +987,17 @@ fn check_tail(ctx: &mut Ctx, tail: &Tail, registry: &FnRegistry) -> Result<Ty, T
             }
 
             // Instantiate and check each capability pattern.
-            let mut required_delta = Delta::default();
+            let mut required_delta = Delta::<L::Region>::default();
             for (cap_pat, arg_var) in fn_def.caps.iter().zip(array_args.iter()) {
                 // Substitute indices in the capability pattern.
-                let mut instantiated_cap = Cap::default();
+                let mut instantiated_cap = Cap::<L::Region>::default();
                 if let Some(uniq_region) = &cap_pat.uniq {
-                    instantiated_cap.uniq = substitute_region(uniq_region, &subst_map);
+                    let substituted = substitute_region(uniq_region, &subst_map);
+                    instantiated_cap.uniq = <L::Region as RegionModel>::from_region(&substituted);
                 }
                 if let Some(shrd_region) = &cap_pat.shrd {
-                    instantiated_cap.shrd = substitute_region(shrd_region, &subst_map);
+                    let substituted = substitute_region(shrd_region, &subst_map);
+                    instantiated_cap.shrd = <L::Region as RegionModel>::from_region(&substituted);
                 }
 
                 required_delta.0.insert(arg_var.0.clone(), instantiated_cap);

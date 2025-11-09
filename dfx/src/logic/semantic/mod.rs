@@ -1,7 +1,9 @@
+pub mod region_set;
 pub mod solver;
 
 pub use super::cap::{Cap, CapPattern, Delta};
 pub use super::region::{Interval, Region};
+pub use region_set::{RegionSetExpr, check_equivalent, check_subset, overlaps};
 pub use solver::{Atom, Idx, Phi, PhiSolver, SmtSolver};
 
 use crate::logic::CapabilityLogic;
@@ -25,24 +27,10 @@ impl SemanticLogic {
 }
 
 impl CapabilityLogic for SemanticLogic {
-    fn solver(&self) -> &dyn PhiSolver {
+    type Region = RegionSetExpr;
+
+    fn solver(&self) -> &<Self::Region as crate::logic::cap::RegionModel>::Solver {
         &self.solver
-    }
-
-    fn cap_leq(&self, phi: &Phi, required: &Cap, available: &Cap) -> bool {
-        required.leq(available, phi, &self.solver)
-    }
-
-    fn cap_diff(&self, phi: &Phi, available: &Cap, required: &Cap) -> Option<Cap> {
-        available.diff(required, phi, &self.solver)
-    }
-
-    fn delta_leq(&self, phi: &Phi, required: &Delta, available: &Delta) -> bool {
-        required.leq(available, phi, &self.solver)
-    }
-
-    fn delta_diff(&self, phi: &Phi, available: &Delta, required: &Delta) -> Option<Delta> {
-        available.diff(required, phi, &self.solver)
     }
 
     fn set_query_logging(&self, enabled: bool) {

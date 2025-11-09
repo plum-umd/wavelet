@@ -1,26 +1,63 @@
-//! Capability algebra for the semantic backend.
+//! Capability algebra parameterised over an abstract region model.
 
 use std::collections::BTreeMap;
 
 use super::region::Region;
-use super::{Phi, PhiSolver};
+use crate::logic::semantic::solver::{Phi, PhiSolver};
+
+/// Trait implemented by data structures that model regions.
+pub trait RegionModel: Clone + Default + std::fmt::Debug {
+    /// Solver capable of reasoning about propositions for this region model.
+    type Solver: PhiSolver<Region = Self>;
+
+    /// Convert a syntactic region into this model.
+    fn from_region(region: &Region) -> Self;
+
+    /// Compute the union of two regions.
+    fn union(&self, other: &Self, phi: &Phi, solver: &Self::Solver) -> Self;
+
+    /// Compute the set difference `self \ other`.
+    fn diff(&self, other: &Self, phi: &Phi, solver: &Self::Solver) -> Self;
+
+    /// Decide whether `self ⊆ other`.
+    fn is_subregion_of(&self, other: &Self, phi: &Phi, solver: &Self::Solver) -> bool;
+
+    /// Determine whether the region is empty under the current context.
+    fn is_empty(&self, phi: &Phi, solver: &Self::Solver) -> bool;
+
+    /// Render the region for diagnostics.
+    fn display(&self) -> String;
+}
 
 /// A capability comprising read-only (`shrd`) and read-write (`uniq`) regions.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct Cap {
-    pub shrd: Region,
-    pub uniq: Region,
+pub struct Cap<R: RegionModel> {
+    pub shrd: R,
+    pub uniq: R,
 }
 
-impl Cap {
-    pub fn leq(&self, other: &Cap, phi: &Phi, solver: &dyn PhiSolver) -> bool {
+impl<R: RegionModel> Cap<R> {
+    /// Essentially:
+    /// ```text
+    /// c₁ ≤ c₂ := c₁.shrd ⊆ (c₂.shrd ∪ c₂.uniq) ∧ c₁.uniq ⊆ c₂.uniq
+    /// ```
+    pub fn leq(&self, other: &Cap<R>, phi: &Phi, solver: &R::Solver) -> bool {
         let union_shrd = other.shrd.union(&other.uniq, phi, solver);
         let shrd_ok = self.shrd.is_subregion_of(&union_shrd, phi, solver);
         let uniq_ok = self.uniq.is_subregion_of(&other.uniq, phi, solver);
         shrd_ok && uniq_ok
     }
 
-    pub fn diff(&self, other: &Cap, phi: &Phi, solver: &dyn PhiSolver) -> Option<Cap> {
+    /// Essentially:
+    /// ```text
+    /// c₁ \ c₂ :=
+    ///   if c₂ ≤ c₁ then
+    ///     some { shrd := c₁.shrd ∪ c₂.shrd,
+    ///            uniq := c₁.uniq \ (c₂.shrd ∪ c₂.uniq) }
+    ///   else
+    ///     none
+    /// ```
+    pub fn diff(&self, other: &Cap<R>, phi: &Phi, solver: &R::Solver) -> Option<Cap<R>> {
         if !other.leq(self, phi, solver) {
             return None;
         }
@@ -36,10 +73,10 @@ impl Cap {
 
 /// A mapping from array identifiers to capabilities.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Delta(pub BTreeMap<String, Cap>);
+pub struct Delta<R: RegionModel>(pub BTreeMap<String, Cap<R>>);
 
-impl Delta {
-    pub fn leq(&self, other: &Delta, phi: &Phi, solver: &dyn PhiSolver) -> bool {
+impl<R: RegionModel> Delta<R> {
+    pub fn leq(&self, other: &Delta<R>, phi: &Phi, solver: &R::Solver) -> bool {
         for (name, cap1) in &self.0 {
             match other.0.get(name) {
                 Some(cap2) => {
@@ -53,7 +90,7 @@ impl Delta {
         true
     }
 
-    pub fn diff(&self, other: &Delta, phi: &Phi, solver: &dyn PhiSolver) -> Option<Delta> {
+    pub fn diff(&self, other: &Delta<R>, phi: &Phi, solver: &R::Solver) -> Option<Delta<R>> {
         if !other.leq(self, phi, solver) {
             return None;
         }
@@ -79,13 +116,15 @@ pub struct CapPattern {
 }
 
 impl CapPattern {
-    pub fn instantiate(&self, phi: &Phi, solver: &dyn PhiSolver) -> Cap {
-        let mut cap = Cap::default();
+    pub fn initialize<R: RegionModel>(
+        &self,
+    ) -> Cap<R> {
+        let mut cap = Cap::<R>::default();
         if let Some(uniq) = &self.uniq {
-            cap.uniq = uniq.clone();
+            cap.uniq = R::from_region(uniq);
         }
         if let Some(shrd) = &self.shrd {
-            cap.shrd = cap.shrd.union(shrd, phi, solver);
+            cap.shrd = R::from_region(shrd);
         }
         cap
     }

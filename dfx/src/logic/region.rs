@@ -2,9 +2,10 @@
 
 use std::fmt;
 
+use crate::logic::cap::RegionModel;
 use crate::logic::semantic::Atom;
-
 use crate::logic::semantic::solver::{Idx, Phi, PhiSolver};
+use crate::logic::syntactic::solver::BasicSolver;
 
 /// A half-open interval `[lo, hi)`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,7 +42,12 @@ impl Region {
     }
 
     // explain the union operation implementation
-    pub fn union(&self, other: &Region, phi: &Phi, solver: &dyn PhiSolver) -> Region {
+    pub fn union(
+        &self,
+        other: &Region,
+        phi: &Phi,
+        solver: &dyn PhiSolver<Region = Region>,
+    ) -> Region {
         let mut intervals = Vec::new();
         let mut curr: Option<Interval> = None;
         let push_interval =
@@ -104,7 +110,12 @@ impl Region {
         Region { intervals }
     }
 
-    pub fn diff(&self, other: &Region, phi: &Phi, solver: &dyn PhiSolver) -> Region {
+    pub fn diff(
+        &self,
+        other: &Region,
+        phi: &Phi,
+        solver: &dyn PhiSolver<Region = Region>,
+    ) -> Region {
         let mut result = Vec::new();
         'outer: for s in &self.intervals {
             let mut current = s.clone();
@@ -141,7 +152,12 @@ impl Region {
         Region { intervals: result }
     }
 
-    pub fn is_subregion_of(&self, other: &Region, phi: &Phi, solver: &dyn PhiSolver) -> bool {
+    pub fn is_subregion_of(
+        &self,
+        other: &Region,
+        phi: &Phi,
+        solver: &dyn PhiSolver<Region = Region>,
+    ) -> bool {
         for a in &self.intervals {
             let mut covered = false;
             for b in &other.intervals {
@@ -157,6 +173,34 @@ impl Region {
             }
         }
         true
+    }
+}
+
+impl RegionModel for Region {
+    type Solver = BasicSolver;
+
+    fn from_region(region: &Region) -> Self {
+        region.clone()
+    }
+
+    fn union(&self, other: &Self, phi: &Phi, solver: &Self::Solver) -> Self {
+        Region::union(self, other, phi, solver)
+    }
+
+    fn diff(&self, other: &Self, phi: &Phi, solver: &Self::Solver) -> Self {
+        Region::diff(self, other, phi, solver)
+    }
+
+    fn is_subregion_of(&self, other: &Self, phi: &Phi, solver: &Self::Solver) -> bool {
+        Region::is_subregion_of(self, other, phi, solver)
+    }
+
+    fn is_empty(&self, _phi: &Phi, _solver: &Self::Solver) -> bool {
+        self.intervals.is_empty()
+    }
+
+    fn display(&self) -> String {
+        format!("{}", self)
     }
 }
 
