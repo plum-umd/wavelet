@@ -1136,7 +1136,7 @@ $$
   \end{gather*}
 }{
   \Gamma ; \Delta \;\vdash_{\Phi}\; 
-  \texttt{let } \vec{y} \texttt{ = } f(\vec{i}, \vec{A}); \; E : \tau_E
+  \texttt{let } \vec{y} \texttt{ = } f(\vec{i}, \vec{A}) \text{ ---}  \; E : \tau_E
 }
 $$
 
