@@ -17,8 +17,8 @@ fn lower_fn(fn_def: &FnDef) -> GhostFnDef {
     let (ghost_params, initial_ctx) = if fn_def.caps.is_empty() {
         (Vec::new(), PermCtx::default())
     } else {
-        let sync = GhostVar("p0".into());
-        let leftover = GhostVar("p_lft".into());
+        let sync = GhostVar("p_sync".into());
+        let leftover = GhostVar("p_garb".into());
         (
             vec![sync.clone(), leftover.clone()],
             PermCtx::with(vec![sync], vec![leftover]),
@@ -39,26 +39,44 @@ fn lower_fn(fn_def: &FnDef) -> GhostFnDef {
 #[derive(Clone, Default)]
 struct PermCtx {
     sync: Vec<GhostVar>,
-    leftover: Vec<GhostVar>,
+    restore: Vec<GhostVar>,
+    garb: Vec<GhostVar>,
 }
 
 impl PermCtx {
     fn with(sync: Vec<GhostVar>, leftover: Vec<GhostVar>) -> Self {
-        Self { sync, leftover }
+        Self {
+            sync,
+            restore: Vec::new(),
+            garb: leftover,
+        }
     }
 
     fn sync_inputs(&self) -> Vec<GhostVar> {
         self.sync.clone()
     }
 
-    fn leftover_inputs(&self) -> Vec<GhostVar> {
-        self.leftover.clone()
+    fn garb_inputs(&self) -> Vec<GhostVar> {
+        self.garb.clone()
     }
 
     fn all_inputs(&self) -> Vec<GhostVar> {
         let mut inputs = self.sync.clone();
-        inputs.extend(self.leftover.clone());
+        inputs.extend(self.restore.clone());
+        inputs.extend(self.garb.clone());
         inputs
+    }
+
+    fn move_restore_to_sync(&mut self) {
+        if !self.restore.is_empty() {
+            self.sync.extend(self.restore.drain(..));
+        }
+    }
+
+    fn move_restore_to_garb(&mut self) {
+        if !self.restore.is_empty() {
+            self.garb.extend(self.restore.drain(..));
+        }
     }
 }
 
@@ -109,9 +127,10 @@ impl FunctionLowerer {
                 let mut ctx = ctx;
                 let (need_perm, left_perm) = self.split_sync(builder, &mut ctx);
                 // for tail calls, we "garbage collect" any leftover permissions
-                ctx.leftover.push(left_perm);
+                ctx.garb.push(left_perm);
+                ctx.move_restore_to_garb();
 
-                let (left_perm, _) = self.join_split(builder, ctx.leftover_inputs());
+                let (left_perm, _) = self.join_split(builder, ctx.garb_inputs());
 
                 GhostTail::TailCall {
                     func: func.clone(),
@@ -152,10 +171,11 @@ impl FunctionLowerer {
             ghost_in,
             ghost_out: ghost_out.clone(),
         });
+
+        // dummy zero token can be dropped
+        // ctx.garb.push(ghost_out); 
         if fenced {
-            ctx.sync.push(ghost_out);
-        } else {
-            ctx.leftover.push(ghost_out);
+            ctx.move_restore_to_sync();
         }
     }
 
@@ -178,11 +198,7 @@ impl FunctionLowerer {
                     ghost_in,
                     ghost_out: ghost_out.clone(),
                 });
-                if fenced {
-                    ctx.sync.push(ghost_out);
-                } else {
-                    ctx.leftover.push(ghost_out);
-                }
+                ctx.restore.push(ghost_out);
             }
             Op::Store {
                 array,
@@ -199,11 +215,7 @@ impl FunctionLowerer {
                     ghost_in,
                     ghost_out: ghost_out.clone(),
                 });
-                if fenced {
-                    ctx.sync.push(ghost_out);
-                } else {
-                    ctx.leftover.push(ghost_out);
-                }
+                ctx.restore.push(ghost_out);
             }
             _ => {
                 // NOTE: pureop needs no token and output a zero token
@@ -215,12 +227,12 @@ impl FunctionLowerer {
                     op: op.clone(),
                     ghost_out: ghost_out.clone(),
                 });
-                if fenced {
-                    ctx.sync.push(ghost_out);
-                } else {
-                    ctx.leftover.push(ghost_out);
-                }
+                // dummy zero token can be dropped
+                // ctx.garb.push(ghost_out); 
             }
+        }
+        if fenced {
+            ctx.move_restore_to_sync();
         }
     }
 
@@ -235,9 +247,9 @@ impl FunctionLowerer {
     ) {
         let (need_perm, _) = self.split_sync(builder, ctx);
 
-        let inputs = ctx.leftover_inputs();
+        let inputs = ctx.garb_inputs();
         let (left_perm, right_perm) = self.join_split(builder, inputs);
-        ctx.leftover = vec![right_perm.clone()];
+        ctx.garb = vec![right_perm.clone()];
 
         let ret_perm = self.fresh();
         builder.push(GhostStmt::Call {
@@ -249,10 +261,9 @@ impl FunctionLowerer {
             ghost_ret: ret_perm.clone(),
         });
 
+        ctx.restore.push(ret_perm);
         if fence {
-            ctx.sync.push(ret_perm);
-        } else {
-            ctx.leftover.push(ret_perm);
+            ctx.move_restore_to_sync();
         }
     }
 
@@ -335,7 +346,7 @@ mod tests {
 
         assert_eq!(
             ghost_fn.ghost_params,
-            vec![GhostVar("p0".into()), GhostVar("p_lft".into())]
+            vec![GhostVar("p_sync".into()), GhostVar("p_garb".into())]
         );
 
         assert!(
@@ -401,7 +412,7 @@ mod tests {
 
         assert_eq!(
             ghost_fn.ghost_params,
-            vec![GhostVar("p0".into()), GhostVar("p_lft".into())]
+            vec![GhostVar("p_sync".into()), GhostVar("p_garb".into())]
         );
 
         let (then_expr, else_expr) = match &ghost_fn.body.tail {
@@ -503,8 +514,8 @@ mod tests {
         assert_eq!(params[1], "a");
         assert_eq!(params[2], "N");
         assert_eq!(params[3], "A");
-        assert_eq!(params[4], "p0");
-        assert_eq!(params[5], "p_lft");
+        assert_eq!(params[4], "p_sync");
+        assert_eq!(params[5], "p_garb");
 
         // Verify body structure
         assert!(

@@ -1,12 +1,12 @@
 {
   "fns": [
     {
-      "name": "sum",
+      "name": "copy_array",
       "params": [
         "i",
-        "a",
         "N",
-        "A",
+        "src",
+        "dst",
         "p_sync",
         "p_garb"
       ],
@@ -16,7 +16,7 @@
           {
             "op": {
               "op": {
-                "fork": 3
+                "fork": 4
               }
             }
           },
@@ -26,7 +26,8 @@
           [
             "i_fork0",
             "i_fork1",
-            "i_fork2"
+            "i_fork2",
+            "i_fork3"
           ],
           {
             "op": [
@@ -84,7 +85,7 @@
                               {
                                 "op": {
                                   "op_ghost": {
-                                    "load": "A"
+                                    "load": "src"
                                   }
                                 }
                               },
@@ -93,7 +94,7 @@
                                 "p2"
                               ],
                               [
-                                "val",
+                                "v",
                                 "p4"
                               ],
                               {
@@ -117,63 +118,65 @@
                                     "op": [
                                       {
                                         "op": {
-                                          "op": {
-                                            "const": 1
+                                          "op_ghost": {
+                                            "store": "dst"
                                           }
                                         }
                                       },
                                       [
+                                        "i_fork2",
+                                        "v",
                                         "p5"
                                       ],
                                       [
-                                        "one",
                                         "p7"
                                       ],
                                       {
                                         "op": [
                                           {
                                             "op": {
-                                              "op": "add"
+                                              "join": {
+                                                "deps": 0,
+                                                "toks": 1
+                                              }
                                             }
                                           },
                                           [
-                                            "i_fork2",
-                                            "one"
+                                            "p6"
                                           ],
                                           [
-                                            "j",
-                                            "p8"
+                                            "p8",
+                                            "p9"
                                           ],
                                           {
                                             "op": [
                                               {
                                                 "op": {
-                                                  "op": "add"
+                                                  "op": {
+                                                    "const": 1
+                                                  }
                                                 }
                                               },
                                               [
-                                                "a",
-                                                "val"
+                                                "p8"
                                               ],
                                               [
-                                                "new_a",
-                                                "p9"
+                                                "one",
+                                                "p10"
                                               ],
                                               {
                                                 "op": [
                                                   {
                                                     "op": {
-                                                      "join": {
-                                                        "deps": 0,
-                                                        "toks": 1
-                                                      }
+                                                      "op": "add"
                                                     }
                                                   },
                                                   [
-                                                    "p6"
+                                                    "i_fork3",
+                                                    "one"
                                                   ],
                                                   [
-                                                    "p10",
+                                                    "j",
                                                     "p11"
                                                   ],
                                                   {
@@ -182,27 +185,47 @@
                                                         "op": {
                                                           "join": {
                                                             "deps": 0,
-                                                            "toks": 3
+                                                            "toks": 1
                                                           }
                                                         }
                                                       },
                                                       [
-                                                        "p_garb",
-                                                        "p11",
-                                                        "p4"
+                                                        "p9"
                                                       ],
                                                       [
                                                         "p12",
                                                         "p13"
                                                       ],
                                                       {
-                                                        "tail": [
-                                                          "j",
-                                                          "new_a",
-                                                          "N_fork1",
-                                                          "A",
-                                                          "p10",
-                                                          "p12"
+                                                        "op": [
+                                                          {
+                                                            "op": {
+                                                              "join": {
+                                                                "deps": 0,
+                                                                "toks": 4
+                                                              }
+                                                            }
+                                                          },
+                                                          [
+                                                            "p_garb",
+                                                            "p13",
+                                                            "p4",
+                                                            "p7"
+                                                          ],
+                                                          [
+                                                            "p14",
+                                                            "p15"
+                                                          ],
+                                                          {
+                                                            "tail": [
+                                                              "j",
+                                                              "N_fork1",
+                                                              "src",
+                                                              "dst",
+                                                              "p12",
+                                                              "p14"
+                                                            ]
+                                                          }
                                                         ]
                                                       }
                                                     ]
@@ -227,22 +250,59 @@
                             "op": {
                               "join": {
                                 "deps": 0,
-                                "toks": 2
+                                "toks": 1
                               }
                             }
                           },
                           [
-                            "p_sync",
-                            "p_garb"
+                            "p_sync"
                           ],
                           [
-                            "p14",
-                            "p15"
+                            "p16",
+                            "p17"
                           ],
                           {
-                            "ret": [
-                              "a",
-                              "p14"
+                            "op": [
+                              {
+                                "op": {
+                                  "op": {
+                                    "const": 0
+                                  }
+                                }
+                              },
+                              [
+                                "p16"
+                              ],
+                              [
+                                "_unit_ret",
+                                "p18"
+                              ],
+                              {
+                                "op": [
+                                  {
+                                    "op": {
+                                      "join": {
+                                        "deps": 0,
+                                        "toks": 2
+                                      }
+                                    }
+                                  },
+                                  [
+                                    "p17",
+                                    "p_garb"
+                                  ],
+                                  [
+                                    "p19",
+                                    "p20"
+                                  ],
+                                  {
+                                    "ret": [
+                                      "_unit_ret",
+                                      "p19"
+                                    ]
+                                  }
+                                ]
+                              }
                             ]
                           }
                         ]

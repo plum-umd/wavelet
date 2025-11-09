@@ -1,37 +1,109 @@
+use dfx::SemanticLogic;
+use dfx::check::{CheckOptions, check_fn_with_options};
+use dfx::env::FnRegistry;
 use dfx::ghost::json::export_program_json;
 use dfx::ghost::lower::synthesize_ghost_program;
 use dfx::parse::parse_program;
+use std::fs;
+use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Example program: sum an array (from test files)
-    let source = include_str!("../tests/test_files/sum.rs");
+    let test_dir = PathBuf::from("tests/test_files");
+    let output_dir = PathBuf::from("examples/output");
 
-    println!("Parsing program...");
-    let program = parse_program(source)?;
-    println!("Parsed {} function(s)", program.defs.len());
-    println!("Parsed program:\n{}", program);
+    // Create output directory if it doesn't exist
+    fs::create_dir_all(&output_dir)?;
 
-    println!("\nLowering to ghost IR...");
-    let ghost_program = synthesize_ghost_program(&program);
+    println!("Processing test files from {}...\n", test_dir.display());
 
-    println!("Ghost IR:");
-    for def in &ghost_program.defs {
-        println!("{}", def);
+    let mut success_count = 0;
+    let mut fail_count = 0;
+    let logic = SemanticLogic::default();
+    let options = CheckOptions::default();
+
+    // Iterate through all .rs files in test_files
+    for entry in fs::read_dir(&test_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.extension().map(|e| e == "rs").unwrap_or(false) {
+            let filename = path.file_name().unwrap().to_string_lossy().to_string();
+            print!("Processing {}... ", filename);
+
+            // Read
+            let source = match fs::read_to_string(&path) {
+                Ok(content) => content,
+                Err(e) => {
+                    println!("✗ Failed to read: {}", e);
+                    fail_count += 1;
+                    continue;
+                }
+            };
+
+            // Parse
+            let program = match parse_program(&source) {
+                Ok(prog) => prog,
+                Err(e) => {
+                    println!("✗ Parse error: {}", e);
+                    fail_count += 1;
+                    continue;
+                }
+            };
+
+            // Type check
+            let mut registry = FnRegistry::default();
+            for def in &program.defs {
+                registry.insert(def.clone());
+            }
+
+            let mut all_passed = true;
+            for def in &program.defs {
+                if let Err(e) = check_fn_with_options(def, &registry, &logic, options.clone()) {
+                    println!("✗ Type check failed: {}", e);
+                    all_passed = false;
+                    break;
+                }
+            }
+
+            if !all_passed {
+                fail_count += 1;
+                continue;
+            }
+
+            // Lower to ghost IR
+            let ghost_program = synthesize_ghost_program(&program);
+
+            // Export to JSON
+            let json = match export_program_json(&ghost_program) {
+                Ok(json) => json,
+                Err(e) => {
+                    println!("✗ JSON export failed: {}", e);
+                    fail_count += 1;
+                    continue;
+                }
+            };
+
+            // Write to output file
+            let output_filename = filename.replace(".rs", ".json");
+            let output_path = output_dir.join(&output_filename);
+
+            match fs::write(&output_path, &json) {
+                Ok(_) => {
+                    println!("✓ Success -> {}", output_filename);
+                    success_count += 1;
+                }
+                Err(e) => {
+                    println!("✗ Write failed: {}", e);
+                    fail_count += 1;
+                }
+            }
+        }
     }
 
-    println!("\n\nExporting to JSON...");
-    let json = export_program_json(&ghost_program)?;
-
-    println!("JSON output:");
-    println!("{}", json);
-
-    // Verify the JSON is valid and parseable
-    let parsed: serde_json::Value = serde_json::from_str(&json)?;
-    println!("\n✓ JSON is valid");
-    println!(
-        "✓ Contains {} function(s)",
-        parsed["fns"].as_array().unwrap().len()
-    );
+    println!("\n=== Summary ===");
+    println!("Successful: {}", success_count);
+    println!("Failed: {}", fail_count);
+    println!("Output directory: {}", output_dir.display());
 
     Ok(())
 }

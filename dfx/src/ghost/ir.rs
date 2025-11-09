@@ -120,7 +120,7 @@ impl std::fmt::Display for GhostFnDef {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}: {:?}", var.0, ty)?;
+            write!(f, "{}: {}", var.0, ty)?;
         }
         write!(f, "; ")?;
         for (i, gv) in self.ghost_params.iter().enumerate() {
@@ -129,7 +129,7 @@ impl std::fmt::Display for GhostFnDef {
             }
             write!(f, "{}", gv.0)?;
         }
-        writeln!(f, ") -> {:?} {{", self.returns)?;
+        writeln!(f, ") -> {} {{", self.returns)?;
         write!(f, "{}", self.body)?;
         writeln!(f, "}}")
     }
