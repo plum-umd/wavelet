@@ -1,6 +1,7 @@
 //! Intermediate representation for the restricted language.
 
 use crate::logic::cap::CapPattern;
+use crate::logic::semantic::solver::Idx;
 
 /// A variable name.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -16,8 +17,10 @@ pub struct FnName(pub String);
 pub enum ArrayLen {
     /// Statically known constant length.
     Const(usize),
-    /// Symbolic length (e.g. a const generic parameter `N`).
+    /// Symbolic identifier (e.g. a const generic parameter `N`).
     Symbol(String),
+    /// General index expression (e.g. `M * N`).
+    Expr(Idx),
 }
 
 impl ArrayLen {
@@ -26,6 +29,7 @@ impl ArrayLen {
         match self {
             ArrayLen::Const(n) => n.to_string(),
             ArrayLen::Symbol(name) => name.clone(),
+            ArrayLen::Expr(expr) => format!("{}", expr),
         }
     }
 }

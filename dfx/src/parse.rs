@@ -373,12 +373,12 @@ fn parse_array_length(
 
     let idx_expr = syn_expr_to_index_expr(expr, const_generics)?;
     let idx = idx_expr.to_idx();
-    if let Idx::Const(value) = idx {
-        if value >= 0 {
-            return Ok(ArrayLen::Const(value as usize));
-        }
+    match idx {
+        Idx::Const(value) if value >= 0 => Ok(ArrayLen::Const(value as usize)),
+        Idx::Const(value) => Ok(ArrayLen::Expr(Idx::Const(value))),
+        Idx::Var(name) => Ok(ArrayLen::Symbol(name)),
+        other => Ok(ArrayLen::Expr(other)),
     }
-    Ok(ArrayLen::Symbol(format!("{}", idx)))
 }
 
 /// Convert capability annotation to CapPattern

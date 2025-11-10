@@ -780,6 +780,9 @@ impl CheckContext {
                 crate::ir::ArrayLen::Symbol(name) => {
                     RegionSetExpr::interval(Idx::Const(0), Idx::Var(name.clone()))
                 }
+                crate::ir::ArrayLen::Expr(expr) => {
+                    RegionSetExpr::interval(Idx::Const(0), expr.clone())
+                }
             };
 
             // Process uniq region if present
