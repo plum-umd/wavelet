@@ -7,6 +7,7 @@ mod dconv;
 mod dither;
 mod dmm;
 mod dmv;
+mod fft;
 mod nn_conv;
 mod nn_fc;
 mod nn_norm;

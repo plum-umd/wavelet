@@ -8,8 +8,11 @@ fn dot_row_col_aux<const M: usize, const N: usize, const P: usize>(
 ) -> i32 {
     let cond = k < N;
     if cond {
-        let a_val = a[row_base + k];
-        let b_val = b[col_start + k * P];
+        let idx_a = row_base + k;
+        let kp = k * P;
+        let idx_b = col_start + kp;
+        let a_val = a[idx_a];
+        let b_val = b[idx_b];
         let prod = a_val * b_val;
         let new_acc = acc + prod;
 
@@ -36,7 +39,8 @@ fn mm_row_aux<const M: usize, const N: usize, const P: usize>(
 
         let w = dot_row_col_aux::<M, N, P>(0, row_base, col_start, a, b, 0);
 
-        let dest_idx = i * P + j;
+        let ip = i * P;
+        let dest_idx = ip + j;
         z[dest_idx] = w;
 
         let one = 1;
