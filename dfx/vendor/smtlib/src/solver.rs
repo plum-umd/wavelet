@@ -92,6 +92,34 @@ where
             _ => todo!(),
         }
     }
+
+    /// Reset all assertions and declarations made since the solver was
+    /// created. This provides a clean state for subsequent queries.
+    pub fn reset(&mut self) -> Result<(), Error> {
+        self.push_pop_stack.clear();
+        self.decls.clear();
+        self.declared_sorts.clear();
+
+        let cmd = ast::Command::ResetAssertions;
+        match self.driver.exec(cmd)? {
+            ast::GeneralResponse::Success => Ok(()),
+            ast::GeneralResponse::Error(e) => Err(Error::Smt(e.to_string(), cmd.to_string())),
+            _ => todo!(),
+        }
+    }
+
+    /// Set Z3's resource limit counter (`rlimit`).
+    pub fn set_rlimit(&mut self, rlimit: usize) -> Result<(), Error> {
+        let cmd = ast::Command::SetOption(ast::Option::Attribute(ast::Attribute::WithValue(
+            smtlib_lowlevel::lexicon::Keyword(":rlimit"),
+            ast::AttributeValue::SpecConstant(ast::SpecConstant::Numeral(Numeral::from_usize(rlimit))),
+        )));
+        match self.driver.exec(cmd)? {
+            ast::GeneralResponse::Success => Ok(()),
+            ast::GeneralResponse::Error(e) => Err(Error::Smt(e.to_string(), cmd.to_string())),
+            _ => todo!(),
+        }
+    }
     /// Explicitly sets the logic for the solver. For some backends this is not
     /// required, as they will infer what ever logic fits the current program.
     ///

@@ -4,8 +4,8 @@ use std::{
     collections::HashMap,
     fmt::{self, Display},
     sync::{
-        Arc,
         atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
     },
 };
 
@@ -14,6 +14,7 @@ use smtlib::terms::IntoWithStorage;
 use smtlib::{Bool, Int, Real, SatResult, Solver, Storage, backend::z3_binary::Z3Binary};
 
 use smtlib::terms::StaticSorted;
+use smtlib_lowlevel::ast;
 
 use crate::logic::cap::RegionModel;
 
@@ -173,7 +174,9 @@ pub trait PhiSolver {
 pub struct SmtSolver {
     z3_path: String,
     timeout_ms: Option<u64>,
+    rlimit: Option<u64>,
     log_queries: Arc<AtomicBool>,
+    solver: Arc<Mutex<Option<SolverInstance>>>,
 }
 
 impl SmtSolver {
@@ -183,7 +186,9 @@ impl SmtSolver {
         Self {
             z3_path: "z3".into(),
             timeout_ms: None,
+            rlimit: None,
             log_queries: Arc::new(AtomicBool::new(false)),
+            solver: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -192,7 +197,9 @@ impl SmtSolver {
         Self {
             z3_path: path.into(),
             timeout_ms: None,
+            rlimit: None,
             log_queries: Arc::new(AtomicBool::new(false)),
+            solver: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -200,6 +207,12 @@ impl SmtSolver {
     /// invocations.
     pub fn with_timeout(mut self, timeout_ms: u64) -> Self {
         self.timeout_ms = Some(timeout_ms);
+        self
+    }
+
+    /// Configure Z3's `:rlimit` counter.
+    pub fn with_rlimit(mut self, rlimit: u64) -> Self {
+        self.rlimit = Some(rlimit);
         self
     }
 
@@ -234,16 +247,25 @@ impl Clone for SmtSolver {
         Self {
             z3_path: self.z3_path.clone(),
             timeout_ms: self.timeout_ms,
+            rlimit: self.rlimit,
             log_queries: Arc::clone(&self.log_queries),
+            solver: Arc::clone(&self.solver),
         }
     }
 }
 
 impl fmt::Debug for SmtSolver {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let has_solver = self
+            .solver
+            .lock()
+            .map(|guard| guard.is_some())
+            .unwrap_or(false);
         f.debug_struct("SmtSolver")
             .field("z3_path", &self.z3_path)
             .field("timeout_ms", &self.timeout_ms)
+            .field("rlimit", &self.rlimit)
+            .field("solver_cached", &has_solver)
             .field("log_queries", &self.log_queries.load(Ordering::Relaxed))
             .finish()
     }
@@ -253,35 +275,51 @@ impl PhiSolver for SmtSolver {
     type Region = super::region_set::RegionSetExpr;
 
     fn entails(&self, ctx: &Phi, atom: &Atom) -> bool {
-        let storage = Storage::new();
-        let backend = match Z3Binary::new(&self.z3_path) {
-            Ok(backend) => backend,
-            Err(err) => {
-                eprintln!("failed to initialise z3 backend: {err}");
-                return false;
-            }
-        };
-        let mut solver = match Solver::new(&storage, backend) {
-            Ok(solver) => solver,
-            Err(err) => {
-                eprintln!("failed to construct solver: {err}");
-                return false;
-            }
+        let mut solver_guard = match self.solver.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
         };
 
+        if solver_guard.is_none() {
+            match SolverInstance::new(&self.z3_path) {
+                Ok(instance) => {
+                    *solver_guard = Some(instance);
+                }
+                Err(err) => {
+                    eprintln!("failed to initialise z3 backend: {err}");
+                    return false;
+                }
+            }
+        }
+
+    let instance = solver_guard.as_mut().expect("solver instance initialised");
+    let storage_ptr = instance.storage_ptr();
+    let solver = instance.solver_mut();
+    let storage = unsafe { &*storage_ptr };
+
         if let Some(timeout) = self.timeout_ms {
-            if let Err(err) = solver.set_timeout(timeout as usize) {
+            let timeout = timeout.min(usize::MAX as u64) as usize;
+            if let Err(err) = solver.set_timeout(timeout) {
                 eprintln!("failed to set solver timeout: {err}");
             }
         }
 
-        let mut encoder = Encoder::new(&storage);
+        if let Some(limit) = self.rlimit {
+            let limit = limit.min(usize::MAX as u64) as usize;
+            if let Err(err) = solver.set_rlimit(limit) {
+                eprintln!("failed to set solver rlimit: {err}");
+            }
+        }
+
+        let mut encoder = Encoder::new(storage);
         let logging = self.log_queries.load(Ordering::Relaxed);
         let mut smt_trace = Vec::new();
         if logging {
             smt_trace.push("; z3 entailment query".to_string());
             smt_trace.push("; assumptions".to_string());
         }
+
+        let mut had_assert_failure = false;
         for assumption in ctx.iter() {
             let term = encoder.encode_atom(assumption);
             if logging {
@@ -291,52 +329,118 @@ impl PhiSolver for SmtSolver {
                 eprintln!("failed to assert assumption: {err}");
                 if logging {
                     smt_trace.push(format!("; solver error while asserting assumption: {err}"));
-                    for line in smt_trace {
-                        println!("{line}");
-                    }
                 }
-                return false;
+                had_assert_failure = true;
+                break;
             }
         }
 
-        let negated_atom = Atom::Not(Box::new(atom.clone()));
-        let negated = encoder.encode_atom(&negated_atom);
-        if logging {
-            smt_trace.push(format!("(assert {}) ; negated goal", negated));
-            smt_trace.push("(check-sat)".to_string());
-        }
-
-        let mut sat_outcome: Option<String> = None;
-        match solver.scope(|solver| {
-            solver.assert(negated)?;
-            let outcome = solver.check_sat()?;
-            sat_outcome = Some(format!("{:?}", outcome));
-            match outcome {
-                SatResult::Unsat => Ok(true),
-                _ => Ok(false),
+        let mut result = false;
+        if !had_assert_failure {
+            let negated_atom = Atom::Not(Box::new(atom.clone()));
+            let negated = encoder.encode_atom(&negated_atom);
+            if logging {
+                smt_trace.push(format!("(assert {}) ; negated goal", negated));
+                smt_trace.push("(check-sat)".to_string());
             }
-        }) {
-            Ok(result) => {
-                if logging {
-                    if let Some(outcome) = sat_outcome {
-                        smt_trace.push(format!("; result: {outcome}"));
-                    }
-                    for line in smt_trace {
-                        println!("{line}");
+
+            let mut sat_outcome: Option<String> = None;
+            match solver.scope(|solver| {
+                solver.assert(negated)?;
+                let outcome = solver.check_sat()?;
+                sat_outcome = Some(format!("{:?}", outcome));
+                match outcome {
+                    SatResult::Unsat => Ok(true),
+                    _ => Ok(false),
+                }
+            }) {
+                Ok(scope_result) => {
+                    result = scope_result;
+                    if logging {
+                        if let Some(outcome) = sat_outcome {
+                            smt_trace.push(format!("; result: {outcome}"));
+                        }
+                        for line in &smt_trace {
+                            println!("{line}");
+                        }
                     }
                 }
-                result
+                Err(err) => {
+                    eprintln!("solver failure while checking entailment: {err}");
+                    if logging {
+                        smt_trace.push(format!("; solver failure: {err}"));
+                        for line in &smt_trace {
+                            println!("{line}");
+                        }
+                    }
+                }
             }
+        } else if logging {
+            for line in &smt_trace {
+                println!("{line}");
+            }
+        }
+
+        if let Err(err) = solver.reset() {
+            eprintln!("failed to reset solver state: {err}");
+        }
+
+        drop(solver_guard);
+
+        result
+    }
+}
+
+struct SolverInstance {
+    storage: *mut Storage,
+    solver: Solver<'static, Z3Binary>,
+}
+
+impl SolverInstance {
+    fn new(z3_path: &str) -> Result<Self, String> {
+        let storage = Box::into_raw(Box::new(Storage::new()));
+        let storage_ref = unsafe { &*storage };
+
+        let backend = match Z3Binary::new(z3_path) {
+            Ok(backend) => backend,
             Err(err) => {
-                eprintln!("solver failure while checking entailment: {err}");
-                if logging {
-                    smt_trace.push(format!("; solver failure: {err}"));
-                    for line in smt_trace {
-                        println!("{line}");
-                    }
+                unsafe {
+                    drop(Box::from_raw(storage));
                 }
-                false
+                return Err(err.to_string());
             }
+        };
+
+        let solver = match Solver::new(storage_ref, backend) {
+            Ok(solver) => solver,
+            Err(err) => {
+                unsafe {
+                    drop(Box::from_raw(storage));
+                }
+                return Err(err.to_string());
+            }
+        };
+
+        Ok(Self { storage, solver })
+    }
+
+    fn storage_ptr(&self) -> *const Storage {
+        self.storage as *const Storage
+    }
+
+    fn solver_mut(&mut self) -> &mut Solver<'static, Z3Binary> {
+        &mut self.solver
+    }
+}
+
+impl Drop for SolverInstance {
+    fn drop(&mut self) {
+        if let Err(err) = self.solver.run_command(ast::Command::Exit) {
+            eprintln!("failed to shut down z3 backend: {err}");
+        }
+        // Safety: storage was created with Box::into_raw in new()
+        unsafe {
+            drop(Box::from_raw(self.storage));
         }
     }
 }
