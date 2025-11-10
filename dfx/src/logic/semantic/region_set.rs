@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 
 use super::{Atom, Idx, Phi, PhiSolver, SmtSolver};
@@ -210,6 +210,30 @@ impl RegionSetExpr {
                                     break 'outer_reduce;
                                 }
                             }
+                            // If the remaining union pieces collectively cover `rhs`,
+                            // we can also collapse back to the base region. This helps in
+                            // scenarios where `rhs` was split into several disjoint pieces
+                            // earlier (e.g. when loads/stores carve out individual indices).
+                            if normalized.len() > 1 {
+                                let mut others: Vec<RegionSetExpr> = Vec::new();
+                                for (j, item) in normalized.iter().enumerate() {
+                                    if j == idx {
+                                        continue;
+                                    }
+                                    others.push(item.clone());
+                                }
+                                if !others.is_empty() {
+                                    let others_union =
+                                        RegionSetExpr::union(others).simplify(phi, solver);
+                                    if regions_equivalent(phi, &others_union, &rhs, solver) {
+                                        let base_expr = base.simplify(phi, solver);
+                                        normalized.clear();
+                                        normalized.push(base_expr);
+                                        reduced = true;
+                                        break 'outer_reduce;
+                                    }
+                                }
+                            }
                         }
                     }
                     if !reduced {
@@ -237,6 +261,22 @@ impl RegionSetExpr {
                 if is_empty_expr(&right, phi, solver) {
                     return left;
                 }
+
+                if let RegionSetExpr::Union(items) = &left {
+                    let mut pieces: Vec<RegionSetExpr> = Vec::new();
+                    for item in items {
+                        let diff = RegionSetExpr::difference(item.clone(), right.clone())
+                            .simplify(phi, solver);
+                        if !is_empty_expr(&diff, phi, solver) {
+                            pieces.push(diff);
+                        }
+                    }
+                    if pieces.is_empty() {
+                        return RegionSetExpr::Empty;
+                    }
+                    return RegionSetExpr::Union(pieces).simplify(phi, solver);
+                }
+
                 if is_subset_expr(&left, &right, phi, solver) {
                     return RegionSetExpr::Empty;
                 }
@@ -348,6 +388,35 @@ pub fn check_subset(
     rhs: &RegionSetExpr,
     solver: &SmtSolver,
 ) -> bool {
+    let const_map = build_const_map(phi);
+
+    if let (
+        RegionSetExpr::Interval { lo: lo_lhs, hi: hi_lhs },
+        RegionSetExpr::Interval { lo: lo_rhs, hi: hi_rhs },
+    ) = (lhs, rhs)
+    {
+        let lo_lhs_sub = substitute_idx_consts(lo_lhs, &const_map);
+        let hi_lhs_sub = substitute_idx_consts(hi_lhs, &const_map);
+        let lo_rhs_sub = substitute_idx_consts(lo_rhs, &const_map);
+        let hi_rhs_sub = substitute_idx_consts(hi_rhs, &const_map);
+
+        let lower_ok = solver.entails(phi, &Atom::Le(lo_rhs_sub.clone(), lo_lhs_sub.clone()));
+        let upper_ok = solver.entails(phi, &Atom::Le(hi_lhs_sub.clone(), hi_rhs_sub.clone()));
+        if lower_ok && upper_ok {
+            return true;
+        }
+    }
+
+    match lhs {
+        RegionSetExpr::Empty => return true,
+        RegionSetExpr::Union(items) => {
+            return items
+                .iter()
+                .all(|item| check_subset(phi, item, rhs, solver));
+        }
+        _ => {}
+    }
+
     let mut int_vars = BTreeSet::new();
     let mut bool_vars = BTreeSet::new();
 
@@ -379,6 +448,46 @@ pub fn check_subset(
     extended_ctx.push(lhs_membership);
 
     solver.entails(&extended_ctx, &rhs_membership)
+}
+
+fn build_const_map(phi: &Phi) -> HashMap<String, i64> {
+    let mut consts = HashMap::new();
+    for atom in phi.iter() {
+        if let Atom::Eq(lhs, rhs) = atom {
+            match (lhs, rhs) {
+                (Idx::Var(name), Idx::Const(val)) => {
+                    consts.insert(name.clone(), *val);
+                }
+                (Idx::Const(val), Idx::Var(name)) => {
+                    consts.insert(name.clone(), *val);
+                }
+                _ => {}
+            }
+        }
+    }
+    consts
+}
+
+fn substitute_idx_consts(idx: &Idx, consts: &HashMap<String, i64>) -> Idx {
+    match idx {
+        Idx::Const(n) => Idx::Const(*n),
+        Idx::Var(name) => consts
+            .get(name)
+            .map(|val| Idx::Const(*val))
+            .unwrap_or_else(|| Idx::Var(name.clone())),
+        Idx::Add(lhs, rhs) => Idx::Add(
+            Box::new(substitute_idx_consts(lhs, consts)),
+            Box::new(substitute_idx_consts(rhs, consts)),
+        ),
+        Idx::Sub(lhs, rhs) => Idx::Sub(
+            Box::new(substitute_idx_consts(lhs, consts)),
+            Box::new(substitute_idx_consts(rhs, consts)),
+        ),
+        Idx::Mul(lhs, rhs) => Idx::Mul(
+            Box::new(substitute_idx_consts(lhs, consts)),
+            Box::new(substitute_idx_consts(rhs, consts)),
+        ),
+    }
 }
 
 fn region_membership_atom(expr: &RegionSetExpr, witness: &str) -> Atom {

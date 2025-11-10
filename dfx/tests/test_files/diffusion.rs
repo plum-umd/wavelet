@@ -2,8 +2,10 @@
 fn diffusion_step_aux<const N: usize>(i: usize, grid: &mut [i32; N]) {
     let one = 1;
     let ip1 = i + one;
-    let cont = ip1 < N;
-    if cont {
+    let cond1 = 0 < i;
+    let cond2 = ip1 < N;
+    let cond = cond1 && cond2;
+    if cond {
         let prev = i - one;
         let next = i + one;
         let left = grid[prev];

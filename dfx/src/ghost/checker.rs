@@ -1128,6 +1128,9 @@ fn build_function_signature(def: &GhostFnDef) -> FunctionSignature {
 
 /// Check a single ghost function definition.
 fn check_ghost_fn(def: &GhostFnDef, ctx: &mut CheckContext) -> Result<(), String> {
+    // clear propositional context and permission env
+    ctx.phi.atoms.clear();
+    ctx.penv.perms.clear();
     ctx.set_current_fn_entry_perms(None);
 
     trace_context(ctx, &format!("Initial context for function {}", def.name.0));
@@ -1350,6 +1353,66 @@ fn check_ghost_stmt_pure(stmt: &GhostStmt, ctx: &mut CheckContext) -> Result<(),
                 Box::new(Atom::Not(Box::new(comparison))),
             ));
         }
+        Op::And if inputs.len() == 2 => {
+            let lhs = Atom::BoolVar(inputs[0].0.clone());
+            let rhs = Atom::BoolVar(inputs[1].0.clone());
+            let out = Atom::BoolVar(output.0.clone());
+
+            // out => lhs and out => rhs
+            ctx.add_constraint(Atom::Implies(
+                Box::new(out.clone()),
+                Box::new(lhs.clone()),
+            ));
+            ctx.add_constraint(Atom::Implies(
+                Box::new(out.clone()),
+                Box::new(rhs.clone()),
+            ));
+
+            // lhs ∧ rhs => out
+            let lhs_and_rhs = Atom::And(Box::new(lhs.clone()), Box::new(rhs.clone()));
+            ctx.add_constraint(Atom::Implies(
+                Box::new(lhs_and_rhs),
+                Box::new(out.clone()),
+            ));
+
+            // ¬out => ¬lhs ∨ ¬rhs
+            let not_out = Atom::Not(Box::new(out.clone()));
+            let not_lhs = Atom::Not(Box::new(lhs));
+            let not_rhs = Atom::Not(Box::new(rhs));
+            let not_lhs_or_not_rhs = Atom::Or(Box::new(not_lhs), Box::new(not_rhs));
+            ctx.add_constraint(Atom::Implies(Box::new(not_out), Box::new(not_lhs_or_not_rhs)));
+        }
+        Op::Or if inputs.len() == 2 => {
+            let lhs = Atom::BoolVar(inputs[0].0.clone());
+            let rhs = Atom::BoolVar(inputs[1].0.clone());
+            let out = Atom::BoolVar(output.0.clone());
+
+            // lhs => out and rhs => out
+            ctx.add_constraint(Atom::Implies(
+                Box::new(lhs.clone()),
+                Box::new(out.clone()),
+            ));
+            ctx.add_constraint(Atom::Implies(
+                Box::new(rhs.clone()),
+                Box::new(out.clone()),
+            ));
+
+            // out => lhs ∨ rhs
+            let lhs_or_rhs = Atom::Or(Box::new(lhs.clone()), Box::new(rhs.clone()));
+            ctx.add_constraint(Atom::Implies(
+                Box::new(out.clone()),
+                Box::new(lhs_or_rhs),
+            ));
+
+            // ¬lhs ∧ ¬rhs => ¬out
+            let not_lhs = Atom::Not(Box::new(lhs));
+            let not_rhs = Atom::Not(Box::new(rhs));
+            let not_lhs_and_not_rhs = Atom::And(Box::new(not_lhs), Box::new(not_rhs));
+            ctx.add_constraint(Atom::Implies(
+                Box::new(not_lhs_and_not_rhs),
+                Box::new(Atom::Not(Box::new(out))),
+            ));
+        }
         Op::Add | Op::Sub | Op::Mul if inputs.len() == 2 => {
             // output == inputs[0] op inputs[1]
             let lhs = Box::new(Idx::Var(inputs[0].0.clone()));
@@ -1361,6 +1424,38 @@ fn check_ghost_stmt_pure(stmt: &GhostStmt, ctx: &mut CheckContext) -> Result<(),
                 _ => unreachable!(),
             };
             ctx.add_constraint(Atom::Eq(Idx::Var(output.0.clone()), result));
+
+            match op {
+                Op::Add => {
+                    // Also relate operands back to the result to aid solver reasoning.
+                    let out_var = Idx::Var(output.0.clone());
+                    let lhs_var = Idx::Var(inputs[0].0.clone());
+                    let rhs_var = Idx::Var(inputs[1].0.clone());
+                    ctx.add_constraint(Atom::Eq(
+                        lhs_var.clone(),
+                        Idx::Sub(Box::new(out_var.clone()), Box::new(rhs_var.clone())),
+                    ));
+                    ctx.add_constraint(Atom::Eq(
+                        rhs_var,
+                        Idx::Sub(Box::new(out_var), Box::new(lhs_var)),
+                    ));
+                }
+                Op::Sub => {
+                    // output = lhs - rhs  =>  lhs = output + rhs, rhs = lhs - output
+                    let out_var = Idx::Var(output.0.clone());
+                    let lhs_var = Idx::Var(inputs[0].0.clone());
+                    let rhs_var = Idx::Var(inputs[1].0.clone());
+                    ctx.add_constraint(Atom::Eq(
+                        lhs_var.clone(),
+                        Idx::Add(Box::new(out_var.clone()), Box::new(rhs_var.clone())),
+                    ));
+                    ctx.add_constraint(Atom::Eq(
+                        rhs_var,
+                        Idx::Sub(Box::new(lhs_var), Box::new(out_var)),
+                    ));
+                }
+                _ => {}
+            }
         }
         _ => {
             // Other operations don't add semantic constraints yet
@@ -1640,6 +1735,7 @@ fn check_ghost_stmt_joinsplit_store(
 
     ctx.bind_perm(right, rem_perm);
     ctx.bind_perm(&ghost_out.1, store_perm);
+
     Ok(())
 }
 
@@ -1971,7 +2067,7 @@ fn check_ghost_tail_with_two_joinsplits(
             };
 
             // right2 would always be epsilon
-            let (left2, _right2, inputs2) = match join_stmt2 {
+            let (left2, right2, inputs2) = match join_stmt2 {
                 GhostStmt::JoinSplit {
                     left,
                     right,
@@ -2114,10 +2210,18 @@ fn check_ghost_tail_with_two_joinsplits(
                     ));
                 }
             }
-            if !available_garb.is_empty() {
+            let leftover_expr = permissions_to_expr(available_garb);
+            let leftover_norm = leftover_expr
+                .normalize(&ctx.phi, &ctx.solver)
+                .ok_or_else(|| "TailCall leftover permissions could not be normalised".to_string())?;
+            let leftover_perms = leftover_norm
+                .collect_permissions(&ctx.phi, &ctx.solver)
+                .ok_or_else(|| "TailCall leftover permissions could not be collected".to_string())?;
+
+            if !leftover_perms.is_empty() {
                 if ctx.verbose {
                     println!("    ✗ Extra permissions remaining after p_garb consumption:");
-                    for extra in &available_garb {
+                    for extra in &leftover_perms {
                         println!("      - {}", render_permission(extra));
                     }
                 }
@@ -2131,6 +2235,9 @@ fn check_ghost_tail_with_two_joinsplits(
                 println!("    ✓ p_garb consumed exactly");
                 println!("  Verifying total permissions match entry permissions...");
             }
+
+            // Bind the remainder (which should be empty) back to the second JoinSplit right.
+            ctx.bind_perm(right2, leftover_norm);
 
             let entry_perms = ctx.current_fn_entry_perms().ok_or_else(|| {
                 "TailCall encountered without recorded entry permissions".to_string()
