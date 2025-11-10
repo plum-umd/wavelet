@@ -13,11 +13,15 @@ fn pool_k_aux<const SRC: usize>(
     if cond {
         let idx = src_offset + j * input_cols + k;
         let t = src[idx];
-        let w1 = if t > w { t } else { w };
-
-        let one = 1usize;
+        let cond1 = t > w;
+        let one = 1;
         let k1 = k + one;
-        pool_k_aux::<SRC>(k1, pool_size, src_offset, j, input_cols, w1, src)
+        if cond1 {
+            let w1 = t;
+            pool_k_aux::<SRC>(k1, pool_size, src_offset, j, input_cols, w1, src)
+        } else {
+            pool_k_aux::<SRC>(k1, pool_size, src_offset, j, input_cols, w, src)
+        }
     } else {
         w
     }
