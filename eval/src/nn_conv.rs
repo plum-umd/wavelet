@@ -1,6 +1,3 @@
-const SHRT_MIN: i32 = -32767;
-const SHRT_MAX: i32 = 32767;
-
 fn dot_window_aux<const SRC: usize, const W: usize>(
     j: usize,
     row: usize,
@@ -19,14 +16,17 @@ fn dot_window_aux<const SRC: usize, const W: usize>(
     if cond {
         // accumulate
         let a = weight[j];
-        let b = src[base + src_idx];
-        let sum = acc + a * b;
+        let src_offset = base + src_idx;
+        let b = src[src_offset];
+        let prod = a * b;
+        let sum = acc + prod;
 
         // advance scanning state
         let one = 1usize;
         let col1 = col + one;
         let src_idx1 = src_idx + one;
 
+        let j1 = j + one;
         let hit_col_end = col1 == weight_cols;
         if hit_col_end {
             let col2 = 0usize;
@@ -37,7 +37,6 @@ fn dot_window_aux<const SRC: usize, const W: usize>(
             if hit_row_end {
                 let row2 = 0usize;
                 let src_idx3 = src_idx2 + wc_wr_bump;
-                let j1 = j + one;
                 dot_window_aux::<SRC, W>(
                     j1,
                     row2,
@@ -53,7 +52,6 @@ fn dot_window_aux<const SRC: usize, const W: usize>(
                     sum,
                 )
             } else {
-                let j1 = j + one;
                 dot_window_aux::<SRC, W>(
                     j1,
                     row1,
@@ -70,7 +68,6 @@ fn dot_window_aux<const SRC: usize, const W: usize>(
                 )
             }
         } else {
-            let j1 = j + one;
             dot_window_aux::<SRC, W>(
                 j1,
                 row,
@@ -88,6 +85,18 @@ fn dot_window_aux<const SRC: usize, const W: usize>(
         }
     } else {
         acc
+    }
+}
+
+fn clamp_i16(w: i32) -> i32 {
+    let min = -32768;
+    let below = w < min;
+    if below {
+        min
+    } else {
+        let max = 32767;
+        let above = max < w;
+        if above { max } else { w }
     }
 }
 
@@ -125,18 +134,8 @@ fn nn_conv_aux<const SRC: usize, const W: usize, const OUT: usize>(
 
         // shift and clamp to [SHRT_MIN, SHRT_MAX]
         let shifted = w_raw >> shift;
-        let clipped_low = if shifted < SHRT_MIN {
-            SHRT_MIN
-        } else {
-            shifted
-        };
-        let clipped_high = if clipped_low > SHRT_MAX {
-            SHRT_MAX
-        } else {
-            clipped_low
-        };
-
-        dest[i] = clipped_high;
+        let clipped = clamp_i16(shifted);
+        dest[i] = clipped;
 
         // next output position
         let one = 1usize;
