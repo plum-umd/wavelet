@@ -147,7 +147,230 @@
       }
     },
     {
-      "name": "cond_write",
+      "name": "cond_write1",
+      "params": [
+        "j",
+        "odd",
+        "v",
+        "N",
+        "p_sync",
+        "p_garb"
+      ],
+      "outputs": 2,
+      "body": {
+        "br": [
+          "odd",
+          {
+            "op": [
+              {
+                "op": {
+                  "join": {
+                    "deps": 0,
+                    "toks": 1
+                  }
+                }
+              },
+              [
+                "p_sync"
+              ],
+              [
+                "p1",
+                "p2"
+              ],
+              {
+                "op": [
+                  {
+                    "op": {
+                      "op_ghost": {
+                        "store": "a"
+                      }
+                    }
+                  },
+                  [
+                    "j",
+                    "v",
+                    "p1"
+                  ],
+                  [
+                    "__store_dummy_4",
+                    "p3"
+                  ],
+                  {
+                    "op": [
+                      {
+                        "op": {
+                          "join": {
+                            "deps": 0,
+                            "toks": 1
+                          }
+                        }
+                      },
+                      [
+                        "p2"
+                      ],
+                      [
+                        "p5",
+                        "p6"
+                      ],
+                      {
+                        "op": [
+                          {
+                            "op": {
+                              "op": {
+                                "const": 0
+                              }
+                            }
+                          },
+                          [
+                            "p5"
+                          ],
+                          [
+                            "_unit_ret",
+                            "p7"
+                          ],
+                          {
+                            "op": [
+                              {
+                                "op": {
+                                  "join": {
+                                    "deps": 0,
+                                    "toks": 3
+                                  }
+                                }
+                              },
+                              [
+                                "p6",
+                                "p3",
+                                "p_garb"
+                              ],
+                              [
+                                "p8",
+                                "p9"
+                              ],
+                              {
+                                "ret": [
+                                  "_unit_ret",
+                                  "p8"
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": [
+              {
+                "op": {
+                  "join": {
+                    "deps": 0,
+                    "toks": 1
+                  }
+                }
+              },
+              [
+                "p_sync"
+              ],
+              [
+                "p10",
+                "p11"
+              ],
+              {
+                "op": [
+                  {
+                    "op": {
+                      "op_ghost": {
+                        "store": "z"
+                      }
+                    }
+                  },
+                  [
+                    "j",
+                    "v",
+                    "p10"
+                  ],
+                  [
+                    "__store_dummy_13",
+                    "p12"
+                  ],
+                  {
+                    "op": [
+                      {
+                        "op": {
+                          "join": {
+                            "deps": 0,
+                            "toks": 1
+                          }
+                        }
+                      },
+                      [
+                        "p11"
+                      ],
+                      [
+                        "p14",
+                        "p15"
+                      ],
+                      {
+                        "op": [
+                          {
+                            "op": {
+                              "op": {
+                                "const": 0
+                              }
+                            }
+                          },
+                          [
+                            "p14"
+                          ],
+                          [
+                            "_unit_ret",
+                            "p16"
+                          ],
+                          {
+                            "op": [
+                              {
+                                "op": {
+                                  "join": {
+                                    "deps": 0,
+                                    "toks": 3
+                                  }
+                                }
+                              },
+                              [
+                                "p15",
+                                "p12",
+                                "p_garb"
+                              ],
+                              [
+                                "p17",
+                                "p18"
+                              ],
+                              {
+                                "ret": [
+                                  "_unit_ret",
+                                  "p17"
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "cond_write2",
       "params": [
         "j",
         "odd",
@@ -1157,7 +1380,7 @@
                                                                                                                                                                               {
                                                                                                                                                                                 "op": [
                                                                                                                                                                                   {
-                                                                                                                                                                                    "call": "cond_write"
+                                                                                                                                                                                    "call": "cond_write1"
                                                                                                                                                                                   },
                                                                                                                                                                                   [
                                                                                                                                                                                     "idx1_copy1",
@@ -1410,7 +1633,7 @@
                                                                                                                                                                               {
                                                                                                                                                                                 "op": [
                                                                                                                                                                                   {
-                                                                                                                                                                                    "call": "cond_write"
+                                                                                                                                                                                    "call": "cond_write2"
                                                                                                                                                                                   },
                                                                                                                                                                                   [
                                                                                                                                                                                     "idx0_copy1",

@@ -43,7 +43,7 @@ def AtomicProcs.checkNoDupIO [Arity Op] [DecidableEq χ]
       s!"atomic proc {i}: {err}"
 
 /-- Executable version of `AtomicProcs.AffineChan`. -/
-def AtomicProcs.checkAffineChan [Arity Op] [DecidableEq χ]
+def AtomicProcs.checkAffineChan [Arity Op] [DecidableEq χ] [Repr χ]
   (aps : AtomicProcs Op χ V) : Except String Unit
   := do
   aps.checkNoDupIO
@@ -56,7 +56,7 @@ def AtomicProcs.checkAffineChan [Arity Op] [DecidableEq χ]
           throw s!"atomic procs {i} and {j} have overlapping outputs"
 
 /-- Executable version of `Proc.AffineChan`. -/
-def Proc.checkAffineChan [Arity Op] [DecidableEq χ]
+def Proc.checkAffineChan [Arity Op] [DecidableEq χ] [Repr χ]
   (proc : Proc Op χ V m n) : Except String Unit
   := do
   if ¬ proc.inputs.toList.Nodup then
@@ -98,7 +98,7 @@ theorem AtomicProcs.checkNoDupIO.correct
   grind only [List.mem_finRange, =_ List.contains_iff_mem, cases Or]
 
 theorem AtomicProcs.checkAffineChan.correct
-  [Arity Op] [DecidableEq χ]
+  [Arity Op] [DecidableEq χ] [Repr χ]
   {aps : AtomicProcs Op χ V} :
     aps.checkAffineChan.isOk ↔ aps.AffineChan
   := by
@@ -136,7 +136,7 @@ theorem AtomicProcs.checkAffineChan.correct
       simp [this, pure, Except.pure, Except.isOk, Except.toBool]
 
 theorem Proc.checkAffineChan.correct
-  [Arity Op] [DecidableEq χ]
+  [Arity Op] [DecidableEq χ] [Repr χ]
   {proc : Proc Op χ V m n} :
     proc.checkAffineChan.isOk ↔ proc.AffineChan
   := by
@@ -183,7 +183,8 @@ theorem Proc.checkAffineChan.correct
       simp at h₄ h₅
       simp [h₄, h₅, Except.isOk, Except.toBool]
 
-instance [Arity Op] [DecidableEq χ] {proc : Proc Op χ V m n} :
+instance [Arity Op] [DecidableEq χ] [Repr χ]
+  {proc : Proc Op χ V m n} :
   Decidable (proc.AffineChan) :=
   if h : proc.checkAffineChan.isOk then
     isTrue (Proc.checkAffineChan.correct.mp h)

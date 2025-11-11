@@ -17,7 +17,16 @@ fn cond_read<const N: usize>(j: usize, odd: bool, a: &[i32; N], z: &[i32; N]) ->
 }
 
 #[cap(a: uniq @ j..j+1, z: uniq @ j..j+1)]
-fn cond_write<const N: usize>(j: usize, odd: bool, a: &mut [i32; N], z: &mut [i32; N], v: i32) {
+fn cond_write1<const N: usize>(j: usize, odd: bool, a: &mut [i32; N], z: &mut [i32; N], v: i32) {
+    if odd {
+        a[j] = v;
+    } else {
+        z[j] = v;
+    }
+}
+
+#[cap(a: uniq @ j..j+1, z: uniq @ j..j+1)]
+fn cond_write2<const N: usize>(j: usize, odd: bool, a: &mut [i32; N], z: &mut [i32; N], v: i32) {
     if odd {
         a[j] = v;
     } else {
@@ -70,7 +79,7 @@ fn pass_aux<const N: usize>(
         if o {
             let safe = idx1 < N;
             if safe {
-                cond_write::<N>(idx1, odd, a, z, v);
+                cond_write1::<N>(idx1, odd, a, z, v);
                 fence!();
                 let idx1b = idx1 + 1;
                 pass_aux::<N>(j1, bit, a, z, idx0, idx1b, next_count2, odd)
@@ -80,7 +89,7 @@ fn pass_aux<const N: usize>(
         } else {
             let safe = idx0 < N;
             if safe {
-                cond_write::<N>(idx0, odd, a, z, v);
+                cond_write2::<N>(idx0, odd, a, z, v);
                 fence!();
                 let idx0b = idx0 + 1;
                 pass_aux::<N>(j1, bit, a, z, idx0b, idx1, next_count2, odd)
