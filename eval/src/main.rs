@@ -3,6 +3,8 @@
 #![allow(unused_braces)]
 #![allow(dead_code)]
 
+pub use dfx_macros::cap;
+
 mod dconv;
 mod dither;
 mod dmm;

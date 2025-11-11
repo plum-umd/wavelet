@@ -1,3 +1,6 @@
+use dfx_macros::cap;
+
+#[cap(src: shrd @ i..N, dest: uniq @ i..N)]
 fn nn_norm_aux<const N: usize>(
     i: usize,
     src: &[u32; N],
@@ -20,6 +23,7 @@ fn nn_norm_aux<const N: usize>(
     }
 }
 
+#[cap(src: shrd @ 0..N, dest: uniq @ 0..N)]
 fn nn_norm<const N: usize>(src: &[u32; N], dest: &mut [u32; N], max: u32, shift: u32) {
     let start = 0;
     nn_norm_aux::<N>(start, src, dest, max, shift)

@@ -1,3 +1,6 @@
+use dfx_macros::cap;
+
+#[cap(src: shrd @ i..N, dest: uniq @ i..N)]
 fn nn_relu_aux<const N: usize>(i: usize, src: &[i32; N], dest: &mut [i32; N]) {
     let cond = i < N;
     if cond {
@@ -18,6 +21,7 @@ fn nn_relu_aux<const N: usize>(i: usize, src: &[i32; N], dest: &mut [i32; N]) {
     }
 }
 
+#[cap(src: shrd @ 0..N, dest: uniq @ 0..N)]
 fn nn_relu<const N: usize>(src: &[i32; N], dest: &mut [i32; N]) {
     let start = 0;
     nn_relu_aux::<N>(start, src, dest)

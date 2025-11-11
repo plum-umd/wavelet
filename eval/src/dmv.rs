@@ -1,3 +1,6 @@
+use dfx_macros::cap;
+
+#[cap(a: shrd @ i*N..i*N + N, x: shrd @ j..N)]
 fn cal_dot_product<const M: usize, const N: usize>(
     j: usize,
     i: usize,
@@ -20,7 +23,7 @@ fn cal_dot_product<const M: usize, const N: usize>(
         acc
     }
 }
-
+#[cap(a: shrd @ idx*N..M*N, x: shrd @ 0..N, y: uniq @ idx..M)]
 fn mv_mul<const M: usize, const N: usize>(
     idx: usize,
     a: &[u32; { M * N }],
@@ -38,7 +41,7 @@ fn mv_mul<const M: usize, const N: usize>(
         ()
     }
 }
-
+#[cap(a: shrd @ 0..M*N, x: shrd @ 0..N, y: uniq @ 0..M)]
 fn dmv<const M: usize, const N: usize>(a: &[u32; { M * N }], x: &[u32; N], y: &mut [u32; M]) {
     let start = 0;
     mv_mul::<M, N>(start, a, x, y)

@@ -1,3 +1,6 @@
+use dfx_macros::cap;
+
+#[cap(weight: shrd @ i*C..i*C + C, src: shrd @ j..C)]
 fn row_dot<const R: usize, const C: usize>(
     i: usize,
     j: usize,
@@ -21,6 +24,7 @@ fn row_dot<const R: usize, const C: usize>(
     }
 }
 
+#[cap]
 fn clamp_i16(w: i32) -> i32 {
     let min = -32768;
     let below = w < min;
@@ -32,6 +36,8 @@ fn clamp_i16(w: i32) -> i32 {
         if above { max } else { w }
     }
 }
+
+#[cap(weight: shrd @ i*C..R*C, src: shrd @ 0..C, dest: uniq @ i..R)]
 fn rec_rows<const R: usize, const C: usize>(
     i: usize,
     weight: &[i32; { R * C }],
@@ -52,7 +58,7 @@ fn rec_rows<const R: usize, const C: usize>(
         ()
     }
 }
-
+#[cap(weight: shrd @ 0..R*C, src: shrd @ 0..C, dest: uniq @ 0..R)]
 fn nn_fc<const R: usize, const C: usize>(
     weight: &[i32; { R * C }],
     src: &[i32; C],

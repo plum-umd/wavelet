@@ -1,3 +1,6 @@
+use dfx_macros::cap;
+
+#[cap(weight: shrd @ i..N, src: shrd @ i..N, dest: uniq @ i..N)]
 pub fn nn_vadd_aux<const N: usize>(
     i: usize,
     weight: &[u32; N],
@@ -19,6 +22,7 @@ pub fn nn_vadd_aux<const N: usize>(
     }
 }
 
+#[cap(weight: shrd @ 0..N, src: shrd @ 0..N, dest: uniq @ 0..N)]
 pub fn nn_vadd<const N: usize>(weight: &[u32; N], src: &[u32; N], dest: &mut [u32; N]) {
     let start = 0;
     nn_vadd_aux::<N>(start, weight, src, dest)

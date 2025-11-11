@@ -1,7 +1,22 @@
-fn cond_read<const N: usize>(j: usize, odd: bool, a: &[i32; N], z: &[i32; N]) -> i32 {
-    if odd { z[j] } else { a[j] }
+use dfx_macros::cap;
+
+#[allow(unused_macros)]
+macro_rules! fence {
+    ($($tt:tt)*) => {};
 }
 
+#[cap(a: shrd @ j..j+1, z: shrd @ j..j+1)]
+fn cond_read<const N: usize>(j: usize, odd: bool, a: &[i32; N], z: &[i32; N]) -> i32 {
+    if odd {
+        let ret = z[j];
+        ret
+    } else {
+        let ret = a[j];
+        ret
+    }
+}
+
+#[cap(a: uniq @ j..j+1, z: uniq @ j..j+1)]
 fn cond_write<const N: usize>(j: usize, odd: bool, a: &mut [i32; N], z: &mut [i32; N], v: i32) {
     if odd {
         a[j] = v;
@@ -10,10 +25,20 @@ fn cond_write<const N: usize>(j: usize, odd: bool, a: &mut [i32; N], z: &mut [i3
     }
 }
 
+#[cap]
+fn compute_next_count(zero_flag: bool, next_count: usize) -> usize {
+    if zero_flag {
+        let next_count2 = next_count + 1;
+        next_count2
+    } else {
+        next_count
+    }
+}
+
+#[cap(a: uniq @ 0..N, z: uniq @ 0..N)]
 fn pass_aux<const N: usize>(
     j: usize,
     bit: usize,
-    size: usize,
     a: &mut [i32; N],
     z: &mut [i32; N],
     idx0: usize,
@@ -21,51 +46,72 @@ fn pass_aux<const N: usize>(
     next_count: usize,
     odd: bool, // if true: src = Z, dst = A; else: src = A, dst = Z
 ) -> usize {
-    let cond = j < size;
+    let cond = j < N;
     if cond {
         // Read from the chosen source buffer
         let v = cond_read::<N>(j, odd, a, z);
 
         // Current bit and next higher bit check
-        let o = ((v >> (bit as u32)) & 0x1) != 0;
-        let next_mask = 1i32 << ((bit + 1) as u32);
-        let next_count2 = next_count + ((v & next_mask) == 0) as usize;
+        let v_shifted = v >> bit;
+        let v_masked = v_shifted & 0x1;
+        let zero = 0;
+        let o = v_masked != zero;
+
+        let bit_plus_one = bit + 1;
+        let next_mask = 1i32 << bit_plus_one;
+
+        let v_mask = v & next_mask;
+        let mask_is_zero = v_mask == 0;
+        let next_count2 = compute_next_count(mask_is_zero, next_count);
         let j1 = j + 1;
+        fence!();
 
         // Write to the chosen destination buffer
         if o {
-            cond_write::<N>(idx1, odd, a, z, v);
-            let idx1b = idx1 + 1;
-            pass_aux::<N>(j1, bit, size, a, z, idx0, idx1b, next_count2, odd)
+            let safe = idx1 < N;
+            if safe {
+                cond_write::<N>(idx1, odd, a, z, v);
+                fence!();
+                let idx1b = idx1 + 1;
+                pass_aux::<N>(j1, bit, a, z, idx0, idx1b, next_count2, odd)
+            } else {
+                next_count2
+            }
         } else {
-            cond_write::<N>(idx0, odd, a, z, v);
-            let idx0b = idx0 + 1;
-            pass_aux::<N>(j1, bit, size, a, z, idx0b, idx1, next_count2, odd)
+            let safe = idx0 < N;
+            if safe {
+                cond_write::<N>(idx0, odd, a, z, v);
+                fence!();
+                let idx0b = idx0 + 1;
+                pass_aux::<N>(j1, bit, a, z, idx0b, idx1, next_count2, odd)
+            } else {
+                next_count2
+            }
         }
     } else {
         next_count
     }
 }
 
-fn sort_bits_aux<const N: usize>(
-    bit: usize,
-    count: usize,
-    size: usize,
-    a: &mut [i32; N],
-    z: &mut [i32; N],
-) {
+#[cap(a: uniq @ 0..N, z: uniq @ 0..N)]
+fn sort_bits_aux<const N: usize>(bit: usize, count: usize, a: &mut [i32; N], z: &mut [i32; N]) {
     let cond = bit < 32;
     if cond {
-        let odd = (bit & 0x1) != 0;
+        let zero = 0;
+        let bit_mask = bit & 0x1;
+        let odd = bit_mask != zero;
 
-        let next_count = pass_aux::<N>(0, bit, size, a, z, 0, count, 0, odd);
+        let next_count = pass_aux::<N>(0, bit, a, z, 0, count, 0, odd);
 
-        sort_bits_aux::<N>(bit + 1, next_count, size, a, z)
+        let bitp1 = bit + 1;
+        fence!();
+        sort_bits_aux::<N>(bitp1, next_count, a, z)
     } else {
         ()
     }
 }
 
-pub fn sort<const N: usize>(a: &mut [i32; N], z: &mut [i32; N], size: usize, even_count: usize) {
-    sort_bits_aux::<N>(0, even_count, size, a, z)
+#[cap(a: uniq @ 0..N, z: uniq @ 0..N)]
+pub fn sort<const N: usize>(a: &mut [i32; N], z: &mut [i32; N], even_count: usize) {
+    sort_bits_aux::<N>(0, even_count, a, z)
 }

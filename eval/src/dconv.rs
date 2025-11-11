@@ -1,3 +1,7 @@
+use dfx_macros::cap;
+
+// #[cap(a: shrd @ base..SRC, b: shrd @ 0..FROWS*FROWS)]
+// #[cap(a: shrd @ 0..SRC, b: shrd @ 0..FROWS*FROWS)]
 fn dconv_k_aux<const SRC: usize, const FROWS: usize, const FCOLS: usize>(
     k: usize,
     base: usize,  // row * SCOLS + col
@@ -14,7 +18,11 @@ fn dconv_k_aux<const SRC: usize, const FROWS: usize, const FCOLS: usize>(
         let a_offset = base + scols_j;
         let a_idx = a_offset + k;
         let b_idx = frows_j + k;
-        let prod = a[a_idx] * b[b_idx];
+        let safe1 = a_idx < SRC;
+        let frows_fcols = FROWS * FROWS;
+        let a_val = a[a_idx];
+        let b_val = b[b_idx];
+        let prod = a_val * b_val;
         let new_acc = acc + prod;
 
         let one = 1usize;
@@ -25,6 +33,8 @@ fn dconv_k_aux<const SRC: usize, const FROWS: usize, const FCOLS: usize>(
     }
 }
 
+// #[cap(a: shrd @ base..SRC, b: shrd @ 0..FROWS*FROWS)]
+// #[cap(a: shrd @ 0..SRC, b: shrd @ 0..FROWS*FROWS)]
 fn dconv_j_aux<const SRC: usize, const FROWS: usize, const FCOLS: usize>(
     j: usize,
     base: usize, // row * SCOLS + col
@@ -45,6 +55,7 @@ fn dconv_j_aux<const SRC: usize, const FROWS: usize, const FCOLS: usize>(
     }
 }
 
+// #[cap(a: shrd @ 0..SRC, b: shrd @ 0..FROWS*FROWS, z: uniq @ i..SIZE)]
 fn dconv_i_aux<
     const SIZE: usize,
     const COLS: usize,
@@ -62,7 +73,7 @@ fn dconv_i_aux<
 ) {
     let cond = i < SIZE;
     if cond {
-        // base offset = row * SCOLS + col (no division/modulo)
+        // base offset = row * SCOLS + col
         let row_base = row * SCOLS;
         let base = row_base + col;
 
@@ -86,6 +97,7 @@ fn dconv_i_aux<
     }
 }
 
+// #[cap(a: shrd @ 0..SRC, b: shrd @ 0..FROWS*FROWS, z: uniq @ 0..SIZE)]
 pub fn dconv<
     const SIZE: usize,
     const COLS: usize,
