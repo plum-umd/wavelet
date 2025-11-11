@@ -1,13 +1,12 @@
 {
   "fns": [
     {
-      "name": "row_dot",
+      "name": "cal_dot_product",
       "params": [
-        "i",
-        "j",
+        "col",
+        "idx",
+        "rem",
         "acc",
-        "R",
-        "C",
         "p_sync",
         "p_garb"
       ],
@@ -16,168 +15,168 @@
         "op": [
           {
             "op": {
-              "op": {
-                "copy": 2
+              "join": {
+                "deps": 0,
+                "toks": 1
               }
             }
           },
           [
-            "j"
+            "p_sync"
           ],
           [
-            "j_copy0",
-            "j_copy1",
-            "j_copy2",
-            "j_copy3"
+            "p1",
+            "p2"
           ],
           {
             "op": [
               {
                 "op": {
                   "op": {
-                    "copy": 1
+                    "const": 0
                   }
                 }
               },
               [
-                "C"
+                "p1"
               ],
               [
-                "C_copy0",
-                "C_copy1",
-                "C_copy2"
+                "zero",
+                "p3"
               ],
               {
                 "op": [
                   {
                     "op": {
-                      "op": "lt"
+                      "op": {
+                        "copy": 0
+                      }
                     }
                   },
                   [
-                    "j_copy0",
-                    "C_copy0"
+                    "rem"
                   ],
                   [
-                    "cond",
-                    "p1"
+                    "rem_copy0",
+                    "rem_copy1"
                   ],
                   {
-                    "br": [
-                      "cond",
+                    "op": [
                       {
-                        "op": [
-                          {
-                            "op": {
-                              "op": {
-                                "copy": 0
-                              }
-                            }
-                          },
-                          [
-                            "i"
-                          ],
-                          [
-                            "i_copy0",
-                            "i_copy1"
-                          ],
+                        "op": {
+                          "op": "lt"
+                        }
+                      },
+                      [
+                        "zero",
+                        "rem_copy0"
+                      ],
+                      [
+                        "cond",
+                        "p4"
+                      ],
+                      {
+                        "br": [
+                          "cond",
                           {
                             "op": [
                               {
                                 "op": {
-                                  "op": "mul"
+                                  "join": {
+                                    "deps": 0,
+                                    "toks": 1
+                                  }
                                 }
                               },
                               [
-                                "i_copy0",
-                                "C_copy1"
+                                "p2"
                               ],
                               [
-                                "base",
-                                "p2"
+                                "p5",
+                                "p6"
                               ],
                               {
                                 "op": [
                                   {
                                     "op": {
-                                      "op": "add"
+                                      "op": {
+                                        "copy": 0
+                                      }
                                     }
                                   },
                                   [
-                                    "base",
-                                    "j_copy1"
+                                    "idx"
                                   ],
                                   [
-                                    "idx",
-                                    "p3"
+                                    "idx_copy0",
+                                    "idx_copy1"
                                   ],
                                   {
                                     "op": [
                                       {
                                         "op": {
-                                          "join": {
-                                            "deps": 0,
-                                            "toks": 1
+                                          "op_ghost": {
+                                            "load": "a"
                                           }
                                         }
                                       },
                                       [
-                                        "p_sync"
+                                        "idx_copy0",
+                                        "p5"
                                       ],
                                       [
-                                        "p4",
-                                        "p5"
+                                        "a_val",
+                                        "p7"
                                       ],
                                       {
                                         "op": [
                                           {
                                             "op": {
-                                              "op_ghost": {
-                                                "load": "src"
+                                              "join": {
+                                                "deps": 0,
+                                                "toks": 1
                                               }
                                             }
                                           },
                                           [
-                                            "j_copy2",
-                                            "p4"
+                                            "p6"
                                           ],
                                           [
-                                            "s_val",
-                                            "p6"
+                                            "p8",
+                                            "p9"
                                           ],
                                           {
                                             "op": [
                                               {
                                                 "op": {
-                                                  "join": {
-                                                    "deps": 0,
-                                                    "toks": 1
+                                                  "op": {
+                                                    "copy": 0
                                                   }
                                                 }
                                               },
                                               [
-                                                "p5"
+                                                "col"
                                               ],
                                               [
-                                                "p7",
-                                                "p8"
+                                                "col_copy0",
+                                                "col_copy1"
                                               ],
                                               {
                                                 "op": [
                                                   {
                                                     "op": {
                                                       "op_ghost": {
-                                                        "load": "weight"
+                                                        "load": "x"
                                                       }
                                                     }
                                                   },
                                                   [
-                                                    "idx",
-                                                    "p7"
+                                                    "col_copy0",
+                                                    "p8"
                                                   ],
                                                   [
-                                                    "w_val",
-                                                    "p9"
+                                                    "x_val",
+                                                    "p10"
                                                   ],
                                                   {
                                                     "op": [
@@ -187,12 +186,12 @@
                                                         }
                                                       },
                                                       [
-                                                        "s_val",
-                                                        "w_val"
+                                                        "a_val",
+                                                        "x_val"
                                                       ],
                                                       [
                                                         "prod",
-                                                        "p10"
+                                                        "p11"
                                                       ],
                                                       {
                                                         "op": [
@@ -207,7 +206,7 @@
                                                           ],
                                                           [
                                                             "new_acc",
-                                                            "p11"
+                                                            "p12"
                                                           ],
                                                           {
                                                             "op": [
@@ -220,11 +219,11 @@
                                                                 }
                                                               },
                                                               [
-                                                                "p8"
+                                                                "p9"
                                                               ],
                                                               [
-                                                                "p12",
-                                                                "p13"
+                                                                "p13",
+                                                                "p14"
                                                               ],
                                                               {
                                                                 "op": [
@@ -236,73 +235,125 @@
                                                                     }
                                                                   },
                                                                   [
-                                                                    "p12"
+                                                                    "p13"
                                                                   ],
                                                                   [
                                                                     "one",
-                                                                    "p14"
+                                                                    "p15"
                                                                   ],
                                                                   {
                                                                     "op": [
                                                                       {
                                                                         "op": {
-                                                                          "op": "add"
+                                                                          "op": {
+                                                                            "copy": 1
+                                                                          }
                                                                         }
                                                                       },
                                                                       [
-                                                                        "j_copy3",
                                                                         "one"
                                                                       ],
                                                                       [
-                                                                        "next",
-                                                                        "p15"
+                                                                        "one_copy0",
+                                                                        "one_copy1",
+                                                                        "one_copy2"
                                                                       ],
                                                                       {
                                                                         "op": [
                                                                           {
                                                                             "op": {
-                                                                              "join": {
-                                                                                "deps": 0,
-                                                                                "toks": 1
-                                                                              }
+                                                                              "op": "add"
                                                                             }
                                                                           },
                                                                           [
-                                                                            "p13"
+                                                                            "col_copy1",
+                                                                            "one_copy0"
                                                                           ],
                                                                           [
-                                                                            "p16",
-                                                                            "p17"
+                                                                            "next_col",
+                                                                            "p16"
                                                                           ],
                                                                           {
                                                                             "op": [
                                                                               {
                                                                                 "op": {
-                                                                                  "join": {
-                                                                                    "deps": 0,
-                                                                                    "toks": 4
-                                                                                  }
+                                                                                  "op": "add"
                                                                                 }
                                                                               },
                                                                               [
-                                                                                "p_garb",
-                                                                                "p17",
-                                                                                "p6",
-                                                                                "p9"
+                                                                                "idx_copy1",
+                                                                                "one_copy1"
                                                                               ],
                                                                               [
-                                                                                "p18",
-                                                                                "p19"
+                                                                                "idx_next",
+                                                                                "p17"
                                                                               ],
                                                                               {
-                                                                                "tail": [
-                                                                                  "i_copy1",
-                                                                                  "next",
-                                                                                  "new_acc",
-                                                                                  "R",
-                                                                                  "C_copy2",
-                                                                                  "p16",
-                                                                                  "p18"
+                                                                                "op": [
+                                                                                  {
+                                                                                    "op": {
+                                                                                      "op": "sub"
+                                                                                    }
+                                                                                  },
+                                                                                  [
+                                                                                    "rem_copy1",
+                                                                                    "one_copy2"
+                                                                                  ],
+                                                                                  [
+                                                                                    "rem_next",
+                                                                                    "p18"
+                                                                                  ],
+                                                                                  {
+                                                                                    "op": [
+                                                                                      {
+                                                                                        "op": {
+                                                                                          "join": {
+                                                                                            "deps": 0,
+                                                                                            "toks": 1
+                                                                                          }
+                                                                                        }
+                                                                                      },
+                                                                                      [
+                                                                                        "p14"
+                                                                                      ],
+                                                                                      [
+                                                                                        "p19",
+                                                                                        "p20"
+                                                                                      ],
+                                                                                      {
+                                                                                        "op": [
+                                                                                          {
+                                                                                            "op": {
+                                                                                              "join": {
+                                                                                                "deps": 0,
+                                                                                                "toks": 4
+                                                                                              }
+                                                                                            }
+                                                                                          },
+                                                                                          [
+                                                                                            "p_garb",
+                                                                                            "p20",
+                                                                                            "p7",
+                                                                                            "p10"
+                                                                                          ],
+                                                                                          [
+                                                                                            "p21",
+                                                                                            "p22"
+                                                                                          ],
+                                                                                          {
+                                                                                            "tail": [
+                                                                                              "next_col",
+                                                                                              "idx_next",
+                                                                                              "rem_next",
+                                                                                              "new_acc",
+                                                                                              "p19",
+                                                                                              "p21"
+                                                                                            ]
+                                                                                          }
+                                                                                        ]
+                                                                                      }
+                                                                                    ]
+                                                                                  }
                                                                                 ]
                                                                               }
                                                                             ]
@@ -330,31 +381,31 @@
                                 ]
                               }
                             ]
-                          }
-                        ]
-                      },
-                      {
-                        "op": [
-                          {
-                            "op": {
-                              "join": {
-                                "deps": 0,
-                                "toks": 2
-                              }
-                            }
                           },
-                          [
-                            "p_sync",
-                            "p_garb"
-                          ],
-                          [
-                            "p20",
-                            "p21"
-                          ],
                           {
-                            "ret": [
-                              "acc",
-                              "p20"
+                            "op": [
+                              {
+                                "op": {
+                                  "join": {
+                                    "deps": 0,
+                                    "toks": 2
+                                  }
+                                }
+                              },
+                              [
+                                "p2",
+                                "p_garb"
+                              ],
+                              [
+                                "p23",
+                                "p24"
+                              ],
+                              {
+                                "ret": [
+                                  "acc",
+                                  "p23"
+                                ]
+                              }
                             ]
                           }
                         ]
@@ -369,9 +420,9 @@
       }
     },
     {
-      "name": "clamp_i16",
+      "name": "mv_mul",
       "params": [
-        "w",
+        "idx",
         "p_sync",
         "p_garb"
       ],
@@ -398,7 +449,7 @@
               {
                 "op": {
                   "op": {
-                    "const": -32768
+                    "const": 4
                   }
                 }
               },
@@ -406,7 +457,7 @@
                 "p1"
               ],
               [
-                "min",
+                "_lit_4_0",
                 "p3"
               ],
               {
@@ -414,307 +465,44 @@
                   {
                     "op": {
                       "op": {
-                        "copy": 1
+                        "copy": 2
                       }
                     }
                   },
                   [
-                    "w"
+                    "idx"
                   ],
                   [
-                    "w_copy0",
-                    "w_copy1",
-                    "w_copy2"
+                    "idx_copy2",
+                    "idx_copy3",
+                    "idx_copy4",
+                    "idx_copy5"
                   ],
                   {
                     "op": [
                       {
                         "op": {
-                          "op": {
-                            "copy": 0
-                          }
+                          "op": "lt"
                         }
                       },
                       [
-                        "min"
+                        "idx_copy2",
+                        "_lit_4_0"
                       ],
                       [
-                        "min_copy0",
-                        "min_copy1"
+                        "cond",
+                        "p4"
                       ],
                       {
-                        "op": [
-                          {
-                            "op": {
-                              "op": "lt"
-                            }
-                          },
-                          [
-                            "w_copy0",
-                            "min_copy0"
-                          ],
-                          [
-                            "below",
-                            "p4"
-                          ],
-                          {
-                            "br": [
-                              "below",
-                              {
-                                "op": [
-                                  {
-                                    "op": {
-                                      "join": {
-                                        "deps": 0,
-                                        "toks": 2
-                                      }
-                                    }
-                                  },
-                                  [
-                                    "p2",
-                                    "p_garb"
-                                  ],
-                                  [
-                                    "p5",
-                                    "p6"
-                                  ],
-                                  {
-                                    "ret": [
-                                      "min_copy1",
-                                      "p5"
-                                    ]
-                                  }
-                                ]
-                              },
-                              {
-                                "op": [
-                                  {
-                                    "op": {
-                                      "join": {
-                                        "deps": 0,
-                                        "toks": 1
-                                      }
-                                    }
-                                  },
-                                  [
-                                    "p2"
-                                  ],
-                                  [
-                                    "p7",
-                                    "p8"
-                                  ],
-                                  {
-                                    "op": [
-                                      {
-                                        "op": {
-                                          "op": {
-                                            "const": 32767
-                                          }
-                                        }
-                                      },
-                                      [
-                                        "p7"
-                                      ],
-                                      [
-                                        "max",
-                                        "p9"
-                                      ],
-                                      {
-                                        "op": [
-                                          {
-                                            "op": {
-                                              "op": {
-                                                "copy": 0
-                                              }
-                                            }
-                                          },
-                                          [
-                                            "max"
-                                          ],
-                                          [
-                                            "max_copy0",
-                                            "max_copy1"
-                                          ],
-                                          {
-                                            "op": [
-                                              {
-                                                "op": {
-                                                  "op": "lt"
-                                                }
-                                              },
-                                              [
-                                                "max_copy0",
-                                                "w_copy1"
-                                              ],
-                                              [
-                                                "above",
-                                                "p10"
-                                              ],
-                                              {
-                                                "br": [
-                                                  "above",
-                                                  {
-                                                    "op": [
-                                                      {
-                                                        "op": {
-                                                          "join": {
-                                                            "deps": 0,
-                                                            "toks": 2
-                                                          }
-                                                        }
-                                                      },
-                                                      [
-                                                        "p8",
-                                                        "p_garb"
-                                                      ],
-                                                      [
-                                                        "p11",
-                                                        "p12"
-                                                      ],
-                                                      {
-                                                        "ret": [
-                                                          "max_copy1",
-                                                          "p11"
-                                                        ]
-                                                      }
-                                                    ]
-                                                  },
-                                                  {
-                                                    "op": [
-                                                      {
-                                                        "op": {
-                                                          "join": {
-                                                            "deps": 0,
-                                                            "toks": 2
-                                                          }
-                                                        }
-                                                      },
-                                                      [
-                                                        "p8",
-                                                        "p_garb"
-                                                      ],
-                                                      [
-                                                        "p13",
-                                                        "p14"
-                                                      ],
-                                                      {
-                                                        "ret": [
-                                                          "w_copy2",
-                                                          "p13"
-                                                        ]
-                                                      }
-                                                    ]
-                                                  }
-                                                ]
-                                              }
-                                            ]
-                                          }
-                                        ]
-                                      }
-                                    ]
-                                  }
-                                ]
-                              }
-                            ]
-                          }
-                        ]
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "name": "rec_rows",
-      "params": [
-        "i",
-        "shift",
-        "R",
-        "C",
-        "p_sync",
-        "p_garb"
-      ],
-      "outputs": 2,
-      "body": {
-        "op": [
-          {
-            "op": {
-              "op": {
-                "copy": 2
-              }
-            }
-          },
-          [
-            "i"
-          ],
-          [
-            "i_copy2",
-            "i_copy3",
-            "i_copy4",
-            "i_copy5"
-          ],
-          {
-            "op": [
-              {
-                "op": {
-                  "op": {
-                    "copy": 1
-                  }
-                }
-              },
-              [
-                "R"
-              ],
-              [
-                "R_copy0",
-                "R_copy1",
-                "R_copy2"
-              ],
-              {
-                "op": [
-                  {
-                    "op": {
-                      "op": "lt"
-                    }
-                  },
-                  [
-                    "i_copy2",
-                    "R_copy0"
-                  ],
-                  [
-                    "cond",
-                    "p1"
-                  ],
-                  {
-                    "br": [
-                      "cond",
-                      {
-                        "op": [
-                          {
-                            "op": {
-                              "join": {
-                                "deps": 0,
-                                "toks": 1
-                              }
-                            }
-                          },
-                          [
-                            "p_sync"
-                          ],
-                          [
-                            "p2",
-                            "p3"
-                          ],
+                        "br": [
+                          "cond",
                           {
                             "op": [
                               {
                                 "op": {
-                                  "op": {
-                                    "const": 0
+                                  "join": {
+                                    "deps": 0,
+                                    "toks": 1
                                   }
                                 }
                               },
@@ -722,41 +510,39 @@
                                 "p2"
                               ],
                               [
-                                "_lit_0_20",
-                                "p4"
+                                "p5",
+                                "p6"
                               ],
                               {
                                 "op": [
                                   {
                                     "op": {
-                                      "join": {
-                                        "deps": 0,
-                                        "toks": 1
+                                      "op": {
+                                        "const": 3
                                       }
                                     }
                                   },
                                   [
-                                    "p3"
+                                    "p5"
                                   ],
                                   [
-                                    "p5",
-                                    "p6"
+                                    "_lit_3_1",
+                                    "p7"
                                   ],
                                   {
                                     "op": [
                                       {
                                         "op": {
-                                          "op": {
-                                            "const": 0
-                                          }
+                                          "op": "mul"
                                         }
                                       },
                                       [
-                                        "p5"
+                                        "idx_copy3",
+                                        "_lit_3_1"
                                       ],
                                       [
-                                        "_lit_0_21",
-                                        "p7"
+                                        "row_base",
+                                        "p8"
                                       ],
                                       {
                                         "op": [
@@ -772,16 +558,15 @@
                                             "p6"
                                           ],
                                           [
-                                            "p8",
-                                            "p9"
+                                            "p9",
+                                            "p10"
                                           ],
                                           {
                                             "op": [
                                               {
                                                 "op": {
-                                                  "join": {
-                                                    "deps": 0,
-                                                    "toks": 1
+                                                  "op": {
+                                                    "const": 0
                                                   }
                                                 }
                                               },
@@ -789,7 +574,7 @@
                                                 "p9"
                                               ],
                                               [
-                                                "p10",
+                                                "_lit_0_2",
                                                 "p11"
                                               ],
                                               {
@@ -798,12 +583,11 @@
                                                     "op": {
                                                       "join": {
                                                         "deps": 0,
-                                                        "toks": 2
+                                                        "toks": 1
                                                       }
                                                     }
                                                   },
                                                   [
-                                                    "p_garb",
                                                     "p10"
                                                   ],
                                                   [
@@ -815,65 +599,66 @@
                                                       {
                                                         "op": {
                                                           "op": {
-                                                            "copy": 0
+                                                            "const": 3
                                                           }
                                                         }
                                                       },
                                                       [
-                                                        "C"
+                                                        "p12"
                                                       ],
                                                       [
-                                                        "C_copy3",
-                                                        "C_copy4"
+                                                        "_lit_3_3",
+                                                        "p14"
                                                       ],
                                                       {
                                                         "op": [
                                                           {
-                                                            "call": "row_dot"
+                                                            "op": {
+                                                              "join": {
+                                                                "deps": 0,
+                                                                "toks": 1
+                                                              }
+                                                            }
                                                           },
                                                           [
-                                                            "i_copy3",
-                                                            "_lit_0_20",
-                                                            "_lit_0_21",
-                                                            "R_copy1",
-                                                            "C_copy3",
-                                                            "p8",
-                                                            "p12"
+                                                            "p13"
                                                           ],
                                                           [
-                                                            "dot",
-                                                            "p14"
+                                                            "p15",
+                                                            "p16"
                                                           ],
                                                           {
                                                             "op": [
                                                               {
                                                                 "op": {
                                                                   "op": {
-                                                                    "copy": 0
+                                                                    "const": 0
                                                                   }
                                                                 }
                                                               },
                                                               [
-                                                                "shift"
+                                                                "p15"
                                                               ],
                                                               [
-                                                                "shift_copy0",
-                                                                "shift_copy1"
+                                                                "_lit_0_4",
+                                                                "p17"
                                                               ],
                                                               {
                                                                 "op": [
                                                                   {
                                                                     "op": {
-                                                                      "op": "ashr"
+                                                                      "join": {
+                                                                        "deps": 0,
+                                                                        "toks": 1
+                                                                      }
                                                                     }
                                                                   },
                                                                   [
-                                                                    "dot",
-                                                                    "shift_copy0"
+                                                                    "p16"
                                                                   ],
                                                                   [
-                                                                    "shifted",
-                                                                    "p15"
+                                                                    "p18",
+                                                                    "p19"
                                                                   ],
                                                                   {
                                                                     "op": [
@@ -886,11 +671,11 @@
                                                                         }
                                                                       },
                                                                       [
-                                                                        "p11"
+                                                                        "p19"
                                                                       ],
                                                                       [
-                                                                        "p16",
-                                                                        "p17"
+                                                                        "p20",
+                                                                        "p21"
                                                                       ],
                                                                       {
                                                                         "op": [
@@ -898,132 +683,134 @@
                                                                             "op": {
                                                                               "join": {
                                                                                 "deps": 0,
-                                                                                "toks": 1
+                                                                                "toks": 2
                                                                               }
                                                                             }
                                                                           },
                                                                           [
-                                                                            "p17"
+                                                                            "p_garb",
+                                                                            "p20"
                                                                           ],
                                                                           [
-                                                                            "p18",
-                                                                            "p19"
+                                                                            "p22",
+                                                                            "p23"
                                                                           ],
                                                                           {
                                                                             "op": [
                                                                               {
-                                                                                "op": {
-                                                                                  "join": {
-                                                                                    "deps": 0,
-                                                                                    "toks": 3
-                                                                                  }
-                                                                                }
+                                                                                "call": "cal_dot_product"
                                                                               },
                                                                               [
+                                                                                "_lit_0_2",
+                                                                                "row_base",
+                                                                                "_lit_3_3",
+                                                                                "_lit_0_4",
                                                                                 "p18",
-                                                                                "p13",
-                                                                                "p14"
+                                                                                "p22"
                                                                               ],
                                                                               [
-                                                                                "p20",
-                                                                                "p21"
+                                                                                "dot",
+                                                                                "p24"
                                                                               ],
                                                                               {
                                                                                 "op": [
                                                                                   {
-                                                                                    "call": "clamp_i16"
+                                                                                    "op": {
+                                                                                      "join": {
+                                                                                        "deps": 0,
+                                                                                        "toks": 1
+                                                                                      }
+                                                                                    }
                                                                                   },
                                                                                   [
-                                                                                    "shifted",
-                                                                                    "p16",
-                                                                                    "p20"
+                                                                                    "p21"
                                                                                   ],
                                                                                   [
-                                                                                    "clamped",
-                                                                                    "p22"
+                                                                                    "p25",
+                                                                                    "p26"
                                                                                   ],
                                                                                   {
                                                                                     "op": [
                                                                                       {
                                                                                         "op": {
-                                                                                          "join": {
-                                                                                            "deps": 0,
-                                                                                            "toks": 1
+                                                                                          "op_ghost": {
+                                                                                            "store": "y"
                                                                                           }
                                                                                         }
                                                                                       },
                                                                                       [
-                                                                                        "p19"
+                                                                                        "idx_copy4",
+                                                                                        "dot",
+                                                                                        "p25"
                                                                                       ],
                                                                                       [
-                                                                                        "p23",
-                                                                                        "p24"
+                                                                                        "__store_dummy_28",
+                                                                                        "p27"
                                                                                       ],
                                                                                       {
                                                                                         "op": [
                                                                                           {
                                                                                             "op": {
-                                                                                              "op_ghost": {
-                                                                                                "store": "dest"
+                                                                                              "join": {
+                                                                                                "deps": 0,
+                                                                                                "toks": 1
                                                                                               }
                                                                                             }
                                                                                           },
                                                                                           [
-                                                                                            "i_copy4",
-                                                                                            "clamped",
-                                                                                            "p23"
+                                                                                            "p26"
                                                                                           ],
                                                                                           [
-                                                                                            "__store_dummy_26",
-                                                                                            "p25"
+                                                                                            "p29",
+                                                                                            "p30"
                                                                                           ],
                                                                                           {
                                                                                             "op": [
                                                                                               {
                                                                                                 "op": {
-                                                                                                  "join": {
-                                                                                                    "deps": 0,
-                                                                                                    "toks": 1
+                                                                                                  "op": {
+                                                                                                    "const": 1
                                                                                                   }
                                                                                                 }
                                                                                               },
                                                                                               [
-                                                                                                "p24"
+                                                                                                "p29"
                                                                                               ],
                                                                                               [
-                                                                                                "p27",
-                                                                                                "p28"
+                                                                                                "_lit_1_5",
+                                                                                                "p31"
                                                                                               ],
                                                                                               {
                                                                                                 "op": [
                                                                                                   {
                                                                                                     "op": {
-                                                                                                      "op": {
-                                                                                                        "const": 1
-                                                                                                      }
+                                                                                                      "op": "add"
                                                                                                     }
                                                                                                   },
                                                                                                   [
-                                                                                                    "p27"
+                                                                                                    "idx_copy5",
+                                                                                                    "_lit_1_5"
                                                                                                   ],
                                                                                                   [
-                                                                                                    "one",
-                                                                                                    "p29"
+                                                                                                    "next",
+                                                                                                    "p32"
                                                                                                   ],
                                                                                                   {
                                                                                                     "op": [
                                                                                                       {
                                                                                                         "op": {
-                                                                                                          "op": "add"
+                                                                                                          "join": {
+                                                                                                            "deps": 0,
+                                                                                                            "toks": 1
+                                                                                                          }
                                                                                                         }
                                                                                                       },
                                                                                                       [
-                                                                                                        "i_copy5",
-                                                                                                        "one"
+                                                                                                        "p30"
                                                                                                       ],
                                                                                                       [
-                                                                                                        "next",
-                                                                                                        "p30"
+                                                                                                        "p33",
+                                                                                                        "p34"
                                                                                                       ],
                                                                                                       {
                                                                                                         "op": [
@@ -1031,47 +818,25 @@
                                                                                                             "op": {
                                                                                                               "join": {
                                                                                                                 "deps": 0,
-                                                                                                                "toks": 1
+                                                                                                                "toks": 4
                                                                                                               }
                                                                                                             }
                                                                                                           },
                                                                                                           [
-                                                                                                            "p28"
+                                                                                                            "p34",
+                                                                                                            "p23",
+                                                                                                            "p24",
+                                                                                                            "p27"
                                                                                                           ],
                                                                                                           [
-                                                                                                            "p31",
-                                                                                                            "p32"
+                                                                                                            "p35",
+                                                                                                            "p36"
                                                                                                           ],
                                                                                                           {
-                                                                                                            "op": [
-                                                                                                              {
-                                                                                                                "op": {
-                                                                                                                  "join": {
-                                                                                                                    "deps": 0,
-                                                                                                                    "toks": 4
-                                                                                                                  }
-                                                                                                                }
-                                                                                                              },
-                                                                                                              [
-                                                                                                                "p32",
-                                                                                                                "p21",
-                                                                                                                "p22",
-                                                                                                                "p25"
-                                                                                                              ],
-                                                                                                              [
-                                                                                                                "p33",
-                                                                                                                "p34"
-                                                                                                              ],
-                                                                                                              {
-                                                                                                                "tail": [
-                                                                                                                  "next",
-                                                                                                                  "shift_copy1",
-                                                                                                                  "R_copy2",
-                                                                                                                  "C_copy4",
-                                                                                                                  "p31",
-                                                                                                                  "p33"
-                                                                                                                ]
-                                                                                                              }
+                                                                                                            "tail": [
+                                                                                                              "next",
+                                                                                                              "p33",
+                                                                                                              "p35"
                                                                                                             ]
                                                                                                           }
                                                                                                         ]
@@ -1113,64 +878,64 @@
                                 ]
                               }
                             ]
-                          }
-                        ]
-                      },
-                      {
-                        "op": [
-                          {
-                            "op": {
-                              "join": {
-                                "deps": 0,
-                                "toks": 1
-                              }
-                            }
                           },
-                          [
-                            "p_sync"
-                          ],
-                          [
-                            "p35",
-                            "p36"
-                          ],
                           {
                             "op": [
                               {
                                 "op": {
-                                  "op": {
-                                    "const": 0
+                                  "join": {
+                                    "deps": 0,
+                                    "toks": 1
                                   }
                                 }
                               },
                               [
-                                "p35"
+                                "p2"
                               ],
                               [
-                                "_unit_ret",
-                                "p37"
+                                "p37",
+                                "p38"
                               ],
                               {
                                 "op": [
                                   {
                                     "op": {
-                                      "join": {
-                                        "deps": 0,
-                                        "toks": 2
+                                      "op": {
+                                        "const": 0
                                       }
                                     }
                                   },
                                   [
-                                    "p36",
-                                    "p_garb"
+                                    "p37"
                                   ],
                                   [
-                                    "p38",
+                                    "_unit_ret",
                                     "p39"
                                   ],
                                   {
-                                    "ret": [
-                                      "_unit_ret",
-                                      "p38"
+                                    "op": [
+                                      {
+                                        "op": {
+                                          "join": {
+                                            "deps": 0,
+                                            "toks": 2
+                                          }
+                                        }
+                                      },
+                                      [
+                                        "p38",
+                                        "p_garb"
+                                      ],
+                                      [
+                                        "p40",
+                                        "p41"
+                                      ],
+                                      {
+                                        "ret": [
+                                          "_unit_ret",
+                                          "p40"
+                                        ]
+                                      }
                                     ]
                                   }
                                 ]
@@ -1189,11 +954,8 @@
       }
     },
     {
-      "name": "nn_fc",
+      "name": "dmv",
       "params": [
-        "shift",
-        "R",
-        "C",
         "p_sync",
         "p_garb"
       ],
@@ -1286,13 +1048,10 @@
                           {
                             "op": [
                               {
-                                "call": "rec_rows"
+                                "call": "mv_mul"
                               },
                               [
                                 "start",
-                                "shift",
-                                "R",
-                                "C",
                                 "p4",
                                 "p8"
                               ],

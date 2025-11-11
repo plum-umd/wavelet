@@ -1,11 +1,9 @@
 {
   "fns": [
     {
-      "name": "nn_norm_aux",
+      "name": "move_fn",
       "params": [
         "i",
-        "max",
-        "shift",
         "N",
         "p_sync",
         "p_garb"
@@ -16,7 +14,7 @@
           {
             "op": {
               "op": {
-                "copy": 2
+                "copy": 3
               }
             }
           },
@@ -27,7 +25,8 @@
             "i_copy0",
             "i_copy1",
             "i_copy2",
-            "i_copy3"
+            "i_copy3",
+            "i_copy4"
           ],
           {
             "op": [
@@ -57,12 +56,12 @@
                     "N_copy0"
                   ],
                   [
-                    "cond",
+                    "c",
                     "p1"
                   ],
                   {
                     "br": [
-                      "cond",
+                      "c",
                       {
                         "op": [
                           {
@@ -101,63 +100,69 @@
                                 "op": [
                                   {
                                     "op": {
-                                      "op": {
-                                        "copy": 0
+                                      "join": {
+                                        "deps": 0,
+                                        "toks": 1
                                       }
                                     }
                                   },
                                   [
-                                    "max"
+                                    "p3"
                                   ],
                                   [
-                                    "max_copy0",
-                                    "max_copy1"
+                                    "p5",
+                                    "p6"
                                   ],
                                   {
                                     "op": [
                                       {
                                         "op": {
-                                          "op": "mul"
+                                          "op_ghost": {
+                                            "store": "dst"
+                                          }
                                         }
                                       },
                                       [
+                                        "i_copy2",
                                         "v",
-                                        "max_copy0"
+                                        "p5"
                                       ],
                                       [
-                                        "prod",
-                                        "p5"
+                                        "__store_dummy_8",
+                                        "p7"
                                       ],
                                       {
                                         "op": [
                                           {
                                             "op": {
-                                              "op": {
-                                                "copy": 0
+                                              "join": {
+                                                "deps": 0,
+                                                "toks": 1
                                               }
                                             }
                                           },
                                           [
-                                            "shift"
+                                            "p6"
                                           ],
                                           [
-                                            "shift_copy0",
-                                            "shift_copy1"
+                                            "p9",
+                                            "p10"
                                           ],
                                           {
                                             "op": [
                                               {
                                                 "op": {
-                                                  "op": "ashr"
+                                                  "op": {
+                                                    "const": 1
+                                                  }
                                                 }
                                               },
                                               [
-                                                "prod",
-                                                "shift_copy0"
+                                                "p9"
                                               ],
                                               [
-                                                "scaled",
-                                                "p6"
+                                                "one",
+                                                "p11"
                                               ],
                                               {
                                                 "op": [
@@ -170,29 +175,27 @@
                                                     }
                                                   },
                                                   [
-                                                    "p3"
+                                                    "p10"
                                                   ],
                                                   [
-                                                    "p7",
-                                                    "p8"
+                                                    "p12",
+                                                    "p13"
                                                   ],
                                                   {
                                                     "op": [
                                                       {
                                                         "op": {
-                                                          "op_ghost": {
-                                                            "store": "dest"
+                                                          "op": {
+                                                            "const": 0
                                                           }
                                                         }
                                                       },
                                                       [
-                                                        "i_copy2",
-                                                        "scaled",
-                                                        "p7"
+                                                        "p12"
                                                       ],
                                                       [
-                                                        "__store_dummy_10",
-                                                        "p9"
+                                                        "zero",
+                                                        "p14"
                                                       ],
                                                       {
                                                         "op": [
@@ -200,32 +203,36 @@
                                                             "op": {
                                                               "join": {
                                                                 "deps": 0,
-                                                                "toks": 1
+                                                                "toks": 3
                                                               }
                                                             }
                                                           },
                                                           [
-                                                            "p8"
+                                                            "p13",
+                                                            "p4",
+                                                            "p7"
                                                           ],
                                                           [
-                                                            "p11",
-                                                            "p12"
+                                                            "p15",
+                                                            "p16"
                                                           ],
                                                           {
                                                             "op": [
                                                               {
                                                                 "op": {
-                                                                  "op": {
-                                                                    "const": 1
+                                                                  "op_ghost": {
+                                                                    "store": "src"
                                                                   }
                                                                 }
                                                               },
                                                               [
-                                                                "p11"
+                                                                "i_copy3",
+                                                                "zero",
+                                                                "p15"
                                                               ],
                                                               [
-                                                                "one",
-                                                                "p13"
+                                                                "__store_dummy_18",
+                                                                "p17"
                                                               ],
                                                               {
                                                                 "op": [
@@ -235,12 +242,12 @@
                                                                     }
                                                                   },
                                                                   [
-                                                                    "i_copy3",
+                                                                    "i_copy4",
                                                                     "one"
                                                                   ],
                                                                   [
                                                                     "j",
-                                                                    "p14"
+                                                                    "p19"
                                                                   ],
                                                                   {
                                                                     "op": [
@@ -253,11 +260,11 @@
                                                                         }
                                                                       },
                                                                       [
-                                                                        "p12"
+                                                                        "p16"
                                                                       ],
                                                                       [
-                                                                        "p15",
-                                                                        "p16"
+                                                                        "p20",
+                                                                        "p21"
                                                                       ],
                                                                       {
                                                                         "op": [
@@ -265,28 +272,25 @@
                                                                             "op": {
                                                                               "join": {
                                                                                 "deps": 0,
-                                                                                "toks": 4
+                                                                                "toks": 3
                                                                               }
                                                                             }
                                                                           },
                                                                           [
                                                                             "p_garb",
-                                                                            "p16",
-                                                                            "p4",
-                                                                            "p9"
+                                                                            "p21",
+                                                                            "p17"
                                                                           ],
                                                                           [
-                                                                            "p17",
-                                                                            "p18"
+                                                                            "p22",
+                                                                            "p23"
                                                                           ],
                                                                           {
                                                                             "tail": [
                                                                               "j",
-                                                                              "max_copy1",
-                                                                              "shift_copy1",
                                                                               "N_copy1",
-                                                                              "p15",
-                                                                              "p17"
+                                                                              "p20",
+                                                                              "p22"
                                                                             ]
                                                                           }
                                                                         ]
@@ -329,8 +333,8 @@
                             "p_sync"
                           ],
                           [
-                            "p19",
-                            "p20"
+                            "p24",
+                            "p25"
                           ],
                           {
                             "op": [
@@ -342,11 +346,11 @@
                                 }
                               },
                               [
-                                "p19"
+                                "p24"
                               ],
                               [
                                 "_unit_ret",
-                                "p21"
+                                "p26"
                               ],
                               {
                                 "op": [
@@ -359,169 +363,17 @@
                                     }
                                   },
                                   [
-                                    "p20",
+                                    "p25",
                                     "p_garb"
                                   ],
                                   [
-                                    "p22",
-                                    "p23"
+                                    "p27",
+                                    "p28"
                                   ],
                                   {
                                     "ret": [
                                       "_unit_ret",
-                                      "p22"
-                                    ]
-                                  }
-                                ]
-                              }
-                            ]
-                          }
-                        ]
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "name": "nn_norm",
-      "params": [
-        "max",
-        "shift",
-        "N",
-        "p_sync",
-        "p_garb"
-      ],
-      "outputs": 2,
-      "body": {
-        "op": [
-          {
-            "op": {
-              "join": {
-                "deps": 0,
-                "toks": 1
-              }
-            }
-          },
-          [
-            "p_sync"
-          ],
-          [
-            "p1",
-            "p2"
-          ],
-          {
-            "op": [
-              {
-                "op": {
-                  "op": {
-                    "const": 0
-                  }
-                }
-              },
-              [
-                "p1"
-              ],
-              [
-                "start",
-                "p3"
-              ],
-              {
-                "op": [
-                  {
-                    "op": {
-                      "join": {
-                        "deps": 0,
-                        "toks": 1
-                      }
-                    }
-                  },
-                  [
-                    "p2"
-                  ],
-                  [
-                    "p4",
-                    "p5"
-                  ],
-                  {
-                    "op": [
-                      {
-                        "op": {
-                          "join": {
-                            "deps": 0,
-                            "toks": 1
-                          }
-                        }
-                      },
-                      [
-                        "p5"
-                      ],
-                      [
-                        "p6",
-                        "p7"
-                      ],
-                      {
-                        "op": [
-                          {
-                            "op": {
-                              "join": {
-                                "deps": 0,
-                                "toks": 2
-                              }
-                            }
-                          },
-                          [
-                            "p_garb",
-                            "p6"
-                          ],
-                          [
-                            "p8",
-                            "p9"
-                          ],
-                          {
-                            "op": [
-                              {
-                                "call": "nn_norm_aux"
-                              },
-                              [
-                                "start",
-                                "max",
-                                "shift",
-                                "N",
-                                "p4",
-                                "p8"
-                              ],
-                              [
-                                "_tail_ret",
-                                "p10"
-                              ],
-                              {
-                                "op": [
-                                  {
-                                    "op": {
-                                      "join": {
-                                        "deps": 0,
-                                        "toks": 3
-                                      }
-                                    }
-                                  },
-                                  [
-                                    "p7",
-                                    "p9",
-                                    "p10"
-                                  ],
-                                  [
-                                    "p11",
-                                    "p12"
-                                  ],
-                                  {
-                                    "ret": [
-                                      "_tail_ret",
-                                      "p11"
+                                      "p27"
                                     ]
                                   }
                                 ]

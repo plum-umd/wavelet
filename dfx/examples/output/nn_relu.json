@@ -565,7 +565,7 @@
                         }
                       },
                       [
-                        "p_garb"
+                        "p5"
                       ],
                       [
                         "p6",
@@ -574,41 +574,61 @@
                       {
                         "op": [
                           {
-                            "call": "nn_relu_aux"
+                            "op": {
+                              "join": {
+                                "deps": 0,
+                                "toks": 2
+                              }
+                            }
                           },
                           [
-                            "start",
-                            "N",
-                            "p4",
+                            "p_garb",
                             "p6"
                           ],
                           [
-                            "_tail_ret",
-                            "p8"
+                            "p8",
+                            "p9"
                           ],
                           {
                             "op": [
                               {
-                                "op": {
-                                  "join": {
-                                    "deps": 0,
-                                    "toks": 3
-                                  }
-                                }
+                                "call": "nn_relu_aux"
                               },
                               [
-                                "p5",
-                                "p7",
+                                "start",
+                                "N",
+                                "p4",
                                 "p8"
                               ],
                               [
-                                "p9",
+                                "_tail_ret",
                                 "p10"
                               ],
                               {
-                                "ret": [
-                                  "_tail_ret",
-                                  "p9"
+                                "op": [
+                                  {
+                                    "op": {
+                                      "join": {
+                                        "deps": 0,
+                                        "toks": 3
+                                      }
+                                    }
+                                  },
+                                  [
+                                    "p7",
+                                    "p9",
+                                    "p10"
+                                  ],
+                                  [
+                                    "p11",
+                                    "p12"
+                                  ],
+                                  {
+                                    "ret": [
+                                      "_tail_ret",
+                                      "p11"
+                                    ]
+                                  }
                                 ]
                               }
                             ]
