@@ -158,7 +158,8 @@ def Proc.plot
   [Arity Op] [DotName Op] [DotName V] [Repr χ]
   [DecidableEq χ]
   (proc : Proc Op χ V m n)
-  (omitForks : Bool := false) : PlotM Unit := do
+  (omitForks : Bool := false)
+  (showChanNames : Bool := false) : PlotM Unit := do
   .startBlock "digraph G"
   .cmd r#"graph [fontname="courier"]"#
   .cmd r#"node [fontname="courier"]"#
@@ -188,6 +189,7 @@ def Proc.plot
 
     -- Draw edges to input ports
     for (inPort₁, chan) in atom.inputs.mapIdx (·, ·) do
+      let chanName := if showChanNames then repr chan else ""
       let headPort := plot.inputPortName atom inPort₁
 
       let senders :=
@@ -200,20 +202,21 @@ def Proc.plot
       for (idx₂, outPort₂, sender) in senders do
         -- Draw an edge from (idx₂, outPort₂) to (idx₁, inPort₁)
         let tailPort := plot.outputPortName sender outPort₂
-        PlotM.cmd s!"a{idx₂} -> a{idx₁} [label=\"{repr chan}\" arrowsize=0.4 headport={headPort} tailport={tailPort}]"
+        PlotM.cmd s!"a{idx₂} -> a{idx₁} [label=\"{chanName}\" arrowsize=0.4 headport={headPort} tailport={tailPort}]"
 
       -- Also draw edges from process inputs
       for inputIdx in inputs do
         -- Draw an edge from inputIdx to (idx₁, inPort₁)
-        PlotM.cmd s!"i{inputIdx} -> a{idx₁} [label=\"{repr chan}\" arrowsize=0.4 tailport=s headport={headPort}]"
+        PlotM.cmd s!"i{inputIdx} -> a{idx₁} [label=\"{chanName}\" arrowsize=0.4 tailport=s headport={headPort}]"
 
       if senders.isEmpty ∧ inputs.isEmpty then
         -- Special annotation for dangling inputs
         PlotM.cmd s!"c{idx₁}i{inPort₁} [label=\"?\" shape=plaintext]"
-        PlotM.cmd s!"c{idx₁}i{inPort₁} -> a{idx₁} [label=\"{repr chan}\" arrowsize=0.4 headport={headPort}]"
+        PlotM.cmd s!"c{idx₁}i{inPort₁} -> a{idx₁} [label=\"{chanName}\" arrowsize=0.4 headport={headPort}]"
 
     -- Draw edges from output ports
     for (outPort₁, chan) in atom.outputs.mapIdx (·, ·) do
+      let chanName := if showChanNames then repr chan else ""
       let tailPort := plot.outputPortName atom outPort₁
 
       -- Also draw edges to process outputs
@@ -221,11 +224,11 @@ def Proc.plot
         for outputIdx in List.finRange n do
           if chan = proc.outputs[outputIdx] then
             -- Draw an edge from (idx₁, outPort₁) to outputIdx
-            PlotM.cmd s!"a{idx₁} -> o{outputIdx} [label=\"{repr chan}\" arrowsize=0.4 headport=n tailport={tailPort}]"
+            PlotM.cmd s!"a{idx₁} -> o{outputIdx} [label=\"{chanName}\" arrowsize=0.4 headport=n tailport={tailPort}]"
       else if (proc.receiversOf chan).isEmpty then
         -- Special annotation for dangling outputs
         PlotM.cmd s!"c{idx₁}o{outPort₁} [label=\"?\" shape=plaintext]"
-        PlotM.cmd s!"a{idx₁} -> c{idx₁}o{outPort₁} [label=\"{repr chan}\" arrowsize=0.4 tailPort={tailPort}]"
+        PlotM.cmd s!"a{idx₁} -> c{idx₁}o{outPort₁} [label=\"{chanName}\" arrowsize=0.4 tailPort={tailPort}]"
 
   .endBlock
 

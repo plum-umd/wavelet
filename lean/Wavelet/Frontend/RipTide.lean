@@ -23,8 +23,9 @@ abbrev Value := Int
 inductive SyncOp (Loc : Type u) : Type u where
   | add | sub | mul | div
   | shl | ashr | lshr
-  | eq | lt | le
+  | eq | lt | le | neq
   | and
+  | bitand
   | load (_ : Loc) | store (_ : Loc) | sel
   | const (_ : Value)
   | copy (_ : Nat)
@@ -33,14 +34,16 @@ inductive SyncOp (Loc : Type u) : Type u where
 instance : Arity (SyncOp Loc) where
   ι | .add => 2 | .sub => 2 | .mul => 2 | .div => 2
     | .shl => 2 | .ashr => 2 | .lshr => 2
-    | .eq => 2 | .lt => 2 | .le => 2
+    | .eq => 2 | .lt => 2 | .le => 2 | .neq => 2
     | .and => 2
+    | .bitand => 2
     | .load _ => 1 | .store _ => 2 | .sel => 3
     | .const _ => 1 | .copy _ => 1
   ω | .add => 1 | .sub => 1 | .mul => 1 | .div => 1
     | .shl => 1 | .ashr => 1 | .lshr => 1
-    | .eq => 1 | .lt => 1 | .le => 1
+    | .eq => 1 | .lt => 1 | .le => 1 | .neq => 1
     | .and => 1
+    | .bitand => 1
     | .load _ => 1 | .store _ => 1 | .sel => 1
     | .const _ => 1
     -- NOTE: `copy n` outputs `n + 1` values
@@ -86,6 +89,10 @@ instance instOpInterpM [DecidableEq Loc] [Hashable Loc] :
     | .add, (inputs : Vector Value 2) => return #v[inputs[0] + inputs[1]]
     | .mul, (inputs : Vector Value 2) => return #v[inputs[0] * inputs[1]]
     | .lt, (inputs : Vector Value 2) => return #v[if inputs[0] < inputs[1] then 1 else 0]
+    | .and, (inputs : Vector Value 2) => do
+      let a ← InterpConsts.toBool inputs[0]
+      let b ← InterpConsts.toBool inputs[1]
+      return #v[InterpConsts.fromBool (a && b)]
     | .ashr, (inputs : Vector Value 2) =>
       let a : Int32 := inputs[0].toInt32
       let b : Int32 := inputs[1].toInt32
@@ -275,7 +282,9 @@ instance [ToString Loc] : Dataflow.DotName (SyncOp Loc) where
     | .eq => "\"=\""
     | .lt => "\"<\""
     | .le => "\"<=\""
+    | .neq => "\"!=\""
     | .and => "\"&&\""
+    | .bitand => "\"&\""
     | .load loc => s!"<LD<sub>{loc}</sub>>"
     | .store loc => s!"<ST<sub>{loc}</sub>>"
     | .sel => "\"SEL\""
