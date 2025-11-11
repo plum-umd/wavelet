@@ -251,14 +251,25 @@ impl FunctionLowerer {
         builder: &mut Vec<GhostStmt>,
         ctx: &mut PermCtx,
     ) {
-        let (need_perm, _) = self.split_sync(builder, ctx);
+        // // let (need_perm, _) = self.split_sync(builder, ctx);
 
-        // a non-tail call might need to GC some of the pending tokens
-        // so we "borrow" them into garb first
+        // // a non-tail call might need to GC some of the pending tokens
+        // // so we "borrow" them into garb first
+        // ctx.move_restore_to_garb();
+        // let inputs = ctx.clear_and_get_garb();
+        // let (left_perm, right_perm) = self.join_split(builder, inputs);
+        // // then we "return" the left over garbage tokens back to the pending context
+        // ctx.restore = vec![right_perm.clone()];
+
+        let (need_perm, right) = self.join_split(builder, ctx.sync_inputs());
+
+        let (left2, right2) = self.join_split(builder, vec![right]);
+        ctx.sync = vec![right2.clone()];
+
+        ctx.garb.push(left2);
         ctx.move_restore_to_garb();
         let inputs = ctx.clear_and_get_garb();
         let (left_perm, right_perm) = self.join_split(builder, inputs);
-        // then we "return" the left over garbage tokens back to the pending context
         ctx.restore = vec![right_perm.clone()];
 
         let ret_perm = self.fresh();
