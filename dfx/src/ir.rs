@@ -71,6 +71,7 @@ impl Ty {
     pub fn signedness(&self) -> Option<Signedness> {
         match self {
             Ty::Int(sign) => Some(*sign),
+            Ty::Bool => Some(Signedness::Unsigned),
             _ => None,
         }
     }
@@ -107,6 +108,8 @@ pub enum Op {
     And,
     /// Boolean disjunction: x || y
     Or,
+    /// Boolean negation: !x
+    Not,
     /// Bitwise and: x & y
     BitAnd,
     /// Bitwise or: x | y
@@ -123,8 +126,8 @@ pub enum Op {
     LessEqual,
     /// Equality comparison: x == y
     Equal,
-    /// Integer cast between widths.
-    Cast,
+    /// Inequality comparison: x != y
+    NotEqual,
     /// Load from array.
     Load {
         /// Array variable to load from.
@@ -373,6 +376,7 @@ impl std::fmt::Display for Op {
             Op::Div => write!(f, "/"),
             Op::And => write!(f, "&&"),
             Op::Or => write!(f, "||"),
+            Op::Not => write!(f, "!"),
             Op::BitAnd => write!(f, "&"),
             Op::BitOr => write!(f, "|"),
             Op::BitXor => write!(f, "^"),
@@ -381,7 +385,7 @@ impl std::fmt::Display for Op {
             Op::LessThan => write!(f, "<"),
             Op::LessEqual => write!(f, "<="),
             Op::Equal => write!(f, "=="),
-            Op::Cast => write!(f, "cast"),
+            Op::NotEqual => write!(f, "!="),
             Op::Load { array, index, len } => {
                 write!(f, "{}[{}:{}]", array, index, len.display())
             }

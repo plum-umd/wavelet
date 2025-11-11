@@ -20,8 +20,8 @@ use thiserror::Error;
 )]
 struct Cli {
     /// Path to the Rust source file to analyze.
-    #[arg(value_name = "INPUT")]
-    input: PathBuf,
+    #[arg(value_name = "INPUT", required_unless_present = "batch")]
+    input: Option<PathBuf>,
 
     /// Write the resulting ghost JSON to this file. Defaults to stdout.
     #[arg(short, long, value_name = "OUTPUT")]
@@ -38,6 +38,14 @@ struct Cli {
     /// Emit a textual rendering of the ghost program.
     #[arg(long)]
     emit_ghost: bool,
+
+    /// Process multiple programs from a file containing a list of paths (one per line).
+    #[arg(long, value_name = "BATCH_FILE", conflicts_with = "input")]
+    batch: Option<PathBuf>,
+
+    /// Skip ghost program checking (only check the input program).
+    #[arg(long = "skip-ghost-check")]
+    skip_ghost_check: bool,
 }
 
 #[derive(Debug, Error)]
@@ -91,7 +99,102 @@ fn run(cli: Cli) -> Result<(), CliError> {
         verbose,
         log_solver,
         emit_ghost,
+        batch,
+        skip_ghost_check,
     } = cli;
+
+    // Handle batch mode
+    if let Some(batch_file) = batch {
+        return run_batch(batch_file, output, verbose, log_solver, emit_ghost, skip_ghost_check);
+    }
+
+    // Single file mode
+    let input = input.expect("input is required when not in batch mode");
+    process_single_file(input, output, verbose, log_solver, emit_ghost, skip_ghost_check)
+}
+
+fn run_batch(
+    batch_file: PathBuf,
+    output: Option<PathBuf>,
+    verbose: bool,
+    log_solver: bool,
+    emit_ghost: bool,
+    skip_ghost_check: bool,
+) -> Result<(), CliError> {
+    let batch_contents = fs::read_to_string(&batch_file).map_err(|source| CliError::ReadFile {
+        path: batch_file.clone(),
+        source,
+    })?;
+
+    let input_files: Vec<PathBuf> = batch_contents
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| PathBuf::from(line.trim()))
+        .collect();
+
+    if input_files.is_empty() {
+        eprintln!("warning: batch file '{}' contains no input files", batch_file.display());
+        return Ok(());
+    }
+
+    println!("Processing {} file(s) in batch mode...\n", input_files.len());
+
+    let mut success_count = 0;
+    let mut failure_count = 0;
+
+    for (idx, input_file) in input_files.iter().enumerate() {
+        println!("[{}/{}] Processing: {}", idx + 1, input_files.len(), input_file.display());
+        
+        // In batch mode, output should go to a derived path if not stdout
+        let file_output = output.as_ref().map(|base_path| {
+            let file_stem = input_file.file_stem().unwrap_or_default();
+            let parent = base_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+            parent.join(format!("{}.json", file_stem.to_string_lossy()))
+        });
+
+        match process_single_file(
+            input_file.clone(),
+            file_output,
+            verbose,
+            log_solver,
+            emit_ghost,
+            skip_ghost_check,
+        ) {
+            Ok(()) => {
+                println!("  ✅ Success\n");
+                success_count += 1;
+            }
+            Err(err) => {
+                eprintln!("  ❌ Failed: {}", err);
+                report_error(&err);
+                eprintln!();
+                failure_count += 1;
+            }
+        }
+    }
+
+    println!("Batch processing complete: {} succeeded, {} failed", success_count, failure_count);
+    
+    if failure_count > 0 {
+        Err(CliError::Type {
+            path: batch_file,
+            source: TypeError::InvalidOp {
+                op: format!("{} file(s) failed to process", failure_count),
+            },
+        })
+    } else {
+        Ok(())
+    }
+}
+
+fn process_single_file(
+    input: PathBuf,
+    output: Option<PathBuf>,
+    verbose: bool,
+    log_solver: bool,
+    emit_ghost: bool,
+    skip_ghost_check: bool,
+) -> Result<(), CliError> {
     let source = fs::read_to_string(&input).map_err(|source| CliError::ReadFile {
         path: input.clone(),
         source,
@@ -121,21 +224,25 @@ fn run(cli: Cli) -> Result<(), CliError> {
     }
     let ghost = synthesize_ghost_program(&program);
 
-    // Also check the ghost program with verbose mode if requested
-    if verbose {
-        println!("\n╔═══════════════════════════════════════════════════════════╗");
-        println!("║         Checking Synthesized Ghost Program                ║");
-        println!("╚═══════════════════════════════════════════════════════════╝\n");
-    }
+    // Check the ghost program unless skip_ghost_check is set
+    if !skip_ghost_check {
+        if verbose {
+            println!("\n╔═══════════════════════════════════════════════════════════╗");
+            println!("║         Checking Synthesized Ghost Program                ║");
+            println!("╚═══════════════════════════════════════════════════════════╝\n");
+        }
 
-    check_ghost_program_with_verbose(&ghost, verbose).map_err(|err| CliError::Type {
-        path: input.clone(),
-        source: TypeError::InvalidOp {
-            op: format!("Ghost program check failed: {}", err),
-        },
-    })?;
-    if verbose {
-        println!("\n✅ Ghost program validation succeeded!\n");
+        check_ghost_program_with_verbose(&ghost, verbose).map_err(|err| CliError::Type {
+            path: input.clone(),
+            source: TypeError::InvalidOp {
+                op: format!("Ghost program check failed: {}", err),
+            },
+        })?;
+        if verbose {
+            println!("\n✅ Ghost program validation succeeded!\n");
+        }
+    } else if verbose {
+        println!("\n⏭️  Skipping ghost program check (--skip-ghost-check enabled)\n");
     }
 
     if emit_ghost {

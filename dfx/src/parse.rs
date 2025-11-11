@@ -139,6 +139,7 @@ impl IndexExpr {
 /// Returns multiple annotations if comma-separated.
 fn parse_cap_annotations(attr: &Attribute) -> Result<Vec<CapAnnotation>, ParseError> {
     // Expected format: #[cap(A: shrd @ i..N)] or #[cap(A: shrd @ i..N, B: uniq @ 0..M)]
+    // Also supports #[cap] with no arguments (returns empty vec)
     let meta = &attr.meta;
 
     // For simplicity, parse the token stream manually
@@ -153,9 +154,15 @@ fn parse_cap_annotations(attr: &Attribute) -> Result<Vec<CapAnnotation>, ParseEr
     }
 
     // Extract content between parentheses
-    let content = tokens
-        .strip_prefix("cap")
-        .and_then(|s| s.trim().strip_prefix('('))
+    // If there are no parentheses (just #[cap]), return empty annotations
+    let content = tokens.strip_prefix("cap").unwrap().trim();
+    if content.is_empty() {
+        // #[cap] with no arguments - this is valid for functions that don't use arrays
+        return Ok(Vec::new());
+    }
+    
+    let content = content
+        .strip_prefix('(')
         .and_then(|s| s.strip_suffix(')'))
         .ok_or_else(|| ParseError {
             message: "Invalid cap annotation format".to_string(),
@@ -695,6 +702,7 @@ fn mark_stmt_as_fenced(stmt: &mut ir::Stmt) {
 }
 
 /// Parse a local statement (let binding)
+/// Parse a local statement (let binding)
 fn parse_local(
     local: &syn::Local,
     array_lens: &HashMap<String, ArrayLen>,
@@ -718,6 +726,29 @@ fn parse_local(
                 fence: false,
             });
         }
+
+        // Check for cast expressions - provide a helpful error
+        if let Expr::Cast(cast_expr) = expr.as_ref() {
+            // Try to extract the variable name from the source for a better error message
+            let source_hint = if let Expr::Path(path) = cast_expr.expr.as_ref() {
+                path.path
+                    .segments
+                    .last()
+                    .map(|s| format!(" (try using '{}' directly)", s.ident))
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+
+            return Err(ParseError {
+                message: format!(
+                    "Standalone cast bindings like 'let {} = expr as T' are not supported. \
+                     Type casts are treated as noops and only work inline in operations. \
+                     Remove the cast{}.",
+                    var_name, source_hint
+                ),
+            });
+        }
     }
 
     Err(ParseError {
@@ -733,6 +764,20 @@ fn try_parse_as_op(
     ctx: &mut ParseContext,
 ) -> Result<Option<ir::Stmt>, ParseError> {
     match expr {
+        Expr::Unary(unary_expr) => {
+            // Unary operators: currently only support ! (not)
+            match unary_expr.op {
+                syn::UnOp::Not(_) => {
+                    let var = extract_var_from_expr(&unary_expr.expr, ctx)?;
+                    Ok(Some(ir::Stmt::LetOp {
+                        vars: vec![Var(var), Var(result_var)],
+                        op: Op::Not,
+                        fence: false,
+                    }))
+                }
+                _ => Ok(None),
+            }
+        }
         Expr::Binary(bin_expr) => {
             let left = extract_var_from_expr(&bin_expr.left, ctx)?;
             let right = extract_var_from_expr(&bin_expr.right, ctx)?;
@@ -750,6 +795,7 @@ fn try_parse_as_op(
                 syn::BinOp::Lt(_) => Op::LessThan,
                 syn::BinOp::Le(_) => Op::LessEqual,
                 syn::BinOp::Eq(_) => Op::Equal,
+                syn::BinOp::Ne(_) => Op::NotEqual,
                 syn::BinOp::And(_) => Op::And,
                 syn::BinOp::Or(_) => Op::Or,
                 _ => {
@@ -849,12 +895,42 @@ fn try_parse_as_val(expr: &Expr) -> Result<Option<ir::Val>, ParseError> {
     }
 }
 
-/// Parse expression as statement (e.g., assignments)
+/// Parse expression as statement (e.g., assignments, function calls)
 fn parse_expr_stmt(
     expr: &Expr,
     array_lens: &HashMap<String, ArrayLen>,
     ctx: &mut ParseContext,
 ) -> Result<ir::Stmt, ParseError> {
+    // Check for function calls (including unit-returning functions)
+    if let Expr::Call(call_expr) = expr {
+        let (func_name, generic_args) = extract_func_name_and_generics(&call_expr.func)?;
+
+        let mut scalar_args = Vec::new();
+        let mut array_args = Vec::new();
+        for arg in &call_expr.args {
+            let var_name = extract_var_from_expr(arg, ctx)?;
+            if array_lens.contains_key(&var_name) {
+                array_args.push(Var(var_name));
+            } else {
+                scalar_args.push(Var(var_name));
+            }
+        }
+
+        let mut args = scalar_args;
+        args.extend(generic_args.into_iter().map(Var));
+        args.extend(array_args);
+
+        // Create a dummy variable for the result (may be unit)
+        let result_var = Var(fresh_literal_name("_call_result"));
+
+        return Ok(ir::Stmt::LetCall {
+            vars: vec![result_var],
+            func: FnName(func_name),
+            args,
+            fence: false,
+        });
+    }
+
     // Check for array assignment: A[i] = val
     if let Expr::Assign(assign_expr) = expr {
         if let Expr::Index(index_expr) = &*assign_expr.left {
@@ -1021,6 +1097,10 @@ fn extract_var_from_expr(expr: &Expr, ctx: &mut ParseContext) -> Result<String, 
             }
         }
         Expr::Paren(paren_expr) => extract_var_from_expr(&paren_expr.expr, ctx),
+        Expr::Cast(cast_expr) => {
+            // Treat cast as noop - just extract the variable being cast
+            extract_var_from_expr(&cast_expr.expr, ctx)
+        }
         _ => Err(ParseError {
             message: format!("Expected variable, got: {:?}", expr),
         }),

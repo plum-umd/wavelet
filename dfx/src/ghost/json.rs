@@ -11,7 +11,7 @@ use std::fmt;
 #[derive(Debug)]
 pub enum ExportError {
     /// A required portion of the serializer has not been implemented yet.
-    Unsupported(&'static str),
+    Unsupported(String),
     /// Wrapper around JSON encoding failures.
     Serde(serde_json::Error),
 }
@@ -396,6 +396,10 @@ pub enum SyncOp {
     Ashr,
     Lshr,
     Eq,
+    Neq,
+    BitAnd,
+    BitOr,
+    BitXor,
     Lt,
     Le,
     And,
@@ -421,6 +425,10 @@ impl Serialize for SyncOp {
             SyncOp::Ashr => serializer.serialize_str("ashr"),
             SyncOp::Lshr => serializer.serialize_str("lshr"),
             SyncOp::Eq => serializer.serialize_str("eq"),
+            SyncOp::Neq => serializer.serialize_str("neq"),
+            SyncOp::BitAnd => serializer.serialize_str("bitand"),
+            SyncOp::BitOr => serializer.serialize_str("bitor"),
+            SyncOp::BitXor => serializer.serialize_str("bitxor"),
             SyncOp::Lt => serializer.serialize_str("lt"),
             SyncOp::Le => serializer.serialize_str("le"),
             SyncOp::And => serializer.serialize_str("and"),
@@ -461,10 +469,14 @@ fn map_sync_op(op: &Op) -> Result<SyncOp, ExportError> {
         Op::Shl => Ok(SyncOp::Shl),
         Op::Shr => Ok(SyncOp::Ashr),
         Op::Equal => Ok(SyncOp::Eq),
+        Op::NotEqual => Ok(SyncOp::Neq),
+        Op::BitAnd => Ok(SyncOp::BitAnd),
+        Op::BitOr => Ok(SyncOp::BitOr),
+        Op::BitXor => Ok(SyncOp::BitXor),
         Op::LessThan => Ok(SyncOp::Lt),
         Op::LessEqual => Ok(SyncOp::Le),
         _ => Err(ExportError::Unsupported(
-            "pure operation not yet supported for serialization",
+            format!("pure operation {} not yet supported for serialization", op), 
         )),
     }
 }

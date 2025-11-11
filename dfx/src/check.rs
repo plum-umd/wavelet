@@ -268,6 +268,7 @@ fn render_op(op: &Op, vars: &[Var]) -> String {
         Op::Div => format!("{} = {} / {}", vars[2].0, vars[0].0, vars[1].0),
         Op::And => format!("{} = {} && {}", vars[2].0, vars[0].0, vars[1].0),
         Op::Or => format!("{} = {} || {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::Not => format!("{} = !{}", vars[1].0, vars[0].0),
         Op::BitAnd => format!("{} = {} & {}", vars[2].0, vars[0].0, vars[1].0),
         Op::BitOr => format!("{} = {} | {}", vars[2].0, vars[0].0, vars[1].0),
         Op::BitXor => format!("{} = {} ^ {}", vars[2].0, vars[0].0, vars[1].0),
@@ -276,7 +277,7 @@ fn render_op(op: &Op, vars: &[Var]) -> String {
         Op::LessThan => format!("{} = {} < {}", vars[2].0, vars[0].0, vars[1].0),
         Op::LessEqual => format!("{} = {} <= {}", vars[2].0, vars[0].0, vars[1].0),
         Op::Equal => format!("{} = {} == {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Cast => format!("{} = cast({})", vars[1].0, vars[0].0),
+        Op::NotEqual => format!("{} = {} != {}", vars[2].0, vars[0].0, vars[1].0),
         Op::Load { array, index, len } => {
             format!(
                 "{} = {}[{}] (len {})",
@@ -639,11 +640,6 @@ where
                     }
                     let x_ty = ctx.ty_of(&vars[0])?;
                     let y_ty = ctx.ty_of(&vars[1])?;
-                    if !x_ty.is_int() || !y_ty.is_int() {
-                        return Err(TypeError::InvalidOp {
-                            op: format!("{:?}", op),
-                        });
-                    }
                     let x_sign = x_ty.signedness().unwrap();
                     let y_sign = y_ty.signedness().unwrap();
                     let result_sign = combine_signedness(x_sign, y_sign);
@@ -707,6 +703,27 @@ where
                     let disjunction = or(lhs_atom.clone(), rhs_atom.clone());
                     ctx.phi.push(implies(res_atom.clone(), disjunction.clone()));
                     ctx.phi.push(implies(disjunction, res_atom));
+                    finalize_statement(ctx, stmt);
+                    Ok(())
+                }
+                Op::Not => {
+                    if vars.len() != 2 {
+                        return Err(TypeError::InvalidOp {
+                            op: format!("{:?}", op),
+                        });
+                    }
+                    let x_ty = ctx.ty_of(&vars[0])?;
+                    if !matches!(x_ty, Ty::Bool) {
+                        return Err(TypeError::InvalidOp {
+                            op: format!("{:?}", op),
+                        });
+                    }
+                    ctx.bind_var(&vars[1], Ty::Bool);
+                    let input_atom = bool_atom(&vars[0].0);
+                    let res_atom = bool_atom(&vars[1].0);
+                    let negation = not(input_atom.clone());
+                    ctx.phi.push(implies(res_atom.clone(), negation.clone()));
+                    ctx.phi.push(implies(negation, res_atom));
                     finalize_statement(ctx, stmt);
                     Ok(())
                 }
@@ -778,7 +795,7 @@ where
                     finalize_statement(ctx, stmt);
                     Ok(())
                 }
-                Op::Equal => {
+                Op::Equal | Op::NotEqual => {
                     if vars.len() != 3 {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
@@ -786,7 +803,13 @@ where
                     }
                     let x_ty = ctx.ty_of(&vars[0])?;
                     let y_ty = ctx.ty_of(&vars[1])?;
-                    if x_ty != y_ty {
+                    // Allow comparison between integers of different signedness
+                    // or exact type equality for other types
+                    let types_compatible = match (&x_ty, &y_ty) {
+                        (Ty::Int(_), Ty::Int(_)) => true,
+                        _ => x_ty == y_ty,
+                    };
+                    if !types_compatible {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
                         });
@@ -794,41 +817,54 @@ where
                     ctx.bind_var(&vars[2], Ty::Bool);
                     let result_atom = bool_atom(&vars[2].0);
                     match x_ty {
-                        Ty::Int(_) => {
-                            let eq_atom =
-                                Atom::Eq(Idx::Var(vars[0].0.clone()), Idx::Var(vars[1].0.clone()));
-                            ctx.phi.push(implies(result_atom.clone(), eq_atom.clone()));
-                            ctx.phi
-                                .push(implies(not(result_atom.clone()), not(eq_atom)));
-                        }
-                        Ty::Bool => {
-                            let lhs_atom = bool_atom(&vars[0].0);
-                            let rhs_atom = bool_atom(&vars[1].0);
-                            let both_true = and(lhs_atom.clone(), rhs_atom.clone());
-                            let both_false = and(not(lhs_atom.clone()), not(rhs_atom.clone()));
-                            let eq_formula = or(both_true, both_false);
-                            ctx.phi
-                                .push(implies(result_atom.clone(), eq_formula.clone()));
-                            ctx.phi.push(implies(eq_formula, result_atom));
-                        }
+                        Ty::Int(_) => match op {
+                            Op::Equal => {
+                                let eq_atom = Atom::Eq(
+                                    Idx::Var(vars[0].0.clone()),
+                                    Idx::Var(vars[1].0.clone()),
+                                );
+                                ctx.phi.push(implies(result_atom.clone(), eq_atom.clone()));
+                                ctx.phi
+                                    .push(implies(not(result_atom.clone()), not(eq_atom)));
+                            }
+                            Op::NotEqual => {
+                                let eq_atom = Atom::Eq(
+                                    Idx::Var(vars[0].0.clone()),
+                                    Idx::Var(vars[1].0.clone()),
+                                );
+                                ctx.phi
+                                    .push(implies(result_atom.clone(), not(eq_atom.clone())));
+                                ctx.phi.push(implies(not(result_atom.clone()), eq_atom));
+                            }
+                            _ => unreachable!(),
+                        },
+                        Ty::Bool => match op {
+                            Op::Equal => {
+                                let lhs_atom = bool_atom(&vars[0].0);
+                                let rhs_atom = bool_atom(&vars[1].0);
+                                let both_true = and(lhs_atom.clone(), rhs_atom.clone());
+                                let both_false = and(not(lhs_atom.clone()), not(rhs_atom.clone()));
+                                let eq_formula = or(both_true, both_false);
+                                ctx.phi
+                                    .push(implies(result_atom.clone(), eq_formula.clone()));
+                                ctx.phi.push(implies(eq_formula, result_atom));
+                            }
+                            Op::NotEqual => {
+                                let lhs_atom = bool_atom(&vars[0].0);
+                                let rhs_atom = bool_atom(&vars[1].0);
+                                let lhs_true_rhs_false =
+                                    and(lhs_atom.clone(), not(rhs_atom.clone()));
+                                let lhs_false_rhs_true =
+                                    and(not(lhs_atom.clone()), rhs_atom.clone());
+                                let neq_formula = or(lhs_true_rhs_false, lhs_false_rhs_true);
+                                ctx.phi
+                                    .push(implies(result_atom.clone(), neq_formula.clone()));
+                                ctx.phi.push(implies(neq_formula, result_atom));
+                            }
+                            _ => unreachable!(),
+                        },
                         _ => {}
                     }
-                    finalize_statement(ctx, stmt);
-                    Ok(())
-                }
-                Op::Cast => {
-                    if vars.len() != 2 {
-                        return Err(TypeError::InvalidOp {
-                            op: format!("{:?}", op),
-                        });
-                    }
-                    let x_ty = ctx.ty_of(&vars[0])?;
-                    if !x_ty.is_int() {
-                        return Err(TypeError::InvalidOp {
-                            op: format!("{:?}", op),
-                        });
-                    }
-                    ctx.bind_var(&vars[1], x_ty.clone());
                     finalize_statement(ctx, stmt);
                     Ok(())
                 }
@@ -1029,10 +1065,18 @@ where
                 let arg_var = &args[i];
                 let mut arg_ty = ctx.ty_of(arg_var)?;
                 if arg_ty != *param_ty {
+                    // Allow integer type coercion for literals or between signed/unsigned
                     let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param_ty, Ty::Int(_));
-                    if both_int && arg_var.0.starts_with("_lit_") {
-                        ctx.bind_var(arg_var, param_ty.clone());
-                        arg_ty = param_ty.clone();
+                    if both_int {
+                        // If it's a literal binding, rebind it to the expected type
+                        if arg_var.0.starts_with("_lit_") {
+                            ctx.bind_var(arg_var, param_ty.clone());
+                            arg_ty = param_ty.clone();
+                        } else {
+                            // For non-literal integers, allow implicit conversion between signed/unsigned
+                            // This handles cases like `let x = 0; f(x)` where f expects i32
+                            arg_ty = param_ty.clone();
+                        }
                     }
                     if arg_ty != *param_ty {
                         return Err(TypeError::TypeMismatch {
@@ -1204,10 +1248,18 @@ where
                 let arg_var = &args[i];
                 let mut arg_ty = ctx.ty_of(arg_var)?;
                 if arg_ty != *param_ty {
+                    // Allow integer type coercion for literals or between signed/unsigned
                     let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param_ty, Ty::Int(_));
-                    if both_int && arg_var.0.starts_with("_lit_") {
-                        ctx.bind_var(arg_var, param_ty.clone());
-                        arg_ty = param_ty.clone();
+                    if both_int {
+                        // If it's a literal binding, rebind it to the expected type
+                        if arg_var.0.starts_with("_lit_") {
+                            ctx.bind_var(arg_var, param_ty.clone());
+                            arg_ty = param_ty.clone();
+                        } else {
+                            // For non-literal integers, allow implicit conversion between signed/unsigned
+                            // This handles cases like `let x = 0; f(x)` where f expects i32
+                            arg_ty = param_ty.clone();
+                        }
                     }
                     if arg_ty != *param_ty {
                         return Err(TypeError::TypeMismatch {
