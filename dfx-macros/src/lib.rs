@@ -59,27 +59,26 @@ pub fn cap(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Reconstruct the annotated function string as dfx expects it
     let annotated_fn = format!("#[cap({})]\n{}", attr_string, fn_string);
     let fn_name = input_fn.sig.ident.to_string();
-    let (existing_functions, existing_order) = {
-        let registry = registry().lock().expect("registry lock poisoned");
-        let cloned = registry.clone();
-        let order = registry
-            .iter()
-            .find(|stored| stored.name == fn_name)
-            .map(|stored| stored.order);
-        (cloned, order)
-    };
+    let mut registry = registry().lock().expect("registry lock poisoned");
 
-    let order = existing_order.unwrap_or_else(|| next_order(&existing_functions));
+    let order = registry
+        .iter()
+        .find(|stored| stored.name == fn_name)
+        .map(|stored| stored.order)
+        .unwrap_or_else(|| next_order(&registry));
 
-    let mut candidates: Vec<StoredFunction> = existing_functions
-        .into_iter()
-        .filter(|stored| stored.name != fn_name)
-        .collect();
-    candidates.push(StoredFunction {
+    let new_entry = StoredFunction {
         name: fn_name.clone(),
         code: annotated_fn.clone(),
         order,
-    });
+    };
+
+    let mut candidates: Vec<StoredFunction> = registry
+        .iter()
+        .filter(|stored| stored.name != fn_name)
+        .cloned()
+        .collect();
+    candidates.push(new_entry.clone());
     candidates.sort_by(|a, b| a.order.cmp(&b.order));
 
     let program_source = candidates
@@ -91,17 +90,11 @@ pub fn cap(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Run dfx type checking at compile time for all known annotated functions
     match run_dfx_check(&program_source) {
         Ok(()) => {
-            // Update the registry with the (potentially updated) function definition
-            let mut registry = registry().lock().expect("registry lock poisoned");
             if let Some(existing) = registry.iter_mut().find(|stored| stored.name == fn_name) {
                 existing.code = annotated_fn;
                 existing.order = order;
             } else {
-                registry.push(StoredFunction {
-                    name: fn_name,
-                    code: annotated_fn,
-                    order,
-                });
+                registry.push(new_entry);
                 registry.sort_by(|a, b| a.order.cmp(&b.order));
             }
 

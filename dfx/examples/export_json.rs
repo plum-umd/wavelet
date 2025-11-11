@@ -4,16 +4,32 @@ use dfx::env::FnRegistry;
 use dfx::ghost::json::export_program_json;
 use dfx::ghost::lower::synthesize_ghost_program;
 use dfx::parse::parse_program;
+use std::env;
 use std::fs;
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let test_dir = PathBuf::from("tests/test_files");
-    let output_dir = PathBuf::from("examples/output");
+    let args: Vec<String> = env::args().collect();
+    
+    // Parse command line arguments
+    let test_dir = if args.len() > 1 {
+        PathBuf::from(&args[1])
+    } else {
+        PathBuf::from("tests/test_files")
+    };
+    
+    let output_dir = if args.len() > 2 {
+        PathBuf::from(&args[2])
+    } else {
+        PathBuf::from("examples/output")
+    };
 
     // Create output directory if it doesn't exist
     fs::create_dir_all(&output_dir)?;
 
+    println!("Usage: {} [test_dir] [output_dir]", args[0]);
+    println!("  test_dir: {} (default: tests/test_files)", test_dir.display());
+    println!("  output_dir: {} (default: examples/output)\n", output_dir.display());
     println!("Processing test files from {}...\n", test_dir.display());
 
     let mut success_count = 0;
