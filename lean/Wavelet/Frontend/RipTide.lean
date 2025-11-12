@@ -99,6 +99,11 @@ instance instOpInterpM [DecidableEq Loc] [Hashable Loc] :
       let c := a >>> b
       return #v[c.toInt]
     | .load loc, (inputs : Vector Value 1) => return #v[← (← get).load loc inputs[0]]
+    | .sel, (inputs : Vector Value 3) => do
+      let cond ← InterpConsts.toBool inputs[0]
+      let v₁ := inputs[1]
+      let v₂ := inputs[2]
+      return #v[if cond then v₁ else v₂]
     | .store loc, (inputs : Vector Value 2) => do
       modify (λ s => s.store loc inputs[0] inputs[1])
       return #v[0]
@@ -303,6 +308,17 @@ def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite (RipTide.SyncOp Loc) χ
   -- Lower `const` to the built-in `const`
   | .op (.const v) inputs outputs =>
     return .mk "riptide-const" [.const v (inputs[0]'(by simp [Arity.ι])) outputs]
+  -- Select with equal inputs can be rewritten to a forward
+  | .op .sel (inputs : Vector _ 3) (outputs : Vector _ 1) => do
+    let cond := inputs[0]
+    let input₁ := inputs[1]
+    let input₂ := inputs[2]
+    let output := outputs[0]
+    .assumeFromSameFork input₁ input₂
+    return .mk "riptide-sel-eq" [
+      .forward #v[input₁] #v[output],
+      .sink #v[cond, input₂],
+    ]
   -- Lower `switch` to two `steer`s
   -- This is optional but may enable more rewrites
   | .async (.switch 1) inputs outputs =>
@@ -318,6 +334,36 @@ def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite (RipTide.SyncOp Loc) χ
         .steer false (.rename 1 decider) #v[.rename 1 input] #v[output₂],
       ]
     else failure
+  -- Merging opposite steers with the same decider
+  -- is equivalent to a select operator
+  | .async (.merge .decider 1) inputs outputs =>
+    .assume (inputs.length = 3 ∧ outputs.length = 1) λ h => do
+    let decider := inputs[0]'(by omega)
+    let inputL := inputs[1]'(by omega)
+    let inputR := inputs[2]'(by omega)
+    let output := outputs[0]'(by omega)
+    .chooseWithNames (inputs ++ outputs) λ
+    | .async (.steer flavor₁ 1) inputs₁ outputs₁ =>
+      .assume (inputs₁.length = 2 ∧ outputs₁.length = 1) λ h₁ => do
+      let decider₁ := inputs₁[0]'(by omega)
+      let input₁ := inputs₁[1]'(by omega)
+      let output₁ := outputs₁[0]'(by omega)
+      .assumeFromSameFork decider decider₁
+      .chooseWithNames (inputs ++ outputs) λ
+      | .async (.steer flavor₂ 1) inputs₂ outputs₂ =>
+        .assume (inputs₂.length = 2 ∧ outputs₂.length = 1) λ h₂ => do
+        let decider₂ := inputs₂[0]'(by omega)
+        let input₂ := inputs₂[1]'(by omega)
+        let output₂ := outputs₂[0]'(by omega)
+        .assumeFromSameFork decider decider₂
+        if flavor₁ = false ∧ flavor₂ = true ∧ output₁ = inputL ∧ output₂ = inputR then
+          return .mk "riptide-merge-steer-steer-to-sel" [
+            .op .sel #v[decider, input₂, input₁] #v[output],
+            .sink #v[decider₁, decider₂],
+          ]
+        else failure
+      | _ => failure
+    | _ => failure
   | _ => failure
 
 end Wavelet.Frontend.RipTide
