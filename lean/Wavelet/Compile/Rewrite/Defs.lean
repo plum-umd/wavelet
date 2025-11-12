@@ -375,6 +375,34 @@ def deadCodeElim
   [InterpConsts V] [DecidableEq V] :
     Rewrite Op χ V :=
   .choose λ
+  -- Two orders coming into a synchronized operator can be combined
+  | .op _ inputs outputs =>
+    .chooseWithNames (inputs.toList ++ outputs.toList) λ
+    | .async (AsyncOp.order n) inputs₁ outputs₁ =>
+      .assume (n > 0 ∧ inputs₁.length = n ∧ outputs₁.length = 1) λ h => do
+      let input₁ := inputs₁[0]'(by omega)
+      let output₁ := outputs₁[0]'(by omega)
+      if output₁ ∈ inputs then
+        .chooseWithNames (inputs.toList ++ outputs.toList) λ
+        | .async (AsyncOp.order m) inputs₂ outputs₂ =>
+          .assume (m > 0 ∧ inputs₂.length = m ∧ outputs₂.length = 1) λ h => do
+          let output₂ := outputs₂[0]'(by omega)
+          if output₂ ∈ inputs then
+            let : NeZero (inputs₁.tail ++ inputs₂).length := by
+              constructor
+              simp
+              intros h₃ h₄
+              subst h₄
+              simp at h
+              omega
+            return .mk "sync-order-order" [
+              .op _ (inputs.replace output₁ input₁) outputs,
+              .order (inputs₁.tail ++ inputs₂).toVector output₂,
+            ]
+          else failure
+        | _ => failure
+      else failure
+    | _ => failure
   -- Forwards can be folded into either the sender or the receiver
   -- depending on which is available.
   | .async (.forward 1) inputs outputs =>
@@ -623,6 +651,32 @@ def deadCodeElim
           .const v output' #v[output],
         ]
       else failure
+    -- If an order has two inputs that come from two steers
+    -- of the same flavor and decider, then we can pop the order
+    -- up to synchronize the inputs to the two steers instead.
+    | .async (AsyncOp.steer flavor 1) inputs₁ outputs₁ =>
+      .assume (n = 2) λ h₁ => do
+      let orderInput₁ := inputs[0]'(by omega)
+      let orderInput₂ := inputs[1]'(by omega)
+      .assume (inputs₁.length = 2 ∧ outputs₁.length = 1) λ h₂ => do
+      let decider₁ := inputs₁[0]'(by omega)
+      let input₁ := inputs₁[1]'(by omega)
+      let output₁ := outputs₁[0]'(by omega)
+      .chooseWithNames (inputs ++ outputs) λ
+      | .async (AsyncOp.steer flavor' 1) inputs₂ outputs₂ =>
+        .assume (inputs₂.length = 2 ∧ outputs₂.length = 1) λ h₃ => do
+        let decider₂ := inputs₂[0]'(by omega)
+        let input₂ := inputs₂[1]'(by omega)
+        let output₂ := outputs₂[0]'(by omega)
+        .assumeFromSameFork decider₁ decider₂
+        if flavor = flavor' ∧ output₁ = orderInput₁ ∧ output₂ = orderInput₂ then
+          return .mk "order-steer-steer" [
+            .order #v[input₁, input₂] output₁,
+            .steer flavor decider₁ #v[output₁] #v[output],
+            .sink #v[decider₂],
+          ]
+        else failure
+      | _ => failure
     | _ => failure
   -- Constant with a sink output can be rewritten to a sink
   | .async (.const v 1) inputs outputs =>

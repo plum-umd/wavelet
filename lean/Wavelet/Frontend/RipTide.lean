@@ -364,6 +364,30 @@ def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite (RipTide.SyncOp Loc) χ
         else failure
       | _ => failure
     | _ => failure
+  -- A pure synchronous operator can be merged into a non-first input
+  -- of an order operator.
+  | .async (Dataflow.AsyncOp.order n) inputs outputs =>
+    .assume (n > 0 ∧ inputs.length = n ∧ outputs.length = 1) λ h => do
+    let input₁ := inputs[0]'(by omega)
+    let output := outputs[0]'(by omega)
+    .chooseWithNames (inputs ++ outputs) λ
+    | .op op inputs' outputs' =>
+      match op with
+      | .load .. | .store .. => failure
+      | op =>
+        if input₁ ∉ outputs' ∧ outputs'.toList ⊆ inputs then
+          have : NeZero (inputs.removeAll outputs'.toList ++ inputs'.toList).length := by
+            constructor
+            simp
+            intros h₁ h₂
+            have : NeZero (Arity.ι op) := by infer_instance
+            have := this.ne
+            omega
+          return .mk "riptide-order-sync" [
+            .order ((inputs.removeAll outputs'.toList) ++ inputs'.toList).toVector output,
+          ]
+        else failure
+    | _ => failure
   | _ => failure
 
 end Wavelet.Frontend.RipTide
