@@ -35,6 +35,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     | "none" => pure OutputFormat.none
     | fmt    => throw <| IO.userError s!"unknown output format: {fmt}"
   let enablePermOut := p.hasFlag "perm-out"
+  let enableNoOut := p.hasFlag "no-out"
   let enableStats := p.hasFlag "stats"
   let omitForks := p.hasFlag "omit-forks"
   let writeOutput (content : String) : IO Unit :=
@@ -81,16 +82,26 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     let P χ := Proc
       (RipTide.SyncOp Loc) χ RipTide.Value
       (prog.sigs last).ι
-      (if ¬ enablePermOut then (prog.sigs last).ω - 1 else (prog.sigs last).ω)
+      (if ¬ enablePermOut then
+        if enableNoOut then 0 else
+        (prog.sigs last).ω - 1
+      else (prog.sigs last).ω)
     let proc : P Nat :=
-      if h : ¬ enablePermOut then
-        -- If we don't need output permission from the entire graph,
-        -- the last output (which assumed to be a ghost permission output)
-        -- can be replaced with a sink to enable more optimizations.
-        { proc with
-          outputs := proc.outputs.pop.cast (by simp [h]),
-          atoms := .sink #v[proc.outputs.back] :: proc.atoms }
-      else cast (by simp [P, h]) proc
+      if h₁ : ¬ enablePermOut then
+        if h₂ : enableNoOut then
+          -- If we enable the more aggressive no-output mode,
+          -- sink all outputs of the dataflow graph
+          { proc with
+            outputs := #v[].cast (by simp [h₁, h₂]),
+            atoms := .sink proc.outputs :: proc.atoms }
+        else
+          -- If we don't need output permission from the entire graph,
+          -- the last output (which assumed to be a ghost permission output)
+          -- can be replaced with a sink to enable more optimizations.
+          { proc with
+            outputs := proc.outputs.pop.cast (by simp [h₁, h₂]),
+            atoms := .sink #v[proc.outputs.back] :: proc.atoms }
+      else cast (by simp [P, h₁]) proc
 
     trace s!"applying op selection and optimizations..."
     let (numRws, stats, proc) := Rewrite.applyUntilFailNat
@@ -158,6 +169,7 @@ def compileCmd := `[Cli|
       o, output    : String ; "Path to output final dataflow graph in JSON (Default: stdout)"
       f, format    : String ; "Output format [json|dot|none]"
       "perm-out"            ; "Enable permission output which might increase graph size"
+      "no-out"              ; "Disable all outputs for a smaller graph"
       stats                 ; "Print various statistics"
       "omit-forks"          ; "Omit fork operators in the DOT graph"
       "tests"      : String ; "A JSON file including test vectors for the final dataflow graph"

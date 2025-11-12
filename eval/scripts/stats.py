@@ -10,7 +10,6 @@ import networkx as nx
 import riptide
 
 BENCH_NAMES = [
-    "sort",
     "nn_vadd",
     "nn_norm",
     "nn_relu",
@@ -81,10 +80,11 @@ def load_wavelet_dfg(path: str) -> nx.DiGraph:
     with open(path, "r") as f:
         dfg = json.load(f)
 
-        op_names = {}
         chans = set()
         edge_to_node = {}
         edge_from_node = {}
+
+        nx_dfg = nx.DiGraph()
         
         for idx, atom in enumerate(dfg["atoms"]):
             if "async" in atom:
@@ -94,7 +94,7 @@ def load_wavelet_dfg(path: str) -> nx.DiGraph:
             else:
                 assert False, f"unknown atom {atom}"
 
-            op_names[idx] = parse_wavelet_op(atom["op"])
+            nx_dfg.add_node(idx, name=parse_wavelet_op(atom["op"]))
 
             for i, chan in enumerate(atom["inputs"]):
                 # if op_names[idx] == "carry" and (i == 0 or i == 2):
@@ -109,16 +109,11 @@ def load_wavelet_dfg(path: str) -> nx.DiGraph:
                 edge_from_node[chan] = idx
                 chans.add(chan)
 
-        nx_dfg = nx.DiGraph()
-
         for chan in chans:
             if chan in edge_to_node and chan in edge_from_node:
                 src = edge_from_node[chan]
                 dst = edge_to_node[chan]
                 nx_dfg.add_edge(src, dst)
-
-        for idx, name in op_names.items():
-            nx_dfg.nodes[idx]["name"] = name
 
         # Bypass every fork, forward, and const node
         for v in list(nx_dfg.nodes):
@@ -174,10 +169,12 @@ def main():
         num_cf_ops = sum(1 for _, data in wavelet_dfg.nodes(data=True) if wavelet_op_type(data["name"]) == "cf")
         num_mem_ops = sum(1 for _, data in wavelet_dfg.nodes(data=True) if wavelet_op_type(data["name"]) == "mem")
         num_orders = sum(1 for _, data in wavelet_dfg.nodes(data=True) if data["name"] == "order")
+        num_carrys = sum(1 for _, data in wavelet_dfg.nodes(data=True) if data["name"] == "carry")
         print("  sync ops:", num_sync_ops)
         print("  cf ops:", num_cf_ops)
         print("  mem ops:", num_mem_ops)
         print("  order ops:", num_orders)
+        print("  carry ops:", num_carrys)
         print("  cf overhead:", round(num_cf_ops / (num_mem_ops + num_sync_ops), 2))
         # nx_dfg_condensed = nx.condensation(wavelet_dfg)
         # print("  longest path length (condensed):", nx.dag_longest_path_length(nx_dfg_condensed))
@@ -189,12 +186,14 @@ def main():
         num_sync_ops = sum(1 for _, data in riptide_dfg.nodes(data=True) if riptide_op_type(data["name"]) == "sync")
         num_cf_ops = sum(1 for _, data in riptide_dfg.nodes(data=True) if riptide_op_type(data["name"]) == "cf")
         num_mem_ops = sum(1 for _, data in riptide_dfg.nodes(data=True) if riptide_op_type(data["name"]) == "mem")
+        num_carrys = sum(1 for _, data in riptide_dfg.nodes(data=True) if data["name"] == "CF_CFG_OP_CARRY")
         print("  sync ops:", num_sync_ops)
         print("  cf ops:", num_cf_ops)
         print("  mem ops:", num_mem_ops)
+        print("  carry ops:", num_carrys)
         print("  cf overhead:", round(num_cf_ops / (num_mem_ops + num_sync_ops), 2))
 
-        print("  wavelet/riptide:", round(wavelet_dfg.number_of_nodes() / riptide_dfg.number_of_nodes(), 2))
+        print("wavelet/riptide:", round(wavelet_dfg.number_of_nodes() / riptide_dfg.number_of_nodes(), 2))
         # nx_dfg_condensed = nx.condensation(riptide_dfg)
         # print("  longest path length (condensed):", nx.dag_longest_path_length(nx_dfg_condensed))
         # print("  dag:", nx.is_directed_acyclic_graph(riptide_dfg))

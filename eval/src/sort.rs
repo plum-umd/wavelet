@@ -17,16 +17,7 @@ fn cond_read<const N: usize>(j: usize, odd: bool, a: &[i32; N], z: &[i32; N]) ->
 }
 
 #[cap(a: uniq @ j..j+1, z: uniq @ j..j+1)]
-fn cond_write1<const N: usize>(j: usize, odd: bool, a: &mut [i32; N], z: &mut [i32; N], v: i32) {
-    if odd {
-        a[j] = v;
-    } else {
-        z[j] = v;
-    }
-}
-
-#[cap(a: uniq @ j..j+1, z: uniq @ j..j+1)]
-fn cond_write2<const N: usize>(j: usize, odd: bool, a: &mut [i32; N], z: &mut [i32; N], v: i32) {
+fn cond_write<const N: usize>(j: usize, odd: bool, a: &mut [i32; N], z: &mut [i32; N], v: i32) {
     if odd {
         a[j] = v;
     } else {
@@ -41,6 +32,33 @@ fn compute_next_count(zero_flag: bool, next_count: usize) -> usize {
         next_count2
     } else {
         next_count
+    }
+}
+
+#[cap]
+fn sel1(cond: bool, a: u32, b: u32) -> u32 {
+    if cond {
+        a
+    } else {
+        b
+    }
+}
+
+#[cap]
+fn sel2(cond: bool, a: u32, b: u32) -> u32 {
+    if cond {
+        a
+    } else {
+        b
+    }
+}
+
+#[cap]
+fn sel3(cond: bool, a: u32, b: u32) -> u32 {
+    if cond {
+        a
+    } else {
+        b
     }
 }
 
@@ -75,27 +93,21 @@ fn pass_aux<const N: usize>(
         let j1 = j + 1;
         fence!();
 
+        let idx = sel1(o, idx1, idx0);
+        let idx1b = idx1 + 1;
+        let idx0b = idx0 + 1;
+
+        let idx0n = sel2(o, idx0, idx0b);
+        let idx1n = sel3(o, idx1b, idx1);
+
         // Write to the chosen destination buffer
-        if o {
-            let safe = idx1 < N;
-            if safe {
-                cond_write1::<N>(idx1, odd, a, z, v);
-                fence!();
-                let idx1b = idx1 + 1;
-                pass_aux::<N>(j1, bit, a, z, idx0, idx1b, next_count2, odd)
-            } else {
-                next_count2
-            }
+        let safe = idx < N;
+        if safe {
+            cond_write::<N>(idx, odd, a, z, v);
+            fence!();
+            pass_aux::<N>(j1, bit, a, z, idx0n, idx1n, next_count2, odd)
         } else {
-            let safe = idx0 < N;
-            if safe {
-                cond_write2::<N>(idx0, odd, a, z, v);
-                fence!();
-                let idx0b = idx0 + 1;
-                pass_aux::<N>(j1, bit, a, z, idx0b, idx1, next_count2, odd)
-            } else {
-                next_count2
-            }
+            next_count2
         }
     } else {
         next_count

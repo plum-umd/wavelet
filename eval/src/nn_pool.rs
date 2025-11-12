@@ -1,5 +1,14 @@
 use dfx_macros::cap;
 
+#[cap]
+fn sel(cond: bool, a: i32, b: i32) -> i32 {
+    if cond {
+        a
+    } else {
+        b
+    }
+}
+
 // #[cap(src: shrd @ src_offset + j*input_cols..src_offset + j*input_cols + pool_size)]
 #[cap(src: shrd @ 0..SRC)]
 fn pool_k_aux<const SRC: usize>(
@@ -22,11 +31,8 @@ fn pool_k_aux<const SRC: usize>(
             let cond1 = w < t;
             let one = 1;
             let k1 = k + one;
-            if cond1 {
-                pool_k_aux::<SRC>(k1, pool_size, src_offset, j, input_cols, t, src)
-            } else {
-                pool_k_aux::<SRC>(k1, pool_size, src_offset, j, input_cols, w, src)
-            }
+            let tw = sel(cond1, t, w);
+            pool_k_aux::<SRC>(k1, pool_size, src_offset, j, input_cols, tw, src)
         } else {
             w
         }

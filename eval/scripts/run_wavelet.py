@@ -31,9 +31,13 @@ def main():
     parser.add_argument("--output", "-o", help="Output directory")
     args = parser.parse_args()
 
-    output_dir = args.output or tempfile.mkdtemp()
-    assert not os.path.exists(output_dir), f"output directory {output_dir} already exists"
-    os.makedirs(output_dir)
+
+    if args.output is not None:
+        assert not os.path.exists(args.output), f"output directory {args.output} already exists"
+        output_dir = args.output
+        os.mkdir(output_dir)
+    else:
+        output_dir = tempfile.mkdtemp()
 
     output_dir = os.path.abspath(output_dir)
 
@@ -57,6 +61,7 @@ def main():
                     WAVELET_PATH, input_path,
                     "--format", "json",
                     "--output", output_path,
+                    "--no-out",
                     "--stats",
                 ],
                 stdout=subprocess.PIPE,

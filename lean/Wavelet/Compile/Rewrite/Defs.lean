@@ -778,14 +778,33 @@ def deadCodeElim
           .sink (inputs'.erase output).toVector,
         ]
       else failure
-    -- Merge -> steer can be optimized to a forward and a sink
-    -- if they have the same decider (both deciders coming from a fork)
     | .async (.steer flavor 1) inputs' outputs' =>
       .assume (inputs'.length = 2 ∧ outputs'.length = 1) λ h => do
       let decider' := inputs'[0]'(by omega)
       let input' := inputs'[1]'(by omega)
       let output' := outputs'[0]'(by omega)
       .assumeFromSameFork decider decider'
+      -- This is a somewhat specific pattern to occur, where
+      -- two steers on the same fork and same decider is merged
+      -- again with the same decider. In which case the whole
+      -- pattern can be rewritten to a forward
+      (.chooseWithNames (inputs ++ outputs) λ
+        | .async (.steer flavor'' 1) inputs'' outputs'' =>
+          .assume (inputs''.length = 2 ∧ outputs''.length = 1) λ h => do
+          let decider'' := inputs''[0]'(by omega)
+          let input'' := inputs''[1]'(by omega)
+          let output'' := outputs''[0]'(by omega)
+          .assumeFromSameFork decider decider''
+          .assumeFromSameFork input' input''
+          if flavor = false ∧ flavor'' = true ∧ output' = inputL ∧ output'' = inputR then
+            return .mk "merge-steer-steer" [
+              .forward #v[input'] #v[output],
+              .sink #v[decider, decider', decider'', input''],
+            ]
+          else failure
+        | _ => failure) <|>
+      -- Merge -> steer can be optimized to a forward and a sink
+      -- if they have the same decider (both deciders coming from a fork)
       if output = input' then
         if flavor then
           return .mk "merge-steer-true" [

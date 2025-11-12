@@ -5,6 +5,24 @@ macro_rules! fence {
     ($($tt:tt)*) => {};
 }
 
+#[cap]
+fn sel1(cond: bool, a: i32, b: i32) -> i32 {
+    if cond {
+        a
+    } else {
+        b
+    }
+}
+
+#[cap]
+fn sel2(cond: bool, a: i32, b: i32) -> i32 {
+    if cond {
+        a
+    } else {
+        b
+    }
+}
+
 #[cap(src: shrd @ i*C..i*C + C, dst: uniq @ i*C..i*C + C)]
 fn dither_row_aux<const R: usize, const C: usize>(
     j: usize,
@@ -28,17 +46,13 @@ fn dither_row_aux<const R: usize, const C: usize>(
         let next_j = j + one;
         fence!();
 
-        if is_above {
-            let err1 = out - max_pixel;
-            dst[idx] = max_pixel;
-            fence!();
-            dither_row_aux::<R, C>(next_j, i, err1, src, dst)
-        } else {
-            let zero = 0;
-            dst[idx] = zero;
-            fence!();
-            dither_row_aux::<R, C>(next_j, i, out, src, dst)
-        }
+        let err1 = out - max_pixel;
+        let zero = 0;
+        let dst_val = sel1(is_above, max_pixel, zero);
+        let err_next = sel2(is_above, err1, out);
+        dst[idx] = dst_val;
+        fence!();
+        dither_row_aux::<R, C>(next_j, i, err_next, src, dst)
     } else {
         ()
     }

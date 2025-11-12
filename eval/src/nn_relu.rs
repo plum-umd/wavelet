@@ -1,5 +1,14 @@
 use dfx_macros::cap;
 
+#[cap]
+fn sel(cond: bool, a: i32, b: i32) -> i32 {
+    if cond {
+        a
+    } else {
+        b
+    }
+}
+
 #[cap(src: shrd @ i..N, dest: uniq @ i..N)]
 fn nn_relu_aux<const N: usize>(i: usize, src: &[i32; N], dest: &mut [i32; N]) {
     let cond = i < N;
@@ -9,13 +18,9 @@ fn nn_relu_aux<const N: usize>(i: usize, src: &[i32; N], dest: &mut [i32; N]) {
         let one = 1;
         let j = i + one;
         let is_neg = w < zero;
-        if is_neg {
-            dest[i] = zero;
-            nn_relu_aux::<N>(j, src, dest)
-        } else {
-            dest[i] = w;
-            nn_relu_aux::<N>(j, src, dest)
-        }
+        let v = sel(is_neg, zero, w);
+        dest[i] = v;
+        nn_relu_aux::<N>(j, src, dest)
     } else {
         ()
     }
