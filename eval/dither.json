@@ -1,0 +1,1377 @@
+{
+  "fns": [
+    {
+      "name": "sel1",
+      "params": [
+        "cond",
+        "a",
+        "b",
+        "p_sync",
+        "p_garb"
+      ],
+      "outputs": 2,
+      "body": {
+        "br": [
+          "cond",
+          {
+            "op": [
+              {
+                "op": {
+                  "join": {
+                    "deps": 0,
+                    "toks": 2
+                  }
+                }
+              },
+              [
+                "p_sync",
+                "p_garb"
+              ],
+              [
+                "p1",
+                "p2"
+              ],
+              {
+                "ret": [
+                  "a",
+                  "p1"
+                ]
+              }
+            ]
+          },
+          {
+            "op": [
+              {
+                "op": {
+                  "join": {
+                    "deps": 0,
+                    "toks": 2
+                  }
+                }
+              },
+              [
+                "p_sync",
+                "p_garb"
+              ],
+              [
+                "p3",
+                "p4"
+              ],
+              {
+                "ret": [
+                  "b",
+                  "p3"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "sel2",
+      "params": [
+        "cond",
+        "a",
+        "b",
+        "p_sync",
+        "p_garb"
+      ],
+      "outputs": 2,
+      "body": {
+        "br": [
+          "cond",
+          {
+            "op": [
+              {
+                "op": {
+                  "join": {
+                    "deps": 0,
+                    "toks": 2
+                  }
+                }
+              },
+              [
+                "p_sync",
+                "p_garb"
+              ],
+              [
+                "p1",
+                "p2"
+              ],
+              {
+                "ret": [
+                  "a",
+                  "p1"
+                ]
+              }
+            ]
+          },
+          {
+            "op": [
+              {
+                "op": {
+                  "join": {
+                    "deps": 0,
+                    "toks": 2
+                  }
+                }
+              },
+              [
+                "p_sync",
+                "p_garb"
+              ],
+              [
+                "p3",
+                "p4"
+              ],
+              {
+                "ret": [
+                  "b",
+                  "p3"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "dither_row_aux",
+      "params": [
+        "j",
+        "i",
+        "err",
+        "R",
+        "C",
+        "p_sync",
+        "p_garb"
+      ],
+      "outputs": 2,
+      "body": {
+        "op": [
+          {
+            "op": {
+              "op": {
+                "copy": 1
+              }
+            }
+          },
+          [
+            "j"
+          ],
+          [
+            "j_copy0",
+            "j_copy1",
+            "j_copy2"
+          ],
+          {
+            "op": [
+              {
+                "op": {
+                  "op": {
+                    "copy": 1
+                  }
+                }
+              },
+              [
+                "C"
+              ],
+              [
+                "C_copy0",
+                "C_copy1",
+                "C_copy2"
+              ],
+              {
+                "op": [
+                  {
+                    "op": {
+                      "op": "lt"
+                    }
+                  },
+                  [
+                    "j_copy0",
+                    "C_copy0"
+                  ],
+                  [
+                    "cond",
+                    "p1"
+                  ],
+                  {
+                    "br": [
+                      "cond",
+                      {
+                        "op": [
+                          {
+                            "op": {
+                              "op": {
+                                "copy": 0
+                              }
+                            }
+                          },
+                          [
+                            "i"
+                          ],
+                          [
+                            "i_copy0",
+                            "i_copy1"
+                          ],
+                          {
+                            "op": [
+                              {
+                                "op": {
+                                  "op": "mul"
+                                }
+                              },
+                              [
+                                "i_copy0",
+                                "C_copy1"
+                              ],
+                              [
+                                "idx_mul",
+                                "p2"
+                              ],
+                              {
+                                "op": [
+                                  {
+                                    "op": {
+                                      "op": "add"
+                                    }
+                                  },
+                                  [
+                                    "idx_mul",
+                                    "j_copy1"
+                                  ],
+                                  [
+                                    "idx",
+                                    "p3"
+                                  ],
+                                  {
+                                    "op": [
+                                      {
+                                        "op": {
+                                          "join": {
+                                            "deps": 0,
+                                            "toks": 1
+                                          }
+                                        }
+                                      },
+                                      [
+                                        "p_sync"
+                                      ],
+                                      [
+                                        "p4",
+                                        "p5"
+                                      ],
+                                      {
+                                        "op": [
+                                          {
+                                            "op": {
+                                              "op": {
+                                                "copy": 0
+                                              }
+                                            }
+                                          },
+                                          [
+                                            "idx"
+                                          ],
+                                          [
+                                            "idx_copy0",
+                                            "idx_copy1"
+                                          ],
+                                          {
+                                            "op": [
+                                              {
+                                                "op": {
+                                                  "op_ghost": {
+                                                    "load": "src"
+                                                  }
+                                                }
+                                              },
+                                              [
+                                                "idx_copy0",
+                                                "p4"
+                                              ],
+                                              [
+                                                "pix",
+                                                "p6"
+                                              ],
+                                              {
+                                                "op": [
+                                                  {
+                                                    "op": {
+                                                      "op": "add"
+                                                    }
+                                                  },
+                                                  [
+                                                    "pix",
+                                                    "err"
+                                                  ],
+                                                  [
+                                                    "out",
+                                                    "p7"
+                                                  ],
+                                                  {
+                                                    "op": [
+                                                      {
+                                                        "op": {
+                                                          "join": {
+                                                            "deps": 0,
+                                                            "toks": 1
+                                                          }
+                                                        }
+                                                      },
+                                                      [
+                                                        "p5"
+                                                      ],
+                                                      [
+                                                        "p8",
+                                                        "p9"
+                                                      ],
+                                                      {
+                                                        "op": [
+                                                          {
+                                                            "op": {
+                                                              "op": {
+                                                                "const": 256
+                                                              }
+                                                            }
+                                                          },
+                                                          [
+                                                            "p8"
+                                                          ],
+                                                          [
+                                                            "threshold",
+                                                            "p10"
+                                                          ],
+                                                          {
+                                                            "op": [
+                                                              {
+                                                                "op": {
+                                                                  "join": {
+                                                                    "deps": 0,
+                                                                    "toks": 1
+                                                                  }
+                                                                }
+                                                              },
+                                                              [
+                                                                "p9"
+                                                              ],
+                                                              [
+                                                                "p11",
+                                                                "p12"
+                                                              ],
+                                                              {
+                                                                "op": [
+                                                                  {
+                                                                    "op": {
+                                                                      "op": {
+                                                                        "const": 511
+                                                                      }
+                                                                    }
+                                                                  },
+                                                                  [
+                                                                    "p11"
+                                                                  ],
+                                                                  [
+                                                                    "max_pixel",
+                                                                    "p13"
+                                                                  ],
+                                                                  {
+                                                                    "op": [
+                                                                      {
+                                                                        "op": {
+                                                                          "op": {
+                                                                            "copy": 1
+                                                                          }
+                                                                        }
+                                                                      },
+                                                                      [
+                                                                        "out"
+                                                                      ],
+                                                                      [
+                                                                        "out_copy0",
+                                                                        "out_copy1",
+                                                                        "out_copy2"
+                                                                      ],
+                                                                      {
+                                                                        "op": [
+                                                                          {
+                                                                            "op": {
+                                                                              "op": "lt"
+                                                                            }
+                                                                          },
+                                                                          [
+                                                                            "threshold",
+                                                                            "out_copy0"
+                                                                          ],
+                                                                          [
+                                                                            "is_above",
+                                                                            "p14"
+                                                                          ],
+                                                                          {
+                                                                            "op": [
+                                                                              {
+                                                                                "op": {
+                                                                                  "join": {
+                                                                                    "deps": 0,
+                                                                                    "toks": 1
+                                                                                  }
+                                                                                }
+                                                                              },
+                                                                              [
+                                                                                "p12"
+                                                                              ],
+                                                                              [
+                                                                                "p15",
+                                                                                "p16"
+                                                                              ],
+                                                                              {
+                                                                                "op": [
+                                                                                  {
+                                                                                    "op": {
+                                                                                      "op": {
+                                                                                        "const": 1
+                                                                                      }
+                                                                                    }
+                                                                                  },
+                                                                                  [
+                                                                                    "p15"
+                                                                                  ],
+                                                                                  [
+                                                                                    "one",
+                                                                                    "p17"
+                                                                                  ],
+                                                                                  {
+                                                                                    "op": [
+                                                                                      {
+                                                                                        "op": {
+                                                                                          "op": "add"
+                                                                                        }
+                                                                                      },
+                                                                                      [
+                                                                                        "j_copy2",
+                                                                                        "one"
+                                                                                      ],
+                                                                                      [
+                                                                                        "next_j",
+                                                                                        "p18"
+                                                                                      ],
+                                                                                      {
+                                                                                        "op": [
+                                                                                          {
+                                                                                            "op": {
+                                                                                              "op": {
+                                                                                                "copy": 0
+                                                                                              }
+                                                                                            }
+                                                                                          },
+                                                                                          [
+                                                                                            "max_pixel"
+                                                                                          ],
+                                                                                          [
+                                                                                            "max_pixel_copy0",
+                                                                                            "max_pixel_copy1"
+                                                                                          ],
+                                                                                          {
+                                                                                            "op": [
+                                                                                              {
+                                                                                                "op": {
+                                                                                                  "op": "sub"
+                                                                                                }
+                                                                                              },
+                                                                                              [
+                                                                                                "out_copy1",
+                                                                                                "max_pixel_copy0"
+                                                                                              ],
+                                                                                              [
+                                                                                                "err1",
+                                                                                                "p19"
+                                                                                              ],
+                                                                                              {
+                                                                                                "op": [
+                                                                                                  {
+                                                                                                    "op": {
+                                                                                                      "join": {
+                                                                                                        "deps": 0,
+                                                                                                        "toks": 2
+                                                                                                      }
+                                                                                                    }
+                                                                                                  },
+                                                                                                  [
+                                                                                                    "p16",
+                                                                                                    "p6"
+                                                                                                  ],
+                                                                                                  [
+                                                                                                    "p20",
+                                                                                                    "p21"
+                                                                                                  ],
+                                                                                                  {
+                                                                                                    "op": [
+                                                                                                      {
+                                                                                                        "op": {
+                                                                                                          "op": {
+                                                                                                            "const": 0
+                                                                                                          }
+                                                                                                        }
+                                                                                                      },
+                                                                                                      [
+                                                                                                        "p20"
+                                                                                                      ],
+                                                                                                      [
+                                                                                                        "zero",
+                                                                                                        "p22"
+                                                                                                      ],
+                                                                                                      {
+                                                                                                        "op": [
+                                                                                                          {
+                                                                                                            "op": {
+                                                                                                              "join": {
+                                                                                                                "deps": 0,
+                                                                                                                "toks": 1
+                                                                                                              }
+                                                                                                            }
+                                                                                                          },
+                                                                                                          [
+                                                                                                            "p21"
+                                                                                                          ],
+                                                                                                          [
+                                                                                                            "p23",
+                                                                                                            "p24"
+                                                                                                          ],
+                                                                                                          {
+                                                                                                            "op": [
+                                                                                                              {
+                                                                                                                "op": {
+                                                                                                                  "join": {
+                                                                                                                    "deps": 0,
+                                                                                                                    "toks": 1
+                                                                                                                  }
+                                                                                                                }
+                                                                                                              },
+                                                                                                              [
+                                                                                                                "p_garb"
+                                                                                                              ],
+                                                                                                              [
+                                                                                                                "p25",
+                                                                                                                "p26"
+                                                                                                              ],
+                                                                                                              {
+                                                                                                                "op": [
+                                                                                                                  {
+                                                                                                                    "op": {
+                                                                                                                      "op": {
+                                                                                                                        "copy": 0
+                                                                                                                      }
+                                                                                                                    }
+                                                                                                                  },
+                                                                                                                  [
+                                                                                                                    "is_above"
+                                                                                                                  ],
+                                                                                                                  [
+                                                                                                                    "is_above_copy0",
+                                                                                                                    "is_above_copy1"
+                                                                                                                  ],
+                                                                                                                  {
+                                                                                                                    "op": [
+                                                                                                                      {
+                                                                                                                        "call": "sel1"
+                                                                                                                      },
+                                                                                                                      [
+                                                                                                                        "is_above_copy0",
+                                                                                                                        "max_pixel_copy1",
+                                                                                                                        "zero",
+                                                                                                                        "p23",
+                                                                                                                        "p25"
+                                                                                                                      ],
+                                                                                                                      [
+                                                                                                                        "dst_val",
+                                                                                                                        "p27"
+                                                                                                                      ],
+                                                                                                                      {
+                                                                                                                        "op": [
+                                                                                                                          {
+                                                                                                                            "op": {
+                                                                                                                              "join": {
+                                                                                                                                "deps": 0,
+                                                                                                                                "toks": 1
+                                                                                                                              }
+                                                                                                                            }
+                                                                                                                          },
+                                                                                                                          [
+                                                                                                                            "p24"
+                                                                                                                          ],
+                                                                                                                          [
+                                                                                                                            "p28",
+                                                                                                                            "p29"
+                                                                                                                          ],
+                                                                                                                          {
+                                                                                                                            "op": [
+                                                                                                                              {
+                                                                                                                                "op": {
+                                                                                                                                  "join": {
+                                                                                                                                    "deps": 0,
+                                                                                                                                    "toks": 2
+                                                                                                                                  }
+                                                                                                                                }
+                                                                                                                              },
+                                                                                                                              [
+                                                                                                                                "p26",
+                                                                                                                                "p27"
+                                                                                                                              ],
+                                                                                                                              [
+                                                                                                                                "p30",
+                                                                                                                                "p31"
+                                                                                                                              ],
+                                                                                                                              {
+                                                                                                                                "op": [
+                                                                                                                                  {
+                                                                                                                                    "call": "sel2"
+                                                                                                                                  },
+                                                                                                                                  [
+                                                                                                                                    "is_above_copy1",
+                                                                                                                                    "err1",
+                                                                                                                                    "out_copy2",
+                                                                                                                                    "p28",
+                                                                                                                                    "p30"
+                                                                                                                                  ],
+                                                                                                                                  [
+                                                                                                                                    "err_next",
+                                                                                                                                    "p32"
+                                                                                                                                  ],
+                                                                                                                                  {
+                                                                                                                                    "op": [
+                                                                                                                                      {
+                                                                                                                                        "op": {
+                                                                                                                                          "join": {
+                                                                                                                                            "deps": 0,
+                                                                                                                                            "toks": 1
+                                                                                                                                          }
+                                                                                                                                        }
+                                                                                                                                      },
+                                                                                                                                      [
+                                                                                                                                        "p29"
+                                                                                                                                      ],
+                                                                                                                                      [
+                                                                                                                                        "p33",
+                                                                                                                                        "p34"
+                                                                                                                                      ],
+                                                                                                                                      {
+                                                                                                                                        "op": [
+                                                                                                                                          {
+                                                                                                                                            "op": {
+                                                                                                                                              "op_ghost": {
+                                                                                                                                                "store": "dst"
+                                                                                                                                              }
+                                                                                                                                            }
+                                                                                                                                          },
+                                                                                                                                          [
+                                                                                                                                            "idx_copy1",
+                                                                                                                                            "dst_val",
+                                                                                                                                            "p33"
+                                                                                                                                          ],
+                                                                                                                                          [
+                                                                                                                                            "__store_dummy_36",
+                                                                                                                                            "p35"
+                                                                                                                                          ],
+                                                                                                                                          {
+                                                                                                                                            "op": [
+                                                                                                                                              {
+                                                                                                                                                "op": {
+                                                                                                                                                  "join": {
+                                                                                                                                                    "deps": 0,
+                                                                                                                                                    "toks": 3
+                                                                                                                                                  }
+                                                                                                                                                }
+                                                                                                                                              },
+                                                                                                                                              [
+                                                                                                                                                "p34",
+                                                                                                                                                "p32",
+                                                                                                                                                "p35"
+                                                                                                                                              ],
+                                                                                                                                              [
+                                                                                                                                                "p37",
+                                                                                                                                                "p38"
+                                                                                                                                              ],
+                                                                                                                                              {
+                                                                                                                                                "op": [
+                                                                                                                                                  {
+                                                                                                                                                    "op": {
+                                                                                                                                                      "join": {
+                                                                                                                                                        "deps": 0,
+                                                                                                                                                        "toks": 2
+                                                                                                                                                      }
+                                                                                                                                                    }
+                                                                                                                                                  },
+                                                                                                                                                  [
+                                                                                                                                                    "p31",
+                                                                                                                                                    "p38"
+                                                                                                                                                  ],
+                                                                                                                                                  [
+                                                                                                                                                    "p39",
+                                                                                                                                                    "p40"
+                                                                                                                                                  ],
+                                                                                                                                                  {
+                                                                                                                                                    "tail": [
+                                                                                                                                                      "next_j",
+                                                                                                                                                      "i_copy1",
+                                                                                                                                                      "err_next",
+                                                                                                                                                      "R",
+                                                                                                                                                      "C_copy2",
+                                                                                                                                                      "p37",
+                                                                                                                                                      "p39"
+                                                                                                                                                    ]
+                                                                                                                                                  }
+                                                                                                                                                ]
+                                                                                                                                              }
+                                                                                                                                            ]
+                                                                                                                                          }
+                                                                                                                                        ]
+                                                                                                                                      }
+                                                                                                                                    ]
+                                                                                                                                  }
+                                                                                                                                ]
+                                                                                                                              }
+                                                                                                                            ]
+                                                                                                                          }
+                                                                                                                        ]
+                                                                                                                      }
+                                                                                                                    ]
+                                                                                                                  }
+                                                                                                                ]
+                                                                                                              }
+                                                                                                            ]
+                                                                                                          }
+                                                                                                        ]
+                                                                                                      }
+                                                                                                    ]
+                                                                                                  }
+                                                                                                ]
+                                                                                              }
+                                                                                            ]
+                                                                                          }
+                                                                                        ]
+                                                                                      }
+                                                                                    ]
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "op": [
+                          {
+                            "op": {
+                              "join": {
+                                "deps": 0,
+                                "toks": 1
+                              }
+                            }
+                          },
+                          [
+                            "p_sync"
+                          ],
+                          [
+                            "p41",
+                            "p42"
+                          ],
+                          {
+                            "op": [
+                              {
+                                "op": {
+                                  "op": {
+                                    "const": 0
+                                  }
+                                }
+                              },
+                              [
+                                "p41"
+                              ],
+                              [
+                                "_unit_ret",
+                                "p43"
+                              ],
+                              {
+                                "op": [
+                                  {
+                                    "op": {
+                                      "join": {
+                                        "deps": 0,
+                                        "toks": 2
+                                      }
+                                    }
+                                  },
+                                  [
+                                    "p42",
+                                    "p_garb"
+                                  ],
+                                  [
+                                    "p44",
+                                    "p45"
+                                  ],
+                                  {
+                                    "ret": [
+                                      "_unit_ret",
+                                      "p44"
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "dither_aux",
+      "params": [
+        "i",
+        "R",
+        "C",
+        "p_sync",
+        "p_garb"
+      ],
+      "outputs": 2,
+      "body": {
+        "op": [
+          {
+            "op": {
+              "op": {
+                "copy": 1
+              }
+            }
+          },
+          [
+            "i"
+          ],
+          [
+            "i_copy2",
+            "i_copy3",
+            "i_copy4"
+          ],
+          {
+            "op": [
+              {
+                "op": {
+                  "op": {
+                    "copy": 1
+                  }
+                }
+              },
+              [
+                "R"
+              ],
+              [
+                "R_copy0",
+                "R_copy1",
+                "R_copy2"
+              ],
+              {
+                "op": [
+                  {
+                    "op": {
+                      "op": "lt"
+                    }
+                  },
+                  [
+                    "i_copy2",
+                    "R_copy0"
+                  ],
+                  [
+                    "cond",
+                    "p1"
+                  ],
+                  {
+                    "br": [
+                      "cond",
+                      {
+                        "op": [
+                          {
+                            "op": {
+                              "join": {
+                                "deps": 0,
+                                "toks": 1
+                              }
+                            }
+                          },
+                          [
+                            "p_sync"
+                          ],
+                          [
+                            "p2",
+                            "p3"
+                          ],
+                          {
+                            "op": [
+                              {
+                                "op": {
+                                  "op": {
+                                    "const": 0
+                                  }
+                                }
+                              },
+                              [
+                                "p2"
+                              ],
+                              [
+                                "start_err",
+                                "p4"
+                              ],
+                              {
+                                "op": [
+                                  {
+                                    "op": {
+                                      "join": {
+                                        "deps": 0,
+                                        "toks": 1
+                                      }
+                                    }
+                                  },
+                                  [
+                                    "p3"
+                                  ],
+                                  [
+                                    "p5",
+                                    "p6"
+                                  ],
+                                  {
+                                    "op": [
+                                      {
+                                        "op": {
+                                          "op": {
+                                            "const": 0
+                                          }
+                                        }
+                                      },
+                                      [
+                                        "p5"
+                                      ],
+                                      [
+                                        "start_j",
+                                        "p7"
+                                      ],
+                                      {
+                                        "op": [
+                                          {
+                                            "op": {
+                                              "join": {
+                                                "deps": 0,
+                                                "toks": 1
+                                              }
+                                            }
+                                          },
+                                          [
+                                            "p6"
+                                          ],
+                                          [
+                                            "p8",
+                                            "p9"
+                                          ],
+                                          {
+                                            "op": [
+                                              {
+                                                "op": {
+                                                  "join": {
+                                                    "deps": 0,
+                                                    "toks": 1
+                                                  }
+                                                }
+                                              },
+                                              [
+                                                "p_garb"
+                                              ],
+                                              [
+                                                "p10",
+                                                "p11"
+                                              ],
+                                              {
+                                                "op": [
+                                                  {
+                                                    "op": {
+                                                      "op": {
+                                                        "copy": 0
+                                                      }
+                                                    }
+                                                  },
+                                                  [
+                                                    "C"
+                                                  ],
+                                                  [
+                                                    "C_copy3",
+                                                    "C_copy4"
+                                                  ],
+                                                  {
+                                                    "op": [
+                                                      {
+                                                        "call": "dither_row_aux"
+                                                      },
+                                                      [
+                                                        "start_j",
+                                                        "i_copy3",
+                                                        "start_err",
+                                                        "R_copy1",
+                                                        "C_copy3",
+                                                        "p8",
+                                                        "p10"
+                                                      ],
+                                                      [
+                                                        "_call_result_3",
+                                                        "p12"
+                                                      ],
+                                                      {
+                                                        "op": [
+                                                          {
+                                                            "op": {
+                                                              "join": {
+                                                                "deps": 0,
+                                                                "toks": 1
+                                                              }
+                                                            }
+                                                          },
+                                                          [
+                                                            "p9"
+                                                          ],
+                                                          [
+                                                            "p13",
+                                                            "p14"
+                                                          ],
+                                                          {
+                                                            "op": [
+                                                              {
+                                                                "op": {
+                                                                  "op": {
+                                                                    "const": 1
+                                                                  }
+                                                                }
+                                                              },
+                                                              [
+                                                                "p13"
+                                                              ],
+                                                              [
+                                                                "one",
+                                                                "p15"
+                                                              ],
+                                                              {
+                                                                "op": [
+                                                                  {
+                                                                    "op": {
+                                                                      "op": "add"
+                                                                    }
+                                                                  },
+                                                                  [
+                                                                    "i_copy4",
+                                                                    "one"
+                                                                  ],
+                                                                  [
+                                                                    "next_i",
+                                                                    "p16"
+                                                                  ],
+                                                                  {
+                                                                    "op": [
+                                                                      {
+                                                                        "op": {
+                                                                          "join": {
+                                                                            "deps": 0,
+                                                                            "toks": 1
+                                                                          }
+                                                                        }
+                                                                      },
+                                                                      [
+                                                                        "p14"
+                                                                      ],
+                                                                      [
+                                                                        "p17",
+                                                                        "p18"
+                                                                      ],
+                                                                      {
+                                                                        "op": [
+                                                                          {
+                                                                            "op": {
+                                                                              "join": {
+                                                                                "deps": 0,
+                                                                                "toks": 3
+                                                                              }
+                                                                            }
+                                                                          },
+                                                                          [
+                                                                            "p11",
+                                                                            "p18",
+                                                                            "p12"
+                                                                          ],
+                                                                          [
+                                                                            "p19",
+                                                                            "p20"
+                                                                          ],
+                                                                          {
+                                                                            "tail": [
+                                                                              "next_i",
+                                                                              "R_copy2",
+                                                                              "C_copy4",
+                                                                              "p17",
+                                                                              "p19"
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "op": [
+                          {
+                            "op": {
+                              "join": {
+                                "deps": 0,
+                                "toks": 1
+                              }
+                            }
+                          },
+                          [
+                            "p_sync"
+                          ],
+                          [
+                            "p21",
+                            "p22"
+                          ],
+                          {
+                            "op": [
+                              {
+                                "op": {
+                                  "op": {
+                                    "const": 0
+                                  }
+                                }
+                              },
+                              [
+                                "p21"
+                              ],
+                              [
+                                "_unit_ret",
+                                "p23"
+                              ],
+                              {
+                                "op": [
+                                  {
+                                    "op": {
+                                      "join": {
+                                        "deps": 0,
+                                        "toks": 2
+                                      }
+                                    }
+                                  },
+                                  [
+                                    "p22",
+                                    "p_garb"
+                                  ],
+                                  [
+                                    "p24",
+                                    "p25"
+                                  ],
+                                  {
+                                    "ret": [
+                                      "_unit_ret",
+                                      "p24"
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "dither",
+      "params": [
+        "R",
+        "C",
+        "p_sync",
+        "p_garb"
+      ],
+      "outputs": 2,
+      "body": {
+        "op": [
+          {
+            "op": {
+              "join": {
+                "deps": 0,
+                "toks": 1
+              }
+            }
+          },
+          [
+            "p_sync"
+          ],
+          [
+            "p1",
+            "p2"
+          ],
+          {
+            "op": [
+              {
+                "op": {
+                  "op": {
+                    "const": 0
+                  }
+                }
+              },
+              [
+                "p1"
+              ],
+              [
+                "start_i",
+                "p3"
+              ],
+              {
+                "op": [
+                  {
+                    "op": {
+                      "join": {
+                        "deps": 0,
+                        "toks": 1
+                      }
+                    }
+                  },
+                  [
+                    "p2"
+                  ],
+                  [
+                    "p4",
+                    "p5"
+                  ],
+                  {
+                    "op": [
+                      {
+                        "op": {
+                          "join": {
+                            "deps": 0,
+                            "toks": 1
+                          }
+                        }
+                      },
+                      [
+                        "p_garb"
+                      ],
+                      [
+                        "p6",
+                        "p7"
+                      ],
+                      {
+                        "op": [
+                          {
+                            "call": "dither_aux"
+                          },
+                          [
+                            "start_i",
+                            "R",
+                            "C",
+                            "p4",
+                            "p6"
+                          ],
+                          [
+                            "_tail_ret",
+                            "p8"
+                          ],
+                          {
+                            "op": [
+                              {
+                                "op": {
+                                  "join": {
+                                    "deps": 0,
+                                    "toks": 3
+                                  }
+                                }
+                              },
+                              [
+                                "p5",
+                                "p8",
+                                "p7"
+                              ],
+                              [
+                                "p9",
+                                "p10"
+                              ],
+                              {
+                                "ret": [
+                                  "_tail_ret",
+                                  "p9"
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
