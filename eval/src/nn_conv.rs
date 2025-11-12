@@ -1,3 +1,4 @@
+#[cap(weight: shrd @ 0..W, src: shrd @ base + src_idx .. SRC)]
 fn dot_window_aux<const SRC: usize, const W: usize>(
     j: usize,
     row: usize,
@@ -17,46 +18,64 @@ fn dot_window_aux<const SRC: usize, const W: usize>(
         // accumulate
         let a = weight[j];
         let src_offset = base + src_idx;
-        let b = src[src_offset];
-        let prod = a * b;
-        let sum = acc + prod;
+        let cond2 = src_offset < SRC;
+        if cond2 {
+            let b = src[src_offset];
+            let prod = a * b;
+            let sum = acc + prod;
 
-        // advance scanning state
-        let one = 1usize;
-        let col1 = col + one;
-        let src_idx1 = src_idx + one;
+            // advance scanning state
+            let one = 1usize;
+            let col1 = col + one;
+            let src_idx1 = src_idx + one;
 
-        let j1 = j + one;
-        let hit_col_end = col1 == weight_cols;
-        if hit_col_end {
-            let col2 = 0usize;
-            let row1 = row + one;
-            let src_idx2 = src_idx1 + wc_bump;
+            let j1 = j + one;
+            let hit_col_end = col1 == weight_cols;
+            if hit_col_end {
+                let col2 = 0usize;
+                let row1 = row + one;
+                let src_idx2 = src_idx1 + wc_bump;
 
-            let hit_row_end = row1 == weight_rows;
-            if hit_row_end {
-                let row2 = 0usize;
-                let src_idx3 = src_idx2 + wc_wr_bump;
-                dot_window_aux::<SRC, W>(
-                    j1,
-                    row2,
-                    col2,
-                    src_idx3,
-                    base,
-                    weight,
-                    src,
-                    weight_rows,
-                    weight_cols,
-                    wc_bump,
-                    wc_wr_bump,
-                    sum,
-                )
+                let hit_row_end = row1 == weight_rows;
+                if hit_row_end {
+                    let row2 = 0usize;
+                    let src_idx3 = src_idx2 + wc_wr_bump;
+                    dot_window_aux::<SRC, W>(
+                        j1,
+                        row2,
+                        col2,
+                        src_idx3,
+                        base,
+                        weight,
+                        src,
+                        weight_rows,
+                        weight_cols,
+                        wc_bump,
+                        wc_wr_bump,
+                        sum,
+                    )
+                } else {
+                    dot_window_aux::<SRC, W>(
+                        j1,
+                        row1,
+                        col2,
+                        src_idx2,
+                        base,
+                        weight,
+                        src,
+                        weight_rows,
+                        weight_cols,
+                        wc_bump,
+                        wc_wr_bump,
+                        sum,
+                    )
+                }
             } else {
                 dot_window_aux::<SRC, W>(
                     j1,
-                    row1,
-                    col2,
-                    src_idx2,
+                    row,
+                    col1,
+                    src_idx1,
                     base,
                     weight,
                     src,
@@ -68,20 +87,7 @@ fn dot_window_aux<const SRC: usize, const W: usize>(
                 )
             }
         } else {
-            dot_window_aux::<SRC, W>(
-                j1,
-                row,
-                col1,
-                src_idx1,
-                base,
-                weight,
-                src,
-                weight_rows,
-                weight_cols,
-                wc_bump,
-                wc_wr_bump,
-                sum,
-            )
+            acc
         }
     } else {
         acc
@@ -100,6 +106,7 @@ fn clamp_i16(w: i32) -> i32 {
     }
 }
 
+#[cap(weight: shrd @ 0..W, src: shrd @ i..SRC, dest: uniq @ i..OUT)]
 fn nn_conv_aux<const SRC: usize, const W: usize, const OUT: usize>(
     i: usize,
     weight: &[i32; W],
@@ -114,7 +121,7 @@ fn nn_conv_aux<const SRC: usize, const W: usize, const OUT: usize>(
     let cond = i < OUT;
     if cond {
         // base offset for this output column
-        let base = i;
+        // let base = i;
 
         // compute convolution dot-product over the current window
         let w_raw = dot_window_aux::<SRC, W>(
@@ -122,7 +129,7 @@ fn nn_conv_aux<const SRC: usize, const W: usize, const OUT: usize>(
             0,
             0,
             0,
-            base,
+            i,
             weight,
             src,
             weight_rows,
@@ -131,6 +138,7 @@ fn nn_conv_aux<const SRC: usize, const W: usize, const OUT: usize>(
             wc_wr_bump,
             0,
         );
+        // fence!();
 
         // shift and clamp to [SHRT_MIN, SHRT_MAX]
         let shifted = w_raw >> shift;
@@ -156,6 +164,7 @@ fn nn_conv_aux<const SRC: usize, const W: usize, const OUT: usize>(
     }
 }
 
+#[cap(weight: shrd @ 0..W, src: shrd @ 0..SRC, dest: uniq @ 0..OUT)]
 pub fn nn_conv<const SRC: usize, const W: usize, const OUT: usize>(
     weight: &[i32; W],
     src: &[i32; SRC],
