@@ -19,7 +19,7 @@ BENCH_NAMES = [
     "nn_relu",
     "nn_pool",
     "nn_fc",
-    # "nn_conv",
+    "nn_conv",
     "dmv",
     "dmm",
     "dither",
@@ -57,7 +57,7 @@ def bypass_node(G: nx.DiGraph, v):
 
 def bypass_all_cf(G: nx.DiGraph):
     for v in list(G.nodes):
-        if G.nodes[v]["op_kind"] == "cf":
+        if G.nodes[v]["op_kind"] != "mem":
             bypass_node(G, v)
 
 def wavelet_op_type(op_name: str) -> str:
@@ -168,6 +168,16 @@ class Stats:
     cf_overhead: float
     num_sccs: int
 
+    def print(self):
+        print(f"total ops: {self.total_ops}")
+        print(f"num sync ops: {self.num_sync_ops}")
+        print(f"num cf ops: {self.num_cf_ops}")
+        print(f"num mem ops: {self.num_mem_ops}")
+        print(f"num orders: {self.num_orders}")
+        print(f"num carrys: {self.num_carrys}")
+        print(f"cf overhead: {self.cf_overhead:.2f}")
+        print(f"num sccs: {self.num_sccs}")
+
 def collect_common_stats(G: nx.DiGraph) -> Stats:
     total_ops = G.number_of_nodes()
     num_sync_ops = sum(1 for _, data in G.nodes(data=True) if data["op_kind"] == "sync")
@@ -229,8 +239,12 @@ def main():
             "riptide2": riptide2_stats,
         }
 
-        print("wavelet:", wavelet_stats.num_sccs)
-        print("riptide1:", riptide1_stats.num_sccs)
+        print("---- Wavelet")
+        wavelet_stats.print()
+        print("---- RipTide 1")
+        riptide1_stats.print()
+        print("---- RipTide 2")
+        riptide2_stats.print()
 
     # Plot the final LaTeX tabular
     # total_ops | num_sync_ops | num_cf_ops | cf_overhead
@@ -243,7 +257,7 @@ def main():
 
     metrics = [
         ("\\#Ops", lambda s: s.total_ops),
-        ("\\#Sync", lambda s: s.num_sync_ops),
+        # ("\\#Sync", lambda s: s.num_sync_ops),
         ("\\#CF", lambda s: s.num_cf_ops),
         ("Overhead", lambda s: f"{s.cf_overhead:.2f}"),
         # ("SCCs", lambda s: s.num_sccs),
