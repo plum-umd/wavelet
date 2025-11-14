@@ -96,19 +96,6 @@ impl PermExpr {
             PermExpr::Empty => true,
             PermExpr::Singleton(perm) => perm.is_valid(phi, solver),
             PermExpr::Add(items) => {
-                // we need to
-                // 1. separate the permissions by array
-                // 2. for each array, check that
-                //   a. if there are multiple permissions on the same array,
-                //      i. if their regions are disjoint: just check each
-                //      permission is valid
-                //      ii. if their regions overlap: we need to check that
-                //      the sum of their fractions is <= 1.0 on the overlapping
-                //      region, and each individual permission is valid
-                //   b. if there's only one permission on the array, just check
-                //   it's valid
-
-                // Group permissions by array
                 let mut perms_by_array: HashMap<Var, Vec<&Permission>> = HashMap::new();
                 for item in items {
                     if let PermExpr::Singleton(perm) = item {
@@ -117,30 +104,23 @@ impl PermExpr {
                             .or_insert_with(Vec::new)
                             .push(perm);
                     } else {
-                        // Nested Add expressions should have been flattened
-                        // For now, recursively check them
                         if !item.is_valid(phi, solver) {
                             return false;
                         }
                     }
                 }
 
-                // Check each array's permissions
                 for (_, perms_for_array) in perms_by_array {
                     if perms_for_array.len() == 1 {
-                        // Single permission on array: just check it's valid
                         if !perms_for_array[0].is_valid(phi, solver) {
                             return false;
                         }
                     } else {
-                        // Multiple permissions on same array: check for overlaps
                         for i in 0..perms_for_array.len() {
-                            // Each permission must be individually valid
                             if !perms_for_array[i].is_valid(phi, solver) {
                                 return false;
                             }
 
-                            // Check for overlaps with other permissions
                             for j in (i + 1)..perms_for_array.len() {
                                 if overlaps(
                                     phi,
@@ -148,7 +128,6 @@ impl PermExpr {
                                     &perms_for_array[j].region,
                                     solver,
                                 ) {
-                                    // On overlapping region, fractions must sum to <= 1.0
                                     let sum_fraction = FractionExpr::sum(
                                         perms_for_array[i].fraction.clone(),
                                         perms_for_array[j].fraction.clone(),
@@ -167,13 +146,10 @@ impl PermExpr {
                 true
             }
             PermExpr::Sub(lhs, rhs) => {
-                // For subtraction, we need to ensure that lhs >= rhs
                 if !lhs.is_valid(phi, solver) || !rhs.is_valid(phi, solver) {
                     return false;
                 }
 
-                // Attempt to normalise the subtraction; failure means we
-                // cannot cover rhs with lhs.
                 self.collect_permissions(phi, solver).is_some()
             }
         }

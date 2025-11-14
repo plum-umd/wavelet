@@ -22,9 +22,7 @@ impl FractionExpr {
             den != 0,
             "denominator of a fractional constant must not be zero"
         );
-        // Normalise the sign: the denominator is always positive.
         let (n, d) = if den < 0 { (-num, -den) } else { (num, den) };
-        // Reduce fraction using gcd.
         let g = gcd_i64(n.abs(), d);
         FractionExpr::Const(n / g, d / g)
     }
@@ -60,9 +58,6 @@ impl FractionExpr {
     }
 }
 
-/// Compute the greatest common divisor of two 64‑bit integers.  A
-/// simple Euclidean algorithm is sufficient here.  Used to
-/// normalise rational constants.
 fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
     while b != 0 {
         let r = a % b;
@@ -78,16 +73,13 @@ fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
 /// example inequalities on symbolic variables) are taken into
 /// account.
 pub fn check_fraction_valid(phi: &Phi, expr: &FractionExpr, solver: &SmtSolver) -> bool {
-    // Convert FractionExpr to RealExpr
     let real_expr = expr.to_real_expr();
     let zero = RealExpr::from_int(0);
     let one = RealExpr::from_int(1);
 
-    // Check that expr >= 0 and expr <= 1
     let ge_zero = Atom::RealLe(zero, real_expr.clone());
     let le_one = Atom::RealLe(real_expr.clone(), one);
 
-    // Both constraints must hold
     solver.entails(phi, &ge_zero) && solver.entails(phi, &le_one)
     // entails_with_real_arith(phi, &ge_zero, solver) && entails_with_real_arith(phi, &le_one, solver)
 }
@@ -103,7 +95,6 @@ pub fn check_fraction_leq(
     rhs: &FractionExpr,
     solver: &SmtSolver,
 ) -> bool {
-    // Convert to RealExpr and check lhs <= rhs
     let lhs_real = lhs.to_real_expr();
     let rhs_real = rhs.to_real_expr();
     let leq_atom = Atom::RealLe(lhs_real, rhs_real);
@@ -133,7 +124,6 @@ pub fn try_add_fractions(
     phi: &Phi,
     solver: &SmtSolver,
 ) -> Option<FractionExpr> {
-    // use check_fraction_valid on the sum
     let sum = FractionExpr::sum(a.clone(), b.clone());
     if check_fraction_valid(phi, &sum, solver) {
         Some(sum)
@@ -149,7 +139,6 @@ pub fn try_sub_fractions(
     phi: &Phi,
     solver: &SmtSolver,
 ) -> Option<FractionExpr> {
-    // Use check_fraction_leq to ensure that a >= b
     if check_fraction_leq(phi, b, a, solver) {
         Some(FractionExpr::diff(a.clone(), b.clone()))
     } else {

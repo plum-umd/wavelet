@@ -131,7 +131,6 @@ impl FunctionLowerer {
             Tail::TailCall { func, args } => {
                 let mut ctx = ctx;
                 let (need_perm, left_perm) = self.split_sync(builder, &mut ctx);
-                // for tail calls, we "garbage collect" any leftover permissions
                 ctx.garb.push(left_perm);
                 ctx.move_restore_to_garb();
 

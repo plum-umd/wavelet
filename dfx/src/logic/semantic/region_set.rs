@@ -206,7 +206,6 @@ impl RegionSetExpr {
 
                 loop {
                     let mut reduced = false;
-                    // Collapse `(base \ rhs) ∪ rhs` back to `base` when both parts appear.
                     'outer_reduce: for idx in 0..normalized.len() {
                         if let RegionSetExpr::Difference(base, rhs) = normalized[idx].clone() {
                             for j in 0..normalized.len() {
@@ -221,10 +220,6 @@ impl RegionSetExpr {
                                     break 'outer_reduce;
                                 }
                             }
-                            // If the remaining union pieces collectively cover `rhs`,
-                            // we can also collapse back to the base region. This helps in
-                            // scenarios where `rhs` was split into several disjoint pieces
-                            // earlier (e.g. when loads/stores carve out individual indices).
                             if normalized.len() > 1 {
                                 let mut others: Vec<RegionSetExpr> = Vec::new();
                                 for (j, item) in normalized.iter().enumerate() {
@@ -273,10 +268,6 @@ impl RegionSetExpr {
                     return left;
                 }
 
-                // Collapse A \ (A \ B) back to A ∩ B. This pattern arises when
-                // subtracting a previously carved-out slice from the same base
-                // region, and without this rewrite the solver can struggle to
-                // prove that the resulting region matches the carved slice.
                 if let RegionSetExpr::Difference(inner_base, inner_removed) = &right {
                     if regions_equivalent(phi, &left, inner_base, solver) {
                         let intersect = RegionSetExpr::intersection(

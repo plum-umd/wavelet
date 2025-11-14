@@ -155,7 +155,6 @@ pub fn check_ghost_stmt_joinsplit_const(
     ctx: &mut CheckContext,
 ) -> Result<(), String> {
     // Process JoinSplit
-    // For const, left would always be epsilon
     let (left, right, inputs) = match join_stmt {
         GhostStmt::JoinSplit {
             left,
@@ -227,7 +226,6 @@ pub fn check_ghost_stmt_joinsplit_const(
         Val::Unit => {}
     }
 
-    // For const, both ghost_in and ghost_out would be epsilon so we are done
     Ok(())
 }
 

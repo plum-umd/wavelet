@@ -55,6 +55,12 @@ def main():
         print(f"No .rs files found in {src_dir}")
         return
     
+    # filter main.rs, dconv.rs, fft.rs
+    rs_files = [f for f in rs_files if f.name not in {"main.rs", "dconv.rs", "fft.rs"}]
+    if not rs_files:
+        print(f"No relevant .rs files found in {src_dir} after filtering")
+        return
+    
     # Store results
     results = []
     total_cap = 0
@@ -74,14 +80,15 @@ def main():
     print("\n" + "="*90)
     print("Capability Annotations, fence! Macros, and Source Line Statistics")
     print("="*90)
-    print(f"{'File':<20} {'#[cap(...)]':>12} {'fence!()':>12} {'Source':>12} {'Total':>12} {'Cap%':>8}")
+    # print(f"{'File':<20} {'#[cap(...)]':>12} {'fence!()':>12} {'Source':>12} {'Total':>12} {'Cap%':>8}")
+    print(f"{'File':<20} {'#[cap(...)]':>12} {'fence!()':>12} {'Source':>12} {'Total':>12} ")
     print("-"*90)
     
     # Print each file's results
     for filename, cap_count, fence_count, source_count in results:
         total = cap_count + fence_count + source_count
         cap_percentage = (cap_count / total * 100) if total > 0 else 0
-        print(f"{filename:<20} {cap_count:>12} {fence_count:>12} {source_count:>12} {total:>12} {cap_percentage:>7.1f}%")
+        print(f"{filename:<20} {cap_count:>12} {fence_count:>12} {source_count:>12} {total:>12} ")
     
     # Print totals
     print("-"*90)
