@@ -24,6 +24,7 @@ pub fn check_ghost_tail_with_joinsplit(
     match tail {
         GhostTail::Return { value: _, perm } => {
             // Process JoinSplit
+            // For Return, right would always be epsilon
             let (left, _right, inputs) = match join_stmt {
                 GhostStmt::JoinSplit {
                     left,
@@ -172,6 +173,7 @@ pub fn check_ghost_tail_with_two_joinsplits(
                 ));
             }
 
+            // right1 would be added to the garb ctx at lowering
             let (left1, right1, inputs1) = match join_stmt1 {
                 GhostStmt::JoinSplit {
                     left,
@@ -181,6 +183,7 @@ pub fn check_ghost_tail_with_two_joinsplits(
                 _ => unreachable!(),
             };
 
+            // right2 would always be epsilon
             let (left2, _right2, inputs2) = match join_stmt2 {
                 GhostStmt::JoinSplit {
                     left,
@@ -202,6 +205,7 @@ pub fn check_ghost_tail_with_two_joinsplits(
                     ghost_left.0, left2.0
                 ));
             }
+            // check right1 is part of inputs2
             if !inputs2.iter().any(|v| v.0 == right1.0) {
                 return Err(format!(
                     "TailCall ghost_left {} does not join first JoinSplit right {}",
@@ -587,6 +591,7 @@ pub fn check_ghost_tail_if(tail: &GhostTail, ctx: &mut CheckContext) -> Result<(
             if ctx.verbose {
                 println!("  ├─ Then branch (assuming {}):", cond.0);
             }
+            // Check both branches
             super::expr_checker::check_ghost_expr(then_expr, &mut then_ctx)?;
 
             if ctx.verbose {
@@ -598,6 +603,7 @@ pub fn check_ghost_tail_if(tail: &GhostTail, ctx: &mut CheckContext) -> Result<(
                 println!("  === Both branches checked successfully ===\n");
             }
 
+            // Both branches must succeed independently
             Ok(())
         }
         _ => Err(format!("Tail expression must be IfElse, found {:?}", tail)),
