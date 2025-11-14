@@ -4,8 +4,8 @@ use std::{
     collections::HashMap,
     fmt::{self, Display},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
@@ -292,10 +292,10 @@ impl PhiSolver for SmtSolver {
             }
         }
 
-    let instance = solver_guard.as_mut().expect("solver instance initialised");
-    let storage_ptr = instance.storage_ptr();
-    let solver = instance.solver_mut();
-    let storage = unsafe { &*storage_ptr };
+        let instance = solver_guard.as_mut().expect("solver instance initialised");
+        let storage_ptr = instance.storage_ptr();
+        let solver = instance.solver_mut();
+        let storage = unsafe { &*storage_ptr };
 
         if let Some(timeout) = self.timeout_ms {
             let timeout = timeout.min(usize::MAX as u64) as usize;

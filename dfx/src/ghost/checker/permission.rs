@@ -1,12 +1,16 @@
 //! Permission types and operations.
 
-use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 
-use crate::ghost::fracperms::{check_fraction_leq, check_fraction_valid, try_add_fractions, try_sub_fractions, FractionExpr};
+use crate::ghost::fracperms::{
+    FractionExpr, check_fraction_leq, check_fraction_valid, try_add_fractions, try_sub_fractions,
+};
 use crate::ir::Var;
 use crate::logic::cap::RegionModel;
-use crate::logic::semantic::region_set::{overlaps, RegionSetExpr};
-use crate::logic::semantic::solver::{Idx, Phi, SmtSolver};
+use crate::logic::semantic::region_set::{RegionSetExpr, check_subset, overlaps};
+use crate::logic::semantic::solver::{Atom, Idx, Phi, SmtSolver};
 
 /// A fractional permission on a specific array region.
 /// Represents `f@A{region}` where f is a fractional value in [0, 1].
@@ -222,6 +226,12 @@ pub fn normalize_fraction_expr(expr: FractionExpr) -> FractionExpr {
         matches!(expr, FractionExpr::Const(n, _) if *n == 0)
     }
 
+    fn hash_fraction(expr: &FractionExpr) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        expr.hash(&mut hasher);
+        hasher.finish()
+    }
+
     fn normalize_once(expr: FractionExpr) -> FractionExpr {
         match expr {
             FractionExpr::Const(_, _) | FractionExpr::Var(_) => expr,
@@ -300,9 +310,18 @@ pub fn normalize_fraction_expr(expr: FractionExpr) -> FractionExpr {
     }
 
     let mut current = expr;
+    let mut seen: HashSet<u64> = HashSet::new();
     loop {
+        let fingerprint = hash_fraction(&current);
+        if !seen.insert(fingerprint) {
+            return current;
+        }
         let next = normalize_once(current.clone());
         if next == current {
+            return next;
+        }
+        let next_fingerprint = hash_fraction(&next);
+        if seen.contains(&next_fingerprint) {
             return next;
         }
         current = next;
@@ -336,15 +355,9 @@ pub fn normalize_permission_list(
                 }
             }
 
-            if !merged
-                && existing.array == perm.array
-                && existing.fraction == fraction
-            {
-                let combined = RegionSetExpr::union([
-                    existing.region.clone(),
-                    region.clone(),
-                ])
-                .simplify(phi, solver);
+            if !merged && existing.array == perm.array && existing.fraction == fraction {
+                let combined = RegionSetExpr::union([existing.region.clone(), region.clone()])
+                    .simplify(phi, solver);
 
                 existing.region = combined;
                 merged = true;
@@ -353,11 +366,7 @@ pub fn normalize_permission_list(
         }
 
         if !merged {
-            normalized.push(Permission::new(
-                fraction,
-                perm.array,
-                region,
-            ));
+            normalized.push(Permission::new(fraction, perm.array, region));
         }
     }
 
@@ -395,8 +404,8 @@ pub fn consume_permission(
                 continue;
             }
 
-            let candidate = available[idx].clone();
-            let overlap = RegionSetExpr::intersection(candidate.region.clone(), region.clone())
+            let candidate_region = available[idx].region.clone();
+            let overlap = RegionSetExpr::intersection(candidate_region.clone(), region.clone())
                 .simplify(phi, solver);
             if overlap.is_empty(phi, solver) {
                 idx += 1;
@@ -404,13 +413,31 @@ pub fn consume_permission(
             }
 
             let candidate_ge_piece =
-                check_fraction_leq(phi, &piece.fraction, &candidate.fraction, solver);
+                check_fraction_leq(phi, &piece.fraction, &available[idx].fraction, solver);
+            let piece_ge_candidate = if candidate_ge_piece {
+                false
+            } else {
+                check_fraction_leq(phi, &available[idx].fraction, &piece.fraction, solver)
+            };
 
-            available.remove(idx);
+            if !candidate_ge_piece && !piece_ge_candidate {
+                idx += 1;
+                continue;
+            }
 
-            let candidate_outside =
+            let candidate = available.swap_remove(idx);
+
+            let piece_subset_candidate = check_subset(phi, &region, &candidate.region, solver);
+            let candidate_subset_piece = check_subset(phi, &candidate.region, &region, solver);
+
+            let candidate_outside_raw =
                 RegionSetExpr::difference(candidate.region.clone(), overlap.clone())
                     .simplify(phi, solver);
+            let candidate_outside = if candidate_subset_piece {
+                RegionSetExpr::Empty
+            } else {
+                candidate_outside_raw
+            };
             if !candidate_outside.is_empty(phi, solver) {
                 available.push(Permission::new(
                     normalize_fraction_expr(candidate.fraction.clone()),
@@ -419,8 +446,13 @@ pub fn consume_permission(
                 ));
             }
 
-            let piece_outside =
+            let piece_outside_raw =
                 RegionSetExpr::difference(region.clone(), overlap.clone()).simplify(phi, solver);
+            let piece_outside = if piece_subset_candidate {
+                RegionSetExpr::Empty
+            } else {
+                piece_outside_raw
+            };
             if !piece_outside.is_empty(phi, solver) {
                 pending.push(Permission::new(
                     normalize_fraction_expr(piece.fraction.clone()),
@@ -443,24 +475,27 @@ pub fn consume_permission(
                     }
                     satisfied = true;
                 } else {
-                    return false;
+                    // Should not happen because candidate_ge_piece ensured candidate >= piece,
+                    // but fall back to trying other candidates for robustness.
+                    available.push(candidate);
+                    continue;
                 }
+            } else if let Some(diff_fraction) =
+                try_sub_fractions(&piece.fraction, &candidate.fraction, phi, solver)
+            {
+                let diff_fraction = normalize_fraction_expr(diff_fraction);
+                if !is_fraction_zero(phi, &diff_fraction, solver) {
+                    pending.push(Permission::new(
+                        diff_fraction,
+                        piece.array.clone(),
+                        overlap.clone(),
+                    ));
+                }
+                satisfied = true;
             } else {
-                if let Some(diff_fraction) =
-                    try_sub_fractions(&piece.fraction, &candidate.fraction, phi, solver)
-                {
-                    let diff_fraction = normalize_fraction_expr(diff_fraction);
-                    if !is_fraction_zero(phi, &diff_fraction, solver) {
-                        pending.push(Permission::new(
-                            diff_fraction,
-                            piece.array.clone(),
-                            overlap.clone(),
-                        ));
-                    }
-                    satisfied = true;
-                } else {
-                    return false;
-                }
+                // Could not use this candidate after removal; restore it and try another.
+                available.push(candidate);
+                continue;
             }
 
             break;
@@ -503,6 +538,14 @@ pub fn substitute_idx_in_region(region: &RegionSetExpr, from: &str, to: &Idx) ->
             Box::new(substitute_idx_in_region(rhs, from, to)),
         ),
     }
+}
+
+pub fn apply_idx_substitutions_to_idx(idx: &Idx, substitutions: &[(String, Idx)]) -> Idx {
+    let mut current = idx.clone();
+    for (name, replacement) in substitutions {
+        current = substitute_idx(&current, name, replacement);
+    }
+    current
 }
 
 /// Substitute an index variable in an index expression.
@@ -582,5 +625,90 @@ pub fn permissions_to_expr(perms: Vec<Permission>) -> PermExpr {
         PermExpr::empty()
     } else {
         PermExpr::union(perms.into_iter().map(PermExpr::singleton))
+    }
+}
+
+pub fn substitute_atom_with_maps(atom: &Atom, substitutions: &[(String, Idx)]) -> Atom {
+    match atom {
+        Atom::Le(lhs, rhs) => Atom::Le(
+            apply_idx_substitutions_to_idx(lhs, substitutions),
+            apply_idx_substitutions_to_idx(rhs, substitutions),
+        ),
+        Atom::Lt(lhs, rhs) => Atom::Lt(
+            apply_idx_substitutions_to_idx(lhs, substitutions),
+            apply_idx_substitutions_to_idx(rhs, substitutions),
+        ),
+        Atom::Eq(lhs, rhs) => Atom::Eq(
+            apply_idx_substitutions_to_idx(lhs, substitutions),
+            apply_idx_substitutions_to_idx(rhs, substitutions),
+        ),
+        Atom::And(lhs, rhs) => Atom::And(
+            Box::new(substitute_atom_with_maps(lhs, substitutions)),
+            Box::new(substitute_atom_with_maps(rhs, substitutions)),
+        ),
+        Atom::Or(lhs, rhs) => Atom::Or(
+            Box::new(substitute_atom_with_maps(lhs, substitutions)),
+            Box::new(substitute_atom_with_maps(rhs, substitutions)),
+        ),
+        Atom::Implies(lhs, rhs) => Atom::Implies(
+            Box::new(substitute_atom_with_maps(lhs, substitutions)),
+            Box::new(substitute_atom_with_maps(rhs, substitutions)),
+        ),
+        Atom::Not(inner) => Atom::Not(Box::new(substitute_atom_with_maps(inner, substitutions))),
+        _ => atom.clone(),
+    }
+}
+
+pub fn substitute_fraction_expr(
+    expr: &FractionExpr,
+    substitutions: &HashMap<String, FractionExpr>,
+) -> FractionExpr {
+    match expr {
+        FractionExpr::Const(_, _) => expr.clone(),
+        FractionExpr::Var(name) => substitutions
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| FractionExpr::Var(name.clone())),
+        FractionExpr::Add(lhs, rhs) => FractionExpr::Add(
+            Box::new(substitute_fraction_expr(lhs, substitutions)),
+            Box::new(substitute_fraction_expr(rhs, substitutions)),
+        ),
+        FractionExpr::Sub(lhs, rhs) => FractionExpr::Sub(
+            Box::new(substitute_fraction_expr(lhs, substitutions)),
+            Box::new(substitute_fraction_expr(rhs, substitutions)),
+        ),
+    }
+}
+
+pub fn substitute_fraction_in_permission(
+    perm: &Permission,
+    substitutions: &HashMap<String, FractionExpr>,
+) -> Permission {
+    Permission::new(
+        substitute_fraction_expr(&perm.fraction, substitutions),
+        perm.array.clone(),
+        perm.region.clone(),
+    )
+}
+
+pub fn substitute_fraction_in_perm_expr(
+    expr: &PermExpr,
+    substitutions: &HashMap<String, FractionExpr>,
+) -> PermExpr {
+    match expr {
+        PermExpr::Empty => PermExpr::Empty,
+        PermExpr::Singleton(perm) => {
+            PermExpr::singleton(substitute_fraction_in_permission(perm, substitutions))
+        }
+        PermExpr::Add(items) => PermExpr::Add(
+            items
+                .iter()
+                .map(|item| substitute_fraction_in_perm_expr(item, substitutions))
+                .collect(),
+        ),
+        PermExpr::Sub(lhs, rhs) => PermExpr::Sub(
+            Box::new(substitute_fraction_in_perm_expr(lhs, substitutions)),
+            Box::new(substitute_fraction_in_perm_expr(rhs, substitutions)),
+        ),
     }
 }

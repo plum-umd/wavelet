@@ -6,7 +6,7 @@ use crate::logic::semantic::region_set::RegionSetExpr;
 use crate::logic::semantic::solver::{Atom, Idx, Phi, RealExpr, SmtSolver};
 
 use super::perm_env::PermissionEnv;
-use super::permission::{Permission, PermExpr};
+use super::permission::{PermExpr, Permission};
 use super::program_checker::check_ghost_program_with_verbose;
 
 fn make_perm(fraction: FractionExpr, array: &str, lo: i64, hi: i64) -> PermExpr {
@@ -24,13 +24,13 @@ fn test_perm_normalize_adjacent_partitions() {
 
     phi.push(Atom::Le(Idx::Const(0), Idx::Var("i".to_string())));
     phi.push(Atom::Le(Idx::Const(0), Idx::Var("N".to_string())));
-    phi.push(Atom::Lt(Idx::Var("i".to_string()), Idx::Var("N".to_string())));
+    phi.push(Atom::Lt(
+        Idx::Var("i".to_string()),
+        Idx::Var("N".to_string()),
+    ));
     phi.push(Atom::Eq(
         Idx::Var("j".to_string()),
-        Idx::Add(
-            Box::new(Idx::Var("i".to_string())),
-            Box::new(Idx::Const(1)),
-        ),
+        Idx::Add(Box::new(Idx::Var("i".to_string())), Box::new(Idx::Const(1))),
     ));
 
     let dst = Var("dst".to_string());
@@ -64,11 +64,7 @@ fn test_perm_normalize_adjacent_partitions() {
         )),
     ]);
 
-    let expected = PermExpr::singleton(Permission::new(
-        FractionExpr::from_int(1),
-        dst,
-        total,
-    ));
+    let expected = PermExpr::singleton(Permission::new(FractionExpr::from_int(1), dst, total));
 
     assert_eq!(expr_i.normalize(&phi, &solver), Some(expected.clone()));
     assert_eq!(expr_j.normalize(&phi, &solver), Some(expected));

@@ -160,7 +160,7 @@ fn parse_cap_annotations(attr: &Attribute) -> Result<Vec<CapAnnotation>, ParseEr
         // #[cap] with no arguments - this is valid for functions that don't use arrays
         return Ok(Vec::new());
     }
-    
+
     let content = content
         .strip_prefix('(')
         .and_then(|s| s.strip_suffix(')'))

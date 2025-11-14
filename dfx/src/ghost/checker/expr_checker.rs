@@ -3,7 +3,9 @@
 use crate::ghost::ir::{GhostExpr, GhostStmt};
 
 use super::context::CheckContext;
-use super::pretty_print::{print_context_contents, render_ghost_stmt, render_ghost_tail, trace_context};
+use super::pretty_print::{
+    print_context_contents, render_ghost_stmt, render_ghost_tail, trace_context,
+};
 use super::stmt_checker::*;
 use super::tail_checker::*;
 
@@ -18,7 +20,11 @@ pub fn check_ghost_expr(expr: &GhostExpr, ctx: &mut CheckContext) -> Result<(), 
             GhostStmt::Pure { .. } => {
                 // Pure statements stand alone
                 if ctx.verbose {
-                    println!("Processing statement {}: {}", i, render_ghost_stmt(&stmts[i]));
+                    println!(
+                        "Processing statement {}: {}",
+                        i,
+                        render_ghost_stmt(&stmts[i])
+                    );
                 }
                 check_ghost_stmt_pure(&stmts[i], ctx)?;
                 if ctx.verbose {
@@ -32,7 +38,10 @@ pub fn check_ghost_expr(expr: &GhostExpr, ctx: &mut CheckContext) -> Result<(), 
                 if i + 1 >= stmts.len() {
                     // This is the last statement, so it must precede a tail (Return)
                     if ctx.verbose {
-                        println!("JoinSplit at end, checking with tail: {}", render_ghost_tail(&expr.tail));
+                        println!(
+                            "JoinSplit at end, checking with tail: {}",
+                            render_ghost_tail(&expr.tail)
+                        );
                     }
                     check_ghost_tail_with_joinsplit(&stmts[i], &expr.tail, ctx)?;
                     if ctx.verbose {
@@ -46,7 +55,11 @@ pub fn check_ghost_expr(expr: &GhostExpr, ctx: &mut CheckContext) -> Result<(), 
                     GhostStmt::Const { .. } => {
                         // JoinSplit followed by Const
                         if ctx.verbose {
-                            println!("Processing statement {}: {}", i, render_ghost_stmt(&stmts[i + 1]));
+                            println!(
+                                "Processing statement {}: {}",
+                                i,
+                                render_ghost_stmt(&stmts[i + 1])
+                            );
                         }
                         check_ghost_stmt_joinsplit_const(&stmts[i], &stmts[i + 1], ctx)?;
                         if ctx.verbose {
@@ -58,7 +71,11 @@ pub fn check_ghost_expr(expr: &GhostExpr, ctx: &mut CheckContext) -> Result<(), 
                     GhostStmt::Load { .. } => {
                         // JoinSplit followed by Load
                         if ctx.verbose {
-                            println!("Processing statement {}: {}", i, render_ghost_stmt(&stmts[i + 1]));
+                            println!(
+                                "Processing statement {}: {}",
+                                i,
+                                render_ghost_stmt(&stmts[i + 1])
+                            );
                         }
                         check_ghost_stmt_joinsplit_load(&stmts[i], &stmts[i + 1], ctx)?;
                         if ctx.verbose {
@@ -70,7 +87,11 @@ pub fn check_ghost_expr(expr: &GhostExpr, ctx: &mut CheckContext) -> Result<(), 
                     GhostStmt::Store { .. } => {
                         // JoinSplit followed by Store
                         if ctx.verbose {
-                            println!("Processing statement {}: {}", i, render_ghost_stmt(&stmts[i + 1]));
+                            println!(
+                                "Processing statement {}: {}",
+                                i,
+                                render_ghost_stmt(&stmts[i + 1])
+                            );
                         }
                         check_ghost_stmt_joinsplit_store(&stmts[i], &stmts[i + 1], ctx)?;
                         if ctx.verbose {
@@ -85,7 +106,10 @@ pub fn check_ghost_expr(expr: &GhostExpr, ctx: &mut CheckContext) -> Result<(), 
                             // The two JoinSplits are the last statements, so
                             // they must precede a tail (Call)
                             if ctx.verbose {
-                                println!("Two JoinSplits at end, checking with tail: {}", render_ghost_tail(&expr.tail));
+                                println!(
+                                    "Two JoinSplits at end, checking with tail: {}",
+                                    render_ghost_tail(&expr.tail)
+                                );
                             }
                             check_ghost_tail_with_two_joinsplits(
                                 &stmts[i],
@@ -103,7 +127,11 @@ pub fn check_ghost_expr(expr: &GhostExpr, ctx: &mut CheckContext) -> Result<(), 
                             GhostStmt::Call { .. } => {
                                 // Two JoinSplits followed by Call
                                 if ctx.verbose {
-                                    println!("Processing statement {}: {}", i, render_ghost_stmt(&stmts[i + 2]));
+                                    println!(
+                                        "Processing statement {}: {}",
+                                        i,
+                                        render_ghost_stmt(&stmts[i + 2])
+                                    );
                                 }
                                 check_ghost_stmt_jnsplt_jnsplt_call(
                                     &stmts[i],

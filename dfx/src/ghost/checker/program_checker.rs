@@ -14,7 +14,10 @@ pub fn check_ghost_program(program: &GhostProgram) -> Result<(), String> {
 }
 
 /// Check a ghost program for permission correctness with optional verbose mode.
-pub fn check_ghost_program_with_verbose(program: &GhostProgram, verbose: bool) -> Result<(), String> {
+pub fn check_ghost_program_with_verbose(
+    program: &GhostProgram,
+    verbose: bool,
+) -> Result<(), String> {
     let solver = SmtSolver::new();
     let mut ctx = CheckContext::new_with_verbose(solver.clone(), verbose);
 
@@ -26,8 +29,22 @@ pub fn check_ghost_program_with_verbose(program: &GhostProgram, verbose: bool) -
         let sig = build_function_signature(def);
         if verbose {
             println!("Function: {}", def.name.0);
-            println!("  Parameters: {}", def.params.iter().map(|(v, _)| v.0.as_str()).collect::<Vec<_>>().join(", "));
-            println!("  Ghost parameters: {}", def.ghost_params.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", "));
+            println!(
+                "  Parameters: {}",
+                def.params
+                    .iter()
+                    .map(|(v, _)| v.0.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            println!(
+                "  Ghost parameters: {}",
+                def.ghost_params
+                    .iter()
+                    .map(|v| v.0.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
             println!();
         }
         ctx.register_signature(def.name.0.clone(), sig);
@@ -72,7 +89,8 @@ fn build_function_signature(def: &GhostFnDef) -> FunctionSignature {
     let p_garb = GhostVar("__sig_p_garb".to_string());
 
     // Parse caps into permissions
-    temp_ctx.caps_to_permissions(&def.caps, &p_sync, &p_garb);
+    let mut preconditions = Vec::new();
+    temp_ctx.caps_to_permissions(&def.caps, &p_sync, &p_garb, Some(&mut preconditions));
 
     // Extract the permissions
     let sync_perm = match temp_ctx.lookup_perm(&p_sync) {
@@ -86,6 +104,7 @@ fn build_function_signature(def: &GhostFnDef) -> FunctionSignature {
     FunctionSignature {
         params,
         initial_perms: (sync_perm, garb_perm),
+        preconditions,
     }
 }
 
@@ -110,18 +129,23 @@ fn check_ghost_fn(def: &GhostFnDef, ctx: &mut CheckContext) -> Result<(), String
         let p_sync = &def.ghost_params[0];
         let p_garb = &def.ghost_params[1];
 
-        ctx.caps_to_permissions(&def.caps, p_sync, p_garb);
+        let mut preconditions = Vec::new();
+        ctx.caps_to_permissions(&def.caps, p_sync, p_garb, Some(&mut preconditions));
 
         // Clone the permissions before setting them
         let sync = ctx.lookup_perm(p_sync).cloned();
         let garb = ctx.lookup_perm(p_garb).cloned();
-        
+
         if let (Some(sync), Some(garb)) = (sync, garb) {
             if ctx.verbose {
                 println!("  p_sync = {}", render_perm_expr(&sync));
                 println!("  p_garb = {}", render_perm_expr(&garb));
             }
             ctx.set_current_fn_entry_perms(Some((sync, garb)));
+        }
+
+        for atom in preconditions {
+            ctx.add_constraint(atom);
         }
     }
 

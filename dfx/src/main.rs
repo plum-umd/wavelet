@@ -105,12 +105,26 @@ fn run(cli: Cli) -> Result<(), CliError> {
 
     // Handle batch mode
     if let Some(batch_file) = batch {
-        return run_batch(batch_file, output, verbose, log_solver, emit_ghost, skip_ghost_check);
+        return run_batch(
+            batch_file,
+            output,
+            verbose,
+            log_solver,
+            emit_ghost,
+            skip_ghost_check,
+        );
     }
 
     // Single file mode
     let input = input.expect("input is required when not in batch mode");
-    process_single_file(input, output, verbose, log_solver, emit_ghost, skip_ghost_check)
+    process_single_file(
+        input,
+        output,
+        verbose,
+        log_solver,
+        emit_ghost,
+        skip_ghost_check,
+    )
 }
 
 fn run_batch(
@@ -133,22 +147,35 @@ fn run_batch(
         .collect();
 
     if input_files.is_empty() {
-        eprintln!("warning: batch file '{}' contains no input files", batch_file.display());
+        eprintln!(
+            "warning: batch file '{}' contains no input files",
+            batch_file.display()
+        );
         return Ok(());
     }
 
-    println!("Processing {} file(s) in batch mode...\n", input_files.len());
+    println!(
+        "Processing {} file(s) in batch mode...\n",
+        input_files.len()
+    );
 
     let mut success_count = 0;
     let mut failure_count = 0;
 
     for (idx, input_file) in input_files.iter().enumerate() {
-        println!("[{}/{}] Processing: {}", idx + 1, input_files.len(), input_file.display());
-        
+        println!(
+            "[{}/{}] Processing: {}",
+            idx + 1,
+            input_files.len(),
+            input_file.display()
+        );
+
         // In batch mode, output should go to a derived path if not stdout
         let file_output = output.as_ref().map(|base_path| {
             let file_stem = input_file.file_stem().unwrap_or_default();
-            let parent = base_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+            let parent = base_path
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new("."));
             parent.join(format!("{}.json", file_stem.to_string_lossy()))
         });
 
@@ -173,8 +200,11 @@ fn run_batch(
         }
     }
 
-    println!("Batch processing complete: {} succeeded, {} failed", success_count, failure_count);
-    
+    println!(
+        "Batch processing complete: {} succeeded, {} failed",
+        success_count, failure_count
+    );
+
     if failure_count > 0 {
         Err(CliError::Type {
             path: batch_file,

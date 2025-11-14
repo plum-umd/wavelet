@@ -1,12 +1,14 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::hash_map::DefaultHasher;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
 use super::{Atom, Idx, Phi, PhiSolver, SmtSolver};
 use crate::logic::cap::RegionModel;
 use crate::logic::region::Region;
 
 /// Boolean region expressions interpreted as sets of integer indices.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum RegionSetExpr {
     /// The empty set.
     Empty,
@@ -145,9 +147,18 @@ impl RegionSetExpr {
 
     pub fn simplify(&self, phi: &Phi, solver: &SmtSolver) -> RegionSetExpr {
         let mut current = self.clone();
+        let mut seen: HashSet<u64> = HashSet::new();
         loop {
+            let fingerprint = hash_region_expr(&current);
+            if !seen.insert(fingerprint) {
+                return current;
+            }
             let next = current.simplify_once(phi, solver);
             if next == current {
+                return current;
+            }
+            let next_fingerprint = hash_region_expr(&next);
+            if seen.contains(&next_fingerprint) {
                 return next;
             }
             current = next;
@@ -262,6 +273,21 @@ impl RegionSetExpr {
                     return left;
                 }
 
+                // Collapse A \ (A \ B) back to A ∩ B. This pattern arises when
+                // subtracting a previously carved-out slice from the same base
+                // region, and without this rewrite the solver can struggle to
+                // prove that the resulting region matches the carved slice.
+                if let RegionSetExpr::Difference(inner_base, inner_removed) = &right {
+                    if regions_equivalent(phi, &left, inner_base, solver) {
+                        let intersect = RegionSetExpr::intersection(
+                            left.clone(),
+                            inner_removed.as_ref().clone(),
+                        )
+                        .simplify(phi, solver);
+                        return intersect;
+                    }
+                }
+
                 if let RegionSetExpr::Union(items) = &left {
                     let mut pieces: Vec<RegionSetExpr> = Vec::new();
                     for item in items {
@@ -324,6 +350,12 @@ impl RegionSetExpr {
             }
         }
     }
+}
+
+fn hash_region_expr(expr: &RegionSetExpr) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    expr.hash(&mut hasher);
+    hasher.finish()
 }
 
 impl fmt::Display for RegionSetExpr {
@@ -391,8 +423,14 @@ pub fn check_subset(
     let const_map = build_const_map(phi);
 
     if let (
-        RegionSetExpr::Interval { lo: lo_lhs, hi: hi_lhs },
-        RegionSetExpr::Interval { lo: lo_rhs, hi: hi_rhs },
+        RegionSetExpr::Interval {
+            lo: lo_lhs,
+            hi: hi_lhs,
+        },
+        RegionSetExpr::Interval {
+            lo: lo_rhs,
+            hi: hi_rhs,
+        },
     ) = (lhs, rhs)
     {
         let lo_lhs_sub = substitute_idx_consts(lo_lhs, &const_map);

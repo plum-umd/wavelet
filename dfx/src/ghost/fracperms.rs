@@ -2,7 +2,7 @@ use crate::logic::semantic::PhiSolver;
 use crate::logic::semantic::solver::{Atom, Phi, RealExpr, SmtSolver};
 
 /// A symbolic representation of a fractional value.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FractionExpr {
     /// A rational constant, encoded as a numerator/denominator pair.
     Const(i64, i64),

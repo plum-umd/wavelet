@@ -103,41 +103,84 @@ pub fn render_perm_expr(expr: &PermExpr) -> String {
 
 pub fn render_ghost_stmt(stmt: &GhostStmt) -> String {
     match stmt {
-        GhostStmt::Pure { inputs, output, op, ghost_out } => {
-            let inputs_str = inputs.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", ");
-            format!(
-                "({} = {}({}), [{}])",
-                output.0, op, inputs_str, ghost_out.0
-            )
+        GhostStmt::Pure {
+            inputs,
+            output,
+            op,
+            ghost_out,
+        } => {
+            let inputs_str = inputs
+                .iter()
+                .map(|v| v.0.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("({} = {}({}), [{}])", output.0, op, inputs_str, ghost_out.0)
         }
-        GhostStmt::JoinSplit { left, right, inputs } => {
-            let inputs_str = inputs.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", ");
-            format!(
-                "{}, {} ← [{}]",
-                left.0, right.0, inputs_str
-            )
+        GhostStmt::JoinSplit {
+            left,
+            right,
+            inputs,
+        } => {
+            let inputs_str = inputs
+                .iter()
+                .map(|v| v.0.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{}, {} ← [{}]", left.0, right.0, inputs_str)
         }
-        GhostStmt::Const { value, output, ghost_in, ghost_out } => {
+        GhostStmt::Const {
+            value,
+            output,
+            ghost_in,
+            ghost_out,
+        } => {
             format!(
                 "{} = {}, [{} → {}])",
                 output.0, value, ghost_in.0, ghost_out.0
             )
         }
-        GhostStmt::Load { array, index, output, ghost_in, ghost_out } => {
+        GhostStmt::Load {
+            array,
+            index,
+            output,
+            ghost_in,
+            ghost_out,
+        } => {
             format!(
                 "{} = {}[{}], [{} → {}]",
                 output.0, array.0, index.0, ghost_in.0, ghost_out.0
             )
         }
-        GhostStmt::Store { array, index, value, ghost_in, ghost_out } => {
+        GhostStmt::Store {
+            array,
+            index,
+            value,
+            ghost_in,
+            ghost_out,
+        } => {
             format!(
                 "{}[{}] := {}, [{} → ({}, {})]",
                 array.0, index.0, value.0, ghost_in.0, ghost_out.0.0, ghost_out.1.0
             )
         }
-        GhostStmt::Call { outputs, func, args, ghost_need, ghost_left, ghost_ret } => {
-            let outputs_str = outputs.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", ");
-            let args_str = args.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", ");
+        GhostStmt::Call {
+            outputs,
+            func,
+            args,
+            ghost_need,
+            ghost_left,
+            ghost_ret,
+        } => {
+            let outputs_str = outputs
+                .iter()
+                .map(|v| v.0.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let args_str = args
+                .iter()
+                .map(|v| v.0.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             format!(
                 "{} = {}({}); [need={}, left={}, ret={}]",
                 outputs_str, func.0, args_str, ghost_need.0, ghost_left.0, ghost_ret.0
@@ -154,8 +197,17 @@ pub fn render_ghost_tail(tail: &GhostTail) -> String {
         GhostTail::IfElse { cond, .. } => {
             format!("IfElse({})", cond.0)
         }
-        GhostTail::TailCall { func, args, ghost_need, ghost_left } => {
-            let args_str = args.iter().map(|v| v.0.as_str()).collect::<Vec<_>>().join(", ");
+        GhostTail::TailCall {
+            func,
+            args,
+            ghost_need,
+            ghost_left,
+        } => {
+            let args_str = args
+                .iter()
+                .map(|v| v.0.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             format!(
                 "{}({}), [need={}, left={}]",
                 func.0, args_str, ghost_need.0, ghost_left.0

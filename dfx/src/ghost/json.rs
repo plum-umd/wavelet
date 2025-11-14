@@ -475,8 +475,9 @@ fn map_sync_op(op: &Op) -> Result<SyncOp, ExportError> {
         Op::BitXor => Ok(SyncOp::BitXor),
         Op::LessThan => Ok(SyncOp::Lt),
         Op::LessEqual => Ok(SyncOp::Le),
-        _ => Err(ExportError::Unsupported(
-            format!("pure operation {} not yet supported for serialization", op), 
-        )),
+        _ => Err(ExportError::Unsupported(format!(
+            "pure operation {} not yet supported for serialization",
+            op
+        ))),
     }
 }
