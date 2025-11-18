@@ -1,0 +1,58 @@
+{"outputs": [],
+ "inputs": [0, 1, 2],
+ "atoms":
+ [{"async": {"outputs": [4], "op": {"const": {"n": 1, "c": 0}}, "inputs": [3]}},
+  {"op": {"outputs": [6], "op": {"load": "src"}, "inputs": [5]}},
+  {"async":
+   {"outputs": [8, 9, 10, 11, 12, 13, 14],
+    "op": {"fork": {"n": 7}},
+    "inputs": [7]}},
+  {"async":
+   {"outputs": [15],
+    "op": {"inv": {"flavor": true, "c": null}},
+    "inputs": [11, 0]}},
+  {"async": {"outputs": [18], "op": {"order": {"n": 2}}, "inputs": [16, 17]}},
+  {"async":
+   {"outputs": [20, 3, 21, 22, 23], "op": {"fork": {"n": 5}}, "inputs": [19]}},
+  {"op": {"outputs": [26], "op": "lt", "inputs": [24, 25]}},
+  {"async": {"outputs": [28], "op": {"order": {"n": 2}}, "inputs": [23, 27]}},
+  {"op": {"outputs": [16], "op": "sel", "inputs": [26, 29, 30]}},
+  {"async":
+   {"outputs": [32],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [12, 31, 22]}},
+  {"async":
+   {"outputs": [34], "op": {"const": {"n": 1, "c": 0}}, "inputs": [33]}},
+  {"async": {"outputs": [36, 37], "op": {"fork": {"n": 2}}, "inputs": [35]}},
+  {"async":
+   {"outputs": [39, 40, 41], "op": {"fork": {"n": 3}}, "inputs": [38]}},
+  {"async":
+   {"outputs": [38],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [9, 37]}},
+  {"async":
+   {"outputs": [42], "op": {"const": {"n": 1, "c": 1}}, "inputs": [21]}},
+  {"async":
+   {"outputs": [19],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [14, 32]}},
+  {"op": {"outputs": [27], "op": {"store": "dest"}, "inputs": [40, 18]}},
+  {"async": {"outputs": [33, 31, 43], "op": {"fork": {"n": 3}}, "inputs": [1]}},
+  {"async":
+   {"outputs": [17],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [8, 44]}},
+  {"async": {"outputs": [45], "op": {"order": {"n": 2}}, "inputs": [2, 43]}},
+  {"async": {"outputs": [24, 30], "op": {"fork": {"n": 2}}, "inputs": [6]}},
+  {"async": {"outputs": [25, 29], "op": {"fork": {"n": 2}}, "inputs": [4]}},
+  {"op": {"outputs": [46], "op": "add", "inputs": [41, 42]}},
+  {"async":
+   {"outputs": [35],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [10, 34, 46]}},
+  {"async":
+   {"outputs": [44],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [13, 45, 28]}},
+  {"op": {"outputs": [7], "op": "lt", "inputs": [36, 15]}},
+  {"async": {"outputs": [5], "op": {"order": {"n": 2}}, "inputs": [39, 20]}}]}

@@ -1,0 +1,638 @@
+{"outputs": [],
+ "inputs": [0, 1, 2, 3, 4],
+ "atoms":
+ [{"op": {"outputs": [7], "op": "add", "inputs": [5, 6]}},
+  {"op": {"outputs": [10], "op": "add", "inputs": [8, 9]}},
+  {"async":
+   {"outputs": [13],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [11, 12]}},
+  {"async":
+   {"outputs": [16],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [14, 15]}},
+  {"async":
+   {"outputs": [18, 19, 20], "op": {"fork": {"n": 3}}, "inputs": [17]}},
+  {"async":
+   {"outputs": [23],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [21, 22]}},
+  {"async":
+   {"outputs": [26],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [24, 25]}},
+  {"async":
+   {"outputs": [28, 29, 30], "op": {"fork": {"n": 3}}, "inputs": [27]}},
+  {"async":
+   {"outputs": [32, 33, 34], "op": {"fork": {"n": 3}}, "inputs": [31]}},
+  {"async":
+   {"outputs": [37],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [35, 36]}},
+  {"async":
+   {"outputs": [40],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [38, 39]}},
+  {"async":
+   {"outputs": [42, 24, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56],
+    "op": {"fork": {"n": 16}},
+    "inputs": [41]}},
+  {"async": {"outputs": [58, 59], "op": {"fork": {"n": 2}}, "inputs": [57]}},
+  {"async":
+   {"outputs": [60],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [55, 58]}},
+  {"async":
+   {"outputs": [61],
+    "op": {"steer": {"n": 1, "flavor": false}},
+    "inputs": [56, 59]}},
+  {"async":
+   {"outputs":
+    [21,
+     14,
+     11,
+     63,
+     64,
+     65,
+     66,
+     67,
+     68,
+     69,
+     70,
+     71,
+     72,
+     73,
+     74,
+     75,
+     76,
+     77,
+     78,
+     79,
+     80,
+     81,
+     82],
+    "op": {"fork": {"n": 23}},
+    "inputs": [62]}},
+  {"async": {"outputs": [85], "op": {"order": {"n": 2}}, "inputs": [83, 84]}},
+  {"async":
+   {"outputs": [86],
+    "op": {"steer": {"n": 1, "flavor": false}},
+    "inputs": [81, 85]}},
+  {"async": {"outputs": [88, 84], "op": {"fork": {"n": 2}}, "inputs": [87]}},
+  {"async":
+   {"outputs": [89],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [82, 88]}},
+  {"async": {"outputs": [91, 83], "op": {"fork": {"n": 2}}, "inputs": [90]}},
+  {"async":
+   {"outputs": [92],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [80, 91]}},
+  {"async":
+   {"outputs":
+    [94,
+     95,
+     96,
+     97,
+     98,
+     99,
+     100,
+     101,
+     102,
+     103,
+     104,
+     105,
+     106,
+     107,
+     108,
+     109,
+     110,
+     111,
+     112,
+     113,
+     114,
+     115,
+     116,
+     117,
+     118],
+    "op": {"fork": {"n": 25}},
+    "inputs": [93]}},
+  {"async":
+   {"outputs": [121], "op": {"order": {"n": 2}}, "inputs": [119, 120]}},
+  {"async":
+   {"outputs": [122],
+    "op": {"steer": {"n": 1, "flavor": false}},
+    "inputs": [115, 121]}},
+  {"async": {"outputs": [123, 120], "op": {"fork": {"n": 2}}, "inputs": [89]}},
+  {"async":
+   {"outputs": [124],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [118, 123]}},
+  {"async":
+   {"outputs": [128],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [125, 126, 127]}},
+  {"async":
+   {"outputs": [38, 35, 130, 131, 132, 133, 134, 135, 136, 125, 137, 138],
+    "op": {"fork": {"n": 12}},
+    "inputs": [129]}},
+  {"async":
+   {"outputs": [140],
+    "op": {"steer": {"n": 1, "flavor": false}},
+    "inputs": [54, 139]}},
+  {"async": {"outputs": [142, 143], "op": {"fork": {"n": 2}}, "inputs": [141]}},
+  {"async":
+   {"outputs": [144],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [78, 142]}},
+  {"async":
+   {"outputs": [145],
+    "op": {"steer": {"n": 1, "flavor": false}},
+    "inputs": [79, 143]}},
+  {"async": {"outputs": [146, 147], "op": {"fork": {"n": 2}}, "inputs": [144]}},
+  {"async":
+   {"outputs": [148],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [116, 146]}},
+  {"async":
+   {"outputs": [149],
+    "op": {"steer": {"n": 1, "flavor": false}},
+    "inputs": [117, 147]}},
+  {"async":
+   {"outputs": [151], "op": {"const": {"n": 1, "c": 0}}, "inputs": [150]}},
+  {"async":
+   {"outputs": [153], "op": {"const": {"n": 1, "c": 0}}, "inputs": [152]}},
+  {"async":
+   {"outputs": [155], "op": {"const": {"n": 1, "c": 0}}, "inputs": [154]}},
+  {"async":
+   {"outputs": [157], "op": {"const": {"n": 1, "c": 0}}, "inputs": [156]}},
+  {"async": {"outputs": [159, 160], "op": {"fork": {"n": 2}}, "inputs": [158]}},
+  {"async": {"outputs": [162, 163], "op": {"fork": {"n": 2}}, "inputs": [161]}},
+  {"async": {"outputs": [165, 166], "op": {"fork": {"n": 2}}, "inputs": [164]}},
+  {"async":
+   {"outputs": [168, 169, 170], "op": {"fork": {"n": 3}}, "inputs": [167]}},
+  {"async":
+   {"outputs": [167],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [44, 166]}},
+  {"async": {"outputs": [172, 173], "op": {"fork": {"n": 2}}, "inputs": [171]}},
+  {"async":
+   {"outputs": [175, 176, 177], "op": {"fork": {"n": 3}}, "inputs": [174]}},
+  {"async":
+   {"outputs": [174],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [45, 173]}},
+  {"async": {"outputs": [179, 180], "op": {"fork": {"n": 2}}, "inputs": [178]}},
+  {"async":
+   {"outputs": [9, 182, 183], "op": {"fork": {"n": 3}}, "inputs": [181]}},
+  {"async":
+   {"outputs": [181],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [64, 180]}},
+  {"async": {"outputs": [185, 186], "op": {"fork": {"n": 2}}, "inputs": [184]}},
+  {"async":
+   {"outputs": [188, 189, 190], "op": {"fork": {"n": 3}}, "inputs": [187]}},
+  {"async":
+   {"outputs": [187],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [65, 186]}},
+  {"async": {"outputs": [191, 119], "op": {"fork": {"n": 2}}, "inputs": [92]}},
+  {"async":
+   {"outputs": [192],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [114, 191]}},
+  {"async":
+   {"outputs": [194], "op": {"const": {"n": 1, "c": 1}}, "inputs": [193]}},
+  {"async":
+   {"outputs": [196], "op": {"const": {"n": 1, "c": 1}}, "inputs": [195]}},
+  {"async": {"outputs": [198, 139], "op": {"fork": {"n": 2}}, "inputs": [197]}},
+  {"async":
+   {"outputs": [199],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [53, 198]}},
+  {"async":
+   {"outputs": [201], "op": {"const": {"n": 1, "c": 1}}, "inputs": [200]}},
+  {"async":
+   {"outputs": [202],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [138, 128]}},
+  {"async":
+   {"outputs": [154, 203, 204, 200, 127, 205],
+    "op": {"fork": {"n": 6}},
+    "inputs": [202]}},
+  {"async":
+   {"outputs": [150, 152, 206, 207, 208, 195, 209, 210],
+    "op": {"fork": {"n": 8}},
+    "inputs": [199]}},
+  {"op": {"outputs": [213], "op": {"store": "z"}, "inputs": [211, 212]}},
+  {"op": {"outputs": [211], "op": "add", "inputs": [214, 170]}},
+  {"op": {"outputs": [214], "op": "mul", "inputs": [33, 176]}},
+  {"async":
+   {"outputs":
+    [216,
+     217,
+     218,
+     219,
+     220,
+     221,
+     222,
+     223,
+     224,
+     225,
+     226,
+     227,
+     228,
+     229,
+     230,
+     231,
+     232,
+     233,
+     234,
+     235],
+    "op": {"fork": {"n": 20}},
+    "inputs": [215]}},
+  {"async":
+   {"outputs": [236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246],
+    "op": {"fork": {"n": 11}},
+    "inputs": [86]}},
+  {"async":
+   {"outputs": [247, 248, 249, 250, 251, 252, 253, 254, 255, 256],
+    "op": {"fork": {"n": 10}},
+    "inputs": [122]}},
+  {"async":
+   {"outputs": [258, 259, 260], "op": {"fork": {"n": 3}}, "inputs": [257]}},
+  {"async":
+   {"outputs": [261, 262, 193, 263],
+    "op": {"fork": {"n": 4}},
+    "inputs": [192]}},
+  {"async":
+   {"outputs": [257], "op": {"order": {"n": 3}}, "inputs": [124, 264, 265]}},
+  {"op": {"outputs": [268], "op": "mul", "inputs": [266, 267]}},
+  {"op": {"outputs": [271], "op": "lt", "inputs": [269, 270]}},
+  {"op": {"outputs": [274], "op": "lt", "inputs": [272, 273]}},
+  {"op": {"outputs": [270], "op": "mul", "inputs": [190, 19]}},
+  {"op": {"outputs": [273], "op": "mul", "inputs": [275, 188]}},
+  {"op": {"outputs": [6], "op": "mul", "inputs": [183, 18]}},
+  {"async":
+   {"outputs": [156, 126, 276], "op": {"fork": {"n": 3}}, "inputs": [3]}},
+  {"async":
+   {"outputs": [278],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [130, 277]}},
+  {"async": {"outputs": [279], "op": {"order": {"n": 2}}, "inputs": [4, 276]}},
+  {"async":
+   {"outputs": [36],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [136, 2, 280]}},
+  {"async":
+   {"outputs": [39],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [135, 1, 281]}},
+  {"async":
+   {"outputs": [161],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [134, 0, 282]}},
+  {"async":
+   {"outputs": [283],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [131, 160]}},
+  {"async": {"outputs": [284, 285], "op": {"fork": {"n": 2}}, "inputs": [283]}},
+  {"async": {"outputs": [287, 288], "op": {"fork": {"n": 2}}, "inputs": [286]}},
+  {"async": {"outputs": [289, 280], "op": {"fork": {"n": 2}}, "inputs": [37]}},
+  {"async": {"outputs": [290, 281], "op": {"fork": {"n": 2}}, "inputs": [40]}},
+  {"async":
+   {"outputs": [291],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [132, 163]}},
+  {"async": {"outputs": [292, 282], "op": {"fork": {"n": 2}}, "inputs": [291]}},
+  {"async":
+   {"outputs": [27],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [43, 293]}},
+  {"async":
+   {"outputs": [31],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [42, 294]}},
+  {"async": {"outputs": [296, 297], "op": {"fork": {"n": 2}}, "inputs": [295]}},
+  {"async": {"outputs": [298, 299], "op": {"fork": {"n": 2}}, "inputs": [26]}},
+  {"op": {"outputs": [300], "op": "mul", "inputs": [32, 28]}},
+  {"async":
+   {"outputs": [17],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [63, 301]}},
+  {"async":
+   {"outputs": [303],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [101, 302]}},
+  {"async":
+   {"outputs": [305],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [100, 304]}},
+  {"async":
+   {"outputs": [306],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [94, 182]}},
+  {"async":
+   {"outputs": [307],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [97, 20]}},
+  {"async":
+   {"outputs": [308],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [95, 189]}},
+  {"async":
+   {"outputs": [310],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [99, 309]}},
+  {"op": {"outputs": [311], "op": "add", "inputs": [148, 268]}},
+  {"async":
+   {"outputs": [313],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [98, 312]}},
+  {"async":
+   {"outputs": [315],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [96, 314]}},
+  {"op": {"outputs": [316], "op": "add", "inputs": [306, 194]}},
+  {"async":
+   {"outputs": [318],
+    "op": {"steer": {"n": 1, "flavor": false}},
+    "inputs": [226, 317]}},
+  {"async":
+   {"outputs": [320],
+    "op": {"steer": {"n": 1, "flavor": false}},
+    "inputs": [225, 319]}},
+  {"async":
+   {"outputs": [321],
+    "op": {"order": {"n": 4}},
+    "inputs": [210, 297, 318, 213]}},
+  {"async":
+   {"outputs": [322],
+    "op": {"order": {"n": 4}},
+    "inputs": [205, 288, 140, 61]}},
+  {"op": {"outputs": [323], "op": "add", "inputs": [169, 196]}},
+  {"op": {"outputs": [324], "op": "add", "inputs": [284, 201]}},
+  {"async":
+   {"outputs": [326],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [227, 325]}},
+  {"async":
+   {"outputs": [328],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [228, 327]}},
+  {"async":
+   {"outputs": [330],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [229, 329]}},
+  {"async":
+   {"outputs": [332],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [230, 331]}},
+  {"async":
+   {"outputs": [334],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [231, 333]}},
+  {"async":
+   {"outputs": [336],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [232, 335]}},
+  {"async":
+   {"outputs": [338],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [233, 337]}},
+  {"async":
+   {"outputs": [340],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [234, 339]}},
+  {"async":
+   {"outputs": [342],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [235, 341]}},
+  {"async":
+   {"outputs": [319],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [66, 145, 343]}},
+  {"async":
+   {"outputs": [317],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [67, 246, 344]}},
+  {"async":
+   {"outputs": [325],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [68, 345, 346]}},
+  {"async":
+   {"outputs": [327],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [69, 347, 348]}},
+  {"async":
+   {"outputs": [329],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [70, 349, 350]}},
+  {"async":
+   {"outputs": [331],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [71, 351, 352]}},
+  {"async":
+   {"outputs": [333],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [72, 353, 354]}},
+  {"async":
+   {"outputs": [335],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [73, 355, 356]}},
+  {"async":
+   {"outputs": [337],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [74, 357, 358]}},
+  {"async":
+   {"outputs": [339],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [75, 359, 360]}},
+  {"async":
+   {"outputs": [341],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [76, 361, 362]}},
+  {"async":
+   {"outputs": [215],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [77, 363, 113]}},
+  {"async":
+   {"outputs": [345], "op": {"const": {"n": 1, "c": -1}}, "inputs": [236]}},
+  {"async":
+   {"outputs": [347], "op": {"const": {"n": 1, "c": -1}}, "inputs": [237]}},
+  {"async":
+   {"outputs": [349], "op": {"const": {"n": 1, "c": -1}}, "inputs": [238]}},
+  {"async":
+   {"outputs": [351], "op": {"const": {"n": 1, "c": -1}}, "inputs": [239]}},
+  {"async":
+   {"outputs": [353], "op": {"const": {"n": 1, "c": -1}}, "inputs": [240]}},
+  {"async":
+   {"outputs": [355], "op": {"const": {"n": 1, "c": -1}}, "inputs": [241]}},
+  {"async":
+   {"outputs": [357], "op": {"const": {"n": 1, "c": -1}}, "inputs": [242]}},
+  {"async":
+   {"outputs": [359], "op": {"const": {"n": 1, "c": -1}}, "inputs": [243]}},
+  {"async":
+   {"outputs": [361], "op": {"const": {"n": 1, "c": -1}}, "inputs": [244]}},
+  {"async":
+   {"outputs": [363], "op": {"const": {"n": 1, "c": 0}}, "inputs": [245]}},
+  {"async":
+   {"outputs": [343],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [102, 149, 364]}},
+  {"async":
+   {"outputs": [344],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [103, 256, 365]}},
+  {"async":
+   {"outputs": [346],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [104, 366, 316]}},
+  {"async":
+   {"outputs": [348],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [105, 367, 315]}},
+  {"async":
+   {"outputs": [350],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [106, 368, 313]}},
+  {"async":
+   {"outputs": [352],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [107, 369, 311]}},
+  {"async":
+   {"outputs": [354],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [108, 370, 310]}},
+  {"async":
+   {"outputs": [356],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [109, 371, 308]}},
+  {"async":
+   {"outputs": [358],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [110, 372, 307]}},
+  {"async":
+   {"outputs": [360],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [111, 373, 263]}},
+  {"async":
+   {"outputs": [362],
+    "op": {"merge": {"state": "decider", "n": 1}},
+    "inputs": [112, 374, 260]}},
+  {"async":
+   {"outputs": [366], "op": {"const": {"n": 1, "c": -1}}, "inputs": [247]}},
+  {"async":
+   {"outputs": [367], "op": {"const": {"n": 1, "c": -1}}, "inputs": [248]}},
+  {"async":
+   {"outputs": [368], "op": {"const": {"n": 1, "c": -1}}, "inputs": [249]}},
+  {"async":
+   {"outputs": [369], "op": {"const": {"n": 1, "c": -1}}, "inputs": [250]}},
+  {"async":
+   {"outputs": [370], "op": {"const": {"n": 1, "c": -1}}, "inputs": [251]}},
+  {"async":
+   {"outputs": [371], "op": {"const": {"n": 1, "c": -1}}, "inputs": [252]}},
+  {"async":
+   {"outputs": [372], "op": {"const": {"n": 1, "c": -1}}, "inputs": [253]}},
+  {"async":
+   {"outputs": [373], "op": {"const": {"n": 1, "c": -1}}, "inputs": [254]}},
+  {"async":
+   {"outputs": [374], "op": {"const": {"n": 1, "c": -1}}, "inputs": [255]}},
+  {"async":
+   {"outputs": [364], "op": {"const": {"n": 1, "c": -1}}, "inputs": [258]}},
+  {"async":
+   {"outputs": [365], "op": {"const": {"n": 1, "c": -1}}, "inputs": [259]}},
+  {"async":
+   {"outputs": [178],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [216, 151, 326]}},
+  {"async":
+   {"outputs": [22],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [217, 300, 328]}},
+  {"async":
+   {"outputs": [15],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [218, 168, 330]}},
+  {"async":
+   {"outputs": [141],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [219, 153, 332]}},
+  {"async":
+   {"outputs": [12],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [220, 298, 334]}},
+  {"async":
+   {"outputs": [184],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [221, 29, 336]}},
+  {"async":
+   {"outputs": [301],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [222, 175, 338]}},
+  {"async":
+   {"outputs": [90],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [223, 206, 340]}},
+  {"async":
+   {"outputs": [87],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [224, 296, 342]}},
+  {"async":
+   {"outputs": [164],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [46, 155, 323]}},
+  {"async":
+   {"outputs": [294],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [47, 285, 34]}},
+  {"async":
+   {"outputs": [25],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [48, 292, 299]}},
+  {"async":
+   {"outputs": [293],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [49, 290, 30]}},
+  {"async":
+   {"outputs": [171],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [50, 289, 177]}},
+  {"async":
+   {"outputs": [197],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [51, 203, 209]}},
+  {"async":
+   {"outputs": [57],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [52, 287, 321]}},
+  {"async":
+   {"outputs": [158],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [133, 157, 324]}},
+  {"async":
+   {"outputs": [277],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [137, 279, 322]}},
+  {"op": {"outputs": [129], "op": "lt", "inputs": [159, 162]}},
+  {"async":
+   {"outputs": [286], "op": {"order": {"n": 2}}, "inputs": [278, 204]}},
+  {"op": {"outputs": [41], "op": "lt", "inputs": [165, 172]}},
+  {"async": {"outputs": [295], "op": {"order": {"n": 2}}, "inputs": [60, 207]}},
+  {"op": {"outputs": [62], "op": "lt", "inputs": [179, 185]}},
+  {"async": {"outputs": [8, 314], "op": {"fork": {"n": 2}}, "inputs": [23]}},
+  {"async": {"outputs": [5, 312], "op": {"fork": {"n": 2}}, "inputs": [16]}},
+  {"async": {"outputs": [275, 309], "op": {"fork": {"n": 2}}, "inputs": [13]}},
+  {"async": {"outputs": [272, 304], "op": {"fork": {"n": 2}}, "inputs": [10]}},
+  {"async": {"outputs": [269, 302], "op": {"fork": {"n": 2}}, "inputs": [7]}},
+  {"op": {"outputs": [93], "op": "and", "inputs": [274, 271]}},
+  {"async":
+   {"outputs": [375], "op": {"order": {"n": 2}}, "inputs": [305, 261]}},
+  {"async": {"outputs": [266, 264], "op": {"fork": {"n": 2}}, "inputs": [376]}},
+  {"op": {"outputs": [376], "op": {"load": "a"}, "inputs": [375]}},
+  {"async":
+   {"outputs": [377], "op": {"order": {"n": 2}}, "inputs": [303, 262]}},
+  {"async": {"outputs": [267, 265], "op": {"fork": {"n": 2}}, "inputs": [378]}},
+  {"op": {"outputs": [378], "op": {"load": "b"}, "inputs": [377]}},
+  {"async":
+   {"outputs": [212], "op": {"order": {"n": 2}}, "inputs": [320, 208]}}]}

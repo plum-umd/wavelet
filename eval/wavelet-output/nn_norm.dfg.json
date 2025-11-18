@@ -1,0 +1,64 @@
+{"outputs": [],
+ "inputs": [0, 1, 2, 3, 4],
+ "atoms":
+ [{"async":
+   {"outputs": [7],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [5, 6]}},
+  {"async":
+   {"outputs": [10],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [8, 9]}},
+  {"async":
+   {"outputs": [8, 5, 12, 13, 14, 15, 16, 17, 18],
+    "op": {"fork": {"n": 9}},
+    "inputs": [11]}},
+  {"async":
+   {"outputs": [19],
+    "op": {"inv": {"flavor": true, "c": null}},
+    "inputs": [16, 2]}},
+  {"async":
+   {"outputs": [22],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [17, 20, 21]}},
+  {"async":
+   {"outputs": [24], "op": {"const": {"n": 1, "c": 0}}, "inputs": [23]}},
+  {"async": {"outputs": [26, 27], "op": {"fork": {"n": 2}}, "inputs": [25]}},
+  {"async":
+   {"outputs": [29, 30, 31], "op": {"fork": {"n": 3}}, "inputs": [28]}},
+  {"async":
+   {"outputs": [28],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [12, 27]}},
+  {"async":
+   {"outputs": [33], "op": {"const": {"n": 1, "c": 1}}, "inputs": [32]}},
+  {"async":
+   {"outputs": [34],
+    "op": {"steer": {"n": 1, "flavor": true}},
+    "inputs": [18, 22]}},
+  {"async":
+   {"outputs": [35, 32, 21], "op": {"fork": {"n": 3}}, "inputs": [34]}},
+  {"op": {"outputs": [37], "op": {"store": "dest"}, "inputs": [31, 36]}},
+  {"op": {"outputs": [36], "op": "ashr", "inputs": [38, 39]}},
+  {"op": {"outputs": [38], "op": "mul", "inputs": [40, 41]}},
+  {"async": {"outputs": [23, 20], "op": {"fork": {"n": 2}}, "inputs": [3]}},
+  {"async": {"outputs": [], "op": {"sink": {"n": 1}}, "inputs": [4]}},
+  {"async": {"outputs": [], "op": {"sink": {"n": 1}}, "inputs": [37]}},
+  {"async":
+   {"outputs": [6],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [15, 1, 42]}},
+  {"async":
+   {"outputs": [9],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [14, 0, 43]}},
+  {"op": {"outputs": [40], "op": {"load": "src"}, "inputs": [44]}},
+  {"async": {"outputs": [39, 42], "op": {"fork": {"n": 2}}, "inputs": [7]}},
+  {"async": {"outputs": [41, 43], "op": {"fork": {"n": 2}}, "inputs": [10]}},
+  {"op": {"outputs": [45], "op": "add", "inputs": [30, 33]}},
+  {"async":
+   {"outputs": [25],
+    "op": {"merge": {"state": "popLeft", "n": 1}},
+    "inputs": [13, 24, 45]}},
+  {"op": {"outputs": [11], "op": "lt", "inputs": [26, 19]}},
+  {"async": {"outputs": [44], "op": {"order": {"n": 2}}, "inputs": [29, 35]}}]}
