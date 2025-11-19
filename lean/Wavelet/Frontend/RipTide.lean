@@ -185,16 +185,16 @@ instance [DecidableEq Loc] [Hashable Loc] [Lean.ToJson Loc] : Lean.ToJson (State
       })
 
 /-- Test inputs. -/
-structure TestVector Loc [DecidableEq Loc] [Hashable Loc] where
+structure Testbench Loc [DecidableEq Loc] [Hashable Loc] where
   inputs : List Value
   state : State Loc
   deriving Lean.FromJson, Lean.ToJson
 
 /-- Run the test vector on the given process until termination. -/
-partial def TestVector.run
+partial def Testbench.run
   [DecidableEq χ] [Repr χ] [DecidableEq Loc] [Hashable Loc] [Repr Loc]
   [Lean.ToJson Loc] [Lean.ToJson χ]
-  (tv : TestVector Loc)
+  (tv : Testbench Loc)
   (proc : Dataflow.Proc (SyncOp Loc) χ Value m n) :
     Except String (
       List (Nat × Label (SyncOp Loc) Value m n) × -- Execution trace

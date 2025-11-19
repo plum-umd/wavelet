@@ -14,26 +14,29 @@ def Option.unwrapIO {α} (o : Option α) (msg : String) : IO α :=
   | some x => pure x
   | none => throw <| IO.userError msg
 
-inductive OutputFormat where
-  | json
-  | dot
-  | none
-  deriving Repr
-
 def trace (msg : String) : IO Unit := do
   let stderr ← IO.getStderr
   stderr.putStrLn s!"[trace] {msg}"
+
+/-! Some specialized types for RipTide. -/
+namespace Wavelet.Frontend.RipTide
+
+abbrev Loc := String
+abbrev FnName := String
+abbrev Var := String
+
+abbrev RawProg := Frontend.RawProg (WithCall (WithSpec (SyncOp Loc) opSpec) FnName) Var
+abbrev RawProc := Frontend.RawProc (SyncOp Loc) Nat Value
+
+abbrev EncapProg := Frontend.EncapProg (WithSpec (SyncOp Loc) opSpec) Var Value
+abbrev Proc := Dataflow.Proc (SyncOp Loc) Nat Value
+
+end Wavelet.Frontend.RipTide
 
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- CLI option parsing
   let inputPath := p.positionalArg! "input" |>.as! String
   let outputPath? := p.flag? "output" |>.map (·.as! String)
-  let testsPath? := p.flag? "tests" |>.map (·.as! String)
-  let format ← match p.flag! "format" |>.as! String with
-    | "json" => pure OutputFormat.json
-    | "dot"  => pure OutputFormat.dot
-    | "none" => pure OutputFormat.none
-    | fmt    => throw <| IO.userError s!"unknown output format: {fmt}"
   let enablePermOut := p.hasFlag "perm-out"
   let enableNoOut := p.hasFlag "no-out"
   let enableStats := p.hasFlag "stats"
@@ -50,10 +53,8 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let FnName := String
   let Var := String
 
-  let RawT := RawProg
-    (WithCall (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) FnName) Var
-  let rawProg : RawT ← (Lean.FromJson.fromJson? json).unwrapIO "failed to decode JSON input as RawProg"
-  let prog ← (rawProg.toProg (V := RipTide.Value)).unwrapIO "failed to convert RawProg to Prog"
+  let rawProg : RipTide.RawProg ← (Lean.FromJson.fromJson? json).unwrapIO "failed to decode JSON input as RawProg"
+  let prog : RipTide.EncapProg ← rawProg.toProg.unwrapIO "failed to convert RawProg to Prog"
 
   if h : prog.numFns > 0 then
     -- Some abbreviations
@@ -79,14 +80,12 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     proc.checkAffineChan.unwrapIO "dfg invariant error"
 
     -- Some optimizations
-    let P χ := Proc
-      (RipTide.SyncOp Loc) χ RipTide.Value
-      (prog.sigs last).ι
+    let Proc := RipTide.Proc (prog.sigs last).ι
       (if ¬ enablePermOut then
         if enableNoOut then 0 else
         (prog.sigs last).ω - 1
       else (prog.sigs last).ω)
-    let proc : P Nat :=
+    let proc : Proc :=
       if h₁ : ¬ enablePermOut then
         if h₂ : enableNoOut then
           -- If we enable the more aggressive no-output mode,
@@ -101,7 +100,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
           { proc with
             outputs := proc.outputs.pop.cast (by simp [h₁, h₂]),
             atoms := .sink #v[proc.outputs.back] :: proc.atoms }
-      else cast (by simp [P, h₁]) proc
+      else cast (by simp [Proc, h₁]) proc
 
     trace s!"applying op selection and optimizations..."
     let (numRws, stats, proc) := Rewrite.applyUntilFailNat
@@ -128,58 +127,102 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
       |>.length
     trace s!"non-trivial operators: {numNonTrivial}"
 
-    -- If a test file is specified, read and run the tests
-    if let some testsPath := testsPath? then
-      trace s!"running tests from {testsPath}..."
-      let testsInput ← IO.FS.readFile testsPath
-      let testsJson ← (Lean.Json.parse testsInput).unwrapIO s!"failed to parse JSON from {testsPath}"
-      let testVecs : List (RipTide.TestVector Loc) ←
-        (Lean.FromJson.fromJson? testsJson).unwrapIO s!"failed to parse test vectors from {testsPath}"
-      trace s!"loaded {testVecs.length} test vector(s)"
-      for (i, testVec) in testVecs.mapIdx (·, ·) do
-        trace s!"  running test vector {i}..."
-        match testVec.run proc with
-        | .ok (tr, outputs, st) =>
-          trace s!"    steps: {tr.length}, outputs: {outputs}, final state:\n{Lean.ToJson.toJson st}"
-        | .error err =>
-          trace s!"    failed: {err}"
-
-    match format with
-    | .dot =>
-      -- Dump graph as DOT
-      let plot ← (proc.plot (omitForks := omitForks)).run.unwrapIO "failed to generate DOT plot"
-      writeOutput plot
-    | .json =>
-      -- Dump graph as JSON
-      let rawProc := RawProc.fromProc proc
-      let output := Lean.ToJson.toJson rawProc
-      writeOutput (Lean.Json.pretty output)
-    | .none =>
-      trace "no output format selected"
+    -- Dump graph as JSON
+    let rawProc := RawProc.fromProc proc
+    let output := Lean.ToJson.toJson rawProc
+    writeOutput (Lean.Json.pretty output)
     return 0
   else
     trace "no function provided"
     return 0
 
+def runPlotCmd (p : Cli.Parsed) : IO UInt32 := do
+  let inputPath := p.positionalArg! "input" |>.as! String
+  let omitForks := p.hasFlag "omit-forks"
+  let input ← IO.FS.readFile inputPath
+  let json ← (Lean.Json.parse input).unwrapIO "failed to parse JSON input"
+  let rawProc : RipTide.RawProc ← (Lean.FromJson.fromJson? json).unwrapIO "failed to decode JSON input as RawProc"
+  let proc : RipTide.Proc _ _ ← rawProc.toProc.unwrapIO "failed to convert RawProc to Proc"
+  let plot ← (proc.plot (omitForks := omitForks)).run.unwrapIO "failed to generate DOT plot"
+  IO.getStdout >>= (·.putStrLn plot)
+  return 0
+
+def runTestCmd (p : Cli.Parsed) : IO UInt32 := do
+  let inputPath := p.positionalArg! "input" |>.as! String
+  let testbenchPath := p.positionalArg! "testbench" |>.as! String
+  let input ← IO.FS.readFile inputPath
+  let json ← (Lean.Json.parse input).unwrapIO "failed to parse JSON input"
+  let rawProc : RipTide.RawProc ← (Lean.FromJson.fromJson? json).unwrapIO "failed to decode JSON input as RawProc"
+  let proc : RipTide.Proc _ _ ← rawProc.toProc.unwrapIO "failed to convert RawProc to Proc"
+
+  trace s!"running tests from {testbenchPath}..."
+  let tbsInput ← IO.FS.readFile testbenchPath
+  let tbsJson ← (Lean.Json.parse tbsInput).unwrapIO s!"failed to parse JSON from {testbenchPath}"
+  let tbs : List (RipTide.Testbench RipTide.Loc) ←
+    (Lean.FromJson.fromJson? tbsJson).unwrapIO s!"failed to parse test vectors from {testbenchPath}"
+  trace s!"loaded {tbs.length} test vector(s)"
+
+  let mut numFailed := 0
+  for (i, tb) in tbs.mapIdx (·, ·) do
+    trace s!"  running test vector {i}..."
+    match tb.run proc with
+    | .ok (tr, outputs, st) =>
+      trace s!"    steps: {tr.length}, outputs: {outputs}, final state:\n{Lean.ToJson.toJson st}"
+    | .error err =>
+      trace s!"    failed: {err}"
+      numFailed := numFailed + 1
+
+  trace s!"summary: {tbs.length - numFailed} passed, {numFailed} failed."
+  if numFailed = 0 then
+    return 1
+  else
+    return 0
+
+def runMainCmd (p : Cli.Parsed) : IO UInt32 := do
+  p.printHelp
+  return 1
+
 def compileCmd := `[Cli|
-    compileCmd VIA runCompileCmd; ["0.0.1"]
-    "Wavelet compiler (Lean backend)"
+    compile VIA runCompileCmd;
+    "Compiles sequential programs to dataflow graphs."
 
     FLAGS:
-      o, output    : String ; "Path to output final dataflow graph in JSON (Default: stdout)"
-      f, format    : String ; "Output format [json|dot|none]"
+      o, output    : String ; "Path to output final dataflow graph (Default: stdout)"
       "perm-out"            ; "Enable permission output which might increase graph size"
       "no-out"              ; "Disable all outputs for a smaller graph"
       stats                 ; "Print various statistics"
-      "omit-forks"          ; "Omit fork operators in the DOT graph"
-      "tests"      : String ; "A JSON file including test vectors for the final dataflow graph"
 
     ARGS:
       input        : String ; "Input sequential program in JSON"
+  ]
 
-    EXTENSIONS:
-      defaultValues! #[("format", "json")]
+def plotCmd := `[Cli|
+    plot VIA runPlotCmd;
+    "Converts a dataflow graph to DOT format."
+
+    FLAGS:
+      "omit-forks"          ; "Omit fork operators in the DOT graph"
+
+    ARGS:
+      input        : String ; "Input dataflow graph in JSON"
+  ]
+
+def testCmd := `[Cli|
+    test VIA runTestCmd;
+    "Run testbenches on a dataflow graph."
+
+    FLAGS:
+
+    ARGS:
+      input        : String ; "Input dataflow graph in JSON"
+      testbench    : String ; "Input testbench in JSON"
+  ]
+
+def mainCmd := `[Cli|
+    wavelet VIA runMainCmd; ["0.0.1"]
+    "A verified dataflow compiler."
+    SUBCOMMANDS: compileCmd; plotCmd; testCmd
   ]
 
 def main (args : List String) : IO UInt32 :=
-  compileCmd.validate args
+  mainCmd.validate args
