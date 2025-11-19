@@ -1,24 +1,11 @@
 import Cli
+
 import Wavelet.Seq
 import Wavelet.Dataflow
 import Wavelet.Compile
 import Wavelet.Frontend
 
 open Wavelet.Frontend Wavelet.Compile Wavelet.Determinacy Wavelet.Seq Wavelet.Dataflow
-
-def Except.unwrapIO {ε α} (e : Except ε α) (msg : String) [ToString ε] : IO α :=
-  match e with
-  | .ok x => pure x
-  | .error err => throw <| IO.userError s!"{msg}: {toString err}"
-
-def Option.unwrapIO {α} (o : Option α) (msg : String) : IO α :=
-  match o with
-  | some x => pure x
-  | none => throw <| IO.userError msg
-
-def trace (msg : String) : IO Unit := do
-  let stderr ← IO.getStderr
-  stderr.putStrLn s!"[trace] {msg}"
 
 /-! Some specialized types for RipTide. -/
 namespace Wavelet.Frontend.RipTide
@@ -35,8 +22,11 @@ abbrev Proc := Dataflow.Proc (SyncOp Loc) Nat Value
 
 end Wavelet.Frontend.RipTide
 
+def trace (msg : String) : IO Unit := do
+  let stderr ← IO.getStderr
+  stderr.putStrLn s!"[trace] {msg}"
+
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
-  -- CLI option parsing
   let inputPath := p.positionalArg! "input" |>.as! String
   let outputPath? := p.flag? "output" |>.map (·.as! String)
   let enablePermOut := p.hasFlag "perm-out"
@@ -50,10 +40,6 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
 
   let input ← IO.FS.readFile inputPath
   let json ← (Lean.Json.parse input).unwrapIO "failed to parse JSON input"
-
-  let Loc := String
-  let FnName := String
-  let Var := String
 
   let rawProg : RipTide.RawProg ← (Lean.FromJson.fromJson? json).unwrapIO "failed to decode JSON input as RawProg"
   let prog : RipTide.EncapProg ← rawProg.toProg.unwrapIO "failed to convert RawProg to Prog"

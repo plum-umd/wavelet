@@ -5,7 +5,7 @@ require "leanprover-community" / "mathlib"
 
 package wavelet
 
--- Check all proofs
+@[default_target]
 lean_lib Wavelet
 
 @[default_target]

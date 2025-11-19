@@ -117,6 +117,11 @@ theorem mapError_ok_iff_ok
     (e.mapError f).isOk = e.isOk
   := by cases e <;> simp [Except.mapError, isOk, Except.toBool]
 
+def unwrapIO {ε α} (e : Except ε α) (msg : String) [ToString ε] : IO α :=
+  match e with
+  | .ok x => pure x
+  | .error err => throw <| IO.userError s!"{msg}: {toString err}"
+
 end Except
 
 abbrev ExceptDec ε (p : Prop) := Except (ε × PLift ¬p) (PLift p)
@@ -154,6 +159,11 @@ def toExcept {ε α} (o : Option α) (e : ε) : Except ε α :=
   match o with
   | some x => .ok x
   | none => .error e
+
+def unwrapIO {α} (o : Option α) (msg : String) : IO α :=
+  match o with
+  | some x => pure x
+  | none => throw <| IO.userError msg
 
 end Option
 
