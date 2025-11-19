@@ -1,0 +1,21 @@
+name: Build Wavelet
+on: [push]
+jobs:
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Build frontend
+        working-directory: dfx
+        run: cargo build
+  build-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: leanprover/lean-action@v1
+      - name: Build backend
+        working-directory: lean
+        run: |
+          lake exec cache get
+          lake build
