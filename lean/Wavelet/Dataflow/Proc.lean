@@ -1,7 +1,4 @@
-import Mathlib.Logic.Relation
-
 import Wavelet.Semantics.Defs
-import Wavelet.Data.List
 
 import Wavelet.Dataflow.ChanMap
 import Wavelet.Dataflow.AsyncOp
@@ -18,7 +15,7 @@ open Semantics
     to each output channel.
   - Asynchronous operators can change the number of inputs/outputs
     depending on internal state or input values. -/
-inductive AtomicProc (Op χ V : Type*) [Arity Op] where
+inductive AtomicProc (Op : Type u) χ V [Arity Op] where
   | op (op : Op) (inputs : Vector χ (Arity.ι op)) (outputs : Vector χ (Arity.ω op))
   | async (aop : AsyncOp V) (inputs : List χ) (outputs : List χ)
 
@@ -29,6 +26,74 @@ def AtomicProc.inputs [Arity Op] : AtomicProc Op χ V → List χ
 def AtomicProc.outputs [Arity Op] : AtomicProc Op χ V → List χ
   | .op _ _ outputs => outputs.toList
   | .async _ _ outputs => outputs
+
+/-! Built-in asynchronous operators. -/
+namespace AtomicProc
+
+def switch [Arity Op]
+  (decider : χ) (inputs : Vector χ n)
+  (outputs₁ : Vector χ n)
+  (outputs₂ : Vector χ n) : AtomicProc Op χ V
+  := .async (.switch n) (#v[decider] ++ inputs).toList (outputs₁ ++ outputs₂).toList
+
+def steer [Arity Op]
+  (flavor : Bool)
+  (decider : χ) (inputs : Vector χ n)
+  (outputs : Vector χ n) : AtomicProc Op χ V
+  := .async (.steer flavor n) (#v[decider] ++ inputs).toList outputs.toList
+
+def merge [Arity Op] [NeZero n]
+  (decider : χ)
+  (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
+  (outputs : Vector χ n) : AtomicProc Op χ V :=
+  .async (.merge .decider n) (#v[decider] ++ inputs₁ ++ inputs₂).toList outputs.toList
+
+/-- Carry is a variant of merge that can have a different initial state. -/
+def carry [Arity Op] [NeZero n]
+  (state : AsyncOp.MergeState)
+  (decider : χ)
+  (inputs₁ : Vector χ n) (inputs₂ : Vector χ n)
+  (outputs : Vector χ n) : AtomicProc Op χ V
+  := .async (.merge state n) (#v[decider] ++ inputs₁ ++ inputs₂).toList outputs.toList
+
+def forward [Arity Op] [NeZero n]
+  (inputs : Vector χ n) (outputs : Vector χ n) : AtomicProc Op χ V
+  := .async (.forward n) inputs.toList outputs.toList
+
+def fork [Arity Op]
+  (input : χ) (outputs : Vector χ n) : AtomicProc Op χ V
+  := .async (.fork n) [input] outputs.toList
+
+def order [Arity Op] [NeZero n]
+  (inputs : Vector χ n) (output : χ) : AtomicProc Op χ V
+  := .async (.order n) inputs.toList [output]
+
+def const [Arity Op]
+  (c : V) (act : χ) (outputs : Vector χ n) : AtomicProc Op χ V
+  := .async (.const c n) [act] outputs.toList
+
+def forwardc [Arity Op] [NeZero n]
+  (inputs : Vector χ n) (consts : Vector V m)
+  (outputs : Vector χ (n + m)) : AtomicProc Op χ V
+  := .async (.forwardc n m consts) inputs.toList outputs.toList
+
+def sink [Arity Op]
+  (inputs : Vector χ n) : AtomicProc Op χ V
+  := if h : n ≠ 0 then
+    let _ : NeZero n := NeZero.mk h
+    .async (.sink n) inputs.toList #v[].toList
+  else
+    .async (.inact 0) [] []
+
+def inv [Arity Op]
+  (flavor : Bool) (c : Option V) (decider : χ) (input : χ) (output : χ) : AtomicProc Op χ V
+  := .async (.inv flavor c) [decider, input] [output]
+
+def inact [Arity Op]
+  (outputs : Vector χ n) : AtomicProc Op χ V
+  := .async (.inact n) [] outputs.toList
+
+end AtomicProc
 
 abbrev AtomicProcs Op χ V [Arity Op] := List (AtomicProc Op χ V)
 

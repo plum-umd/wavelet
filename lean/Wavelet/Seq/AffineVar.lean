@@ -1,6 +1,4 @@
-import Wavelet.Data.List
-import Wavelet.Data.Except
-
+import Wavelet.Data.Basic
 import Wavelet.Seq.Fn
 
 namespace Wavelet.Seq

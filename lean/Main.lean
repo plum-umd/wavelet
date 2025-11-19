@@ -1,7 +1,9 @@
 import Cli
-import Wavelet
+import Wavelet.Seq
+import Wavelet.Dataflow
+import Wavelet.Compile
+import Wavelet.Frontend
 
-open Cli
 open Wavelet.Frontend Wavelet.Compile Wavelet.Determinacy Wavelet.Seq Wavelet.Dataflow
 
 def Except.unwrapIO {ε α} (e : Except ε α) (msg : String) [ToString ε] : IO α :=
@@ -136,6 +138,20 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     trace "no function provided"
     return 0
 
+def compileCmd := `[Cli|
+    compile VIA runCompileCmd;
+    "Compiles sequential programs to dataflow graphs."
+
+    FLAGS:
+      o, output    : String ; "Path to output final dataflow graph (Default: stdout)"
+      "perm-out"            ; "Enable permission output which might increase graph size"
+      "no-out"              ; "Disable all outputs for a smaller graph"
+      stats                 ; "Print various statistics"
+
+    ARGS:
+      input        : String ; "Input sequential program in JSON"
+  ]
+
 def runPlotCmd (p : Cli.Parsed) : IO UInt32 := do
   let inputPath := p.positionalArg! "input" |>.as! String
   let omitForks := p.hasFlag "omit-forks"
@@ -146,6 +162,17 @@ def runPlotCmd (p : Cli.Parsed) : IO UInt32 := do
   let plot ← (proc.plot (omitForks := omitForks)).run.unwrapIO "failed to generate DOT plot"
   IO.getStdout >>= (·.putStrLn plot)
   return 0
+
+def plotCmd := `[Cli|
+    plot VIA runPlotCmd;
+    "Converts a dataflow graph to DOT format."
+
+    FLAGS:
+      "omit-forks"          ; "Omit fork operators in the DOT graph"
+
+    ARGS:
+      input        : String ; "Input dataflow graph in JSON"
+  ]
 
 def runTestCmd (p : Cli.Parsed) : IO UInt32 := do
   let inputPath := p.positionalArg! "input" |>.as! String
@@ -178,35 +205,6 @@ def runTestCmd (p : Cli.Parsed) : IO UInt32 := do
   else
     return 0
 
-def runMainCmd (p : Cli.Parsed) : IO UInt32 := do
-  p.printHelp
-  return 1
-
-def compileCmd := `[Cli|
-    compile VIA runCompileCmd;
-    "Compiles sequential programs to dataflow graphs."
-
-    FLAGS:
-      o, output    : String ; "Path to output final dataflow graph (Default: stdout)"
-      "perm-out"            ; "Enable permission output which might increase graph size"
-      "no-out"              ; "Disable all outputs for a smaller graph"
-      stats                 ; "Print various statistics"
-
-    ARGS:
-      input        : String ; "Input sequential program in JSON"
-  ]
-
-def plotCmd := `[Cli|
-    plot VIA runPlotCmd;
-    "Converts a dataflow graph to DOT format."
-
-    FLAGS:
-      "omit-forks"          ; "Omit fork operators in the DOT graph"
-
-    ARGS:
-      input        : String ; "Input dataflow graph in JSON"
-  ]
-
 def testCmd := `[Cli|
     test VIA runTestCmd;
     "Run testbenches on a dataflow graph."
@@ -217,6 +215,10 @@ def testCmd := `[Cli|
       input        : String ; "Input dataflow graph in JSON"
       testbench    : String ; "Input testbench in JSON"
   ]
+
+def runMainCmd (p : Cli.Parsed) : IO UInt32 := do
+  p.printHelp
+  return 1
 
 def mainCmd := `[Cli|
     wavelet VIA runMainCmd; ["0.0.1"]

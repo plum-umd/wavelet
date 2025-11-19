@@ -1,13 +1,12 @@
-import Wavelet.Data.Except
+import Wavelet.Data.Basic
 import Wavelet.Dataflow.Proc
 import Wavelet.Dataflow.Plot
 import Wavelet.Dataflow.Interpreter
 import Wavelet.Semantics.OpInterp
 import Wavelet.Determinacy.OpSpec
-import Wavelet.Compile.Rewrite.Defs
+import Wavelet.Compile.Rewrite
 
 import Wavelet.Frontend.Dataflow
-
 import Wavelet.Frontend.Seq
 
 /-! A formalization of the operator set of RipTide (https://ieeexplore.ieee.org/document/9923793). -/
@@ -125,7 +124,7 @@ def opInterp [DecidableEq Loc] [Hashable Loc] :
   }
 
 /-- TODO: Actually define the pre/post conditions. -/
-def opSpec : OpSpec (SyncOp Loc) Value (PCM.FractionPerm Loc) :=
+def opSpec : OpSpec (SyncOp Loc) Value PCM.Triv :=
   {
     pre | _, _ => PCM.zero,
     post | _, _, _ => PCM.zero,

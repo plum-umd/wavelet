@@ -1,3 +1,4 @@
+import Wavelet.Data.Basic
 import Wavelet.Dataflow.Proc
 
 /-! A JSON format for dataflow graphs (`Proc`). -/

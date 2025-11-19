@@ -1,3 +1,4 @@
+import Wavelet.Data.Basic
 import Wavelet.Dataflow.Proc
 import Wavelet.Semantics.OpInterp
 

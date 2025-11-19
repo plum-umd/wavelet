@@ -1,5 +1,3 @@
-import Mathlib.Logic.Relation
-
 /-! Definitions and utilities for labelled transition systems. -/
 
 namespace Wavelet.Semantics
@@ -402,13 +400,16 @@ def Lts.SimilaritySt
     ∀ c₁ c₂, Sim c₁ c₂ → R c₁ c₂
 
 @[simp]
-abbrev TrueR {α β} (_ : α) (_ : β) : Prop := True
+abbrev TrueR (_ : α) (_ : β) : Prop := True
+
+def RelComp (R₁ : α → β → Prop) (R₂ : β → γ → Prop) : α → γ → Prop :=
+  λ a c => ∃ b, R₁ a b ∧ R₂ b c
 
 @[simp, grind]
 theorem TrueR.comp {α β γ} [inst : Inhabited β] :
-  Relation.Comp (TrueR (α := α) (β := β)) (TrueR (α := β) (β := γ)) = TrueR := by
+  RelComp (TrueR (α := α) (β := β)) (TrueR (α := β) (β := γ)) = TrueR := by
   funext
-  simp [Relation.Comp]
+  simp [RelComp]
 
 def Lts.Similarity
   (lts₁ : Lts C₁ E)
@@ -521,7 +522,7 @@ theorem Lts.SimilaritySt.trans_single
   (single₂ : ∀ {c l c'}, lts₂.Step c l c' → lts₂'.Step c l c') :
   Lts.SimilaritySt R₁ lts₁ lts₂ c₁ c₂ →
   Lts.SimilaritySt R₂ lts₂' lts₃ c₂ c₃ →
-  Lts.SimilaritySt (Relation.Comp R₁ R₂) lts₁ lts₃ c₁ c₃ := by
+  Lts.SimilaritySt (RelComp R₁ R₂) lts₁ lts₃ c₁ c₃ := by
   rintro ⟨R₁₂, ⟨hsim₁₂_init, hsim₁₂_coind⟩, hR₁₂⟩
   rintro ⟨R₂₃, ⟨hsim₂₃_init, hsim₂₃_coind⟩, hR₂₃⟩
   apply Lts.SimilaritySt.intro λ c₁ c₃ => ∃ c₂, R₁₂ c₁ c₂ ∧ R₂₃ c₂ c₃
@@ -535,7 +536,7 @@ theorem Lts.SimilaritySt.trans_single
       constructor
       · exact hstep_c₃
       · exists c₂'
-  · simp [Relation.Comp]
+  · simp [RelComp]
     intros c₁ c₂ c' h₁ h₂
     exact ⟨_, hR₁₂ _ _ h₁, hR₂₃ _ _ h₂⟩
 
@@ -547,7 +548,7 @@ theorem Lts.SimilaritySt.trans
   {c₁ : C₁} {c₂ : C₂} {c₃ : C₃} :
   Lts.SimilaritySt R₁ lts₁ lts₂ c₁ c₂ →
   Lts.SimilaritySt R₂ lts₂ lts₃ c₂ c₃ →
-  Lts.SimilaritySt (Relation.Comp R₁ R₂) lts₁ lts₃ c₁ c₃ := .trans_single (by simp)
+  Lts.SimilaritySt (RelComp R₁ R₂) lts₁ lts₃ c₁ c₃ := .trans_single (by simp)
 
 theorem Lts.Similarity.trans
   {C₁ : Type u₁} {C₂ : Type u₂} {C₃ : Type u₃} {E : Type u₄}

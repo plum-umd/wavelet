@@ -3,12 +3,11 @@ open Lake DSL
 
 require "leanprover-community" / "mathlib"
 
-package «wavelet» where
-  -- add package configuration options here
+package wavelet
 
-lean_lib «Wavelet» where
-  -- add library configuration options here
+-- Check all proofs
+lean_lib Wavelet
 
 @[default_target]
-lean_exe «wavelet» where
+lean_exe wavelet where
   root := `Main

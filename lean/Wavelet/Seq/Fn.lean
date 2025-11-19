@@ -1,6 +1,4 @@
-import Mathlib.Logic.Relation
 import Wavelet.Semantics.Defs
-
 import Wavelet.Seq.VarMap
 
 /-! Syntax and semantics for a simple imperative language. -/

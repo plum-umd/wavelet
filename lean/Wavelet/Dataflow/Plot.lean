@@ -1,5 +1,4 @@
-import Mathlib.Control.Monad.Writer
-
+import Wavelet.Data.Basic
 import Wavelet.Dataflow.Proc
 
 /-! Some utilities to generate Graphviz's DOT format. -/
@@ -10,31 +9,35 @@ open Semantics
 
 structure PlotState where
   indent : Nat
+  buf : List String
 
-def PltoState.init : PlotState := { indent := 0 }
+def PltoState.init : PlotState := { indent := 0, buf := [] }
 
-abbrev PlotM := WriterT (List String) (StateT PlotState (Except String))
+abbrev PlotM := StateT PlotState (Except String)
+
+def PlotM.writeLn (line : String) : PlotM Unit :=
+  modify λ s => { s with buf := s.buf ++ [line] }
 
 def PlotM.startBlock (cmd : String) : PlotM Unit := do
   let s ← get
-  tell [String.replicate (s.indent * 2) ' ' ++ cmd ++ " {"]
+  writeLn <| String.replicateChar (s.indent * 2) ' ' ++ cmd ++ " {"
   modify λ s => { s with indent := s.indent + 1 }
 
 def PlotM.endBlock : PlotM Unit := do
   let s ← get
   if s.indent = 0 then
     throw "no matching left brace"
-  tell [String.replicate (s.indent * 2 - 2) ' ' ++ "}"]
+  writeLn <| String.replicateChar (s.indent * 2 - 2) ' ' ++ "}"
   modify λ s => { s with indent := s.indent - 1 }
 
 def PlotM.cmd (cmd : String) : PlotM Unit := do
   let s ← get
-  tell [String.replicate (s.indent * 2) ' ' ++ cmd]
+  writeLn <| String.replicateChar (s.indent * 2) ' ' ++ cmd
 
 /-- Generates the final plot in DOT format. -/
 def PlotM.run (plot : PlotM Unit) : Except String String := do
-  let ((_, cmds), _) ← (WriterT.run plot).run PltoState.init
-  return String.intercalate "\n" cmds
+  let (_, s) ← StateT.run plot PltoState.init
+  return String.intercalate "\n" s.buf
 
 /-- Find sender(s) of a channel name. The return value is a tuple (atom idx, output port idx, atom). -/
 def Proc.sendersOf [Arity Op] [DecidableEq χ]

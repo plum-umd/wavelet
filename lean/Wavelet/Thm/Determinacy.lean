@@ -1,0 +1,10 @@
+import Wavelet.Thm.Determinacy.Confluence
+import Wavelet.Thm.Determinacy.Congr
+import Wavelet.Thm.Determinacy.Convert
+import Wavelet.Thm.Determinacy.Defs
+import Wavelet.Thm.Determinacy.Determinism
+import Wavelet.Thm.Determinacy.DisjointTokens
+import Wavelet.Thm.Determinacy.Hetero
+import Wavelet.Thm.Determinacy.MapTokens
+import Wavelet.Thm.Determinacy.OpSpec
+import Wavelet.Thm.Determinacy.PCM

@@ -1,3 +1,4 @@
+import Wavelet.Data.Basic
 import Wavelet.Seq.Prog
 
 /-! A simple JSON format of Seq `Prog`/`Fn`/`Expr`. -/
