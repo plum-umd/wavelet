@@ -14,6 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: leanprover/lean-action@v1
+        working-directory: lean
       - name: Build backend
         working-directory: lean
         run: |
