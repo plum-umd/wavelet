@@ -635,6 +635,7 @@ pub fn substitute_atom_with_maps(atom: &Atom, substitutions: &[(String, Idx)]) -
     }
 }
 
+#[allow(unused)]
 pub fn substitute_fraction_expr(
     expr: &FractionExpr,
     substitutions: &HashMap<String, FractionExpr>,
@@ -656,6 +657,7 @@ pub fn substitute_fraction_expr(
     }
 }
 
+#[allow(unused)]
 pub fn substitute_fraction_in_permission(
     perm: &Permission,
     substitutions: &HashMap<String, FractionExpr>,
@@ -667,6 +669,7 @@ pub fn substitute_fraction_in_permission(
     )
 }
 
+#[allow(unused)]
 pub fn substitute_fraction_in_perm_expr(
     expr: &PermExpr,
     substitutions: &HashMap<String, FractionExpr>,
