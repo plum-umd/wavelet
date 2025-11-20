@@ -30,13 +30,15 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let inputPath := p.positionalArg! "input" |>.as! String
   let outputPath? := p.flag? "output" |>.map (·.as! String)
   let enablePermOut := p.hasFlag "perm-out"
-  let enableNoOut := p.hasFlag "no-out"
+  let enableSinkAllOut := p.hasFlag "sink-all-out"
+  let enableDot := p.hasFlag "dot"
+  let enableUnopt := p.hasFlag "unopt"
   let enableStats := p.hasFlag "stats"
-  let omitForks := p.hasFlag "omit-forks"
-  let writeOutput (content : String) : IO Unit :=
-    match outputPath? with
-    | some path => IO.FS.writeFile path content
-    | none      => IO.getStdout >>= (·.putStrLn content)
+
+  let outputPrefix ← inputPath.dropSuffix? ".json" |>.unwrapIO "input must be a .json file"
+  let unoptPath := s!"{outputPrefix}.unopt.dfg.json"
+  let dotPath := s!"{outputPrefix}.dot"
+  let finalOutputPath := outputPath?.getD s!"{outputPrefix}.dfg.json"
 
   let input ← IO.FS.readFile inputPath
   let json ← (Lean.Json.parse input).unwrapIO "failed to parse JSON input"
@@ -67,15 +69,21 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     trace s!"erased ghost tokens. graph size: {proc.atoms.length} ops"
     proc.checkAffineChan.unwrapIO "dfg invariant error"
 
+    if enableUnopt then
+      trace s!"writing unoptimized dfg to {unoptPath}..."
+      let rawProc := RawProc.fromProc proc
+      let output := Lean.ToJson.toJson rawProc
+      IO.FS.writeFile unoptPath (Lean.Json.pretty output)
+
     -- Some optimizations
     let Proc := RipTide.Proc (prog.sigs last).ι
       (if ¬ enablePermOut then
-        if enableNoOut then 0 else
+        if enableSinkAllOut then 0 else
         (prog.sigs last).ω - 1
       else (prog.sigs last).ω)
     let proc : Proc :=
       if h₁ : ¬ enablePermOut then
-        if h₂ : enableNoOut then
+        if h₂ : enableSinkAllOut then
           -- If we enable the more aggressive no-output mode,
           -- sink all outputs of the dataflow graph
           { proc with
@@ -115,10 +123,16 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
       |>.length
     trace s!"non-trivial operators: {numNonTrivial}"
 
+    if enableDot then
+      trace s!"writing DOT graph to {dotPath}..."
+      let plot ← proc.plot.run.unwrapIO "failed to generate DOT plot"
+      IO.FS.writeFile dotPath plot
+
     -- Dump graph as JSON
+    trace s!"writing final dfg to {finalOutputPath}..."
     let rawProc := RawProc.fromProc proc
     let output := Lean.ToJson.toJson rawProc
-    writeOutput (Lean.Json.pretty output)
+    IO.FS.writeFile finalOutputPath (Lean.Json.pretty output)
     return 0
   else
     trace "no function provided"
@@ -129,9 +143,11 @@ def compileCmd := `[Cli|
     "Compiles sequential programs to dataflow graphs."
 
     FLAGS:
-      o, output    : String ; "Path to output final dataflow graph (Default: stdout)"
+      o, output    : String ; "Path to output final dataflow graph (Default: <input>.dfg.json)"
       "perm-out"            ; "Enable permission output which might increase graph size"
-      "no-out"              ; "Disable all outputs for a smaller graph"
+      "sink-all-out"        ; "Sink all dataflow outputs for a smaller graph"
+      dot                   ; "Output a DOT graph along with the final dfg"
+      unopt                 ; "Output the unoptimized dfg along with the final dfg"
       stats                 ; "Print various statistics"
 
     ARGS:
