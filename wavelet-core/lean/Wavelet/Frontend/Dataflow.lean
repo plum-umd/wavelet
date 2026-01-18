@@ -128,6 +128,14 @@ def RawProc.toProc [Arity Op] [Repr Op] [Repr χ] [Repr V] (raw : RawProc Op χ 
     atoms := ← raw.atoms.mapM RawAtomicProc.toAtomicProc,
   }
 
+structure EncapProc Op χ V [Arity Op] where
+  numIns : Nat
+  numOuts : Nat
+  proc : Proc Op χ V numIns numOuts
+
+def EncapProc.fromProc [Arity Op] (proc : Proc Op χ V m n) : EncapProc Op χ V :=
+  { numIns := m, numOuts := n, proc := proc }
+
 section Examples
 
 -- #eval Lean.ToJson.toJson (RawAsyncOp.switch 3 : RawAsyncOp Nat)

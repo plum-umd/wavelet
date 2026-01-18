@@ -14,7 +14,9 @@ abbrev RawProg := Frontend.RawProg (WithCall (WithSpec (SyncOp Loc) opSpec) FnNa
 abbrev RawProc := Frontend.RawProc (SyncOp Loc) Nat Value
 
 abbrev EncapProg := Frontend.EncapProg (WithSpec (SyncOp Loc) opSpec) Var Value
+
 abbrev Proc := Dataflow.Proc (SyncOp Loc) Nat Value
+abbrev EncapProc := Frontend.EncapProc (SyncOp Loc) Nat Value
 
 end Wavelet.Frontend.RipTide
 
@@ -72,33 +74,28 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.FS.writeFile unoptPath (Lean.Json.pretty output)
 
     -- Some optimizations
-    let Proc := RipTide.Proc (prog.sigs last).ι
-      (if ¬ enablePermOut then
-        if enableSinkAllOut then 0 else
-        (prog.sigs last).ω - 1
-      else (prog.sigs last).ω)
-    let proc : Proc :=
+    let proc : RipTide.EncapProc :=
       if h₁ : ¬ enablePermOut then
         if h₂ : enableSinkAllOut then
           -- If we enable the more aggressive no-output mode,
           -- sink all outputs of the dataflow graph
-          { proc with
-            outputs := #v[].cast (by simp [h₁, h₂]),
+          EncapProc.fromProc { proc with
+            outputs := #v[],
             atoms := .sink proc.outputs :: proc.atoms }
         else
           -- If we don't need output permission from the entire graph,
           -- the last output (which assumed to be a ghost permission output)
           -- can be replaced with a sink to enable more optimizations.
-          { proc with
-            outputs := proc.outputs.pop.cast (by simp [h₁, h₂]),
+          EncapProc.fromProc { proc with
+            outputs := proc.outputs.pop,
             atoms := .sink #v[proc.outputs.back] :: proc.atoms }
-      else cast (by simp [Proc, h₁]) proc
+      else EncapProc.fromProc proc
 
     trace s!"applying op selection and optimizations..."
     let (numRws, stats, proc) := Rewrite.applyUntilFailNat
       -- (naryLowering <|> RipTide.operatorSel)
       (naryLowering <|> deadCodeElim <|> RipTide.operatorSel)
-      proc
+      proc.proc
     trace s!"{numRws} rewrites. graph size: {proc.atoms.length} ops"
 
     if enableStats then
