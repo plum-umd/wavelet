@@ -1,0 +1,7 @@
+[package]
+name = "wavelet-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+lean-sys = { version = "0.0.9", default-features = false }

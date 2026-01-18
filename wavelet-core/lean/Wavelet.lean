@@ -3,5 +3,6 @@ import Wavelet.Data
 import Wavelet.Dataflow
 import Wavelet.Determinacy
 import Wavelet.Frontend
+import Wavelet.FFI
 import Wavelet.Semantics
 import Wavelet.Seq
