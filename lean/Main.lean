@@ -1,9 +1,5 @@
 import Cli
-
-import Wavelet.Seq
-import Wavelet.Dataflow
-import Wavelet.Compile
-import Wavelet.Frontend
+import Wavelet
 
 open Wavelet.Frontend Wavelet.Compile Wavelet.Determinacy Wavelet.Seq Wavelet.Dataflow
 
@@ -157,12 +153,14 @@ def compileCmd := `[Cli|
 def runPlotCmd (p : Cli.Parsed) : IO UInt32 := do
   let inputPath := p.positionalArg! "input" |>.as! String
   let omitForks := p.hasFlag "omit-forks"
+  let outputPrefix ← inputPath.dropSuffix? ".json" |>.unwrapIO "input must be a .json file"
   let input ← IO.FS.readFile inputPath
   let json ← (Lean.Json.parse input).unwrapIO "failed to parse JSON input"
   let rawProc : RipTide.RawProc ← (Lean.FromJson.fromJson? json).unwrapIO "failed to decode JSON input as RawProc"
   let proc : RipTide.Proc _ _ ← rawProc.toProc.unwrapIO "failed to convert RawProc to Proc"
   let plot ← (proc.plot (omitForks := omitForks)).run.unwrapIO "failed to generate DOT plot"
-  IO.getStdout >>= (·.putStrLn plot)
+  trace s!"writing DOT graph to {outputPrefix}.dot..."
+  IO.FS.writeFile s!"{outputPrefix}.dot" plot
   return 0
 
 def plotCmd := `[Cli|

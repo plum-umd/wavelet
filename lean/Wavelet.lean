@@ -5,4 +5,3 @@ import Wavelet.Determinacy
 import Wavelet.Frontend
 import Wavelet.Semantics
 import Wavelet.Seq
-import Wavelet.Thm

@@ -5,12 +5,13 @@ require "leanprover-community" / "mathlib"
 
 package wavelet
 
-@[default_target]
-lean_lib Wavelet
+lean_lib Wavelet where
+  defaultFacets := #[LeanLib.staticFacet]
 
 @[default_target]
 lean_exe wavelet where
   root := `Main
+  needs := #[Wavelet]
   moreLinkArgs :=
     if System.Platform.isOSX then
       #[
@@ -29,3 +30,7 @@ lean_exe wavelet where
         "-Wl,--strip-all",
         "-Wl,--strip-debug",
       ]
+
+lean_lib Thm where
+  roots := #[`Wavelet.Thm]
+  defaultFacets := #[LeanLib.leanArtsFacet]
