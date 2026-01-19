@@ -2,17 +2,17 @@
 
 use std::collections::HashSet;
 
-use crate::Val;
 use crate::ghost::fracperms::FractionExpr;
 use crate::ghost::ir::GhostStmt;
 use crate::ir::Op;
 use crate::logic::cap::RegionModel;
-use crate::logic::semantic::region_set::{RegionSetExpr, check_subset};
+use crate::logic::semantic::region_set::{check_subset, RegionSetExpr};
 use crate::logic::semantic::solver::{Atom, Idx, PhiSolver, RealExpr};
+use crate::Val;
 
 use super::context::CheckContext;
 use super::permission::{
-    PermExpr, Permission, consume_permission, permissions_to_expr, substitute_atom_with_maps,
+    consume_permission, permissions_to_expr, substitute_atom_with_maps, PermExpr, Permission,
 };
 use super::pretty_print::{render_perm_expr, render_permission, render_region};
 

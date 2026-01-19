@@ -12,5 +12,5 @@ pub use env::{Ctx, FnRegistry, Gamma};
 pub use error::TypeError;
 pub use ghost::synthesize_ghost_program;
 pub use ir::{Expr, FnDef, FnName, Op, Program, Stmt, Tail, Ty, Val, Var};
-pub use logic::{CapabilityLogic, semantic::SemanticLogic};
-pub use parse::{ParseError, parse_fn_def, parse_program};
+pub use logic::{semantic::SemanticLogic, CapabilityLogic};
+pub use parse::{parse_fn_def, parse_program, ParseError};

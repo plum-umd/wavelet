@@ -2,8 +2,8 @@
 
 use wavelet_elab::logic::cap::{Cap, Delta};
 use wavelet_elab::logic::region::{Interval, Region};
-use wavelet_elab::logic::semantic::PhiSolver;
 use wavelet_elab::logic::semantic::solver::{Atom, Idx, Phi};
+use wavelet_elab::logic::semantic::PhiSolver;
 use wavelet_elab::logic::syntactic::solver::BasicSolver;
 
 fn const_idx(n: i64) -> Idx {

@@ -1,12 +1,12 @@
-use wavelet_elab::SemanticLogic;
-use wavelet_elab::check::{CheckOptions, check_fn_with_options};
+use std::env;
+use std::fs;
+use std::path::PathBuf;
+use wavelet_elab::check::{check_fn_with_options, CheckOptions};
 use wavelet_elab::env::FnRegistry;
 use wavelet_elab::ghost::json::export_program_json;
 use wavelet_elab::ghost::lower::synthesize_ghost_program;
 use wavelet_elab::parse::parse_program;
-use std::env;
-use std::fs;
-use std::path::PathBuf;
+use wavelet_elab::SemanticLogic;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();

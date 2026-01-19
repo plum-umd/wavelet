@@ -6,11 +6,11 @@ use std::fmt;
 use crate::env::{Ctx, FnRegistry};
 use crate::error::TypeError;
 use crate::ir::{Expr, FnDef, Op, Program, Signedness, Stmt, Tail, Ty, Val, Var};
-use crate::logic::CapabilityLogic;
 use crate::logic::cap::{Cap, Delta, RegionModel};
 use crate::logic::region::Region;
-use crate::logic::semantic::Interval;
 use crate::logic::semantic::solver::{Atom, Idx, Phi};
+use crate::logic::semantic::Interval;
+use crate::logic::CapabilityLogic;
 
 /// Substitute variable names in an index expression according to a map.
 fn substitute_idx(idx: &Idx, subst: &BTreeMap<String, String>) -> Idx {

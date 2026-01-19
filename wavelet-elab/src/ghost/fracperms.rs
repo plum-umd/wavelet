@@ -1,5 +1,5 @@
-use crate::logic::semantic::PhiSolver;
 use crate::logic::semantic::solver::{Atom, Phi, RealExpr, SmtSolver};
+use crate::logic::semantic::PhiSolver;
 
 /// A symbolic representation of a fractional value.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

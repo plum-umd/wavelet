@@ -4,11 +4,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Parser;
-use wavelet_elab::check::{CheckOptions, check_program_with_options};
-use wavelet_elab::ghost::check_ghost_program_with_verbose;
-use wavelet_elab::ghost::json::{ExportError, export_program_json};
-use wavelet_elab::{ParseError, SemanticLogic, TypeError, parse_program, synthesize_ghost_program};
 use thiserror::Error;
+use wavelet_elab::check::{check_program_with_options, CheckOptions};
+use wavelet_elab::ghost::check_ghost_program_with_verbose;
+use wavelet_elab::ghost::json::{export_program_json, ExportError};
+use wavelet_elab::{parse_program, synthesize_ghost_program, ParseError, SemanticLogic, TypeError};
 
 /// Command line interface for the dfx analyzer.
 #[derive(Parser, Debug)]

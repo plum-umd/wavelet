@@ -1,9 +1,9 @@
-use crate::Val;
 use crate::ghost::affine;
 use crate::ghost::ir::{GhostExpr, GhostFnDef, GhostProgram, GhostStmt, GhostTail};
 use crate::ir::Op;
-use serde::Serialize;
+use crate::Val;
 use serde::ser::{SerializeMap, Serializer};
+use serde::Serialize;
 use serde_json::{self, Value};
 use std::fmt;
 
@@ -215,7 +215,7 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
                 },
             });
             let args = vec![index.0.clone(), value.0.clone(), ghost_in.0.clone()];
-            let outputs = vec![ghost_out.0.0.clone(), ghost_out.1.0.clone()];
+            let outputs = vec![ghost_out.0 .0.clone(), ghost_out.1 .0.clone()];
             Ok(RawExpr::Op {
                 op,
                 args,

@@ -1,9 +1,16 @@
 //! Utilities for dealing with Lean FFI.
 
-use std::{ffi::{c_char, CStr}, sync::OnceLock};
+use std::{
+    ffi::{c_char, CStr},
+    sync::OnceLock,
+};
 
+use lean_sys::{
+    lean_ctor_get, lean_dec, lean_dec_ref, lean_inc, lean_initialize_runtime_module_locked,
+    lean_io_result_is_ok, lean_io_result_show_error, lean_is_ctor, lean_is_string,
+    lean_mk_string_from_bytes, lean_obj_res, lean_object, lean_ptr_tag, lean_string_cstr,
+};
 use thiserror::Error;
-use lean_sys::{lean_ctor_get, lean_dec, lean_dec_ref, lean_inc, lean_initialize_runtime_module_locked, lean_io_result_is_ok, lean_io_result_show_error, lean_is_ctor, lean_is_string, lean_mk_string_from_bytes, lean_obj_res, lean_object, lean_ptr_tag, lean_string_cstr};
 
 #[link(name = "Batteries", kind = "static")]
 #[link(name = "Wavelet", kind = "static")]
@@ -58,7 +65,9 @@ impl LeanObject {
     pub fn from_str(s: &str) -> Self {
         unsafe {
             // TODO: Check if `lean_mk_string_from_bytes` copies the string.
-            LeanObject { raw: lean_mk_string_from_bytes(s.as_ptr(), s.len()) }
+            LeanObject {
+                raw: lean_mk_string_from_bytes(s.as_ptr(), s.len()),
+            }
         }
     }
 
@@ -68,9 +77,7 @@ impl LeanObject {
         if !unsafe { lean_is_string(self.raw) } {
             return Err(LeanObjectError::ExpectedString);
         }
-        let cstr = unsafe {
-            CStr::from_ptr(lean_string_cstr(self.raw) as *const c_char)
-        };
+        let cstr = unsafe { CStr::from_ptr(lean_string_cstr(self.raw) as *const c_char) };
         Ok(cstr.to_str()?)
     }
 
@@ -81,7 +88,7 @@ impl LeanObject {
 
     /// Checks if the lean object is an Lean `Except` value,
     /// and if so, returns it as a Rust `Result`.
-    /// 
+    ///
     /// TODO: This assumes that the fields are all lean objects (e.g., not `USize`, `Bool`, etc.).
     pub fn as_except<'a>(&'a self) -> Result<Result<LeanObject, LeanObject>, LeanObjectError> {
         if !self.is_ctor() {
@@ -123,16 +130,14 @@ impl LeanObject {
 /// See: https://lean-lang.org/doc/reference/latest/Run-Time-Code/Foreign-Function-Interface/#ffi
 pub fn ensure_init_lean() {
     static INIT: OnceLock<()> = OnceLock::new();
-    INIT.get_or_init(|| {
-        unsafe {
-            lean_initialize_runtime_module_locked();
-            let res = initialize_Wavelet(1);
-            if lean_io_result_is_ok(res) {
-                lean_dec_ref(res);
-            } else {
-                lean_io_result_show_error(res);
-                lean_dec(res);
-            }
+    INIT.get_or_init(|| unsafe {
+        lean_initialize_runtime_module_locked();
+        let res = initialize_Wavelet(1);
+        if lean_io_result_is_ok(res) {
+            lean_dec_ref(res);
+        } else {
+            lean_io_result_show_error(res);
+            lean_dec(res);
         }
     });
 }

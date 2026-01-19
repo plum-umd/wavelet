@@ -4,14 +4,14 @@ use std::{
     collections::HashMap,
     fmt::{self, Display},
     sync::{
-        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
     },
 };
 
 use smtlib::prelude::Sorted;
 use smtlib::terms::IntoWithStorage;
-use smtlib::{Bool, Int, Real, SatResult, Solver, Storage, backend::z3_binary::Z3Binary};
+use smtlib::{backend::z3_binary::Z3Binary, Bool, Int, Real, SatResult, Solver, Storage};
 
 use smtlib::terms::StaticSorted;
 use smtlib_lowlevel::ast;

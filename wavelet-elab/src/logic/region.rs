@@ -3,8 +3,8 @@
 use std::fmt;
 
 use crate::logic::cap::RegionModel;
-use crate::logic::semantic::Atom;
 use crate::logic::semantic::solver::{Idx, Phi, PhiSolver};
+use crate::logic::semantic::Atom;
 use crate::logic::syntactic::solver::BasicSolver;
 
 /// A half-open interval `[lo, hi)`.

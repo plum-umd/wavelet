@@ -2,8 +2,10 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
-    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).display().to_string();
-    
+    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
+        .display()
+        .to_string();
+
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=lean/Wavelet");
     println!("cargo:rerun-if-changed=lean/Wavelet.lean");
@@ -26,9 +28,11 @@ fn main() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let lean_dir = PathBuf::from(String::from_utf8(output.stdout)
-        .expect("invalid lean library path")
-        .trim());
+    let lean_dir = PathBuf::from(
+        String::from_utf8(output.stdout)
+            .expect("invalid lean library path")
+            .trim(),
+    );
 
     let lib_dir = if cfg!(target_os = "windows") {
         lean_dir.join("bin")
@@ -48,7 +52,11 @@ fn main() {
         shared_lib.exists()
     };
 
-    assert!(exists, "lean shared library does not exist: {}", shared_lib.display());
+    assert!(
+        exists,
+        "lean shared library does not exist: {}",
+        shared_lib.display()
+    );
 
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=leanshared");
@@ -61,7 +69,7 @@ fn main() {
         .expect("failed to run `lake exec cache get`");
     assert!(status.success(), "`lake exec cache` get failed");
 
-    // Build `libWavelet` and `libBatteries` 
+    // Build `libWavelet` and `libBatteries`
     let output = Command::new("lake")
         .current_dir("lean")
         .args(["build", "Wavelet", "Batteries:static"])

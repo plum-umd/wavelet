@@ -1,6 +1,6 @@
 use crate::{
-    Val,
     ir::{FnName, Ty, Var},
+    Val,
 };
 
 /// Ghost permission variable.
@@ -213,7 +213,7 @@ impl std::fmt::Display for GhostStmt {
                 write!(
                     f,
                     "store {}[{}] = {} [{}->({}, {})]",
-                    array.0, index.0, value.0, ghost_in.0, ghost_out.0.0, ghost_out.1.0
+                    array.0, index.0, value.0, ghost_in.0, ghost_out.0 .0, ghost_out.1 .0
                 )
             }
             GhostStmt::Call {

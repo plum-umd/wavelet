@@ -37,17 +37,29 @@ fn compute_next_count(zero_flag: bool, next_count: usize) -> usize {
 
 #[cap]
 fn sel1(cond: bool, a: usize, b: usize) -> usize {
-    if cond { a } else { b }
+    if cond {
+        a
+    } else {
+        b
+    }
 }
 
 #[cap]
 fn sel2(cond: bool, a: usize, b: usize) -> usize {
-    if cond { a } else { b }
+    if cond {
+        a
+    } else {
+        b
+    }
 }
 
 #[cap]
 fn sel3(cond: bool, a: usize, b: usize) -> usize {
-    if cond { a } else { b }
+    if cond {
+        a
+    } else {
+        b
+    }
 }
 
 #[cap(a: uniq @ 0..N, z: uniq @ 0..N)]

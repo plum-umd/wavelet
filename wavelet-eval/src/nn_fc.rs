@@ -33,7 +33,11 @@ fn clamp_i16(w: i32) -> i32 {
     } else {
         let max = 32767;
         let above = max < w;
-        if above { max } else { w }
+        if above {
+            max
+        } else {
+            w
+        }
     }
 }
 

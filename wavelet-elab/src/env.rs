@@ -4,9 +4,9 @@ use std::collections::BTreeMap;
 
 use crate::error::TypeError;
 use crate::ir::{FnDef, FnName, Ty, Var};
-use crate::logic::CapabilityLogic;
 use crate::logic::cap::Delta;
 use crate::logic::semantic::solver::Phi;
+use crate::logic::CapabilityLogic;
 
 /// Variable environment mapping variable names to their types.
 #[derive(Clone, Debug, Default)]
