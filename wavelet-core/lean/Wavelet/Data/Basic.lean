@@ -172,3 +172,7 @@ namespace String
 def replicateChar (n : Nat) (c : Char) : String := .mk (List.replicate n c)
 
 end String
+
+def trace (msg : String) : IO Unit := do
+  let stderr ← IO.getStderr
+  stderr.putStrLn s!"[trace] {msg}"
