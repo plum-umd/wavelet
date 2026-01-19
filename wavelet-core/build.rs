@@ -2,6 +2,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
+    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).display().to_string();
+    
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=lean/Wavelet");
     println!("cargo:rerun-if-changed=lean/Wavelet.lean");
@@ -76,6 +78,6 @@ fn main() {
     }
 
     // Statically link `libWavelet`
-    println!("cargo:rustc-link-search=native=lean/.lake/build/lib");
-    println!("cargo:rustc-link-search=native=lean/.lake/packages/batteries/.lake/build/lib");
+    println!("cargo:rustc-link-search=native={manifest_dir}/lean/.lake/build/lib");
+    println!("cargo:rustc-link-search=native={manifest_dir}/lean/.lake/packages/batteries/.lake/build/lib");
 }
