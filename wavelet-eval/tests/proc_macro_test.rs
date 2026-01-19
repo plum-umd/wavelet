@@ -56,7 +56,6 @@ fn increment<const N: usize>(i: usize, a: &mut [usize; N]) {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,6 +1,5 @@
 #![allow(incomplete_features)]
 #![allow(unused)]
-
 #![feature(generic_const_exprs)]
 
 use wavelet_embedding::cap;

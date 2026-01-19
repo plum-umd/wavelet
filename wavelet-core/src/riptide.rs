@@ -1,9 +1,9 @@
 //! FFI bindings for the core compiler in Lean,
 //! specialized to RipTide.
 
+use lean_sys::{lean_obj_arg, lean_obj_res};
 use libc::size_t;
 use thiserror::Error;
-use lean_sys::{lean_obj_arg, lean_obj_res};
 
 use crate::ffi::{ensure_init_lean, LeanObject, LeanObjectError};
 
@@ -58,7 +58,9 @@ impl Prog {
     pub fn from_json(json: &str) -> Result<Self, RipTideError> {
         ensure_init_lean();
         let json = LeanObject::from_str(json);
-        let res = LeanObject::from_lean_obj_res(unsafe { wavelet_riptide_prog_from_json(json.to_lean_obj_arg()) });
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_prog_from_json(json.to_lean_obj_arg())
+        });
         match res.as_except()? {
             Ok(prog) => Ok(Prog(prog)),
             Err(err) => Err(RipTideError::ProgParseError(err.as_str()?.to_string())),
@@ -73,7 +75,9 @@ impl Prog {
         });
         match res.as_except()? {
             Ok(proc) => Ok(Proc(proc)),
-            Err(err) => Err(RipTideError::ControlFlowLoweringError(err.as_str()?.to_string())),
+            Err(err) => Err(RipTideError::ControlFlowLoweringError(
+                err.as_str()?.to_string(),
+            )),
         }
     }
 }
@@ -82,9 +86,7 @@ impl Proc {
     /// Gets the number of atoms
     pub fn num_atoms(&self) -> usize {
         ensure_init_lean();
-        unsafe {
-            wavelet_riptide_proc_num_atoms(self.0.clone().to_lean_obj_arg()) as usize
-        }
+        unsafe { wavelet_riptide_proc_num_atoms(self.0.clone().to_lean_obj_arg()) as usize }
     }
 
     /// Gets the number of non-trivial atoms
@@ -98,24 +100,22 @@ impl Proc {
     /// Gets the number of inputs
     pub fn num_inputs(&self) -> usize {
         ensure_init_lean();
-        unsafe {
-            wavelet_riptide_proc_num_inputs(self.0.clone().to_lean_obj_arg()) as usize
-        }
+        unsafe { wavelet_riptide_proc_num_inputs(self.0.clone().to_lean_obj_arg()) as usize }
     }
 
     /// Gets the number of outputs
     pub fn num_outputs(&self) -> usize {
         ensure_init_lean();
-        unsafe {
-            wavelet_riptide_proc_num_outputs(self.0.clone().to_lean_obj_arg()) as usize
-        }
+        unsafe { wavelet_riptide_proc_num_outputs(self.0.clone().to_lean_obj_arg()) as usize }
     }
 
     /// Parses a `Proc` from its JSON representation.
     pub fn from_json(json: &str) -> Result<Self, RipTideError> {
         ensure_init_lean();
         let json = LeanObject::from_str(json);
-        let res = LeanObject::from_lean_obj_res(unsafe { wavelet_riptide_proc_from_json(json.to_lean_obj_arg()) });
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_proc_from_json(json.to_lean_obj_arg())
+        });
         match res.as_except()? {
             Ok(proc) => Ok(Proc(proc)),
             Err(err) => Err(RipTideError::ProcParseError(err.as_str()?.to_string())),

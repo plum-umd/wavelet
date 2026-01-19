@@ -10,8 +10,8 @@ use crate::logic::semantic::solver::{Atom, Idx, PhiSolver, RealExpr};
 
 use super::context::CheckContext;
 use super::permission::{
-    PermExpr, Permission, consume_permission, permissions_to_expr, substitute_atom_with_maps,
-    substitute_perm_expr_with_maps,
+    consume_permission, permissions_to_expr, substitute_atom_with_maps,
+    substitute_perm_expr_with_maps, PermExpr, Permission,
 };
 use super::pretty_print::{render_perm_expr, render_permission, render_region};
 

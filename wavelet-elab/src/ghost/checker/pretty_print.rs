@@ -160,7 +160,7 @@ pub fn render_ghost_stmt(stmt: &GhostStmt) -> String {
         } => {
             format!(
                 "{}[{}] := {}, [{} → ({}, {})]",
-                array.0, index.0, value.0, ghost_in.0, ghost_out.0.0, ghost_out.1.0
+                array.0, index.0, value.0, ghost_in.0, ghost_out.0 .0, ghost_out.1 .0
             )
         }
         GhostStmt::Call {

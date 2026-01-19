@@ -3,7 +3,7 @@ pub mod solver;
 
 pub use super::cap::{Cap, CapPattern, Delta};
 pub use super::region::{Interval, Region};
-pub use region_set::{RegionSetExpr, check_equivalent, check_subset, overlaps};
+pub use region_set::{check_equivalent, check_subset, overlaps, RegionSetExpr};
 pub use solver::{Atom, Idx, Phi, PhiSolver, SmtSolver};
 
 use crate::logic::CapabilityLogic;

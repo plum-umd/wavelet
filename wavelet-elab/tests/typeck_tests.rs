@@ -1,12 +1,12 @@
 //! Tests using the parser to check annotated Rust programs
 
-use wavelet_elab::SemanticLogic;
-use wavelet_elab::check::{CheckOptions, check_fn_with_options};
+use std::collections::HashMap;
+use wavelet_elab::check::{check_fn_with_options, CheckOptions};
 use wavelet_elab::env::FnRegistry;
 use wavelet_elab::ir::FnDef;
 use wavelet_elab::logic::syntactic::SyntacticLogic;
 use wavelet_elab::parse_program;
-use std::collections::HashMap;
+use wavelet_elab::SemanticLogic;
 
 // Define the fence macro as a no-op for parsing
 #[allow(unused_macros)]

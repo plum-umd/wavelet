@@ -29,7 +29,7 @@ fn next_order(existing: &[StoredFunction]) -> usize {
 }
 
 /// Capability annotation macro that runs dfx type checking at compile time.
-/// 
+///
 /// Usage:
 /// ```ignore
 /// #[cap(array: shrd @ i..N)]
@@ -37,7 +37,7 @@ fn next_order(existing: &[StoredFunction]) -> usize {
 ///     // ...
 /// }
 /// ```
-/// 
+///
 /// This macro will:
 /// 1. Parse the capability annotations
 /// 2. Run the dfx type checker on the entire program (using check_program_with_options)
@@ -46,16 +46,16 @@ fn next_order(existing: &[StoredFunction]) -> usize {
 #[proc_macro_attribute]
 pub fn cap(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input_fn = parse_macro_input!(item as ItemFn);
-    
+
     // Store the original function for code generation
     let output_fn = input_fn.clone();
-    
+
     // Convert the function to a string for dfx parsing
     let fn_string = quote! { #input_fn }.to_string();
-    
+
     // Parse the capability annotation
     let attr_string = attr.to_string();
-    
+
     // Reconstruct the annotated function string as dfx expects it
     let annotated_fn = format!("#[cap({})]\n{}", attr_string, fn_string);
     let fn_name = input_fn.sig.ident.to_string();
@@ -113,29 +113,28 @@ pub fn cap(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 /// Run type checking on the annotated function
 fn run_dfx_check(annotated_fn: &str) -> Result<(), String> {
+    use wavelet_elab::check::{check_program_with_options, CheckOptions};
     use wavelet_elab::{parse_program, SemanticLogic};
-    use wavelet_elab::check::{CheckOptions, check_program_with_options};
-    
+
     // Parse the function
     let program = parse_program(annotated_fn).map_err(|e| format!("Parse error: {}", e))?;
-    
+
     if program.defs.is_empty() {
         return Err("No function definitions found".to_string());
     }
-    
+
     // Run type checking on the entire program
     // This allows functions to call each other and enables mutual recursion
     let logic = SemanticLogic::default();
     let options = CheckOptions::default();
-    
-    check_program_with_options(&program, &logic, options)
-        .map_err(|e| format!("{}", e))?;
-    
+
+    check_program_with_options(&program, &logic, options).map_err(|e| format!("{}", e))?;
+
     Ok(())
 }
 
 /// Fence macro for synchronization points
-/// 
+///
 /// Usage:
 /// ```ignore
 /// fence!();

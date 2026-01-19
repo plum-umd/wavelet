@@ -1,6 +1,6 @@
-use crate::Val;
 use crate::ghost::ir::{GhostExpr, GhostFnDef, GhostProgram, GhostStmt, GhostTail, GhostVar};
 use crate::ir::{Expr, FnDef, FnName, Op, Program, Stmt, Tail, Var};
+use crate::Val;
 
 /// Synthesize a ghost-level program from the typed IR.
 pub fn synthesize_ghost_program(prog: &Program) -> GhostProgram {

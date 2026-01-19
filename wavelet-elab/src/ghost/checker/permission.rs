@@ -5,11 +5,11 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
 use crate::ghost::fracperms::{
-    FractionExpr, check_fraction_leq, check_fraction_valid, try_add_fractions, try_sub_fractions,
+    check_fraction_leq, check_fraction_valid, try_add_fractions, try_sub_fractions, FractionExpr,
 };
 use crate::ir::Var;
 use crate::logic::cap::RegionModel;
-use crate::logic::semantic::region_set::{RegionSetExpr, check_subset, overlaps};
+use crate::logic::semantic::region_set::{check_subset, overlaps, RegionSetExpr};
 use crate::logic::semantic::solver::{Atom, Idx, Phi, SmtSolver};
 
 /// A fractional permission on a specific array region.
