@@ -1,28 +1,8 @@
 import Cli
 import Wavelet
 
-open Wavelet.Frontend Wavelet.Compile Wavelet.Determinacy Wavelet.Seq Wavelet.Dataflow
-
-/-! Some specialized types for RipTide. -/
-namespace Wavelet.Frontend.RipTide
-
-abbrev Loc := String
-abbrev FnName := String
-abbrev Var := String
-
-abbrev RawProg := Frontend.RawProg (WithCall (WithSpec (SyncOp Loc) opSpec) FnName) Var
-abbrev RawProc := Frontend.RawProc (SyncOp Loc) Nat Value
-
-abbrev EncapProg := Frontend.EncapProg (WithSpec (SyncOp Loc) opSpec) Var Value
-
-abbrev Proc := Dataflow.Proc (SyncOp Loc) Nat Value
-abbrev EncapProc := Frontend.EncapProc (SyncOp Loc) Nat Value
-
-end Wavelet.Frontend.RipTide
-
-def trace (msg : String) : IO Unit := do
-  let stderr ← IO.getStderr
-  stderr.putStrLn s!"[trace] {msg}"
+open Wavelet.Frontend Wavelet.Compile Wavelet.Determinacy
+  Wavelet.Seq Wavelet.Dataflow Wavelet.FFI
 
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let inputPath := p.positionalArg! "input" |>.as! String
@@ -42,94 +22,29 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let json ← (Lean.Json.parse input).unwrapIO "failed to parse JSON input"
 
   let rawProg : RipTide.RawProg ← (Lean.FromJson.fromJson? json).unwrapIO "failed to decode JSON input as RawProg"
-  let prog : RipTide.EncapProg ← rawProg.toProg.unwrapIO "failed to convert RawProg to Prog"
+  let compiled ← RipTide.compile {
+    prog := rawProg,
+    enablePermOut := enablePermOut,
+    enableSinkAllOut := enableSinkAllOut,
+    enableStats := enableStats,
+  }
 
-  if h : prog.numFns > 0 then
-    -- Some abbreviations
-    let : NeZeroSigs prog.sigs := prog.neZero
-    let last : Fin prog.numFns := ⟨prog.numFns - 1, by omega⟩
+  if enableUnopt then
+    trace s!"writing unoptimized dfg to {unoptPath}..."
+    let output := Lean.ToJson.toJson compiled.unopt
+    IO.FS.writeFile unoptPath (Lean.Json.pretty output)
 
-    -- Check some static properties
-    for i in List.finRange prog.numFns do
-      let name := rawProg.fns[i]?.map (·.name) |>.getD s!"unknown"
-      (prog.prog i).checkAffineVar.resolve
-        |>.unwrapIO s!"function {i} ({name})"
+  if enableDot then
+    trace s!"writing DOT graph to {dotPath}..."
+    let proc : RipTide.Proc _ _ ← compiled.final.toProc.unwrapIO "failed to convert RawProc to Proc"
+    let plot ← proc.plot.run.unwrapIO "failed to generate DOT plot"
+    IO.FS.writeFile dotPath plot
 
-    -- Compile and link
-    let proc := compileProg prog.prog last
-    let proc := proc.renameChans
-    trace s!"compiled {prog.numFns} function(s). graph size: {proc.atoms.length} ops"
-    proc.checkAffineChan.unwrapIO "dfg invariant error"
-
-    -- Erase ghost tokens
-    let proc := proc.eraseGhost
-    let proc := proc.renameChans
-    trace s!"erased ghost tokens. graph size: {proc.atoms.length} ops"
-    proc.checkAffineChan.unwrapIO "dfg invariant error"
-
-    if enableUnopt then
-      trace s!"writing unoptimized dfg to {unoptPath}..."
-      let rawProc := RawProc.fromProc proc
-      let output := Lean.ToJson.toJson rawProc
-      IO.FS.writeFile unoptPath (Lean.Json.pretty output)
-
-    -- Some optimizations
-    let proc : RipTide.EncapProc :=
-      if h₁ : ¬ enablePermOut then
-        if h₂ : enableSinkAllOut then
-          -- If we enable the more aggressive no-output mode,
-          -- sink all outputs of the dataflow graph
-          EncapProc.fromProc { proc with
-            outputs := #v[],
-            atoms := .sink proc.outputs :: proc.atoms }
-        else
-          -- If we don't need output permission from the entire graph,
-          -- the last output (which assumed to be a ghost permission output)
-          -- can be replaced with a sink to enable more optimizations.
-          EncapProc.fromProc { proc with
-            outputs := proc.outputs.pop,
-            atoms := .sink #v[proc.outputs.back] :: proc.atoms }
-      else EncapProc.fromProc proc
-
-    trace s!"applying op selection and optimizations..."
-    let (numRws, stats, proc) := Rewrite.applyUntilFailNat
-      -- (naryLowering <|> RipTide.operatorSel)
-      (naryLowering <|> deadCodeElim <|> RipTide.operatorSel)
-      proc.proc
-    trace s!"{numRws} rewrites. graph size: {proc.atoms.length} ops"
-
-    if enableStats then
-      trace "rewrite rule stats:"
-      for (rwName, count) in stats.toList do
-        trace s!"  {rwName}: {count}"
-
-    let numNonTrivial :=
-      proc.atoms
-      |>.filter (λ
-        | .async (AsyncOp.fork ..) ..
-        | .async (AsyncOp.forward ..) ..
-        | .async (AsyncOp.forwardc ..) ..
-        | .async (AsyncOp.inact ..) ..
-        | .async (AsyncOp.const ..) ..
-        | .async (AsyncOp.sink ..) .. => false
-        | _ => true)
-      |>.length
-    trace s!"non-trivial operators: {numNonTrivial}"
-
-    if enableDot then
-      trace s!"writing DOT graph to {dotPath}..."
-      let plot ← proc.plot.run.unwrapIO "failed to generate DOT plot"
-      IO.FS.writeFile dotPath plot
-
-    -- Dump graph as JSON
-    trace s!"writing final dfg to {finalOutputPath}..."
-    let rawProc := RawProc.fromProc proc
-    let output := Lean.ToJson.toJson rawProc
-    IO.FS.writeFile finalOutputPath (Lean.Json.pretty output)
-    return 0
-  else
-    trace "no function provided"
-    return 0
+  -- Dump graph as JSON
+  trace s!"writing final dfg to {finalOutputPath}..."
+  let output := Lean.ToJson.toJson compiled.final
+  IO.FS.writeFile finalOutputPath (Lean.Json.pretty output)
+  return 0
 
 def compileCmd := `[Cli|
     compile VIA runCompileCmd;

@@ -3,7 +3,8 @@ mod ffi;
 fn main() {
     unsafe {
         let input = "hello";
-        let output = ffi::test(lean_sys::lean_mk_string_from_bytes(
+        let _ = ffi::WaveletFfi::new();
+        let output = ffi::wavelet_riptide_compile(lean_sys::lean_mk_string_from_bytes(
             input.as_ptr(),
             input.len(),
         ));
