@@ -427,17 +427,10 @@ def lowerControlFlow (prog : RipTide.EncapProg) : Except String RipTide.EncapPro
   if h : prog.numFns > 0 then
     let : NeZeroSigs prog.sigs := prog.neZero
     let last : Fin prog.numFns := ⟨prog.numFns - 1, by omega⟩
-
     -- Compile and link
     let proc := compileProg prog.prog last
-    let proc := proc.renameChans
-    dbg_trace s!"compiled {prog.numFns} function(s). graph size: {proc.atoms.length} ops"
-
     -- Erase ghost tokens
-    let proc := proc.eraseGhost
-    let proc := proc.renameChans
-    dbg_trace s!"erased ghost tokens. graph size: {proc.atoms.length} ops"
-
+    let proc := proc.renameChans.eraseGhost.renameChans
     return .fromProc proc
   else
     .error "compiling empty program"

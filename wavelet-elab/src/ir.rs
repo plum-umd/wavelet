@@ -80,6 +80,11 @@ impl Ty {
     pub fn is_array_ref(&self) -> bool {
         matches!(self, Ty::RefShrd { .. } | Ty::RefUniq { .. })
     }
+
+    /// Check if the type is a unit
+    pub fn is_unit(&self) -> bool {
+        matches!(self, Ty::Unit)
+    }
 }
 
 /// Literal values.

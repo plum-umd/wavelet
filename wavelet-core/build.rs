@@ -59,8 +59,8 @@ fn main() {
     );
 
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
-    println!("cargo:rustc-link-lib=leanshared");
-    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
+    println!("cargo:rustc-link-lib=dylib=leanshared");
+    println!("cargo:rustc-link-arg=-Wl,{}", lib_dir.display());
 
     let status = Command::new("lake")
         .current_dir("lean")
