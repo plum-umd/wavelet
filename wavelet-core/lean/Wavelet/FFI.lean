@@ -67,4 +67,14 @@ def FFI.procNumNonTrivialAtoms (proc : RipTide.EncapProc) : USize :=
       | _ => true)
     |>.length)
 
+/-- Returns the number of inputs. -/
+@[export wavelet_riptide_proc_num_inputs]
+def FFI.procNumInputs (proc : RipTide.EncapProc) : USize :=
+  USize.ofNat proc.numIns
+
+/-- Returns the number of outputs. -/
+@[export wavelet_riptide_proc_num_outputs]
+def FFI.procNumOutputs (proc : RipTide.EncapProc) : USize :=
+  USize.ofNat proc.numOuts
+
 end Wavelet.Frontend.RipTide

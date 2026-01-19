@@ -27,6 +27,10 @@ unsafe extern "C" {
     fn wavelet_riptide_proc_num_atoms(arg: lean_obj_arg) -> size_t;
 
     fn wavelet_riptide_proc_num_non_trivial_atoms(arg: lean_obj_arg) -> size_t;
+
+    fn wavelet_riptide_proc_num_inputs(arg: lean_obj_arg) -> size_t;
+
+    fn wavelet_riptide_proc_num_outputs(arg: lean_obj_arg) -> size_t;
 }
 
 #[derive(Debug, Error)]
@@ -88,6 +92,22 @@ impl Proc {
         ensure_init_lean();
         unsafe {
             wavelet_riptide_proc_num_non_trivial_atoms(self.0.clone().to_lean_obj_arg()) as usize
+        }
+    }
+
+    /// Gets the number of inputs
+    pub fn num_inputs(&self) -> usize {
+        ensure_init_lean();
+        unsafe {
+            wavelet_riptide_proc_num_inputs(self.0.clone().to_lean_obj_arg()) as usize
+        }
+    }
+
+    /// Gets the number of outputs
+    pub fn num_outputs(&self) -> usize {
+        ensure_init_lean();
+        unsafe {
+            wavelet_riptide_proc_num_outputs(self.0.clone().to_lean_obj_arg()) as usize
         }
     }
 

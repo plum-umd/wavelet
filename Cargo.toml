@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = [
+    "wavelet-elab",
+    "wavelet-embedding",
+    "wavelet-core",
+    "wavelet-eval",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = [
+    "Zhengyao Lin <zhengyal@cmu.edu>",
+    "Yi Cai <yicai@umd.edu>",
+]
+license = "MIT"
+
+[workspace.dependencies]
+thiserror = "2.0.18"
+
+[patch.crates-io]
+smtlib = { path = "vendor/smtlib" }
