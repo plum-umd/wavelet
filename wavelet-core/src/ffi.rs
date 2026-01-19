@@ -106,7 +106,11 @@ impl LeanObject {
 
     /// `lean_obj_arg` requires an owned `*mut lean_object`.
     pub fn to_lean_obj_arg(self) -> lean_sys::lean_obj_arg {
-        self.raw
+        let raw = self.raw;
+        // Do not decrement the reference counter
+        // since we are transferring ownership.
+        std::mem::forget(self);
+        raw
     }
 
     /// `lean_obj_res` contains an owned `*mut lean_object`.
