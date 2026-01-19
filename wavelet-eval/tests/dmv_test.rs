@@ -1,6 +1,9 @@
+#![allow(incomplete_features)]
+#![allow(unused)]
+
 #![feature(generic_const_exprs)]
 
-use dfx_macros::cap;
+use wavelet_embedding::cap;
 
 #[cap(a: shrd @ i*N..i*N + N, x: shrd @ j..N)]
 fn cal_dot_product<const M: usize, const N: usize>(
@@ -46,7 +49,7 @@ fn mv_mul<const M: usize, const N: usize>(
 }
 
 #[cap(a: shrd @ 0..M*N, x: shrd @ 0..N, y: uniq @ 0..M)]
-fn dmv<const M: usize, const N: usize>(a: &[u32; { M * N }], x: &[u32; N], y: &mut [u32; M]) {
+fn dmv<const M: usize, const N: usize>(a: &[u32; M * N], x: &[u32; N], y: &mut [u32; M]) {
     let start = 0;
     mv_mul::<M, N>(start, a, x, y)
 }

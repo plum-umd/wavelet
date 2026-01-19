@@ -1,7 +1,7 @@
-use dfx::logic::cap::Cap;
-use dfx::logic::region::Region;
-use dfx::logic::semantic::solver::{Atom, Idx, Phi};
-use dfx::logic::syntactic::solver::BasicSolver;
+use wavelet_elab::logic::cap::Cap;
+use wavelet_elab::logic::region::Region;
+use wavelet_elab::logic::semantic::solver::{Atom, Idx, Phi};
+use wavelet_elab::logic::syntactic::solver::BasicSolver;
 
 fn var(name: &str) -> Idx {
     Idx::Var(name.into())

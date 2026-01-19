@@ -1,9 +1,9 @@
-use dfx::SemanticLogic;
-use dfx::check::{CheckOptions, check_fn_with_options};
-use dfx::env::FnRegistry;
-use dfx::ghost::json::export_program_json;
-use dfx::ghost::lower::synthesize_ghost_program;
-use dfx::parse::parse_program;
+use wavelet_elab::SemanticLogic;
+use wavelet_elab::check::{CheckOptions, check_fn_with_options};
+use wavelet_elab::env::FnRegistry;
+use wavelet_elab::ghost::json::export_program_json;
+use wavelet_elab::ghost::lower::synthesize_ghost_program;
+use wavelet_elab::parse::parse_program;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
