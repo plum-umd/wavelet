@@ -1,4 +1,4 @@
-use dfx::logic::semantic::solver::{Atom, Idx, Phi, PhiSolver, SmtSolver};
+use wavelet_elab::logic::semantic::solver::{Atom, Idx, Phi, PhiSolver, SmtSolver};
 
 #[test]
 fn le_i_plus_one_leq_i_should_fail() {

@@ -1,4 +1,4 @@
-use dfx::logic::semantic::solver::{Atom, Idx, Phi, PhiSolver, RealExpr, SmtSolver};
+use wavelet_elab::logic::semantic::solver::{Atom, Idx, Phi, PhiSolver, RealExpr, SmtSolver};
 
 fn idx_var(name: &str) -> Idx {
     Idx::Var(name.to_string())

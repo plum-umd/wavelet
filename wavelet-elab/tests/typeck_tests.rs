@@ -1,11 +1,11 @@
 //! Tests using the parser to check annotated Rust programs
 
-use dfx::SemanticLogic;
-use dfx::check::{CheckOptions, check_fn_with_options};
-use dfx::env::FnRegistry;
-use dfx::ir::FnDef;
-use dfx::logic::syntactic::SyntacticLogic;
-use dfx::parse_program;
+use wavelet_elab::SemanticLogic;
+use wavelet_elab::check::{CheckOptions, check_fn_with_options};
+use wavelet_elab::env::FnRegistry;
+use wavelet_elab::ir::FnDef;
+use wavelet_elab::logic::syntactic::SyntacticLogic;
+use wavelet_elab::parse_program;
 use std::collections::HashMap;
 
 // Define the fence macro as a no-op for parsing
