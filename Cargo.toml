@@ -5,7 +5,9 @@ members = [
     "wavelet-embedding",
     "wavelet-core",
     "wavelet-eval",
+    "wavelet",
 ]
+default-members = ["wavelet"]
 
 [workspace.package]
 version = "0.1.0"
@@ -18,6 +20,7 @@ license = "MIT"
 
 [workspace.dependencies]
 thiserror = "2.0.18"
+clap = { version = "4.5.54", features = ["derive"] }
 
 [patch.crates-io]
 smtlib = { path = "vendor/smtlib" }
