@@ -42,10 +42,10 @@ def FFI.sinkLastNOutputs (n : USize) (proc : RipTide.EncapProc) : RipTide.EncapP
 
 /-- Applies selected legalizations and optimizations. -/
 @[export wavelet_riptide_proc_optimize]
-def FFI.optimizeProc (proc : RipTide.EncapProc) : (USize × RipTide.EncapProc) :=
-  let (numRws, _, proc) := Frontend.RipTide.rewriteProc
+def FFI.optimizeProc (proc : RipTide.EncapProc) : RipTide.EncapProc :=
+  let (_, _, proc) := Frontend.RipTide.rewriteProc
     (naryLowering <|> deadCodeElim <|> RipTide.operatorSel) proc
-  (USize.ofNat numRws, proc)
+  proc
 
 /-- Returns the number of atomic processes. -/
 @[export wavelet_riptide_proc_num_atoms]
