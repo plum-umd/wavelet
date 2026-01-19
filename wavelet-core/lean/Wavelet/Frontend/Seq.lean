@@ -141,11 +141,13 @@ structure EncapProg Op χ V [Arity Op] where
   numFns : Nat
   sigs : Sigs numFns
   prog : Prog Op χ V sigs
+  names : Vector String numFns
   neZero : NeZeroSigs sigs
 
 /-- State for converting from `RawProg` to `Prog`. -/
 structure CheckState Op χ V [Arity Op] where
   numFns : Nat
+  names : Vector String numFns
   nameToIdx : String → Option (Fin numFns)
   sigs : Sigs numFns
   prog : Prog Op χ V sigs
@@ -157,6 +159,7 @@ abbrev CheckM Op χ V [Arity Op] T := StateT (CheckState Op χ V) (Except String
 def CheckState.init [Arity Op] : CheckState Op χ V :=
   {
     numFns := 0,
+    names := #v[],
     nameToIdx := λ _ => none,
     sigs := λ i => i.elim0,
     prog := λ i => i.elim0,
@@ -186,6 +189,7 @@ def CheckState.pushFn [Arity Op]
     CheckState Op χ V
   := {
     numFns := state.numFns + 1,
+    names := state.names.push name,
     nameToIdx := λ name' =>
       if name' = name then
         some ⟨state.numFns, by omega⟩
@@ -242,6 +246,7 @@ def CheckState.toProg [Arity Op]
     numFns := state.numFns,
     sigs := state.sigs,
     prog := state.prog,
+    names := state.names,
     neZero := state.neZero,
   }
 

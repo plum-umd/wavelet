@@ -122,6 +122,11 @@ def unwrapIO {ε α} (e : Except ε α) (msg : String) [ToString ε] : IO α :=
   | .ok x => pure x
   | .error err => throw <| IO.userError s!"{msg}: {toString err}"
 
+def context {ε α} (e : Except ε α) (msg : String) [ToString ε] : Except String α :=
+  match e with
+  | .ok x => .ok x
+  | .error err => .error s!"{msg}: {toString err}"
+
 end Except
 
 abbrev ExceptDec ε (p : Prop) := Except (ε × PLift ¬p) (PLift p)
@@ -173,6 +178,25 @@ def replicateChar (n : Nat) (c : Char) : String := .mk (List.replicate n c)
 
 end String
 
-def trace (msg : String) : IO Unit := do
-  let stderr ← IO.getStderr
-  stderr.putStrLn s!"[trace] {msg}"
+namespace Lean.Json
+
+def decode [Lean.FromJson α] (src : String) : Except String α :=
+  parse src >>= Lean.FromJson.fromJson?
+
+def decodeFile [Lean.FromJson α] (path : String) : IO α := do
+  let input ← IO.FS.readFile path
+  (decode input).unwrapIO s!"failed to deserialize JSON from {path}"
+
+def encodePretty [Lean.ToJson α] (x : α) : String :=
+  pretty (Lean.ToJson.toJson x)
+
+def encodeCompact [Lean.ToJson α] (x : α) : String :=
+  compress (Lean.ToJson.toJson x)
+
+def encodeToFilePretty [Lean.ToJson α] (path : String) (x : α) : IO Unit :=
+  IO.FS.writeFile path (encodePretty x)
+
+def encodeToFileCompact [Lean.ToJson α] (path : String) (x : α) : IO Unit :=
+  IO.FS.writeFile path (encodeCompact x)
+
+end Lean.Json

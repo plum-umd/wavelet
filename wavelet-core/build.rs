@@ -8,6 +8,7 @@ fn main() {
     println!("cargo:rerun-if-changed=lean/lake-manifest.json");
     println!("cargo:rerun-if-changed=lean/lakefile.lean");
     println!("cargo:rerun-if-changed=lean/lean-toolchain");
+    println!("cargo:rerun-if-changed=lean/.lake/packages/batteries/.lake/build/lib");
 
     // Find and dynamically link against `leanshared`
     // Adapted from `lean-sys`'s `build.rs`
@@ -47,7 +48,7 @@ fn main() {
 
     assert!(exists, "lean shared library does not exist: {}", shared_lib.display());
 
-    println!("cargo:rustc-link-search={}", lib_dir.display());
+    println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=leanshared");
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
 
@@ -58,39 +59,23 @@ fn main() {
         .expect("failed to run `lake exec cache get`");
     assert!(status.success(), "`lake exec cache` get failed");
 
-    // Build `libBatteries`
+    // Build `libWavelet` and `libBatteries` 
     let output = Command::new("lake")
         .current_dir("lean")
-        .args(["build", "Batteries:static"])
+        .args(["build", "Wavelet", "Batteries:static"])
         .output()
-        .expect("failed to run `lake build Batteries:static`");
-    assert!(output.status.success(), "`lake build Batteries:static` failed");
+        .expect("failed to run `lake build`");
+    assert!(output.status.success(), "`lake build` failed");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     for line in stdout.lines() {
-        println!("cargo:warning=[lake build Batteries:static] {}", line);
+        println!("cargo:warning=[lake build] {}", line);
     }
     for line in stderr.lines() {
-        println!("cargo:warning=[lake build Batteries:static] {}", line);
-    }
-
-    // Build `libWavelet`
-    let output = Command::new("lake")
-        .current_dir("lean")
-        .args(["build", "Wavelet"])
-        .output()
-        .expect("failed to run `lake build Wavelet`");
-    assert!(output.status.success(), "`lake build Wavelet` failed");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    for line in stdout.lines() {
-        println!("cargo:warning=[lake build Wavelet] {}", line);
-    }
-    for line in stderr.lines() {
-        println!("cargo:warning=[lake build Wavelet] {}", line);
+        println!("cargo:warning=[lake build] {}", line);
     }
 
     // Statically link `libWavelet`
-    println!("cargo:rustc-link-search=lean/.lake/build/lib");
-    println!("cargo:rustc-link-search=lean/.lake/packages/batteries/.lake/build/lib");
+    println!("cargo:rustc-link-search=native=lean/.lake/build/lib");
+    println!("cargo:rustc-link-search=native=lean/.lake/packages/batteries/.lake/build/lib");
 }

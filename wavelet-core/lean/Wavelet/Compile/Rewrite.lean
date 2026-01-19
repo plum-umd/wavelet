@@ -129,13 +129,15 @@ partial def Rewrite.applyUntilFail
       | some (_rwName, proc') => loop (numRewrites + 1) proc'
       | none => (numRewrites, proc)
 
+abbrev RewriteStats := Std.HashMap String Nat
+
 /-- Similar to `applyUntilFail` but performs `renameChans` every round
 for slightly better performance, and also returns some stats about
 rewrite rules used. -/
 partial def Rewrite.applyUntilFailNat
   [Arity Op] [DecidableEq χ]
   (rw : Rewrite Op Nat V)
-  (proc : Proc Op χ V m n) : Nat × Std.HashMap String Nat × Proc Op Nat V m n :=
+  (proc : Proc Op χ V m n) : Nat × RewriteStats × Proc Op Nat V m n :=
     loop 0 proc.renameChans initStats
   where
     initStats := allRewriteNames.foldl (λ m name => m.insert name 0)
