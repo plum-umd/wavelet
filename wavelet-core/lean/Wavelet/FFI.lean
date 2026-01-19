@@ -1,145 +1,70 @@
-import Wavelet.Data.Basic
-import Wavelet.Frontend
-import Wavelet.Seq
-import Wavelet.Dataflow
-import Wavelet.Compile
+import Wavelet.Frontend.RipTide
 
 /-! Foreign interfaces for using Wavelet as a library. -/
 
-namespace Wavelet.FFI
+namespace Wavelet.Frontend.RipTide
 
-inductive Result (T : Type u) where
-  | ok (val : T)
-  | error (msg : String)
-  deriving Repr, Lean.ToJson, Lean.FromJson
+open Frontend Compile Dataflow
 
-/-- Converts a function with JSON-serializable inputs/outputs to
-a `String → String` function to be used as FFI. -/
-unsafe def runIO [Lean.FromJson A] [Lean.ToJson B]
-  (f : A → IO B) (name : String) : String → String :=
-  λ input =>
-    let m : IO B := do
-      let json ← Lean.Json.parse input
-        |>.unwrapIO s!"failed to parse JSON input for {name}"
-      let args : A ← Lean.FromJson.fromJson? json
-        |>.unwrapIO s!"failed to decode JSON input as the argument for {name}"
-      f args
-    let output : Result _ := match unsafeIO m with
-      | .ok val => .ok val
-      | .error err => .error err.toString
-    (Lean.ToJson.toJson output).compress
+/-- Parses the JSON input as `RipTide.EncapProg`. -/
+@[export wavelet_riptide_prog_from_json]
+def FFI.progFromJson (input : String) : Except String RipTide.EncapProg :=
+  Lean.Json.decode input >>= RawProg.toProg
 
-end Wavelet.FFI
+-- TODO: Outputs `RipTide.EncapProg` in JSON.
 
-/-! Compiler for RipTide. -/
-namespace Wavelet.FFI.RipTide
+/-- Parses the JSON input as `RipTide.EncapProc`. -/
+@[export wavelet_riptide_proc_from_json]
+def FFI.procFromJson (input : String) : Except String RipTide.EncapProc := do
+  let rawProc : RipTide.RawProc ← Lean.Json.decode input
+  let proc ← rawProc.toProc
+  return .fromProc proc
 
-open Wavelet.Frontend Wavelet.Compile Wavelet.Determinacy Wavelet.Seq Wavelet.Dataflow
+/-- Outputs `RipTide.EncapProc` in JSON. -/
+@[export wavelet_riptide_proc_to_json]
+def FFI.procToJson (proc : RipTide.EncapProc) : String :=
+  Lean.Json.encodeCompact (RawProc.fromProc proc.proc)
 
-abbrev Loc := String
-abbrev FnName := String
-abbrev Var := String
+/-- Outputs `RipTide.EncapProc` in DOT. -/
+@[export wavelet_riptide_proc_to_dot]
+def FFI.procToDot (proc : RipTide.EncapProc) : Except String String :=
+  proc.proc.plot.run
 
-abbrev RawProg := Frontend.RawProg (WithCall (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) FnName) Var
-abbrev RawProc := Frontend.RawProc (RipTide.SyncOp Loc) Nat RipTide.Value
+/-- Control-flow lowering. -/
+@[export wavelet_riptide_prog_lower_control_flow]
+def FFI.lowerControlFlow (prog : RipTide.EncapProg) : Except String RipTide.EncapProc :=
+  RipTide.lowerControlFlow prog
 
-abbrev EncapProg := Frontend.EncapProg (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) Var RipTide.Value
+/-- Attaches sinks to the last `n` outputs. -/
+@[export wavelet_riptide_proc_sink_last_n_outputs]
+def FFI.sinkLastNOutputs (n : USize) (proc : RipTide.EncapProc) : RipTide.EncapProc :=
+  RipTide.sinkLastNOutputs n.toNat proc
 
-abbrev Proc := Dataflow.Proc (RipTide.SyncOp Loc) Nat RipTide.Value
-abbrev EncapProc := Frontend.EncapProc (RipTide.SyncOp Loc) Nat RipTide.Value
+/-- Applies selected legalizations and optimizations. -/
+@[export wavelet_riptide_proc_optimize]
+def FFI.optimizeProc (proc : RipTide.EncapProc) : (USize × RipTide.EncapProc) :=
+  let (numRws, _, proc) := Frontend.RipTide.rewriteProc
+    (naryLowering <|> deadCodeElim <|> RipTide.operatorSel) proc
+  (USize.ofNat numRws, proc)
 
-structure CompileArgs where
-  prog : RawProg
-  enablePermOut : Bool
-  enableSinkAllOut : Bool
-  enableStats : Bool
-  deriving Repr, Lean.ToJson, Lean.FromJson
+/-- Returns the number of atomic processes. -/
+@[export wavelet_riptide_proc_num_atoms]
+def FFI.procNumAtoms (proc : RipTide.EncapProc) : USize :=
+  USize.ofNat proc.proc.atoms.length
 
-structure CompileOutput where
-  unopt : RawProc
-  final : RawProc
-  deriving Repr, Lean.ToJson, Lean.FromJson
+/-- Returns the number of "non-trivial" atoms. -/
+@[export wavelet_riptide_proc_num_non_trivial_atoms]
+def FFI.procNumNonTrivialAtoms (proc : RipTide.EncapProc) : USize :=
+  USize.ofNat <|
+    (proc.proc.atoms
+    |>.filter (λ
+      | .async (AsyncOp.fork ..) ..
+      | .async (AsyncOp.forward ..) ..
+      | .async (AsyncOp.forwardc ..) ..
+      | .async (AsyncOp.inact ..) ..
+      | .async (AsyncOp.const ..) ..
+      | .async (AsyncOp.sink ..) .. => false
+      | _ => true)
+    |>.length)
 
-def compile (args : CompileArgs) : IO CompileOutput := do
-  let prog : RipTide.EncapProg ← args.prog.toProg.unwrapIO "failed to convert RawProg to Prog"
-
-  if h : prog.numFns > 0 then
-    let : NeZeroSigs prog.sigs := prog.neZero
-    let last : Fin prog.numFns := ⟨prog.numFns - 1, by omega⟩
-
-    -- Check some static properties
-    for i in List.finRange prog.numFns do
-      let name := args.prog.fns[i]?.map (·.name) |>.getD s!"unknown"
-      (prog.prog i).checkAffineVar.resolve
-        |>.unwrapIO s!"function {i} ({name})"
-
-    -- Compile and link
-    let proc := compileProg prog.prog last
-    let proc := proc.renameChans
-    trace s!"compiled {prog.numFns} function(s). graph size: {proc.atoms.length} ops"
-    proc.checkAffineChan.unwrapIO "dfg invariant error"
-
-    -- Erase ghost tokens
-    let proc := proc.eraseGhost
-    let proc := proc.renameChans
-    trace s!"erased ghost tokens. graph size: {proc.atoms.length} ops"
-    proc.checkAffineChan.unwrapIO "dfg invariant error"
-
-    -- Save unoptimized proc for output
-    let unoptProc := proc
-
-    -- If enabled, sink the global permission output (the last output) or all outputs
-    let proc : RipTide.EncapProc :=
-      if ¬ args.enablePermOut then
-        if args.enableSinkAllOut then
-          -- If we enable the more aggressive no-output mode,
-          -- sink all outputs of the dataflow graph
-          EncapProc.fromProc { proc with
-            outputs := #v[],
-            atoms := .sink proc.outputs :: proc.atoms }
-        else
-          -- If we don't need output permission from the entire graph,
-          -- the last output (which assumed to be a ghost permission output)
-          -- can be replaced with a sink to enable more optimizations.
-          EncapProc.fromProc { proc with
-            outputs := proc.outputs.pop,
-            atoms := .sink #v[proc.outputs.back] :: proc.atoms }
-      else EncapProc.fromProc proc
-
-    -- Apply some graph rewrites
-    trace s!"applying op selection and optimizations..."
-    let (numRws, stats, proc) := Rewrite.applyUntilFailNat
-      (naryLowering <|> deadCodeElim <|> RipTide.operatorSel)
-      proc.proc
-    trace s!"{numRws} rewrites. graph size: {proc.atoms.length} ops"
-
-    -- Print stats if enabled
-    if args.enableStats then
-      trace "rewrite rule stats:"
-      for (rwName, count) in stats.toList do
-        trace s!"  {rwName}: {count}"
-
-      let numNonTrivial :=
-        proc.atoms
-        |>.filter (λ
-          | .async (AsyncOp.fork ..) ..
-          | .async (AsyncOp.forward ..) ..
-          | .async (AsyncOp.forwardc ..) ..
-          | .async (AsyncOp.inact ..) ..
-          | .async (AsyncOp.const ..) ..
-          | .async (AsyncOp.sink ..) .. => false
-          | _ => true)
-        |>.length
-      trace s!"non-trivial operators: {numNonTrivial}"
-
-    return {
-      unopt := RawProc.fromProc unoptProc,
-      final := RawProc.fromProc proc,
-    }
-  else
-    throw <| IO.userError "compiling empty program"
-
-@[export wavelet_riptide_compile]
-unsafe def compileFFI := runIO compile "Wavelet.FFI.RipTide.compile"
-
-end Wavelet.FFI.RipTide
+end Wavelet.Frontend.RipTide

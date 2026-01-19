@@ -1,10 +1,12 @@
 import Wavelet.Data.Basic
+import Wavelet.Seq.AffineVar
 import Wavelet.Dataflow.Proc
 import Wavelet.Dataflow.Plot
 import Wavelet.Dataflow.Interpreter
+import Wavelet.Dataflow.AffineChan
 import Wavelet.Semantics.OpInterp
 import Wavelet.Determinacy.OpSpec
-import Wavelet.Compile.Rewrite
+import Wavelet.Compile
 
 import Wavelet.Frontend.Dataflow
 import Wavelet.Frontend.Seq
@@ -388,5 +390,75 @@ def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite (RipTide.SyncOp Loc) χ
         else failure
     | _ => failure
   | _ => failure
+
+end Wavelet.Frontend.RipTide
+
+/-! Instances of various compilation passes to RipTide. -/
+namespace Wavelet.Frontend.RipTide
+
+open Compile Determinacy Seq Dataflow Semantics
+
+private abbrev Loc := String
+private abbrev FnName := String
+private abbrev VarName := String
+
+-- Raw program and process formats used for encoding/decoding
+abbrev RawProg := Frontend.RawProg (WithCall (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) FnName) VarName
+abbrev RawProc := Frontend.RawProc (RipTide.SyncOp Loc) Nat RipTide.Value
+
+-- Actual program and process formats used for compilation
+abbrev EncapProg := Frontend.EncapProg (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) VarName RipTide.Value
+abbrev EncapProc := Frontend.EncapProc (RipTide.SyncOp Loc) Nat RipTide.Value
+
+/-- Validates static properties of a `Prog`. -/
+def validateProg (prog : RipTide.EncapProg) : Except String Unit := do
+  for i in List.finRange prog.numFns do
+    let name := prog.names[i]? |>.getD s!"unknown"
+    (prog.prog i).checkAffineVar.resolve.context s!"function {i} ({name})"
+
+/-- Validates static properties of a `Proc`. -/
+def validateProc (proc : RipTide.EncapProc) : Except String Unit := do
+  proc.proc.checkAffineChan
+
+/-- Converts the last function of the given program to a dataflow process.
+This compiles all imperative control-flow to dataflow, and also lowers all
+ghost operators/inputs/outputs to concrete order operators. -/
+def lowerControlFlow (prog : RipTide.EncapProg) : Except String RipTide.EncapProc := do
+  if h : prog.numFns > 0 then
+    let : NeZeroSigs prog.sigs := prog.neZero
+    let last : Fin prog.numFns := ⟨prog.numFns - 1, by omega⟩
+
+    -- Compile and link
+    let proc := compileProg prog.prog last
+    let proc := proc.renameChans
+    dbg_trace s!"compiled {prog.numFns} function(s). graph size: {proc.atoms.length} ops"
+
+    -- Erase ghost tokens
+    let proc := proc.eraseGhost
+    let proc := proc.renameChans
+    dbg_trace s!"erased ghost tokens. graph size: {proc.atoms.length} ops"
+
+    return .fromProc proc
+  else
+    .error "compiling empty program"
+
+/-- Connects the last `n` output channels of the process to `sink`s.
+This is useful in avoiding unnecessary outputs (like for ghost permissions)
+and reducing the size of the dataflow graph. -/
+def sinkLastNOutputs (n : Nat) (proc : RipTide.EncapProc) : RipTide.EncapProc :=
+  let rem := proc.numOuts - n
+  EncapProc.fromProc {
+    proc.proc with
+    outputs := proc.proc.outputs.take rem,
+    atoms := .sink (proc.proc.outputs.drop rem) :: proc.proc.atoms
+  }
+
+/-- Rewrites the given dataflow process using the given rules. -/
+def rewriteProc
+  (rules : Rewrite (RipTide.SyncOp Loc) Nat RipTide.Value)
+  (proc : RipTide.EncapProc) :
+  Nat × RewriteStats × RipTide.EncapProc :=
+  let (numRws, stats, proc) := Rewrite.applyUntilFailNat rules proc.proc
+  (numRws, stats, EncapProc.fromProc proc)
 
 end Wavelet.Frontend.RipTide
