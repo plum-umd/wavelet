@@ -9,5 +9,14 @@ jobs:
       - uses: leanprover/lean-action@v1
         with:
           lake-package-directory: wavelet-core/lean
+          auto-config: false
       - run: cargo build
       - run: cargo test
+  check-proofs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: wavelet-core/lean
+          build-args: Thm
