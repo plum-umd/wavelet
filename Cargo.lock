@@ -198,8 +198,7 @@ checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
 [[package]]
 name = "lean-sys"
 version = "0.0.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a47679643339a8fe462f55df16670d2515c7de6d90fcbfe88066a329ec1cc194"
+source = "git+https://github.com/zhengyao-lin/lean-sys.git#604149dcb7d1085dd4cbfbb58b6baf7508f34d8d"
 dependencies = [
  "libc",
  "memoffset",

@@ -6,16 +6,15 @@ fn main() {
         .display()
         .to_string();
 
-    println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=lean/Wavelet");
-    println!("cargo:rerun-if-changed=lean/Wavelet.lean");
-    println!("cargo:rerun-if-changed=lean/lake-manifest.json");
-    println!("cargo:rerun-if-changed=lean/lakefile.lean");
-    println!("cargo:rerun-if-changed=lean/lean-toolchain");
-    println!("cargo:rerun-if-changed=lean/.lake/packages/batteries/.lake/build/lib");
+    println!("cargo::rerun-if-changed=build.rs");
+    println!("cargo::rerun-if-changed=lean/Wavelet");
+    println!("cargo::rerun-if-changed=lean/Wavelet.lean");
+    println!("cargo::rerun-if-changed=lean/lake-manifest.json");
+    println!("cargo::rerun-if-changed=lean/lakefile.lean");
+    println!("cargo::rerun-if-changed=lean/lean-toolchain");
+    println!("cargo::rerun-if-changed=lean/.lake/packages/batteries/.lake/build/lib");
 
-    // Find and dynamically link against `leanshared`
-    // Adapted from `lean-sys`'s `build.rs`
+    // Find Lean library paths
     let output = Command::new("lean")
         .current_dir("lean")
         .args(["--print-prefix"])
@@ -33,35 +32,13 @@ fn main() {
             .expect("invalid lean library path")
             .trim(),
     );
-
-    let lib_dir = if cfg!(target_os = "windows") {
-        lean_dir.join("bin")
-    } else {
-        lean_dir.join("lib/lean")
-    };
-
-    let mut shared_lib = lib_dir.clone();
-    let exists = if cfg!(target_os = "windows") {
-        shared_lib.push("libleanshared.dll");
-        shared_lib.exists()
-    } else if cfg!(target_os = "macos") {
-        shared_lib.push("libleanshared.dylib");
-        shared_lib.exists()
-    } else {
-        shared_lib.push("libleanshared.so");
-        shared_lib.exists()
-    };
-
     assert!(
-        exists,
-        "lean shared library does not exist: {}",
-        shared_lib.display()
+        lean_dir.exists(),
+        "lean prefix does not exist: {}",
+        lean_dir.display()
     );
 
-    println!("cargo:rustc-link-search=native={}", lib_dir.display());
-    println!("cargo:rustc-link-lib=dylib=leanshared");
-    println!("cargo:rustc-link-arg=-Wl,{}", lib_dir.display());
-
+    // Fetch Lake dependencies
     let status = Command::new("lake")
         .current_dir("lean")
         .args(["exec", "cache", "get"])
@@ -70,22 +47,38 @@ fn main() {
     assert!(status.success(), "`lake exec cache` get failed");
 
     // Build `libWavelet` and `libBatteries`
-    let output = Command::new("lake")
+    let status = Command::new("lake")
         .current_dir("lean")
         .args(["build", "Wavelet", "Batteries:static"])
-        .output()
+        .status()
         .expect("failed to run `lake build`");
-    assert!(output.status.success(), "`lake build` failed");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    for line in stdout.lines() {
-        println!("cargo:warning=[lake build] {}", line);
+    assert!(status.success(), "`lake build` failed");
+
+    // Include various linking search paths for Lean and Wavelet
+    println!("cargo::rustc-link-search=native={}/lib", lean_dir.display());
+    if cfg!(target_os = "windows") {
+        println!("cargo::rustc-link-search=native={}", lean_dir.join("bin").display());
+    } else {
+        println!("cargo::rustc-link-search=native={}", lean_dir.join("lib/lean").display());
     }
-    for line in stderr.lines() {
-        println!("cargo:warning=[lake build] {}", line);
+    println!("cargo::rustc-link-search=native={manifest_dir}/lean/.lake/build/lib");
+    println!("cargo::rustc-link-search=native={manifest_dir}/lean/.lake/packages/batteries/.lake/build/lib");
+
+    // Link against various required libraries
+    for lib in ["Wavelet", "Batteries", "Lean", "Std", "Init", "leanrt", "leancpp", "uv"] {
+        println!("cargo::rustc-link-lib=static={lib}");
+    }
+    
+    if cfg!(target_os = "macos") {
+        // macOS does not have static libc++
+        println!("cargo::rustc-link-lib=dylib=c++");
+        println!("cargo::rustc-link-lib=dylib=c++abi");
+    } else {
+        println!("cargo::rustc-link-lib=static=c++");
+        println!("cargo::rustc-link-lib=static=c++abi");
     }
 
-    // Statically link `libWavelet`
-    println!("cargo:rustc-link-search=native={manifest_dir}/lean/.lake/build/lib");
-    println!("cargo:rustc-link-search=native={manifest_dir}/lean/.lake/packages/batteries/.lake/build/lib");
+    for lib in ["m", "dl", "gmp"] {
+        println!("cargo::rustc-link-lib=dylib={lib}");
+    }
 }
