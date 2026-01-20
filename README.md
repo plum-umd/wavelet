@@ -1,5 +1,4 @@
-Formally Verified Asynchronous Dataflow Compiler
----
+Wavelet is a formally verified compiler targeting asynchronous dataflow.
 
 ## Build
 

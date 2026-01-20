@@ -11,7 +11,7 @@ jobs:
           lake-package-directory: wavelet-core/lean
           auto-config: false
       - run: cargo build
-      - run: cargo test
+      - run: cargo test --all
   check-proofs:
     runs-on: ubuntu-latest
     steps:
