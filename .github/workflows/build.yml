@@ -1,5 +1,7 @@
 name: Build Wavelet
 on: [push]
+env:
+  Z3_VERSION: 4.15.4
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -10,6 +12,11 @@ jobs:
         with:
           lake-package-directory: wavelet-core/lean
           auto-config: false
+      - run: |
+          wget https://github.com/Z3Prover/z3/releases/download/z3-${Z3_VERSION}/z3-${Z3_VERSION}-x64-glibc-2.39.zip
+          unzip z3-${Z3_VERSION}-*.zip
+          sudo cp z3-${Z3_VERSION}-*/bin/z3 /usr/local/bin/
+          z3 --version
       - run: cargo build
       - run: cargo test --all
   check-proofs:
