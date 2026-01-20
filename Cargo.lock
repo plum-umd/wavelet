@@ -417,7 +417,7 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 [[package]]
 name = "smtlib"
 version = "0.3.0"
-source = "git+https://github.com/zhengyao-lin/smtlib-rs.git#7d0cc11f57d8966f1320835ceaf10f80d7949805"
+source = "git+https://github.com/zhengyao-lin/smtlib-rs.git#2f0573bb7998792892a1da343ccd54b92f9bc41e"
 dependencies = [
  "indexmap",
  "itertools",
@@ -429,7 +429,7 @@ dependencies = [
 [[package]]
 name = "smtlib-lowlevel"
 version = "0.3.0"
-source = "git+https://github.com/zhengyao-lin/smtlib-rs.git#7d0cc11f57d8966f1320835ceaf10f80d7949805"
+source = "git+https://github.com/zhengyao-lin/smtlib-rs.git#2f0573bb7998792892a1da343ccd54b92f9bc41e"
 dependencies = [
  "bumpalo",
  "itertools",
