@@ -12,8 +12,8 @@ smallvec = "1.13"
 syn = { version = "2.0", features = ["full", "extra-traits"] }
 quote = "1.0"
 proc-macro2 = "1.0"
-smtlib = "0.3"
-smtlib-lowlevel = "0.3"
+smtlib = { git = "https://github.com/zhengyao-lin/smtlib-rs.git" }
+smtlib-lowlevel = { git = "https://github.com/zhengyao-lin/smtlib-rs.git" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
