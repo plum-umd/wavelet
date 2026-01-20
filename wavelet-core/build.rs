@@ -57,18 +57,33 @@ fn main() {
     // Include various linking search paths for Lean and Wavelet
     println!("cargo::rustc-link-search=native={}/lib", lean_dir.display());
     if cfg!(target_os = "windows") {
-        println!("cargo::rustc-link-search=native={}", lean_dir.join("bin").display());
+        println!(
+            "cargo::rustc-link-search=native={}",
+            lean_dir.join("bin").display()
+        );
     } else {
-        println!("cargo::rustc-link-search=native={}", lean_dir.join("lib/lean").display());
+        println!(
+            "cargo::rustc-link-search=native={}",
+            lean_dir.join("lib/lean").display()
+        );
     }
     println!("cargo::rustc-link-search=native={manifest_dir}/lean/.lake/build/lib");
     println!("cargo::rustc-link-search=native={manifest_dir}/lean/.lake/packages/batteries/.lake/build/lib");
 
     // Link against various required libraries
-    for lib in ["Wavelet", "Batteries", "Lean", "Std", "Init", "leanrt", "leancpp", "uv"] {
+    for lib in [
+        "Wavelet",
+        "Batteries",
+        "Lean",
+        "Std",
+        "Init",
+        "leanrt",
+        "leancpp",
+        "uv",
+    ] {
         println!("cargo::rustc-link-lib=static={lib}");
     }
-    
+
     if cfg!(target_os = "macos") {
         // macOS does not have static libc++
         println!("cargo::rustc-link-lib=dylib=c++");
