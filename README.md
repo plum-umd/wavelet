@@ -1,10 +1,14 @@
-# Formally Verified Asynchronous Dataflow Compiler
+Formally Verified Asynchronous Dataflow Compiler
+---
 
-## Lean backend
+## Build
 
-To check all proofs and build the compiler:
+First install prerequisites:
+- [Lean 4](https://lean-lang.org/install/)
+- [Cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html)
+
+Then simply run
 ```
-cd lean
-lake exec cache get
-lake build
+cargo build
 ```
+which will produce the CLI binary at `target/debug/wavelet`.
