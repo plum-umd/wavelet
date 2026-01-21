@@ -706,7 +706,7 @@ where
                             Op::Sdiv => match result_sign {
                                 Signedness::Signed => Op::Sdiv,
                                 Signedness::Unsigned => Op::Udiv,
-                            }
+                            },
                             Op::Udiv => Op::Udiv,
                             _ => unreachable!(),
                         },
@@ -867,7 +867,10 @@ where
                         fence: fenced,
                     })
                 }
-                Op::SignedLessThan | Op::SignedLessEqual | Op::UnsignedLessThan | Op::UnsignedLessEqual => {
+                Op::SignedLessThan
+                | Op::SignedLessEqual
+                | Op::UnsignedLessThan
+                | Op::UnsignedLessEqual => {
                     if vars.len() != 3 {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
@@ -909,11 +912,11 @@ where
                             Op::SignedLessThan => match result_sign {
                                 Signedness::Signed => Op::SignedLessThan,
                                 Signedness::Unsigned => Op::UnsignedLessThan,
-                            }
+                            },
                             Op::SignedLessEqual => match result_sign {
                                 Signedness::Signed => Op::SignedLessEqual,
                                 Signedness::Unsigned => Op::UnsignedLessEqual,
-                            }
+                            },
                             Op::UnsignedLessThan => Op::UnsignedLessThan,
                             Op::UnsignedLessEqual => Op::UnsignedLessEqual,
                             _ => unreachable!(),

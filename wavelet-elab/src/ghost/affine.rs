@@ -157,8 +157,8 @@ impl Affinizer {
 
         let queue = self
             .pool
-            .entry(var.to_string())
-            .or_insert_with(|| VecDeque::from(vec![var.to_string()]));
+            .entry(var.name().to_string())
+            .or_insert_with(|| VecDeque::from(vec![var.name().to_string()]));
         let alias = queue
             .pop_front()
             .unwrap_or_else(|| panic!("no available copy of `{}`", var));
@@ -179,15 +179,15 @@ impl Affinizer {
         let (missing, source) = {
             let queue = self
                 .pool
-                .entry(var.to_string())
-                .or_insert_with(|| VecDeque::from(vec![var.to_string()]));
+                .entry(var.name().to_string())
+                .or_insert_with(|| VecDeque::from(vec![var.name().to_string()]));
 
             if queue.len() >= needed {
                 return;
             }
 
             let missing = needed - queue.len();
-            let source = queue.pop_front().unwrap_or_else(|| var.to_string());
+            let source = queue.pop_front().unwrap_or_else(|| var.name().to_string());
             (missing, source)
         };
 
