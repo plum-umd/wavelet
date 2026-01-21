@@ -265,7 +265,7 @@ fn render_op(op: &Op, vars: &[Var]) -> String {
         Op::Add => format!("{} = {} + {}", vars[2].0, vars[0].0, vars[1].0),
         Op::Sub => format!("{} = {} - {}", vars[2].0, vars[0].0, vars[1].0),
         Op::Mul => format!("{} = {} * {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::SignedDiv => format!("{} = {} / {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::Div => format!("{} = {} / {}", vars[2].0, vars[0].0, vars[1].0),
         Op::And => format!("{} = {} && {}", vars[2].0, vars[0].0, vars[1].0),
         Op::Or => format!("{} = {} || {}", vars[2].0, vars[0].0, vars[1].0),
         Op::Not => format!("{} = !{}", vars[1].0, vars[0].0),
@@ -274,8 +274,8 @@ fn render_op(op: &Op, vars: &[Var]) -> String {
         Op::BitXor => format!("{} = {} ^ {}", vars[2].0, vars[0].0, vars[1].0),
         Op::Shl => format!("{} = {} << {}", vars[2].0, vars[0].0, vars[1].0),
         Op::Shr => format!("{} = {} >> {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::SignedLessThan => format!("{} = {} < {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::SignedLessEqual => format!("{} = {} <= {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::LessThan => format!("{} = {} < {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::LessEqual => format!("{} = {} <= {}", vars[2].0, vars[0].0, vars[1].0),
         Op::Equal => format!("{} = {} == {}", vars[2].0, vars[0].0, vars[1].0),
         Op::NotEqual => format!("{} = {} != {}", vars[2].0, vars[0].0, vars[1].0),
         Op::Load { array, index, len } => {
@@ -631,7 +631,7 @@ where
         Stmt::LetOp { vars, op, fence } => {
             let fenced = *fence;
             match op {
-                Op::Add | Op::Sub | Op::Mul | Op::SignedDiv => {
+                Op::Add | Op::Sub | Op::Mul | Op::Div => {
                     // Binary integer arithmetic.  Expect two input vars and one output.
                     if vars.len() != 3 {
                         return Err(TypeError::InvalidOp {
@@ -653,7 +653,7 @@ where
                         Op::Mul => Idx::Mul(Box::new(x_idx), Box::new(y_idx)),
                         _ => result_idx.clone(),
                     };
-                    if !matches!(op, Op::SignedDiv) {
+                    if !matches!(op, Op::Div) {
                         ctx.phi.push(Atom::Eq(result_idx, rhs));
                     }
                     ctx.bind_var(&vars[2], Ty::Int(result_sign));
@@ -765,7 +765,7 @@ where
                     finalize_statement(ctx, stmt);
                     Ok(())
                 }
-                Op::SignedLessThan | Op::SignedLessEqual => {
+                Op::LessThan | Op::LessEqual => {
                     if vars.len() != 3 {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
@@ -782,8 +782,8 @@ where
                     let x_idx = Idx::Var(vars[0].0.clone());
                     let y_idx = Idx::Var(vars[1].0.clone());
                     let comparison = match op {
-                        Op::SignedLessThan => Atom::Lt(x_idx, y_idx),
-                        Op::SignedLessEqual => Atom::Le(x_idx, y_idx),
+                        Op::LessThan => Atom::Lt(x_idx, y_idx),
+                        Op::LessEqual => Atom::Le(x_idx, y_idx),
                         _ => unreachable!(),
                     };
                     let result_atom = bool_atom(&vars[2].0);

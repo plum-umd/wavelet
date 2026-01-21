@@ -483,12 +483,13 @@ impl Serialize for SyncOp {
     }
 }
 
+/// BUG: Div/LessThan/LessEqual should not always map to signed versions.
 fn map_sync_op(op: &Op) -> Result<SyncOp, ExportError> {
     match op {
         Op::Add => Ok(SyncOp::Add),
         Op::Sub => Ok(SyncOp::Sub),
         Op::Mul => Ok(SyncOp::Mul),
-        Op::SignedDiv => Ok(SyncOp::Sdiv),
+        Op::Div => Ok(SyncOp::Sdiv),
         Op::And => Ok(SyncOp::And),
         Op::Or => Ok(SyncOp::Or),
         Op::Shl => Ok(SyncOp::Shl),
@@ -498,8 +499,8 @@ fn map_sync_op(op: &Op) -> Result<SyncOp, ExportError> {
         Op::BitAnd => Ok(SyncOp::BitAnd),
         Op::BitOr => Ok(SyncOp::BitOr),
         Op::BitXor => Ok(SyncOp::BitXor),
-        Op::SignedLessThan => Ok(SyncOp::Slt),
-        Op::SignedLessEqual => Ok(SyncOp::Sle),
+        Op::LessThan => Ok(SyncOp::Slt),
+        Op::LessEqual => Ok(SyncOp::Sle),
         _ => Err(ExportError::Unsupported(format!(
             "pure operation {} not yet supported for serialization",
             op
