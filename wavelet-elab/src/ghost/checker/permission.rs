@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
 use crate::ghost::fracperms::{
     check_fraction_leq, check_fraction_valid, try_add_fractions, try_sub_fractions, FractionExpr,
 };
-use crate::ir::Var;
+use crate::ir::UntypedVar;
 use crate::logic::cap::RegionModel;
 use crate::logic::semantic::region_set::{check_subset, overlaps, RegionSetExpr};
 use crate::logic::semantic::solver::{Atom, Idx, Phi, SmtSolver};
@@ -19,14 +19,14 @@ pub struct Permission {
     /// The fractional value (symbolic expression).
     pub fraction: FractionExpr,
     /// The array variable this permission refers to.
-    pub array: Var,
+    pub array: UntypedVar,
     /// The region of indices covered by this permission.
     pub region: RegionSetExpr,
 }
 
 impl Permission {
     /// Create a new permission.
-    pub fn new(fraction: FractionExpr, array: Var, region: RegionSetExpr) -> Self {
+    pub fn new(fraction: FractionExpr, array: UntypedVar, region: RegionSetExpr) -> Self {
         Self {
             fraction,
             array,
@@ -96,7 +96,7 @@ impl PermExpr {
             PermExpr::Empty => true,
             PermExpr::Singleton(perm) => perm.is_valid(phi, solver),
             PermExpr::Add(items) => {
-                let mut perms_by_array: HashMap<Var, Vec<&Permission>> = HashMap::new();
+                let mut perms_by_array: HashMap<UntypedVar, Vec<&Permission>> = HashMap::new();
                 for item in items {
                     if let PermExpr::Singleton(perm) = item {
                         perms_by_array

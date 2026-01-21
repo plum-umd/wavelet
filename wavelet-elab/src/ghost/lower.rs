@@ -1,12 +1,13 @@
 use crate::ghost::ir::{GhostExpr, GhostFnDef, GhostProgram, GhostStmt, GhostTail, GhostVar};
-use crate::ir::{Expr, FnDef, FnName, Op, Program, Stmt, Tail, Var};
+use crate::ir::{Expr, FnDef, FnName, Op, Program, Stmt, Tail};
 use crate::Val;
 
 /// Synthesize a ghost-level program from the typed IR.
-pub fn synthesize_ghost_program(prog: &Program) -> GhostProgram {
-    let mut prog = prog.clone();
-    prog.desugar_tail_calls();
-    prog.eliminate_array_params();
+pub fn synthesize_ghost_program<V: Clone>(prog: &Program<V>) -> GhostProgram<V> {
+    // let prog = prog.clone();
+    // TODO: put these in the type checker
+    // prog.desugar_tail_calls();
+    // prog.eliminate_array_params();
     let mut ghost = GhostProgram::new();
     for def in &prog.defs {
         ghost.add_fn(lower_fn(def));
@@ -14,7 +15,7 @@ pub fn synthesize_ghost_program(prog: &Program) -> GhostProgram {
     ghost
 }
 
-fn lower_fn(fn_def: &FnDef) -> GhostFnDef {
+fn lower_fn<V: Clone>(fn_def: &FnDef<V>) -> GhostFnDef<V> {
     let mut lowerer = FunctionLowerer::new();
 
     let (ghost_params, initial_ctx) = {
@@ -96,7 +97,7 @@ impl FunctionLowerer {
         }
     }
 
-    fn lower_expr(&mut self, expr: &Expr, mut ctx: PermCtx) -> GhostExpr {
+    fn lower_expr<V: Clone>(&mut self, expr: &Expr<V>, mut ctx: PermCtx) -> GhostExpr<V> {
         let mut stmts = Vec::new();
         for stmt in &expr.stmts {
             self.lower_stmt(stmt, &mut stmts, &mut ctx);
@@ -105,7 +106,12 @@ impl FunctionLowerer {
         GhostExpr::new(stmts, tail)
     }
 
-    fn lower_stmt(&mut self, stmt: &Stmt, builder: &mut Vec<GhostStmt>, ctx: &mut PermCtx) {
+    fn lower_stmt<V: Clone>(
+        &mut self,
+        stmt: &Stmt<V>,
+        builder: &mut Vec<GhostStmt<V>>,
+        ctx: &mut PermCtx,
+    ) {
         match stmt {
             Stmt::LetVal { var, val, fence } => self.lower_const(var, val, *fence, builder, ctx),
             Stmt::LetOp { vars, op, fence } => self.lower_op(vars, op, *fence, builder, ctx),
@@ -118,7 +124,12 @@ impl FunctionLowerer {
         }
     }
 
-    fn lower_tail(&mut self, tail: &Tail, builder: &mut Vec<GhostStmt>, ctx: PermCtx) -> GhostTail {
+    fn lower_tail<V: Clone>(
+        &mut self,
+        tail: &Tail<V>,
+        builder: &mut Vec<GhostStmt<V>>,
+        ctx: PermCtx,
+    ) -> GhostTail<V> {
         match tail {
             Tail::RetVar(var) => {
                 let inputs = ctx.all_inputs();
@@ -160,12 +171,12 @@ impl FunctionLowerer {
         }
     }
 
-    fn lower_const(
+    fn lower_const<V: Clone>(
         &mut self,
-        var: &Var,
+        var: &V,
         val: &Val,
         fenced: bool,
-        builder: &mut Vec<GhostStmt>,
+        builder: &mut Vec<GhostStmt<V>>,
         ctx: &mut PermCtx,
     ) {
         let (ghost_in, _) = self.split_sync(builder, ctx);
@@ -184,12 +195,12 @@ impl FunctionLowerer {
         }
     }
 
-    fn lower_op(
+    fn lower_op<V: Clone>(
         &mut self,
-        vars: &[Var],
-        op: &Op,
+        vars: &[V],
+        op: &Op<V>,
         fenced: bool,
-        builder: &mut Vec<GhostStmt>,
+        builder: &mut Vec<GhostStmt<V>>,
         ctx: &mut PermCtx,
     ) {
         match op {
@@ -242,13 +253,13 @@ impl FunctionLowerer {
         }
     }
 
-    fn lower_call(
+    fn lower_call<V: Clone>(
         &mut self,
-        vars: &[Var],
+        vars: &[V],
         func: &FnName,
-        args: &[Var],
+        args: &[V],
         fence: bool,
-        builder: &mut Vec<GhostStmt>,
+        builder: &mut Vec<GhostStmt<V>>,
         ctx: &mut PermCtx,
     ) {
         let (need_perm, _) = self.split_sync(builder, ctx);
@@ -279,9 +290,9 @@ impl FunctionLowerer {
         }
     }
 
-    fn split_sync(
+    fn split_sync<V: Clone>(
         &mut self,
-        builder: &mut Vec<GhostStmt>,
+        builder: &mut Vec<GhostStmt<V>>,
         ctx: &mut PermCtx,
     ) -> (GhostVar, GhostVar) {
         let (left, right) = self.join_split(builder, ctx.sync_inputs());
@@ -289,9 +300,9 @@ impl FunctionLowerer {
         (left, right)
     }
 
-    fn join_split(
+    fn join_split<V: Clone>(
         &mut self,
-        builder: &mut Vec<GhostStmt>,
+        builder: &mut Vec<GhostStmt<V>>,
         inputs: Vec<GhostVar>,
     ) -> (GhostVar, GhostVar) {
         let left = self.fresh();
@@ -336,11 +347,11 @@ impl GhostNameGenerator {
 }
 
 // all except the last
-fn pure_inputs(vars: &[Var]) -> Vec<Var> {
+fn pure_inputs<V: Clone>(vars: &[V]) -> Vec<V> {
     vars[..vars.len() - 1].to_vec()
 }
 
-fn pure_output(vars: &[Var]) -> Var {
+fn pure_output<V: Clone>(vars: &[V]) -> V {
     vars.last().cloned().expect("pure op must have an output")
 }
 
@@ -348,10 +359,11 @@ fn pure_output(vars: &[Var]) -> Var {
 mod tests {
     use super::*;
     use crate::parse::parse_program;
+    use crate::UntypedVar;
     use std::fs;
     use std::path::Path;
 
-    fn lower_fixture(src: &str, fn_name: &str) -> GhostFnDef {
+    fn lower_fixture(src: &str, fn_name: &str) -> GhostFnDef<UntypedVar> {
         let program = parse_program(src).expect("fixture should parse");
         let ghost = synthesize_ghost_program(&program);
         ghost
@@ -391,7 +403,7 @@ mod tests {
             other => panic!("unexpected top-level tail: {other:?}"),
         };
 
-        assert_eq!(cond, &Var("c".into()));
+        assert_eq!(cond, &UntypedVar("c".into()));
 
         let has_load = then_expr
             .stmts

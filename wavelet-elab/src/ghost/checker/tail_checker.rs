@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ghost::fracperms::FractionExpr;
 use crate::ghost::ir::{GhostStmt, GhostTail};
+use crate::ir::Variable;
 use crate::logic::cap::RegionModel;
 use crate::logic::semantic::region_set::RegionSetExpr;
 use crate::logic::semantic::solver::{Atom, Idx, PhiSolver, RealExpr};
@@ -16,9 +17,9 @@ use super::permission::{
 use super::pretty_print::{render_perm_expr, render_permission, render_region};
 
 /// Check a JoinSplit followed by Return tail.
-pub fn check_ghost_tail_with_joinsplit(
-    join_stmt: &GhostStmt,
-    tail: &GhostTail,
+pub fn check_ghost_tail_with_joinsplit<V: Variable>(
+    join_stmt: &GhostStmt<V>,
+    tail: &GhostTail<V>,
     ctx: &mut CheckContext,
 ) -> Result<(), String> {
     match tail {
@@ -135,10 +136,10 @@ pub fn check_ghost_tail_with_joinsplit(
 }
 
 /// Check two JoinSplits followed by TailCall tail.
-pub fn check_ghost_tail_with_two_joinsplits(
-    join_stmt1: &GhostStmt,
-    join_stmt2: &GhostStmt,
-    tail: &GhostTail,
+pub fn check_ghost_tail_with_two_joinsplits<V: Variable>(
+    join_stmt1: &GhostStmt<V>,
+    join_stmt2: &GhostStmt<V>,
+    tail: &GhostTail<V>,
     ctx: &mut CheckContext,
 ) -> Result<(), String> {
     match tail {
@@ -153,7 +154,7 @@ pub fn check_ghost_tail_with_two_joinsplits(
                     "  Tail calling: {}({})",
                     func.0,
                     args.iter()
-                        .map(|v| v.0.as_str())
+                        .map(|v| v.to_string())
                         .collect::<Vec<_>>()
                         .join(", ")
                 );
@@ -231,9 +232,10 @@ pub fn check_ghost_tail_with_two_joinsplits(
             }
 
             let mut idx_substitutions: Vec<(String, Idx)> = Vec::new();
-            for ((param_var, ty), arg) in sig.params.iter().zip(args.iter()) {
-                if ty.is_int() {
-                    idx_substitutions.push((param_var.0.clone(), Idx::Var(arg.0.clone())));
+            for (param, arg) in sig.params.iter().zip(args.iter()) {
+                if param.ty.is_int() {
+                    idx_substitutions
+                        .push((param.name.to_string(), Idx::Var(arg.name().to_string())));
                 }
             }
             idx_substitutions.sort_by(|a, b| a.0.cmp(&b.0));
@@ -568,7 +570,10 @@ fn ensure_shared_fraction_available(
 }
 
 /// Check a tail if-else expression.
-pub fn check_ghost_tail_if(tail: &GhostTail, ctx: &mut CheckContext) -> Result<(), String> {
+pub fn check_ghost_tail_if<V: Variable>(
+    tail: &GhostTail<V>,
+    ctx: &mut CheckContext,
+) -> Result<(), String> {
     match tail {
         GhostTail::IfElse {
             cond,
@@ -576,7 +581,7 @@ pub fn check_ghost_tail_if(tail: &GhostTail, ctx: &mut CheckContext) -> Result<(
             else_expr,
         } => {
             if ctx.verbose {
-                println!("\n === Checking if-else with condition: {} ===", cond.0);
+                println!("\n === Checking if-else with condition: {} ===", cond);
             }
 
             // Branch: create two sub-contexts
@@ -584,18 +589,18 @@ pub fn check_ghost_tail_if(tail: &GhostTail, ctx: &mut CheckContext) -> Result<(
             let mut else_ctx = ctx.clone();
 
             // Add branching constraints
-            let cond_var = Atom::BoolVar(cond.0.clone());
+            let cond_var = Atom::BoolVar(cond.name().to_string());
             then_ctx.add_constraint(cond_var.clone());
             else_ctx.add_constraint(Atom::Not(Box::new(cond_var)));
 
             if ctx.verbose {
-                println!("  ├─ Then branch (assuming {}):", cond.0);
+                println!("  ├─ Then branch (assuming {}):", cond);
             }
             // Check both branches
             super::expr_checker::check_ghost_expr(then_expr, &mut then_ctx)?;
 
             if ctx.verbose {
-                println!("  ├─ Else branch (assuming !{}):", cond.0);
+                println!("  ├─ Else branch (assuming !{}):", cond);
             }
             super::expr_checker::check_ghost_expr(else_expr, &mut else_ctx)?;
 

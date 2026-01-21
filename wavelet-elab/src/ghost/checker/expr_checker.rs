@@ -1,6 +1,7 @@
 //! Ghost expression checking.
 
 use crate::ghost::ir::{GhostExpr, GhostStmt};
+use crate::ir::Variable;
 
 use super::context::CheckContext;
 use super::pretty_print::{
@@ -9,7 +10,10 @@ use super::pretty_print::{
 use super::stmt_checker::*;
 use super::tail_checker::*;
 
-pub fn check_ghost_expr(expr: &GhostExpr, ctx: &mut CheckContext) -> Result<(), String> {
+pub fn check_ghost_expr<V: Variable>(
+    expr: &GhostExpr<V>,
+    ctx: &mut CheckContext,
+) -> Result<(), String> {
     let stmts = &expr.stmts;
     let mut i = 0;
 

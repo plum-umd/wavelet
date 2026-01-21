@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use crate::ghost::fracperms::FractionExpr;
 use crate::ghost::ir::GhostStmt;
-use crate::ir::Op;
+use crate::ir::{Op, Variable};
 use crate::logic::cap::RegionModel;
 use crate::logic::semantic::region_set::{check_subset, RegionSetExpr};
 use crate::logic::semantic::solver::{Atom, Idx, PhiSolver, RealExpr};
@@ -17,7 +17,10 @@ use super::permission::{
 use super::pretty_print::{render_perm_expr, render_permission, render_region};
 
 /// Check a standalone Pure statement.
-pub fn check_ghost_stmt_pure(stmt: &GhostStmt, ctx: &mut CheckContext) -> Result<(), String> {
+pub fn check_ghost_stmt_pure<V: Variable>(
+    stmt: &GhostStmt<V>,
+    ctx: &mut CheckContext,
+) -> Result<(), String> {
     let (inputs, output, op) = match stmt {
         GhostStmt::Pure {
             inputs,
@@ -33,16 +36,21 @@ pub fn check_ghost_stmt_pure(stmt: &GhostStmt, ctx: &mut CheckContext) -> Result
     match op {
         Op::LessThan | Op::LessEqual | Op::Equal if inputs.len() == 2 => {
             let comparison = match op {
-                Op::LessThan => {
-                    Atom::Lt(Idx::Var(inputs[0].0.clone()), Idx::Var(inputs[1].0.clone()))
-                }
-                Op::LessEqual => {
-                    Atom::Le(Idx::Var(inputs[0].0.clone()), Idx::Var(inputs[1].0.clone()))
-                }
-                Op::Equal => Atom::Eq(Idx::Var(inputs[0].0.clone()), Idx::Var(inputs[1].0.clone())),
+                Op::LessThan => Atom::Lt(
+                    Idx::Var(inputs[0].name().to_string()),
+                    Idx::Var(inputs[1].name().to_string()),
+                ),
+                Op::LessEqual => Atom::Le(
+                    Idx::Var(inputs[0].name().to_string()),
+                    Idx::Var(inputs[1].name().to_string()),
+                ),
+                Op::Equal => Atom::Eq(
+                    Idx::Var(inputs[0].name().to_string()),
+                    Idx::Var(inputs[1].name().to_string()),
+                ),
                 _ => unreachable!(),
             };
-            let result_atom = Atom::BoolVar(output.0.clone());
+            let result_atom = Atom::BoolVar(output.name().to_string());
             ctx.add_constraint(Atom::Implies(
                 Box::new(result_atom.clone()),
                 Box::new(comparison.clone()),
@@ -53,9 +61,9 @@ pub fn check_ghost_stmt_pure(stmt: &GhostStmt, ctx: &mut CheckContext) -> Result
             ));
         }
         Op::And if inputs.len() == 2 => {
-            let lhs = Atom::BoolVar(inputs[0].0.clone());
-            let rhs = Atom::BoolVar(inputs[1].0.clone());
-            let out = Atom::BoolVar(output.0.clone());
+            let lhs = Atom::BoolVar(inputs[0].name().to_string());
+            let rhs = Atom::BoolVar(inputs[1].name().to_string());
+            let out = Atom::BoolVar(output.name().to_string());
 
             // out => lhs and out => rhs
             ctx.add_constraint(Atom::Implies(Box::new(out.clone()), Box::new(lhs.clone())));
@@ -76,9 +84,9 @@ pub fn check_ghost_stmt_pure(stmt: &GhostStmt, ctx: &mut CheckContext) -> Result
             ));
         }
         Op::Or if inputs.len() == 2 => {
-            let lhs = Atom::BoolVar(inputs[0].0.clone());
-            let rhs = Atom::BoolVar(inputs[1].0.clone());
-            let out = Atom::BoolVar(output.0.clone());
+            let lhs = Atom::BoolVar(inputs[0].name().to_string());
+            let rhs = Atom::BoolVar(inputs[1].name().to_string());
+            let out = Atom::BoolVar(output.name().to_string());
 
             // lhs => out and rhs => out
             ctx.add_constraint(Atom::Implies(Box::new(lhs.clone()), Box::new(out.clone())));
@@ -99,22 +107,22 @@ pub fn check_ghost_stmt_pure(stmt: &GhostStmt, ctx: &mut CheckContext) -> Result
         }
         Op::Add | Op::Sub | Op::Mul if inputs.len() == 2 => {
             // output == inputs[0] op inputs[1]
-            let lhs = Box::new(Idx::Var(inputs[0].0.clone()));
-            let rhs = Box::new(Idx::Var(inputs[1].0.clone()));
+            let lhs = Box::new(Idx::Var(inputs[0].name().to_string()));
+            let rhs = Box::new(Idx::Var(inputs[1].name().to_string()));
             let result = match op {
                 Op::Add => Idx::Add(lhs, rhs),
                 Op::Sub => Idx::Sub(lhs, rhs),
                 Op::Mul => Idx::Mul(lhs, rhs),
                 _ => unreachable!(),
             };
-            ctx.add_constraint(Atom::Eq(Idx::Var(output.0.clone()), result));
+            ctx.add_constraint(Atom::Eq(Idx::Var(output.name().to_string()), result));
 
             match op {
                 Op::Add => {
                     // Also relate operands back to the result to aid solver reasoning.
-                    let out_var = Idx::Var(output.0.clone());
-                    let lhs_var = Idx::Var(inputs[0].0.clone());
-                    let rhs_var = Idx::Var(inputs[1].0.clone());
+                    let out_var = Idx::Var(output.name().to_string());
+                    let lhs_var = Idx::Var(inputs[0].name().to_string());
+                    let rhs_var = Idx::Var(inputs[1].name().to_string());
                     ctx.add_constraint(Atom::Eq(
                         lhs_var.clone(),
                         Idx::Sub(Box::new(out_var.clone()), Box::new(rhs_var.clone())),
@@ -126,9 +134,9 @@ pub fn check_ghost_stmt_pure(stmt: &GhostStmt, ctx: &mut CheckContext) -> Result
                 }
                 Op::Sub => {
                     // output = lhs - rhs  =>  lhs = output + rhs, rhs = lhs - output
-                    let out_var = Idx::Var(output.0.clone());
-                    let lhs_var = Idx::Var(inputs[0].0.clone());
-                    let rhs_var = Idx::Var(inputs[1].0.clone());
+                    let out_var = Idx::Var(output.name().to_string());
+                    let lhs_var = Idx::Var(inputs[0].name().to_string());
+                    let rhs_var = Idx::Var(inputs[1].name().to_string());
                     ctx.add_constraint(Atom::Eq(
                         lhs_var.clone(),
                         Idx::Add(Box::new(out_var.clone()), Box::new(rhs_var.clone())),
@@ -149,9 +157,9 @@ pub fn check_ghost_stmt_pure(stmt: &GhostStmt, ctx: &mut CheckContext) -> Result
 }
 
 /// Check JoinSplit followed by Const.
-pub fn check_ghost_stmt_joinsplit_const(
-    join_stmt: &GhostStmt,
-    const_stmt: &GhostStmt,
+pub fn check_ghost_stmt_joinsplit_const<V: Variable>(
+    join_stmt: &GhostStmt<V>,
+    const_stmt: &GhostStmt<V>,
     ctx: &mut CheckContext,
 ) -> Result<(), String> {
     // Process JoinSplit
@@ -215,14 +223,17 @@ pub fn check_ghost_stmt_joinsplit_const(
         Val::Unit => Ty::Unit,
     };
     if let Ty::Int(Signedness::Unsigned) = ty {
-        ctx.add_constraint(Atom::Le(Idx::Const(0), Idx::Var(output.0.clone())));
+        ctx.add_constraint(Atom::Le(Idx::Const(0), Idx::Var(output.name().to_string())));
     }
     match value {
-        Val::Int(n) => ctx.add_constraint(Atom::Eq(Idx::Var(output.0.clone()), Idx::Const(*n))),
-        Val::Bool(true) => ctx.add_constraint(Atom::BoolVar(output.0.clone())),
-        Val::Bool(false) => {
-            ctx.add_constraint(Atom::Not(Box::new(Atom::BoolVar(output.0.clone()))))
-        }
+        Val::Int(n) => ctx.add_constraint(Atom::Eq(
+            Idx::Var(output.name().to_string()),
+            Idx::Const(*n),
+        )),
+        Val::Bool(true) => ctx.add_constraint(Atom::BoolVar(output.name().to_string())),
+        Val::Bool(false) => ctx.add_constraint(Atom::Not(Box::new(Atom::BoolVar(
+            output.name().to_string(),
+        )))),
         Val::Unit => {}
     }
 
@@ -230,9 +241,9 @@ pub fn check_ghost_stmt_joinsplit_const(
 }
 
 /// Check JoinSplit followed by Load.
-pub fn check_ghost_stmt_joinsplit_load(
-    join_stmt: &GhostStmt,
-    load_stmt: &GhostStmt,
+pub fn check_ghost_stmt_joinsplit_load<V: Variable>(
+    join_stmt: &GhostStmt<V>,
+    load_stmt: &GhostStmt<V>,
     ctx: &mut CheckContext,
 ) -> Result<(), String> {
     // Process JoinSplit
@@ -282,15 +293,18 @@ pub fn check_ghost_stmt_joinsplit_load(
     }
 
     let access_region = RegionSetExpr::interval(
-        Idx::Var(index.0.clone()),
-        Idx::Add(Box::new(Idx::Var(index.0.clone())), Box::new(Idx::Const(1))),
+        Idx::Var(index.name().to_string()),
+        Idx::Add(
+            Box::new(Idx::Var(index.name().to_string())),
+            Box::new(Idx::Const(1)),
+        ),
     );
 
     if ctx.verbose {
         println!(
             "  Load from {}[{}], accessing region {}",
-            array.0,
-            index.0,
+            array,
+            index,
             render_region(&access_region)
         );
     }
@@ -302,7 +316,7 @@ pub fn check_ghost_stmt_joinsplit_load(
     let zero = RealExpr::from_int(0);
     let mut candidate: Option<Permission> = None;
     for perm in &collected {
-        if perm.array != *array {
+        if perm.array.name() != array.name() {
             continue;
         }
         if !check_subset(&ctx.phi, &access_region, &perm.region, &ctx.solver) {
@@ -322,7 +336,7 @@ pub fn check_ghost_stmt_joinsplit_load(
     let source_perm = candidate.ok_or_else(|| {
         format!(
             "Load at {}[{}] requires a positive permission covering the index",
-            array.0, index.0
+            array, index
         )
     })?;
 
@@ -351,14 +365,18 @@ pub fn check_ghost_stmt_joinsplit_load(
         );
     }
 
-    let load_perm = Permission::new(f_fraction.clone(), array.clone(), access_region.clone());
+    let load_perm = Permission::new(
+        f_fraction.clone(),
+        array.name().into(),
+        access_region.clone(),
+    );
     let load_perm_expr = PermExpr::singleton(load_perm.clone());
 
     let rem_perm = PermExpr::Sub(Box::new(joined_perm), Box::new(load_perm_expr.clone()));
     if !rem_perm.is_valid(&ctx.phi, &ctx.solver) {
         return Err(format!(
             "Load at {}[{}] cannot split available permissions",
-            array.0, index.0
+            array, index
         ));
     }
 
@@ -369,9 +387,9 @@ pub fn check_ghost_stmt_joinsplit_load(
 }
 
 /// Check JoinSplit followed by Store.
-pub fn check_ghost_stmt_joinsplit_store(
-    join_stmt: &GhostStmt,
-    store_stmt: &GhostStmt,
+pub fn check_ghost_stmt_joinsplit_store<V: Variable>(
+    join_stmt: &GhostStmt<V>,
+    store_stmt: &GhostStmt<V>,
     ctx: &mut CheckContext,
 ) -> Result<(), String> {
     // Process JoinSplit
@@ -421,16 +439,19 @@ pub fn check_ghost_stmt_joinsplit_store(
     }
 
     let (lo, hi) = (
-        Idx::Var(index.0.clone()),
-        Idx::Add(Box::new(Idx::Var(index.0.clone())), Box::new(Idx::Const(1))),
+        Idx::Var(index.name().to_string()),
+        Idx::Add(
+            Box::new(Idx::Var(index.name().to_string())),
+            Box::new(Idx::Const(1)),
+        ),
     );
     let store_region = RegionSetExpr::interval(lo, hi);
 
     if ctx.verbose {
         println!(
             "  Store to {}[{}], region {}",
-            array.0,
-            index.0,
+            array,
+            index,
             render_region(&store_region)
         );
         println!("  Requires full permission (1.0) on this region");
@@ -439,7 +460,7 @@ pub fn check_ghost_stmt_joinsplit_store(
     // full permission on array at `index`
     let store_perm = PermExpr::Singleton(Permission {
         fraction: FractionExpr::from_int(1),
-        array: array.clone(),
+        array: array.name().into(),
         region: store_region,
     });
 
@@ -448,7 +469,7 @@ pub fn check_ghost_stmt_joinsplit_store(
     if !rem_perm.is_valid(&ctx.phi, &ctx.solver) {
         return Err(format!(
             "Store at {} requires full permission on region containing {}",
-            array.0, index.0
+            array, index
         ));
     }
 
@@ -459,10 +480,10 @@ pub fn check_ghost_stmt_joinsplit_store(
 }
 
 /// Check two JoinSplits followed by Call.
-pub fn check_ghost_stmt_jnsplt_jnsplt_call(
-    join_stmt1: &GhostStmt,
-    join_stmt2: &GhostStmt,
-    call_stmt: &GhostStmt,
+pub fn check_ghost_stmt_jnsplt_jnsplt_call<V: Variable>(
+    join_stmt1: &GhostStmt<V>,
+    join_stmt2: &GhostStmt<V>,
+    call_stmt: &GhostStmt<V>,
     ctx: &mut CheckContext,
 ) -> Result<(), String> {
     let (left1, right1, inputs1) = match join_stmt1 {
@@ -517,7 +538,7 @@ pub fn check_ghost_stmt_jnsplt_jnsplt_call(
             "  Calling function: {}({})",
             func.0,
             args.iter()
-                .map(|v| v.0.as_str())
+                .map(|v| v.to_string())
                 .collect::<Vec<_>>()
                 .join(", ")
         );
@@ -552,9 +573,9 @@ pub fn check_ghost_stmt_jnsplt_jnsplt_call(
 
     let mut idx_substitutions: Vec<(String, Idx)> = Vec::new();
 
-    for ((param_var, ty), arg) in sig.params.iter().zip(args.iter()) {
-        if ty.is_int() {
-            idx_substitutions.push((param_var.0.clone(), Idx::Var(arg.0.clone())));
+    for (param, arg) in sig.params.iter().zip(args.iter()) {
+        if param.ty.is_int() {
+            idx_substitutions.push((param.name.to_string(), Idx::Var(arg.name().to_string())));
         }
     }
 

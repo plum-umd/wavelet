@@ -21,7 +21,7 @@ use crate::logic::cap::RegionModel;
 /// An index expression used throughout the type system. Indices are
 /// symbolic arithmetic expressions built from variables, constants and
 /// addition/subtraction.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Idx {
     /// A constant index.
     Const(i64),

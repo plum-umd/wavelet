@@ -3,13 +3,14 @@ use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 
 use crate::ghost::json::{RawExpr, RawFn, RawProg, SyncOp, WithCall, WithSpec};
+use crate::ir::Variable;
 
 /// Rewrite a raw program so that every variable is used affinely.
 /// Repeated uses are made explicit by inserting `fork` operations.
 ///
 /// This pass assumes that the input program does not
 /// have shadowing.
-pub fn enforce_affine(prog: RawProg) -> RawProg {
+pub fn enforce_affine<V: Variable>(prog: RawProg<V>) -> RawProg<V> {
     let names = Rc::new(RefCell::new(NameGenerator::default()));
     let fns = prog
         .fns
@@ -19,7 +20,7 @@ pub fn enforce_affine(prog: RawProg) -> RawProg {
     RawProg { fns }
 }
 
-fn enforce_affine_fn(func: RawFn, names: Rc<RefCell<NameGenerator>>) -> RawFn {
+fn enforce_affine_fn<V: Variable>(func: RawFn<V>, names: Rc<RefCell<NameGenerator>>) -> RawFn<V> {
     let RawFn {
         name,
         params,
@@ -28,7 +29,11 @@ fn enforce_affine_fn(func: RawFn, names: Rc<RefCell<NameGenerator>>) -> RawFn {
     } = func;
 
     let usage = compute_use_counts(&body);
-    let mut affinizer = Affinizer::new(params.clone(), usage, names);
+    let mut affinizer = Affinizer::new(
+        params.iter().map(|v| v.name().to_string()).collect(),
+        usage,
+        names,
+    );
     let body = affinizer.transform_expr(body);
 
     RawFn {
@@ -62,7 +67,7 @@ impl Affinizer {
         }
     }
 
-    fn transform_expr(&mut self, expr: RawExpr) -> RawExpr {
+    fn transform_expr<V: Variable>(&mut self, expr: RawExpr<V>) -> RawExpr<V> {
         match expr {
             RawExpr::Ret(values) => {
                 let mut ops = Vec::new();
@@ -94,9 +99,9 @@ impl Affinizer {
 
                 for ret in &rets {
                     self.pool
-                        .entry(ret.clone())
+                        .entry(ret.name().to_string())
                         .or_insert_with(VecDeque::new)
-                        .push_back(ret.clone());
+                        .push_back(ret.name().to_string());
                 }
 
                 let cont = self.transform_expr(*cont);
@@ -126,12 +131,12 @@ impl Affinizer {
         }
     }
 
-    fn transform_branch(
+    fn transform_branch<V: Variable>(
         &self,
-        expr: RawExpr,
+        expr: RawExpr<V>,
         pool: HashMap<String, VecDeque<String>>,
         remaining: HashMap<String, usize>,
-    ) -> RawExpr {
+    ) -> RawExpr<V> {
         let mut branch = Affinizer {
             remaining,
             pool,
@@ -140,10 +145,10 @@ impl Affinizer {
         branch.transform_expr(expr)
     }
 
-    fn consume_var(&mut self, var: &str, ops: &mut Vec<OpNode>) -> String {
+    fn consume_var<V: Variable>(&mut self, var: &V, ops: &mut Vec<OpNode<V>>) -> V {
         let remaining = *self
             .remaining
-            .get(var)
+            .get(var.name())
             .unwrap_or_else(|| panic!("missing usage information for variable `{}`", var));
 
         if remaining > 1 {
@@ -158,16 +163,19 @@ impl Affinizer {
             .pop_front()
             .unwrap_or_else(|| panic!("no available copy of `{}`", var));
 
-        let entry = self.remaining.get_mut(var).expect("entry must exist");
+        let entry = self
+            .remaining
+            .get_mut(var.name())
+            .expect("entry must exist");
         *entry -= 1;
         if *entry == 0 {
-            self.pool.remove(var);
+            self.pool.remove(var.name());
         }
 
-        alias
+        var.rename(alias)
     }
 
-    fn ensure_supply(&mut self, var: &str, needed: usize, ops: &mut Vec<OpNode>) {
+    fn ensure_supply<V: Variable>(&mut self, var: &V, needed: usize, ops: &mut Vec<OpNode<V>>) {
         let (missing, source) = {
             let queue = self
                 .pool
@@ -184,21 +192,21 @@ impl Affinizer {
         };
 
         let outputs = self.fork_outputs(var, missing + 1);
-        ops.push(OpNode::fork(source.clone(), outputs.clone()));
+        ops.push(OpNode::fork(var.rename(source.clone()), outputs.clone()));
 
         let queue = self
             .pool
-            .get_mut(var)
+            .get_mut(var.name())
             .expect("queue should exist after insertion");
         for out in outputs.into_iter().rev() {
-            queue.push_front(out);
+            queue.push_front(out.name().to_string());
         }
     }
 
-    fn fork_outputs(&self, base: &str, total: usize) -> Vec<String> {
+    fn fork_outputs<V: Variable>(&self, base: &V, total: usize) -> Vec<V> {
         let mut outputs = Vec::with_capacity(total);
         for _ in 0..total {
-            outputs.push(self.fresh_name(base));
+            outputs.push(base.rename(self.fresh_name(base.name())));
         }
         outputs
     }
@@ -209,18 +217,18 @@ impl Affinizer {
     }
 }
 
-struct OpNode {
+struct OpNode<V> {
     op: WithCall,
-    args: Vec<String>,
-    rets: Vec<String>,
+    args: Vec<V>,
+    rets: Vec<V>,
 }
 
-impl OpNode {
-    fn new(op: WithCall, args: Vec<String>, rets: Vec<String>) -> Self {
+impl<V> OpNode<V> {
+    fn new(op: WithCall, args: Vec<V>, rets: Vec<V>) -> Self {
         Self { op, args, rets }
     }
 
-    fn fork(source: String, outputs: Vec<String>) -> Self {
+    fn fork(source: V, outputs: Vec<V>) -> Self {
         let op = WithCall::Op(WithSpec::Spec {
             ghost: false,
             op: SyncOp::Copy { n: outputs.len() },
@@ -233,7 +241,7 @@ impl OpNode {
     }
 }
 
-fn wrap_ops(mut ops: Vec<OpNode>, tail: RawExpr) -> RawExpr {
+fn wrap_ops<V>(mut ops: Vec<OpNode<V>>, tail: RawExpr<V>) -> RawExpr<V> {
     let mut expr = tail;
     while let Some(node) = ops.pop() {
         expr = RawExpr::Op {
@@ -264,19 +272,19 @@ impl NameGenerator {
     }
 }
 
-pub(crate) fn compute_use_counts(expr: &RawExpr) -> HashMap<String, usize> {
+pub(crate) fn compute_use_counts<V: Variable>(expr: &RawExpr<V>) -> HashMap<String, usize> {
     match expr {
         RawExpr::Ret(values) | RawExpr::Tail(values) => {
             let mut counts = HashMap::new();
             for value in values {
-                *counts.entry(value.clone()).or_default() += 1;
+                *counts.entry(value.name().to_string()).or_default() += 1;
             }
             counts
         }
         RawExpr::Op { args, cont, .. } => {
             let mut counts = compute_use_counts(cont);
             for arg in args {
-                *counts.entry(arg.clone()).or_default() += 1;
+                *counts.entry(arg.name().to_string()).or_default() += 1;
             }
             counts
         }
@@ -304,7 +312,7 @@ pub(crate) fn compute_use_counts(expr: &RawExpr) -> HashMap<String, usize> {
                     })
                     .or_insert(*val);
             }
-            *merged.entry(cond.clone()).or_default() += 1;
+            *merged.entry(cond.name().to_string()).or_default() += 1;
             merged
         }
     }
@@ -316,6 +324,7 @@ mod tests {
     use crate::ghost::json::ExportError;
     use crate::ghost::lower::synthesize_ghost_program;
     use crate::parse::parse_program;
+    use crate::{Ty, TypedVar, UntypedVar};
     use std::fs;
     use std::path::PathBuf;
 
@@ -328,13 +337,13 @@ mod tests {
             }),
             args: vec!["x".into(), "x".into()],
             rets: vec!["y".into()],
-            cont: Box::new(RawExpr::Ret(vec!["y".into()])),
+            cont: Box::new(RawExpr::<UntypedVar>::Ret(vec!["y".into()])),
         };
 
         let prog = RawProg {
             fns: vec![RawFn {
                 name: "double".into(),
-                params: vec!["x".into()],
+                params: vec![TypedVar::new("x", Ty::Unit)],
                 outputs: 1,
                 body,
             }],
@@ -356,8 +365,8 @@ mod tests {
                         ..
                     }) => {
                         assert_eq!(*n, 2);
-                        assert_eq!(args, &["x".to_string()]);
-                        assert_eq!(rets, &["x_copy0".to_string(), "x_copy1".to_string()]);
+                        assert_eq!(args, &["x".into()]);
+                        assert_eq!(rets, &["x_copy0".into(), "x_copy1".into()]);
                     }
                     other => panic!("expected fork, found {other:?}"),
                 }
@@ -366,7 +375,7 @@ mod tests {
                     RawExpr::Op { args, .. } => {
                         assert_eq!(args.len(), 2);
                         assert_ne!(args[0], args[1]);
-                        assert!(args.iter().all(|a| a.starts_with("x_copy")));
+                        assert!(args.iter().all(|a| a.name().starts_with("x_copy")));
                     }
                     other => panic!("expected add op after fork, found {other:?}"),
                 }
@@ -391,7 +400,10 @@ mod tests {
                 }),
                 args: vec!["b".into(), "b".into()],
                 rets: vec!["b_res".into()],
-                cont: Box::new(RawExpr::Ret(vec!["a_res".into(), "b_res".into()])),
+                cont: Box::new(RawExpr::<UntypedVar>::Ret(vec![
+                    "a_res".into(),
+                    "b_res".into(),
+                ])),
             }),
         };
 
@@ -415,7 +427,7 @@ mod tests {
         );
     }
 
-    fn collect_copys(expr: &RawExpr, map: &mut HashMap<String, Vec<String>>) {
+    fn collect_copys<V: Variable>(expr: &RawExpr<V>, map: &mut HashMap<String, Vec<String>>) {
         match expr {
             RawExpr::Ret(_) | RawExpr::Tail(_) => {}
             RawExpr::Op {
@@ -429,7 +441,10 @@ mod tests {
                     ..
                 }) = op
                 {
-                    map.insert(args[0].clone(), rets.clone());
+                    map.insert(
+                        args[0].name().to_string(),
+                        rets.iter().map(|v| v.name().to_string()).collect(),
+                    );
                 }
                 collect_copys(cont, map);
             }
@@ -506,19 +521,19 @@ mod tests {
         }
     }
 
-    fn var_usage(expr: &RawExpr) -> HashMap<String, usize> {
+    fn var_usage<V: Variable>(expr: &RawExpr<V>) -> HashMap<String, usize> {
         match expr {
             RawExpr::Ret(values) | RawExpr::Tail(values) => {
                 let mut counts = HashMap::new();
                 for value in values {
-                    *counts.entry(value.clone()).or_default() += 1;
+                    *counts.entry(value.name().to_string()).or_default() += 1;
                 }
                 counts
             }
             RawExpr::Op { args, cont, .. } => {
                 let mut counts = var_usage(cont);
                 for arg in args {
-                    *counts.entry(arg.clone()).or_default() += 1;
+                    *counts.entry(arg.name().to_string()).or_default() += 1;
                 }
                 counts
             }
@@ -531,13 +546,13 @@ mod tests {
                     let right_val = right_counts.get(key).copied().unwrap_or(0);
                     merged.insert(key.clone(), left_val.max(right_val));
                 }
-                *merged.entry(cond.clone()).or_default() += 1;
+                *merged.entry(cond.name().to_string()).or_default() += 1;
                 merged
             }
         }
     }
 
-    fn count_copys(expr: &RawExpr) -> usize {
+    fn count_copys<V>(expr: &RawExpr<V>) -> usize {
         match expr {
             RawExpr::Ret(_) | RawExpr::Tail(_) => 0,
             RawExpr::Op { op, cont, .. } => {

@@ -5,7 +5,7 @@ use std::fmt;
 
 use crate::env::{Ctx, FnRegistry};
 use crate::error::TypeError;
-use crate::ir::{Expr, FnDef, Op, Program, Signedness, Stmt, Tail, Ty, Val, Var};
+use crate::ir::{Expr, FnDef, Op, Program, Signedness, Stmt, Tail, Ty, TypedVar, UntypedVar, Val};
 use crate::logic::cap::{Cap, Delta, RegionModel};
 use crate::logic::region::Region;
 use crate::logic::semantic::solver::{Atom, Idx, Phi};
@@ -119,12 +119,12 @@ impl<'logic, L: CapabilityLogic> Ctx<'logic, L>
 where
     L::Region: RegionModel,
 {
-    fn bind_var(&mut self, var: &Var, ty: Ty) {
+    fn bind_var(&mut self, var: impl AsRef<str>, ty: Ty) {
         if let Ty::Int(Signedness::Unsigned) = ty {
             self.phi
-                .push(Atom::Le(Idx::Const(0), Idx::Var(var.0.clone())));
+                .push(Atom::Le(Idx::Const(0), Idx::Var(var.as_ref().to_string())));
         }
-        self.gamma.insert(var.clone(), ty);
+        self.gamma.insert(var.as_ref().to_string(), ty);
     }
 
     fn record_initial_delta(&mut self) {
@@ -135,23 +135,23 @@ where
         self.delta = self.initial_delta.clone();
     }
 
-    fn ensure_literal_binding(&mut self, var: &Var) -> Result<(), TypeError> {
+    fn ensure_literal_binding(&mut self, var: &UntypedVar) -> Result<(), TypeError> {
         if self.gamma.0.contains_key(&var.0) {
             return Ok(());
         }
         // Special case for unit literal (rare, should be handled by LetVal now)
         if var.0 == "_unit_literal" || var.0 == "_unit_ret" {
-            self.bind_var(var, Ty::Unit);
+            self.bind_var(&var.0, Ty::Unit);
             return Ok(());
         }
         Err(TypeError::UndeclaredVar(var.0.clone()))
     }
 
-    fn ty_of(&mut self, var: &Var) -> Result<Ty, TypeError> {
+    fn ty_of(&mut self, var: &UntypedVar) -> Result<Ty, TypeError> {
         if !self.gamma.0.contains_key(&var.0) {
             self.ensure_literal_binding(var)?;
         }
-        self.gamma.get(var)
+        self.gamma.get(&var.0)
     }
 }
 
@@ -260,30 +260,30 @@ fn render_array_len(len: &crate::ir::ArrayLen) -> String {
     len.display()
 }
 
-fn render_op(op: &Op, vars: &[Var]) -> String {
+fn render_op<V: std::fmt::Display>(op: &Op<V>, vars: &[V]) -> String {
     match op {
-        Op::Add => format!("{} = {} + {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Sub => format!("{} = {} - {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Mul => format!("{} = {} * {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Div => format!("{} = {} / {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::And => format!("{} = {} && {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Or => format!("{} = {} || {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Not => format!("{} = !{}", vars[1].0, vars[0].0),
-        Op::BitAnd => format!("{} = {} & {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::BitOr => format!("{} = {} | {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::BitXor => format!("{} = {} ^ {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Shl => format!("{} = {} << {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Shr => format!("{} = {} >> {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::LessThan => format!("{} = {} < {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::LessEqual => format!("{} = {} <= {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Equal => format!("{} = {} == {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::NotEqual => format!("{} = {} != {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::Add => format!("{} = {} + {}", vars[2], vars[0], vars[1]),
+        Op::Sub => format!("{} = {} - {}", vars[2], vars[0], vars[1]),
+        Op::Mul => format!("{} = {} * {}", vars[2], vars[0], vars[1]),
+        Op::Div => format!("{} = {} / {}", vars[2], vars[0], vars[1]),
+        Op::And => format!("{} = {} && {}", vars[2], vars[0], vars[1]),
+        Op::Or => format!("{} = {} || {}", vars[2], vars[0], vars[1]),
+        Op::Not => format!("{} = !{}", vars[1], vars[0]),
+        Op::BitAnd => format!("{} = {} & {}", vars[2], vars[0], vars[1]),
+        Op::BitOr => format!("{} = {} | {}", vars[2], vars[0], vars[1]),
+        Op::BitXor => format!("{} = {} ^ {}", vars[2], vars[0], vars[1]),
+        Op::Shl => format!("{} = {} << {}", vars[2], vars[0], vars[1]),
+        Op::Shr => format!("{} = {} >> {}", vars[2], vars[0], vars[1]),
+        Op::LessThan => format!("{} = {} < {}", vars[2], vars[0], vars[1]),
+        Op::LessEqual => format!("{} = {} <= {}", vars[2], vars[0], vars[1]),
+        Op::Equal => format!("{} = {} == {}", vars[2], vars[0], vars[1]),
+        Op::NotEqual => format!("{} = {} != {}", vars[2], vars[0], vars[1]),
         Op::Load { array, index, len } => {
             format!(
                 "{} = {}[{}] (len {})",
-                vars[0].0,
-                array.0,
-                index.0,
+                vars[0],
+                array,
+                index,
                 render_array_len(len)
             )
         }
@@ -295,19 +295,19 @@ fn render_op(op: &Op, vars: &[Var]) -> String {
         } => {
             format!(
                 "store {} -> {}[{}] (len {})",
-                value.0,
-                array.0,
-                index.0,
+                value,
+                array,
+                index,
                 render_array_len(len)
             )
         }
     }
 }
 
-fn render_stmt(stmt: &Stmt) -> String {
+fn render_stmt<V: std::fmt::Display>(stmt: &Stmt<V>) -> String {
     match stmt {
         Stmt::LetVal { var, val, fence } => {
-            let mut msg = format!("let {} = {}", var.0, render_val(val));
+            let mut msg = format!("let {} = {}", var, render_val(val));
             if *fence {
                 msg.push_str(" [fenced]");
             }
@@ -332,17 +332,17 @@ fn render_stmt(stmt: &Stmt) -> String {
             } else {
                 let dests = vars
                     .iter()
-                    .map(|v| v.0.as_str())
+                    .map(|v| v.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
                 msg.push_str(&format!("let {} = ", dests));
             }
             let arg_list = args
                 .iter()
-                .map(|v| v.0.as_str())
+                .map(|v| v.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
-            msg.push_str(&format!("{}({})", func.0, arg_list));
+            msg.push_str(&format!("{}({})", func, arg_list));
             if *fence {
                 msg.push_str(" [fenced]");
             }
@@ -351,17 +351,17 @@ fn render_stmt(stmt: &Stmt) -> String {
     }
 }
 
-fn render_tail(tail: &Tail) -> String {
+fn render_tail<V: std::fmt::Display>(tail: &Tail<V>) -> String {
     match tail {
-        Tail::RetVar(var) => format!("return {}", var.0),
-        Tail::IfElse { cond, .. } => format!("if {} {{ ... }} else {{ ... }}", cond.0),
+        Tail::RetVar(var) => format!("return {}", var),
+        Tail::IfElse { cond, .. } => format!("if {} {{ ... }} else {{ ... }}", cond),
         Tail::TailCall { func, args } => {
             let arg_list = args
                 .iter()
-                .map(|v| v.0.as_str())
+                .map(|v| v.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("tail call {}({})", func.0, arg_list)
+            format!("tail call {}({})", func, arg_list)
         }
     }
 }
@@ -414,7 +414,7 @@ where
 }
 
 // Optionally restore the initial capability environment (if fenced)
-fn finalize_statement<L: CapabilityLogic>(ctx: &mut Ctx<L>, stmt: &Stmt)
+fn finalize_statement<L: CapabilityLogic, V: std::fmt::Display>(ctx: &mut Ctx<L>, stmt: &Stmt<V>)
 where
     L::Region: RegionModel,
 {
@@ -437,7 +437,7 @@ where
 
 /// Check an entire program with the supplied options.
 pub fn check_program_with_options<L: CapabilityLogic>(
-    prog: &Program,
+    prog: &Program<UntypedVar>,
     logic: &L,
     options: CheckOptions,
 ) -> Result<(), TypeError>
@@ -457,7 +457,10 @@ where
 
 /// Check an entire program.  Currently this simply iterates over
 /// definitions and checks each in isolation.
-pub fn check_program<L: CapabilityLogic>(prog: &Program, logic: &L) -> Result<(), TypeError>
+pub fn check_program<L: CapabilityLogic>(
+    prog: &Program<UntypedVar>,
+    logic: &L,
+) -> Result<(), TypeError>
 where
     L::Region: RegionModel,
 {
@@ -466,7 +469,7 @@ where
 
 /// Check a single function definition.
 pub fn check_fn<L: CapabilityLogic>(
-    def: &FnDef,
+    def: &FnDef<UntypedVar>,
     registry: &FnRegistry,
     logic: &L,
 ) -> Result<(), TypeError>
@@ -478,7 +481,7 @@ where
 
 /// Check a single function definition with explicit options.
 pub fn check_fn_with_options<L: CapabilityLogic>(
-    def: &FnDef,
+    def: &FnDef<UntypedVar>,
     registry: &FnRegistry,
     logic: &L,
     options: CheckOptions,
@@ -489,8 +492,8 @@ where
     // Initialise context with parameter types.
     logic.set_query_logging(options.log_solver_queries);
     let mut ctx = Ctx::new(logic, options.verbose);
-    for (var, ty) in &def.params {
-        ctx.bind_var(var, ty.clone());
+    for TypedVar { name, ty } in &def.params {
+        ctx.bind_var(name, ty.clone());
     }
     // Initialise capability environment from the function’s cap pattern.
     for cap_pat in &def.caps {
@@ -511,7 +514,7 @@ where
 /// Check an expression and ensure it produces a value of the expected type.
 fn check_expr<L: CapabilityLogic>(
     ctx: &mut Ctx<L>,
-    expr: &Expr,
+    expr: &Expr<UntypedVar>,
     expected: &Ty,
     registry: &FnRegistry,
 ) -> Result<(), TypeError>
@@ -557,7 +560,7 @@ where
 /// Infer the type of an expression (for use in if-else branches).
 fn infer_expr_type<L: CapabilityLogic>(
     ctx: &mut Ctx<L>,
-    expr: &Expr,
+    expr: &Expr<UntypedVar>,
     registry: &FnRegistry,
 ) -> Result<Ty, TypeError>
 where
@@ -596,7 +599,7 @@ where
 /// Check a single statement.
 fn check_stmt<L: CapabilityLogic>(
     ctx: &mut Ctx<L>,
-    stmt: &Stmt,
+    stmt: &Stmt<UntypedVar>,
     registry: &FnRegistry,
 ) -> Result<(), TypeError>
 where
@@ -616,7 +619,7 @@ where
                 Val::Bool(_) => Ty::Bool,
                 Val::Unit => Ty::Unit,
             };
-            ctx.bind_var(var, ty);
+            ctx.bind_var(&var.0, ty);
             match val {
                 Val::Int(n) => ctx
                     .phi
@@ -656,7 +659,7 @@ where
                     if !matches!(op, Op::Div) {
                         ctx.phi.push(Atom::Eq(result_idx, rhs));
                     }
-                    ctx.bind_var(&vars[2], Ty::Int(result_sign));
+                    ctx.bind_var(&vars[2].0, Ty::Int(result_sign));
                     finalize_statement(ctx, stmt);
                     Ok(())
                 }
@@ -673,7 +676,7 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    ctx.bind_var(&vars[2], Ty::Bool);
+                    ctx.bind_var(&vars[2].0, Ty::Bool);
                     let lhs_atom = bool_atom(&vars[0].0);
                     let rhs_atom = bool_atom(&vars[1].0);
                     let res_atom = bool_atom(&vars[2].0);
@@ -696,7 +699,7 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    ctx.bind_var(&vars[2], Ty::Bool);
+                    ctx.bind_var(&vars[2].0, Ty::Bool);
                     let lhs_atom = bool_atom(&vars[0].0);
                     let rhs_atom = bool_atom(&vars[1].0);
                     let res_atom = bool_atom(&vars[2].0);
@@ -718,7 +721,7 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    ctx.bind_var(&vars[1], Ty::Bool);
+                    ctx.bind_var(&vars[1].0, Ty::Bool);
                     let input_atom = bool_atom(&vars[0].0);
                     let res_atom = bool_atom(&vars[1].0);
                     let negation = not(input_atom.clone());
@@ -743,7 +746,7 @@ where
                     let x_sign = x_ty.signedness().unwrap();
                     let y_sign = y_ty.signedness().unwrap();
                     let result_sign = combine_signedness(x_sign, y_sign);
-                    ctx.bind_var(&vars[2], Ty::Int(result_sign));
+                    ctx.bind_var(&vars[2].0, Ty::Int(result_sign));
                     finalize_statement(ctx, stmt);
                     Ok(())
                 }
@@ -761,7 +764,7 @@ where
                         });
                     }
                     let x_sign = x_ty.signedness().unwrap();
-                    ctx.bind_var(&vars[2], Ty::Int(x_sign));
+                    ctx.bind_var(&vars[2].0, Ty::Int(x_sign));
                     finalize_statement(ctx, stmt);
                     Ok(())
                 }
@@ -791,7 +794,7 @@ where
                         .push(implies(result_atom.clone(), comparison.clone()));
                     ctx.phi
                         .push(implies(not(result_atom.clone()), not(comparison)));
-                    ctx.bind_var(&vars[2], Ty::Bool);
+                    ctx.bind_var(&vars[2].0, Ty::Bool);
                     finalize_statement(ctx, stmt);
                     Ok(())
                 }
@@ -814,7 +817,7 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    ctx.bind_var(&vars[2], Ty::Bool);
+                    ctx.bind_var(&vars[2].0, Ty::Bool);
                     let result_atom = bool_atom(&vars[2].0);
                     match x_ty {
                         Ty::Int(_) => match op {
@@ -937,7 +940,7 @@ where
                     }
                     // Bind result.
                     let dest = &vars[0];
-                    ctx.bind_var(dest, elem_ty);
+                    ctx.bind_var(&dest.0, elem_ty);
                     finalize_statement(ctx, stmt);
                     Ok(())
                 }
@@ -1043,12 +1046,12 @@ where
             let value_params: Vec<_> = fn_def
                 .params
                 .iter()
-                .filter(|(_, ty)| !matches!(ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
+                .filter(|tvar| !matches!(tvar.ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
                 .collect();
             let array_params: Vec<_> = fn_def
                 .params
                 .iter()
-                .filter(|(_, ty)| matches!(ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
+                .filter(|tvar| matches!(tvar.ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
                 .collect();
 
             // Build substitution map for indices (param names -> arg vars).
@@ -1061,32 +1064,32 @@ where
                     op: format!("function call to {} has too few arguments", func.0),
                 });
             }
-            for (i, (param_var, param_ty)) in value_params.iter().enumerate() {
+            for (i, param) in value_params.iter().enumerate() {
                 let arg_var = &args[i];
                 let mut arg_ty = ctx.ty_of(arg_var)?;
-                if arg_ty != *param_ty {
+                if arg_ty != param.ty {
                     // Allow integer type coercion for literals or between signed/unsigned
-                    let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param_ty, Ty::Int(_));
+                    let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param.ty, Ty::Int(_));
                     if both_int {
                         // If it's a literal binding, rebind it to the expected type
                         if arg_var.0.starts_with("_lit_") {
-                            ctx.bind_var(arg_var, param_ty.clone());
-                            arg_ty = param_ty.clone();
+                            ctx.bind_var(&arg_var.0, param.ty.clone());
+                            arg_ty = param.ty.clone();
                         } else {
                             // For non-literal integers, allow implicit conversion between signed/unsigned
                             // This handles cases like `let x = 0; f(x)` where f expects i32
-                            arg_ty = param_ty.clone();
+                            arg_ty = param.ty.clone();
                         }
                     }
-                    if arg_ty != *param_ty {
+                    if arg_ty != param.ty {
                         return Err(TypeError::TypeMismatch {
-                            expected: TypeError::type_name(param_ty),
+                            expected: TypeError::type_name(&param.ty),
                             found: TypeError::type_name(&arg_ty),
                         });
                     }
                 }
                 // Record substitution for index expressions.
-                subst_map.insert(param_var.0.clone(), arg_var.0.clone());
+                subst_map.insert(param.name.clone(), arg_var.0.clone());
             }
 
             // Check array arguments and their capabilities.
@@ -1148,7 +1151,7 @@ where
                     ),
                 });
             }
-            ctx.bind_var(&vars[0], fn_def.returns.clone());
+            ctx.bind_var(&vars[0].0, fn_def.returns.clone());
             finalize_statement(ctx, stmt);
             Ok(())
         }
@@ -1158,7 +1161,7 @@ where
 /// Check a tail expression and return its type.
 fn check_tail<L: CapabilityLogic>(
     ctx: &mut Ctx<L>,
-    tail: &Tail,
+    tail: &Tail<UntypedVar>,
     registry: &FnRegistry,
 ) -> Result<Ty, TypeError>
 where
@@ -1226,12 +1229,12 @@ where
             let value_params: Vec<_> = fn_def
                 .params
                 .iter()
-                .filter(|(_, ty)| !matches!(ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
+                .filter(|tvar| !matches!(tvar.ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
                 .collect();
             let array_params: Vec<_> = fn_def
                 .params
                 .iter()
-                .filter(|(_, ty)| matches!(ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
+                .filter(|tvar| matches!(tvar.ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
                 .collect();
 
             // Build substitution map for indices (param names -> arg vars).
@@ -1244,32 +1247,32 @@ where
                     op: format!("tail call to {} has too few arguments", func.0),
                 });
             }
-            for (i, (param_var, param_ty)) in value_params.iter().enumerate() {
+            for (i, param) in value_params.iter().enumerate() {
                 let arg_var = &args[i];
                 let mut arg_ty = ctx.ty_of(arg_var)?;
-                if arg_ty != *param_ty {
+                if arg_ty != param.ty {
                     // Allow integer type coercion for literals or between signed/unsigned
-                    let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param_ty, Ty::Int(_));
+                    let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param.ty, Ty::Int(_));
                     if both_int {
                         // If it's a literal binding, rebind it to the expected type
                         if arg_var.0.starts_with("_lit_") {
-                            ctx.bind_var(arg_var, param_ty.clone());
-                            arg_ty = param_ty.clone();
+                            ctx.bind_var(&arg_var.0, param.ty.clone());
+                            arg_ty = param.ty.clone();
                         } else {
                             // For non-literal integers, allow implicit conversion between signed/unsigned
                             // This handles cases like `let x = 0; f(x)` where f expects i32
-                            arg_ty = param_ty.clone();
+                            arg_ty = param.ty.clone();
                         }
                     }
-                    if arg_ty != *param_ty {
+                    if arg_ty != param.ty {
                         return Err(TypeError::TypeMismatch {
-                            expected: TypeError::type_name(param_ty),
+                            expected: TypeError::type_name(&param.ty),
                             found: TypeError::type_name(&arg_ty),
                         });
                     }
                 }
                 // Record substitution for index expressions.
-                subst_map.insert(param_var.0.clone(), arg_var.0.clone());
+                subst_map.insert(param.name.clone(), arg_var.0.clone());
             }
 
             // Check array arguments and their capabilities.

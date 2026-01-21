@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::ghost::fracperms::FractionExpr;
 use crate::ghost::ir::GhostVar;
-use crate::ir::{Ty, Var};
+use crate::ir::{TypedVar, UntypedVar};
 use crate::logic::cap::CapPattern;
 use crate::logic::semantic::region_set::RegionSetExpr;
 use crate::logic::semantic::solver::{Atom, Idx, Phi, RealExpr, SmtSolver};
@@ -20,7 +20,7 @@ static FRACTION_FRESH_COUNTER: AtomicUsize = AtomicUsize::new(0);
 #[derive(Clone, Debug)]
 pub struct FunctionSignature {
     /// Function parameters (variables and their types).
-    pub params: Vec<(Var, Ty)>,
+    pub params: Vec<TypedVar>,
     /// Initial permission assignments from CapPattern: (p_sync, p_garb).
     pub initial_perms: (PermExpr, PermExpr),
     /// Arithmetic preconditions implied by the capability regions.
@@ -172,7 +172,7 @@ impl CheckContext {
         let mut garb_perms = Vec::new();
 
         for cap_pattern in caps {
-            let array = Var(cap_pattern.array.clone());
+            let array = UntypedVar(cap_pattern.array.clone());
 
             // Get the total region for this array (0..len)
             let len_idx = match &cap_pattern.len {
