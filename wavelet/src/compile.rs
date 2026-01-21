@@ -1,13 +1,27 @@
 //! Implementation of the `compile` subcommand.
 
+use std::io::Write;
 use std::path::PathBuf;
 
 use anyhow::Context;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use thiserror::Error;
 
 use wavelet_core::riptide;
 use wavelet_elab as elab;
+
+/// Target IR to output.
+#[derive(Debug, Parser, ValueEnum, Clone, PartialEq, Eq)]
+enum Target {
+    /// Elaborated imperative IR
+    Elab,
+    /// Elaborated imperative IR in JSON
+    ElabJson,
+    /// Unoptimized dataflow process
+    Unopt,
+    /// Optimized dataflow process
+    Opt,
+}
 
 #[derive(Debug, Parser)]
 pub struct CompileArgs {
@@ -22,16 +36,13 @@ pub struct CompileArgs {
     #[arg(long)]
     trim_output: bool,
 
-    // /// Generate a DOT visualization of the compiled dataflow graph at `<input>.dot`
-    // #[arg(long)]
-    // emit_dot: bool,
-
-    // /// Generate unoptimized Wavelet IR alongside the final output at `<input>.unopt.json`.
-    // #[arg(long)]
-    // emit_unopt: bool,
     /// Enable translation validation for ghost token insertion.
     #[arg(long)]
     ghost_check: bool,
+
+    /// Target IR to output.
+    #[arg(long, default_value = "opt")]
+    target: Target,
 }
 
 #[derive(Debug, Error)]
@@ -51,6 +62,22 @@ pub enum CompileError {
 }
 
 impl CompileArgs {
+    /// Writes the given content to the configured output.
+    fn output<C>(&self, content: C) -> Result<(), CompileError>
+    where
+        C: AsRef<[u8]>,
+    {
+        if let Some(output_path) = &self.output {
+            std::fs::write(output_path, content).context("when writing to the output file")?;
+        } else {
+            std::io::stdout()
+                .lock()
+                .write_all(content.as_ref())
+                .context("when writing to stdout")?;
+        }
+        Ok(())
+    }
+
     pub fn run(&self) -> Result<(), CompileError> {
         // Load source program
         let src = std::fs::read_to_string(&self.input).context("when reading input file")?;
@@ -74,8 +101,16 @@ impl CompileArgs {
         }
         let elab_main_fn = elab_prog.defs.last().ok_or(CompileError::EmptyProgram)?;
 
+        if self.target == Target::Elab {
+            return self.output(format!("{}", elab_prog));
+        }
+
         // Transfer to the Lean side through FFI
         let json = elab::ghost::json::export_program_json(&elab_prog)?;
+        if self.target == Target::ElabJson {
+            return self.output(json);
+        }
+
         let core_prog = riptide::Prog::from_json(&json)
             .context("when converting elaborated program to lean")?;
 
@@ -89,6 +124,9 @@ impl CompileArgs {
             core_proc.num_atoms(),
             core_proc.num_non_trivial_atoms()
         );
+        if self.target == Target::Unopt {
+            return self.output(core_proc.to_json());
+        }
 
         // Remove unnecessary output(s).
         let core_proc = if self.trim_output {
@@ -115,14 +153,6 @@ impl CompileArgs {
             core_proc.num_non_trivial_atoms()
         );
 
-        let json = core_proc.to_json();
-
-        if let Some(output_path) = &self.output {
-            std::fs::write(output_path, &json).context("when writing to the output file")?;
-        } else {
-            println!("{}", json);
-        }
-
-        Ok(())
+        return self.output(core_proc.to_json());
     }
 }
