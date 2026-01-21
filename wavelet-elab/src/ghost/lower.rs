@@ -359,9 +359,9 @@ mod tests {
     use super::*;
     use crate::parse::parse_program;
     use crate::UntypedVar;
+    use serde_json::json;
     use std::fs;
     use std::path::Path;
-    use serde_json::json;
 
     fn lower_fixture(src: &str, fn_name: &str) -> GhostFnDef<UntypedVar> {
         let program = parse_program(src).expect("fixture should parse");
