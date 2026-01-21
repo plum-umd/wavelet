@@ -164,7 +164,7 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
                         ConstValue::Int(1, 0)
                     }
                 }
-                Val::Unit => ConstValue::Unit,
+                Val::Unit => ConstValue::Int(0, 0),
             };
             let op = WithCall::Op(WithSpec::Spec {
                 ghost: false,
@@ -389,7 +389,6 @@ impl Serialize for WithSpec {
 #[derive(Debug)]
 pub enum ConstValue {
     Int(usize, u64),
-    Unit,
 }
 
 #[derive(Debug)]
@@ -431,7 +430,6 @@ impl Serialize for ConstValue {
                 map.serialize_entry("int", &inner)?;
                 map.end()
             }
-            ConstValue::Unit => serializer.serialize_str("unit"),
         }
     }
 }

@@ -19,16 +19,14 @@ open Semantics Determinacy Compile
 
 inductive Value where
   | int (w : Nat) (val : BitVec w)
-  | unit
   deriving BEq, DecidableEq, Hashable, Repr
 
 /-- A special value for control signals. -/
-def Value.none : Value := .int 0 0
+def Value.unit : Value := .int 0 0
 
 instance : Lean.ToJson Value where
   toJson
     | .int w val => json% { "int": { "width": $(w), "value": $(val.toNat) } }
-    | .unit => json% "unit"
 
 instance : Lean.FromJson Value where
   fromJson? json :=
@@ -37,19 +35,11 @@ instance : Lean.FromJson Value where
     let w ← obj.getObjValAs? Nat "width"
     let v ← obj.getObjValAs? Nat "value"
     return .int w (BitVec.ofNat w v)) <|>
-  (do
-    let typ ← json.getStr?
-    if typ = "unit" then
-      return .unit
-    else
-      .error "failed to parse Value") <|>
   .error "failed to parse Value"
 
 instance : ToString Value where
   toString
-    | .int 0 _ => "none"
     | .int w val => s!"{val.toInt}i{w}"
-    | .unit => "unit"
 
 /-- Synchronous operators in RipTide, parametrized by a type of location/array symbols. -/
 inductive SyncOp (Loc : Type u) : Type u where
@@ -125,7 +115,6 @@ private def applyBitVecBinOp
       return #v[.int w₁ v]
     else
       failure
-  | _, _ => failure
 
 private def applyBitVecBinPred
   [DecidableEq Loc] [Hashable Loc]
@@ -137,7 +126,6 @@ private def applyBitVecBinPred
       return #v[InterpConsts.fromBool b]
     else
       failure
-  | _, _ => failure
 
 instance instOpInterpM [DecidableEq Loc] [Hashable Loc] :
   OpInterpM (SyncOp Loc) Value (StateT (State Loc) Option) where
@@ -152,11 +140,10 @@ instance instOpInterpM [DecidableEq Loc] [Hashable Loc] :
     | .ashr, (inputs : Vector Value 2) =>
       match inputs[0], inputs[1] with
       | .int w v, .int _ shift => return #v[.int w (BitVec.sshiftRight v shift.toNat)]
-      | _, _ => failure
     | .load loc, (inputs : Vector Value 1) => return #v[← (← get).load loc inputs[0]]
     | .store loc, (inputs : Vector Value 2) => do
       modify (λ s => s.store loc inputs[0] inputs[1])
-      return #v[.none]
+      return #v[.unit]
     | .sel, (inputs : Vector Value 3) => do
       let cond ← InterpConsts.toBool inputs[0]
       let v₁ := inputs[1]
