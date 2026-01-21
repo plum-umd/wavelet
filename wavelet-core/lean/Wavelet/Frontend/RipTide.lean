@@ -17,14 +17,45 @@ namespace Wavelet.Frontend.RipTide
 
 open Semantics Determinacy Compile
 
--- TODO: Using Int for now since `Int32` doesn't implement ToJson/FromJson
-abbrev Value := Int
+inductive Value where
+  | int (w : Nat) (val : BitVec w)
+  | unit
+  deriving BEq, DecidableEq, Hashable, Repr
+
+/-- A special value for control signals. -/
+def Value.none : Value := .int 0 0
+
+instance : Lean.ToJson Value where
+  toJson
+    | .int w val => json% { "int": { "width": $(w), "value": $(val.toNat) } }
+    | .unit => json% "unit"
+
+instance : Lean.FromJson Value where
+  fromJson? json :=
+  (do
+    let obj ← json.getObjVal? "int"
+    let w ← obj.getObjValAs? Nat "width"
+    let v ← obj.getObjValAs? Nat "value"
+    return .int w (BitVec.ofNat w v)) <|>
+  (do
+    let typ ← json.getStr?
+    if typ = "unit" then
+      return .unit
+    else
+      .error "failed to parse Value") <|>
+  .error "failed to parse Value"
+
+instance : ToString Value where
+  toString
+    | .int 0 _ => "none"
+    | .int w val => s!"{val.toInt}i{w}"
+    | .unit => "unit"
 
 /-- Synchronous operators in RipTide, parametrized by a type of location/array symbols. -/
 inductive SyncOp (Loc : Type u) : Type u where
-  | add | sub | mul | div
+  | add | sub | mul | sdiv
   | shl | ashr | lshr
-  | eq | lt | le | neq
+  | eq | neq | slt | sle
   | and
   | bitand
   | load (_ : Loc) | store (_ : Loc) | sel
@@ -33,16 +64,16 @@ inductive SyncOp (Loc : Type u) : Type u where
   deriving Repr, Lean.ToJson, Lean.FromJson
 
 instance : Arity (SyncOp Loc) where
-  ι | .add => 2 | .sub => 2 | .mul => 2 | .div => 2
+  ι | .add => 2 | .sub => 2 | .mul => 2 | .sdiv => 2
     | .shl => 2 | .ashr => 2 | .lshr => 2
-    | .eq => 2 | .lt => 2 | .le => 2 | .neq => 2
+    | .eq => 2 | .neq => 2 | .slt => 2 | .sle => 2
     | .and => 2
     | .bitand => 2
     | .load _ => 1 | .store _ => 2 | .sel => 3
     | .const _ => 1 | .copy _ => 1
-  ω | .add => 1 | .sub => 1 | .mul => 1 | .div => 1
+  ω | .add => 1 | .sub => 1 | .mul => 1 | .sdiv => 1
     | .shl => 1 | .ashr => 1 | .lshr => 1
-    | .eq => 1 | .lt => 1 | .le => 1 | .neq => 1
+    | .eq => 1 | .neq => 1 | .slt => 1 | .sle => 1
     | .and => 1
     | .bitand => 1
     | .load _ => 1 | .store _ => 1 | .sel => 1
@@ -56,14 +87,14 @@ instance : NeZeroArity (SyncOp Loc) where
 
 /-- Some constants used for compilation. -/
 instance : InterpConsts Value where
-  junkVal := -1
-  toBool | 0 => some false
-         | 1 => some true
+  junkVal := .int 0 0
+  toBool | .int 1 0 => some false
+         | .int 1 1 => some true
          | _ => none
-  fromBool b := if b then 1 else 0
+  fromBool b := if b then .int 1 1 else .int 1 0
   unique_fromBool_toBool b := by cases b <;> simp
   unique_toBool_fromBool b v h := by
-    split at h <;> simp at h <;> subst h <;> decide
+    split at h <;> simp at h <;> subst h <;> simp
   isClonable _ := true
   bool_clonable := by simp
 
@@ -84,30 +115,53 @@ def State.store [DecidableEq Loc] [Hashable Loc]
     memory := s.memory.insert loc
       ((s.memory.getD loc .emptyWithCapacity).insert addr val) }
 
+private def applyBitVecBinOp
+  [DecidableEq Loc] [Hashable Loc]
+  (f : ∀ {w : Nat}, BitVec w → BitVec w → BitVec w) :
+    Value → Value → StateT (State Loc) Option (Vector Value 1)
+  | .int w₁ v₁, .int w₂ v₂ =>
+    if h : w₁ = w₂ then
+      let v := f v₁ (v₂.cast h.symm)
+      return #v[.int w₁ v]
+    else
+      failure
+  | _, _ => failure
+
+private def applyBitVecBinPred
+  [DecidableEq Loc] [Hashable Loc]
+  (f : ∀ {w : Nat}, BitVec w → BitVec w → Bool) :
+    Value → Value → StateT (State Loc) Option (Vector Value 1)
+  | .int w₁ v₁, .int w₂ v₂ =>
+    if h : w₁ = w₂ then
+      let b := f v₁ (v₂.cast h.symm)
+      return #v[InterpConsts.fromBool b]
+    else
+      failure
+  | _, _ => failure
+
 instance instOpInterpM [DecidableEq Loc] [Hashable Loc] :
   OpInterpM (SyncOp Loc) Value (StateT (State Loc) Option) where
   interp
-    | .add, (inputs : Vector Value 2) => return #v[inputs[0] + inputs[1]]
-    | .mul, (inputs : Vector Value 2) => return #v[inputs[0] * inputs[1]]
-    | .lt, (inputs : Vector Value 2) => return #v[if inputs[0] < inputs[1] then 1 else 0]
-    | .and, (inputs : Vector Value 2) => do
-      let a ← InterpConsts.toBool inputs[0]
-      let b ← InterpConsts.toBool inputs[1]
-      return #v[InterpConsts.fromBool (a && b)]
+    | .add, (inputs : Vector Value 2) => applyBitVecBinOp BitVec.add inputs[0] inputs[1]
+    | .mul, (inputs : Vector Value 2) => applyBitVecBinOp BitVec.mul inputs[0] inputs[1]
+    | .eq, (inputs : Vector Value 2) => applyBitVecBinPred (· == ·) inputs[0] inputs[1]
+    | .neq, (inputs : Vector Value 2) => applyBitVecBinPred (· != ·) inputs[0] inputs[1]
+    | .slt, (inputs : Vector Value 2) => applyBitVecBinPred BitVec.slt inputs[0] inputs[1]
+    | .sle, (inputs : Vector Value 2) => applyBitVecBinPred BitVec.sle inputs[0] inputs[1]
+    | .and, (inputs : Vector Value 2) => applyBitVecBinOp BitVec.and inputs[0] inputs[1]
     | .ashr, (inputs : Vector Value 2) =>
-      let a : Int32 := inputs[0].toInt32
-      let b : Int32 := inputs[1].toInt32
-      let c := a >>> b
-      return #v[c.toInt]
+      match inputs[0], inputs[1] with
+      | .int w v, .int _ shift => return #v[.int w (BitVec.sshiftRight v shift.toNat)]
+      | _, _ => failure
     | .load loc, (inputs : Vector Value 1) => return #v[← (← get).load loc inputs[0]]
+    | .store loc, (inputs : Vector Value 2) => do
+      modify (λ s => s.store loc inputs[0] inputs[1])
+      return #v[.none]
     | .sel, (inputs : Vector Value 3) => do
       let cond ← InterpConsts.toBool inputs[0]
       let v₁ := inputs[1]
       let v₂ := inputs[2]
       return #v[if cond then v₁ else v₂]
-    | .store loc, (inputs : Vector Value 2) => do
-      modify (λ s => s.store loc inputs[0] inputs[1])
-      return #v[0]
     -- TODO: other pure operators
     | _, _ => failure
 
@@ -160,12 +214,6 @@ instance [Lean.ToJson Loc] : Lean.ToJson (WithSpec (RipTide.SyncOp Loc) RipTide.
       json% { "op": $(op) }
     | WithSpec.join k l _ =>
       json% { "join": { "toks": $(k), "deps": $(l) } }
-
-instance : Lean.FromJson Value where
-  fromJson? json := json.getInt?
-
-instance : Lean.ToJson Value where
-  toJson v := Lean.Json.num v
 
 instance [DecidableEq Loc] [Hashable Loc] [Lean.FromJson Loc] : Lean.FromJson (State Loc) where
   fromJson? json := do
@@ -260,11 +308,11 @@ def prog₁ :
         .op (.op (.join 1 0 (λ _ => PCM.zero))) ["t₀"] ["t₁", "t₂"] <|
         .op (.op (.op false (.copy 3))) ["i"] ["i₁", "i₂", "i₃", "i₄", "dummy₁"] <|
         .op (.op (.op false (.copy 1))) ["n"] ["n₁", "n₂", "dummy₂"] <|
-        .op (.op (.op false .lt)) ["i₁", "n₁"] ["c", "dummy₃"] <|
+        .op (.op (.op false .slt)) ["i₁", "n₁"] ["c", "dummy₃"] <|
         .br "c"
           (.op (.op (.op true (.load "A"))) ["i₂", "t₁"] ["x", "t₁'"] <|
            .op (.op (.op false .add)) ["sum", "x"] ["sum'", "dummy₄"] <|
-           .op (.op (.op false (.const 1))) ["i₃"] ["one", "dummy₅"] <|
+           .op (.op (.op false (.const (.int 32 1)))) ["i₃"] ["one", "dummy₅"] <|
            .op (.op (.op false .add)) ["i₄", "one"] ["i'", "dummy₆"] <|
             .tail ["sum'", "i'", "n₂", "t₂"])
           (.ret ["sum", "t₂"]),
@@ -281,13 +329,13 @@ instance [ToString Loc] : Dataflow.DotName (SyncOp Loc) where
     | .add => "\"+\""
     | .sub => "\"-\""
     | .mul => "\"*\""
-    | .div => "\"/\""
+    | .sdiv => "\"/\""
     | .shl => "\"<<\""
     | .ashr => "\"a>>\""
     | .lshr => "\"l>>\""
     | .eq => "\"=\""
-    | .lt => "\"<\""
-    | .le => "\"<=\""
+    | .slt => "\"<\""
+    | .sle => "\"<=\""
     | .neq => "\"!=\""
     | .and => "\"&&\""
     | .bitand => "\"&\""
@@ -391,10 +439,8 @@ def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite (RipTide.SyncOp Loc) χ
     | _ => failure
   | _ => failure
 
-end Wavelet.Frontend.RipTide
-
 /-! Instances of various compilation passes to RipTide. -/
-namespace Wavelet.Frontend.RipTide
+section Passes
 
 open Compile Determinacy Seq Dataflow Semantics
 
@@ -453,5 +499,7 @@ def rewriteProc
   Nat × RewriteStats × RipTide.EncapProc :=
   let (numRws, stats, proc) := Rewrite.applyUntilFailNat rules proc.proc
   (numRws, stats, EncapProc.fromProc proc)
+
+end Passes
 
 end Wavelet.Frontend.RipTide

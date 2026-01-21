@@ -22,17 +22,16 @@ pub struct CompileArgs {
     #[arg(long)]
     trim_output: bool,
 
-    /// Generate a DOT visualization of the compiled dataflow graph at `<input>.dot`
-    #[arg(long)]
-    emit_dot: bool,
+    // /// Generate a DOT visualization of the compiled dataflow graph at `<input>.dot`
+    // #[arg(long)]
+    // emit_dot: bool,
 
-    /// Generate unoptimized Wavelet IR alongside the final output at `<input>.unopt.json`.
+    // /// Generate unoptimized Wavelet IR alongside the final output at `<input>.unopt.json`.
+    // #[arg(long)]
+    // emit_unopt: bool,
+    /// Enable translation validation for ghost token insertion.
     #[arg(long)]
-    emit_unopt: bool,
-
-    /// Skip translation validation for ghost token insertion.
-    #[arg(long)]
-    skip_ghost_check: bool,
+    ghost_check: bool,
 }
 
 #[derive(Debug, Error)]
@@ -68,7 +67,7 @@ impl CompileArgs {
 
         // Elaboration and validation
         let elab_prog = elab::synthesize_ghost_program(&prog);
-        if !self.skip_ghost_check {
+        if self.ghost_check {
             eprintln!("validating token placement...");
             elab::ghost::check_ghost_program_with_verbose(&elab_prog, false)
                 .map_err(CompileError::ElabValidationError)?;

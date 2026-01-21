@@ -107,8 +107,8 @@ pub enum Op {
     Sub,
     /// Integer multiplication: x * y
     Mul,
-    /// Integer division: x / y
-    Div,
+    /// Signed integer division: x / y
+    SignedDiv,
     /// Boolean conjunction: x && y
     And,
     /// Boolean disjunction: x || y
@@ -125,10 +125,10 @@ pub enum Op {
     Shl,
     /// Right shift: x >> y
     Shr,
-    /// Integer less-than comparison: x < y
-    LessThan,
-    /// Integer less-than-or-equal comparison: x <= y
-    LessEqual,
+    /// Signed integer less-than comparison: x < y
+    SignedLessThan,
+    /// Signed integer less-than-or-equal comparison: x <= y
+    SignedLessEqual,
     /// Equality comparison: x == y
     Equal,
     /// Inequality comparison: x != y
@@ -378,7 +378,7 @@ impl std::fmt::Display for Op {
             Op::Add => write!(f, "+"),
             Op::Sub => write!(f, "-"),
             Op::Mul => write!(f, "*"),
-            Op::Div => write!(f, "/"),
+            Op::SignedDiv => write!(f, "/"),
             Op::And => write!(f, "&&"),
             Op::Or => write!(f, "||"),
             Op::Not => write!(f, "!"),
@@ -387,8 +387,8 @@ impl std::fmt::Display for Op {
             Op::BitXor => write!(f, "^"),
             Op::Shl => write!(f, "<<"),
             Op::Shr => write!(f, ">>"),
-            Op::LessThan => write!(f, "<"),
-            Op::LessEqual => write!(f, "<="),
+            Op::SignedLessThan => write!(f, "<"),
+            Op::SignedLessEqual => write!(f, "<="),
             Op::Equal => write!(f, "=="),
             Op::NotEqual => write!(f, "!="),
             Op::Load { array, index, len } => {

@@ -375,7 +375,7 @@ mod tests {
             ghost_fn.body.stmts.iter().any(|stmt| matches!(
                 stmt,
                 GhostStmt::Pure {
-                    op: Op::LessThan,
+                    op: Op::SignedLessThan,
                     ..
                 }
             )),

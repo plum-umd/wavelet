@@ -39,7 +39,11 @@ fn main() -> ExitCode {
     match Args::parse().run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
+            let err: anyhow::Error = err.into();
             eprintln!("{}", err);
+            err.chain()
+                .skip(2)
+                .for_each(|cause| eprintln!("  caused by: {}", cause));
             ExitCode::FAILURE
         }
     }

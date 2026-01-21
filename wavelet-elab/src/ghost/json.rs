@@ -156,15 +156,15 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
             ghost_out,
         } => {
             let val = match value {
-                Val::Int(i) => *i as i64,
+                Val::Int(i) => ConstValue::Int(32, *i as u64),
                 Val::Bool(b) => {
                     if *b {
-                        1
+                        ConstValue::Int(1, 1)
                     } else {
-                        0
+                        ConstValue::Int(1, 0)
                     }
                 }
-                Val::Unit => 0,
+                Val::Unit => ConstValue::Unit,
             };
             let op = WithCall::Op(WithSpec::Spec {
                 ghost: false,
@@ -387,11 +387,17 @@ impl Serialize for WithSpec {
 }
 
 #[derive(Debug)]
+pub enum ConstValue {
+    Int(usize, u64),
+    Unit,
+}
+
+#[derive(Debug)]
 pub enum SyncOp {
     Add,
     Sub,
     Mul,
-    Div,
+    Sdiv,
     Shl,
     Ashr,
     Lshr,
@@ -400,15 +406,34 @@ pub enum SyncOp {
     BitAnd,
     BitOr,
     BitXor,
-    Lt,
-    Le,
+    Slt,
+    Sle,
     And,
     Or,
     Load { loc: String },
     Store { loc: String },
     Sel,
-    Const { value: i64 },
+    Const { value: ConstValue },
     Copy { n: usize },
+}
+
+impl Serialize for ConstValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            ConstValue::Int(w, v) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                let mut inner = serde_json::Map::with_capacity(2);
+                inner.insert("width".to_string(), serde_json::Value::from(*w));
+                inner.insert("value".to_string(), serde_json::Value::from(*v));
+                map.serialize_entry("int", &inner)?;
+                map.end()
+            }
+            ConstValue::Unit => serializer.serialize_str("unit"),
+        }
+    }
 }
 
 impl Serialize for SyncOp {
@@ -420,7 +445,7 @@ impl Serialize for SyncOp {
             SyncOp::Add => serializer.serialize_str("add"),
             SyncOp::Sub => serializer.serialize_str("sub"),
             SyncOp::Mul => serializer.serialize_str("mul"),
-            SyncOp::Div => serializer.serialize_str("div"),
+            SyncOp::Sdiv => serializer.serialize_str("sdiv"),
             SyncOp::Shl => serializer.serialize_str("shl"),
             SyncOp::Ashr => serializer.serialize_str("ashr"),
             SyncOp::Lshr => serializer.serialize_str("lshr"),
@@ -429,8 +454,8 @@ impl Serialize for SyncOp {
             SyncOp::BitAnd => serializer.serialize_str("bitand"),
             SyncOp::BitOr => serializer.serialize_str("bitor"),
             SyncOp::BitXor => serializer.serialize_str("bitxor"),
-            SyncOp::Lt => serializer.serialize_str("lt"),
-            SyncOp::Le => serializer.serialize_str("le"),
+            SyncOp::Slt => serializer.serialize_str("slt"),
+            SyncOp::Sle => serializer.serialize_str("sle"),
             SyncOp::And => serializer.serialize_str("and"),
             SyncOp::Or => serializer.serialize_str("or"),
             SyncOp::Sel => serializer.serialize_str("sel"),
@@ -463,7 +488,7 @@ fn map_sync_op(op: &Op) -> Result<SyncOp, ExportError> {
         Op::Add => Ok(SyncOp::Add),
         Op::Sub => Ok(SyncOp::Sub),
         Op::Mul => Ok(SyncOp::Mul),
-        Op::Div => Ok(SyncOp::Div),
+        Op::SignedDiv => Ok(SyncOp::Sdiv),
         Op::And => Ok(SyncOp::And),
         Op::Or => Ok(SyncOp::Or),
         Op::Shl => Ok(SyncOp::Shl),
@@ -473,8 +498,8 @@ fn map_sync_op(op: &Op) -> Result<SyncOp, ExportError> {
         Op::BitAnd => Ok(SyncOp::BitAnd),
         Op::BitOr => Ok(SyncOp::BitOr),
         Op::BitXor => Ok(SyncOp::BitXor),
-        Op::LessThan => Ok(SyncOp::Lt),
-        Op::LessEqual => Ok(SyncOp::Le),
+        Op::SignedLessThan => Ok(SyncOp::Slt),
+        Op::SignedLessEqual => Ok(SyncOp::Sle),
         _ => Err(ExportError::Unsupported(format!(
             "pure operation {} not yet supported for serialization",
             op
