@@ -43,9 +43,9 @@ instance : ToString Value where
 
 /-- Synchronous operators in RipTide, parametrized by a type of location/array symbols. -/
 inductive SyncOp (Loc : Type u) : Type u where
-  | add | sub | mul | sdiv
+  | add | sub | mul | sdiv | udiv
   | shl | ashr | lshr
-  | eq | neq | slt | sle
+  | eq | neq | slt | sle | ult | ule
   | and
   | bitand
   | load (_ : Loc) | store (_ : Loc) | sel
@@ -54,16 +54,22 @@ inductive SyncOp (Loc : Type u) : Type u where
   deriving Repr, Lean.ToJson, Lean.FromJson
 
 instance : Arity (SyncOp Loc) where
-  ι | .add => 2 | .sub => 2 | .mul => 2 | .sdiv => 2
+  ι | .add => 2 | .sub => 2 | .mul => 2
+    | .sdiv => 2 | .udiv => 2
     | .shl => 2 | .ashr => 2 | .lshr => 2
-    | .eq => 2 | .neq => 2 | .slt => 2 | .sle => 2
+    | .eq => 2 | .neq => 2
+    | .slt => 2 | .sle => 2
+    | .ult => 2 | .ule => 2
     | .and => 2
     | .bitand => 2
     | .load _ => 1 | .store _ => 2 | .sel => 3
     | .const _ => 1 | .copy _ => 1
-  ω | .add => 1 | .sub => 1 | .mul => 1 | .sdiv => 1
+  ω | .add => 1 | .sub => 1 | .mul => 1
+    | .sdiv => 1 | .udiv => 1
     | .shl => 1 | .ashr => 1 | .lshr => 1
-    | .eq => 1 | .neq => 1 | .slt => 1 | .sle => 1
+    | .eq => 1 | .neq => 1
+    | .slt => 1 | .sle => 1
+    | .ult => 1 | .ule => 1
     | .and => 1
     | .bitand => 1
     | .load _ => 1 | .store _ => 1 | .sel => 1
@@ -316,14 +322,17 @@ instance [ToString Loc] : Dataflow.DotName (SyncOp Loc) where
     | .add => "\"+\""
     | .sub => "\"-\""
     | .mul => "\"*\""
-    | .sdiv => "\"/\""
+    | .sdiv => "\"s/\""
+    | .udiv => "\"u/\""
     | .shl => "\"<<\""
     | .ashr => "\"a>>\""
     | .lshr => "\"l>>\""
     | .eq => "\"=\""
-    | .slt => "\"<\""
-    | .sle => "\"<=\""
     | .neq => "\"!=\""
+    | .slt => "\"s<\""
+    | .sle => "\"s<=\""
+    | .ult => "\"u<\""
+    | .ule => "\"u<=\""
     | .and => "\"&&\""
     | .bitand => "\"&\""
     | .load loc => s!"<LD<sub>{loc}</sub>>"
@@ -433,14 +442,25 @@ open Compile Determinacy Seq Dataflow Semantics
 
 private abbrev Loc := String
 private abbrev FnName := String
-private abbrev VarName := String
+
+inductive PrimType where
+  | int (_ : Nat)
+  deriving BEq, DecidableEq, Hashable, Repr, Lean.ToJson, Lean.FromJson
+
+def PrimType.unit : PrimType := .int 0
+def PrimType.bool : PrimType := .int 1
+
+structure VarName (α : Type u) where
+  name : α
+  ty : PrimType
+  deriving BEq, DecidableEq, Hashable, Repr, Lean.ToJson, Lean.FromJson
 
 -- Raw program and process formats used for encoding/decoding
-abbrev RawProg := Frontend.RawProg (WithCall (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) FnName) VarName
+abbrev RawProg := Frontend.RawProg (WithCall (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) FnName) (VarName String)
 abbrev RawProc := Frontend.RawProc (RipTide.SyncOp Loc) Nat RipTide.Value
 
 -- Actual program and process formats used for compilation
-abbrev EncapProg := Frontend.EncapProg (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) VarName RipTide.Value
+abbrev EncapProg := Frontend.EncapProg (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) (VarName String) RipTide.Value
 abbrev EncapProc := Frontend.EncapProc (RipTide.SyncOp Loc) Nat RipTide.Value
 
 /-- Validates static properties of a `Prog`. -/
