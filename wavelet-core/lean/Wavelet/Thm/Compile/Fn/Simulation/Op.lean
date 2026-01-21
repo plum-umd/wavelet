@@ -12,6 +12,7 @@ open Semantics Seq Dataflow Compile Fn
 is preserved after execution of an operator. -/
 private theorem sim_step_op_defined_vars
   [DecidableEq χ]
+  {rets}
   {definedVars args : List χ}
   {map : VarMap χ V}
   (hrets_disj : definedVars.Disjoint rets.toList)

@@ -34,6 +34,7 @@ def Fn.renameOp
   (fn : Fn Op₁ χ V m n) : Fn Op₂ χ V m n
   := {
     params := fn.params,
+    rets := fn.rets,
     body := fn.body.renameOp f h,
   }
 
@@ -59,7 +60,7 @@ inductive RawExpr (Op : Type u) (χ : Type v) : Type (max u v) where
 structure RawFn (Op : Type u) (χ : Type v) where
   name : String
   params : List χ
-  outputs : Nat
+  rets : List χ
   body : RawExpr Op χ
   deriving Repr, Lean.ToJson
 
@@ -122,8 +123,8 @@ instance [Lean.FromJson Op] [Lean.FromJson χ] : Lean.FromJson (RawFn Op χ) whe
       name := name,
       params := ← json.getObjValAs? (List χ) "params"
         |>.mapError (λ e => s!"when parsing params of function `{name}`: {e}"),
-      outputs := ← json.getObjValAs? Nat "outputs"
-        |>.mapError (λ e => s!"when parsing output number of function `{name}`: {e}"),
+      rets := ← json.getObjValAs? (List χ) "rets"
+        |>.mapError (λ e => s!"when parsing return variables of function `{name}`: {e}"),
       body := ← json.getObjValAs? (RawExpr Op χ) "body"
         |>.mapError (λ e => s!"when parsing body of function `{name}`: {e}"),
     }
@@ -300,15 +301,16 @@ def RawFn.checkFn [Arity Op] [Repr Op]
   (rawFn : RawFn (WithCall Op String) χ) : CheckM Op χ V Unit
   := do
   let state ← get
-  let expr ← rawFn.body.checkExpr state rawFn.params.length rawFn.outputs
+  let expr ← rawFn.body.checkExpr state rawFn.params.length rawFn.rets.length
     |>.mapError (λ e => s!"when checking function `{rawFn.name}`: {e}")
   if h₁ : rawFn.params.length = 0 then
     throw s!"function {rawFn.name} with zero inputs is not allowed"
-  else if h₂ : rawFn.outputs = 0 then
+  else if h₂ : rawFn.rets.length = 0 then
     throw s!"function {rawFn.name} with zero outputs is not allowed"
   else
     set (state.pushFn rawFn.name {
       params := rawFn.params.toVector,
+      rets := rawFn.rets.toVector,
       body := expr,
     } ⟨h₁, h₂⟩)
 
@@ -357,7 +359,7 @@ def fn₁ : RawFn MiniOp String :=
   {
     name := "main",
     params := ["a", "b"],
-    outputs := 1,
+    rets := ["r"],
     body := expr₁,
   }
 
@@ -371,7 +373,7 @@ def prog₂ : RawProg (WithCall MiniOp String) String :=
       {
         name := "foo",
         params := ["x", "y"],
-        outputs := 1,
+        rets := ["z"],
         body :=
           .op (.op .add) ["x", "y"] ["z"] <|
           .ret ["z"],
@@ -379,7 +381,7 @@ def prog₂ : RawProg (WithCall MiniOp String) String :=
       {
         name := "bar",
         params := ["n", "m"],
-        outputs := 1,
+        rets := ["out"],
         body :=
           .op (.call "foo") ["n", "m"] ["k"] <|
           .ret ["k"],
@@ -393,7 +395,7 @@ def prog₃ : RawProg (WithCall MiniOp String) String :=
       {
         name := "foo",
         params := ["x", "y"],
-        outputs := 1,
+        rets := ["out"],
         body :=
           -- Incorrect arity
           .op (.op .add) ["x"] ["z"] <|
@@ -402,7 +404,7 @@ def prog₃ : RawProg (WithCall MiniOp String) String :=
       {
         name := "bar",
         params := ["n", "m"],
-        outputs := 1,
+        rets := ["out"],
         body :=
           .op (.call "foo") ["n", "m"] ["k"] <|
           .ret ["k"],
@@ -416,7 +418,7 @@ def prog₄ : RawProg (WithCall MiniOp String) String :=
       {
         name := "foo",
         params := ["x", "y"],
-        outputs := 1,
+        rets := ["out"],
         body :=
           .op (.op .add) ["x", "y"] ["z"] <|
           .ret ["z"],
@@ -424,7 +426,7 @@ def prog₄ : RawProg (WithCall MiniOp String) String :=
       {
         name := "bar",
         params := ["n", "m"],
-        outputs := 1,
+        rets := ["out"],
         body :=
           -- Undefined function
           .op (.call "foo?") ["n", "m"] ["k"] <|

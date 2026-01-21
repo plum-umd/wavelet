@@ -135,10 +135,11 @@ abbrev RewriteStats := Std.HashMap String Nat
 for slightly better performance, and also returns some stats about
 rewrite rules used. -/
 partial def Rewrite.applyUntilFailNat
-  [Arity Op] [DecidableEq χ]
-  (rw : Rewrite Op Nat V)
-  (proc : Proc Op χ V m n) : Nat × RewriteStats × Proc Op Nat V m n :=
-    loop 0 proc.renameChans initStats
+  [Arity Op] [DecidableEq χ] [Hashable χ]
+  (renamer : Nat → RewriteName χ → χ)
+  (rw : Rewrite Op χ V)
+  (proc : Proc Op χ V m n) : Nat × RewriteStats × Proc Op χ V m n :=
+    loop 0 proc initStats
   where
     initStats := allRewriteNames.foldl (λ m name => m.insert name 0)
       (Std.HashMap.emptyWithCapacity allRewriteNames.length)
@@ -146,8 +147,8 @@ partial def Rewrite.applyUntilFailNat
       match rw.apply (proc.mapChans .base) with
       | some (rwName, proc') =>
         let stats := stats.insert rwName (stats.getD rwName 0 + 1)
-        loop (numRewrites + 1) proc'.renameChans stats
-      | none => (numRewrites, stats, proc.renameChans)
+        loop (numRewrites + 1) (proc'.renameChans renamer) stats
+      | none => (numRewrites, stats, proc)
 
 /--
 Tries to match every atomic proc in the context with the continuation,

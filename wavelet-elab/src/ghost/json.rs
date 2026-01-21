@@ -66,7 +66,7 @@ impl<V: Variable + From<GhostVar>> TryFrom<&GhostProgram<V>> for RawProg<V> {
 pub struct RawFn<V> {
     pub name: String,
     pub params: Vec<TypedVar>,
-    pub outputs: usize,
+    pub rets: Vec<TypedVar>,
     pub body: RawExpr<V>,
 }
 
@@ -78,12 +78,15 @@ impl<V: Variable + From<GhostVar>> TryFrom<&GhostFnDef<V>> for RawFn<V> {
         // Include both regular params and ghost params
         let mut params = def.params.clone();
         params.extend(def.ghost_params.iter().map(|gv| gv.clone().into()));
-        let outputs = 2; // Fixed to 2: value + permission token
         let body = serialize_body(&def.body)?;
         Ok(RawFn {
             name,
             params,
-            outputs,
+            // Fixed to 2: value + permission token
+            rets: vec![
+                TypedVar::new("ret".to_string(), def.returns.clone()),
+                TypedVar::new("perm".to_string(), Ty::Unit),
+            ],
             body,
         })
     }

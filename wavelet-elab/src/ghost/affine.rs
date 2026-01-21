@@ -24,7 +24,7 @@ fn enforce_affine_fn<V: Variable>(func: RawFn<V>, names: Rc<RefCell<NameGenerato
     let RawFn {
         name,
         params,
-        outputs,
+        rets,
         body,
     } = func;
 
@@ -39,7 +39,7 @@ fn enforce_affine_fn<V: Variable>(func: RawFn<V>, names: Rc<RefCell<NameGenerato
     RawFn {
         name,
         params,
-        outputs,
+        rets,
         body,
     }
 }
@@ -344,7 +344,7 @@ mod tests {
             fns: vec![RawFn {
                 name: "double".into(),
                 params: vec![TypedVar::new("x", Ty::Unit)],
-                outputs: 1,
+                rets: vec![TypedVar::new("y", Ty::Unit)],
                 body,
             }],
         };
