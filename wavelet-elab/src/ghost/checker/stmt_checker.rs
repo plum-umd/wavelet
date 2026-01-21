@@ -34,13 +34,15 @@ pub fn check_ghost_stmt_pure<V: Variable>(
     // Pure operations don't consume permissions
     // Add semantic constraints to phi based on the operation
     match op {
-        Op::LessThan | Op::LessEqual | Op::Equal if inputs.len() == 2 => {
+        Op::SignedLessThan | Op::SignedLessEqual |
+        Op::UnsignedLessThan | Op::UnsignedLessEqual |
+        Op::Equal if inputs.len() == 2 => {
             let comparison = match op {
-                Op::LessThan => Atom::Lt(
+                Op::SignedLessThan | Op::UnsignedLessThan => Atom::Lt(
                     Idx::Var(inputs[0].name().to_string()),
                     Idx::Var(inputs[1].name().to_string()),
                 ),
-                Op::LessEqual => Atom::Le(
+                Op::SignedLessEqual | Op::UnsignedLessEqual => Atom::Le(
                     Idx::Var(inputs[0].name().to_string()),
                     Idx::Var(inputs[1].name().to_string()),
                 ),

@@ -265,7 +265,8 @@ fn render_op<V: std::fmt::Display>(op: &Op<V>, vars: &[V]) -> String {
         Op::Add => format!("{} = {} + {}", vars[2], vars[0], vars[1]),
         Op::Sub => format!("{} = {} - {}", vars[2], vars[0], vars[1]),
         Op::Mul => format!("{} = {} * {}", vars[2], vars[0], vars[1]),
-        Op::Div => format!("{} = {} / {}", vars[2], vars[0], vars[1]),
+        Op::Sdiv => format!("{} = {} s/ {}", vars[2], vars[0], vars[1]),
+        Op::Udiv => format!("{} = {} u/ {}", vars[2], vars[0], vars[1]),
         Op::And => format!("{} = {} && {}", vars[2], vars[0], vars[1]),
         Op::Or => format!("{} = {} || {}", vars[2], vars[0], vars[1]),
         Op::Not => format!("{} = !{}", vars[1], vars[0]),
@@ -273,9 +274,12 @@ fn render_op<V: std::fmt::Display>(op: &Op<V>, vars: &[V]) -> String {
         Op::BitOr => format!("{} = {} | {}", vars[2], vars[0], vars[1]),
         Op::BitXor => format!("{} = {} ^ {}", vars[2], vars[0], vars[1]),
         Op::Shl => format!("{} = {} << {}", vars[2], vars[0], vars[1]),
-        Op::Shr => format!("{} = {} >> {}", vars[2], vars[0], vars[1]),
-        Op::LessThan => format!("{} = {} < {}", vars[2], vars[0], vars[1]),
-        Op::LessEqual => format!("{} = {} <= {}", vars[2], vars[0], vars[1]),
+        Op::Ashr => format!("{} = {} a>> {}", vars[2], vars[0], vars[1]),
+        Op::Lshr => format!("{} = {} l>> {}", vars[2], vars[0], vars[1]),
+        Op::SignedLessThan => format!("{} = {} s< {}", vars[2], vars[0], vars[1]),
+        Op::SignedLessEqual => format!("{} = {} s<= {}", vars[2], vars[0], vars[1]),
+        Op::UnsignedLessThan => format!("{} = {} u< {}", vars[2], vars[0], vars[1]),
+        Op::UnsignedLessEqual => format!("{} = {} u<= {}", vars[2], vars[0], vars[1]),
         Op::Equal => format!("{} = {} == {}", vars[2], vars[0], vars[1]),
         Op::NotEqual => format!("{} = {} != {}", vars[2], vars[0], vars[1]),
         Op::Load { array, index, len } => {
@@ -660,7 +664,7 @@ where
         Stmt::LetOp { vars, op, fence } => {
             let fenced = *fence;
             match op {
-                Op::Add | Op::Sub | Op::Mul | Op::Div => {
+                Op::Add | Op::Sub | Op::Mul | Op::Sdiv | Op::Udiv => {
                     // Binary integer arithmetic.  Expect two input vars and one output.
                     if vars.len() != 3 {
                         return Err(TypeError::InvalidOp {
@@ -682,7 +686,7 @@ where
                         Op::Mul => Idx::Mul(Box::new(x_idx), Box::new(y_idx)),
                         _ => result_idx.clone(),
                     };
-                    if !matches!(op, Op::Div) {
+                    if !matches!(op, Op::Sdiv) && !matches!(op, Op::Udiv) {
                         ctx.phi.push(Atom::Eq(result_idx, rhs));
                     }
                     ctx.bind_var(&vars[2].0, Ty::Int(result_sign));
@@ -697,7 +701,13 @@ where
                             Op::Add => Op::Add,
                             Op::Sub => Op::Sub,
                             Op::Mul => Op::Mul,
-                            Op::Div => Op::Div,
+                            // Parser defaults to signed division
+                            // so we adjust here based on types.
+                            Op::Sdiv => match result_sign {
+                                Signedness::Signed => Op::Sdiv,
+                                Signedness::Unsigned => Op::Udiv,
+                            }
+                            Op::Udiv => Op::Udiv,
                             _ => unreachable!(),
                         },
                         fence: fenced,
@@ -823,7 +833,7 @@ where
                         fence: fenced,
                     })
                 }
-                Op::Shl | Op::Shr => {
+                Op::Shl | Op::Ashr | Op::Lshr => {
                     if vars.len() != 3 {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
@@ -847,13 +857,17 @@ where
                         ],
                         op: match op {
                             Op::Shl => Op::Shl,
-                            Op::Shr => Op::Shr,
+                            Op::Ashr => match x_sign {
+                                Signedness::Signed => Op::Ashr,
+                                Signedness::Unsigned => Op::Lshr,
+                            },
+                            Op::Lshr => Op::Lshr,
                             _ => unreachable!(),
                         },
                         fence: fenced,
                     })
                 }
-                Op::LessThan | Op::LessEqual => {
+                Op::SignedLessThan | Op::SignedLessEqual | Op::UnsignedLessThan | Op::UnsignedLessEqual => {
                     if vars.len() != 3 {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
@@ -866,12 +880,16 @@ where
                             op: format!("{:?}", op),
                         });
                     }
+                    let x_sign = x_ty.signedness().unwrap();
+                    let y_sign = y_ty.signedness().unwrap();
+                    let result_sign = combine_signedness(x_sign, y_sign);
                     // Record the comparison as a fact in Phi.
                     let x_idx = Idx::Var(vars[0].0.clone());
                     let y_idx = Idx::Var(vars[1].0.clone());
                     let comparison = match op {
-                        Op::LessThan => Atom::Lt(x_idx, y_idx),
-                        Op::LessEqual => Atom::Le(x_idx, y_idx),
+                        // TODO: Check if this is ok
+                        Op::SignedLessThan | Op::UnsignedLessThan => Atom::Lt(x_idx, y_idx),
+                        Op::SignedLessEqual | Op::UnsignedLessEqual => Atom::Le(x_idx, y_idx),
                         _ => unreachable!(),
                     };
                     let result_atom = bool_atom(&vars[2].0);
@@ -888,8 +906,16 @@ where
                             vars[2].add_type(Ty::Bool),
                         ],
                         op: match op {
-                            Op::LessThan => Op::LessThan,
-                            Op::LessEqual => Op::LessEqual,
+                            Op::SignedLessThan => match result_sign {
+                                Signedness::Signed => Op::SignedLessThan,
+                                Signedness::Unsigned => Op::UnsignedLessThan,
+                            }
+                            Op::SignedLessEqual => match result_sign {
+                                Signedness::Signed => Op::SignedLessEqual,
+                                Signedness::Unsigned => Op::UnsignedLessEqual,
+                            }
+                            Op::UnsignedLessThan => Op::UnsignedLessThan,
+                            Op::UnsignedLessEqual => Op::UnsignedLessEqual,
                             _ => unreachable!(),
                         },
                         fence: fenced,

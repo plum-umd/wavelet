@@ -784,18 +784,21 @@ fn try_parse_as_op(
             let left = extract_var_from_expr(&bin_expr.left, ctx)?;
             let right = extract_var_from_expr(&bin_expr.right, ctx)?;
 
+            // For operators with signedness overloading (e.g. division, comparisons),
+            // we assume the signed version first, and then resolve the actual
+            // signedness during type checking.
             let op = match bin_expr.op {
                 syn::BinOp::Add(_) => Op::Add,
                 syn::BinOp::Sub(_) => Op::Sub,
                 syn::BinOp::Mul(_) => Op::Mul,
-                syn::BinOp::Div(_) => Op::Div,
+                syn::BinOp::Div(_) => Op::Sdiv,
                 syn::BinOp::BitAnd(_) => Op::BitAnd,
                 syn::BinOp::BitOr(_) => Op::BitOr,
                 syn::BinOp::BitXor(_) => Op::BitXor,
                 syn::BinOp::Shl(_) => Op::Shl,
-                syn::BinOp::Shr(_) => Op::Shr,
-                syn::BinOp::Lt(_) => Op::LessThan,
-                syn::BinOp::Le(_) => Op::LessEqual,
+                syn::BinOp::Shr(_) => Op::Ashr,
+                syn::BinOp::Lt(_) => Op::SignedLessThan,
+                syn::BinOp::Le(_) => Op::SignedLessEqual,
                 syn::BinOp::Eq(_) => Op::Equal,
                 syn::BinOp::Ne(_) => Op::NotEqual,
                 syn::BinOp::And(_) => Op::And,

@@ -168,8 +168,10 @@ pub enum Op<V> {
     Sub,
     /// Integer multiplication: x * y
     Mul,
-    /// Integer division: x / y
-    Div,
+    /// Signed integer division: x / y
+    Sdiv,
+    /// Unsigned integer division: x / y
+    Udiv,
     /// Boolean conjunction: x && y
     And,
     /// Boolean disjunction: x || y
@@ -184,12 +186,18 @@ pub enum Op<V> {
     BitXor,
     /// Left shift: x << y
     Shl,
-    /// Right shift: x >> y
-    Shr,
-    /// Integer less-than comparison: x < y
-    LessThan,
-    /// Integer less-than-or-equal comparison: x <= y
-    LessEqual,
+    /// Arithmetic right shift: x >> y
+    Ashr,
+    /// Logical right shift: x >> y
+    Lshr,
+    /// Signed integer less-than comparison: x < y
+    SignedLessThan,
+    /// Signed integer less-than-or-equal comparison: x <= y
+    SignedLessEqual,
+    /// Unsigned interger less-than comparison: x < y
+    UnsignedLessThan,
+    /// Unsigned integer less-than-or-equal comparison: x <= y
+    UnsignedLessEqual,
     /// Equality comparison: x == y
     Equal,
     /// Inequality comparison: x != y
@@ -439,7 +447,8 @@ impl<V: std::fmt::Display> std::fmt::Display for Op<V> {
             Op::Add => write!(f, "+"),
             Op::Sub => write!(f, "-"),
             Op::Mul => write!(f, "*"),
-            Op::Div => write!(f, "/"),
+            Op::Sdiv => write!(f, "s/"),
+            Op::Udiv => write!(f, "u/"),
             Op::And => write!(f, "&&"),
             Op::Or => write!(f, "||"),
             Op::Not => write!(f, "!"),
@@ -447,9 +456,12 @@ impl<V: std::fmt::Display> std::fmt::Display for Op<V> {
             Op::BitOr => write!(f, "|"),
             Op::BitXor => write!(f, "^"),
             Op::Shl => write!(f, "<<"),
-            Op::Shr => write!(f, ">>"),
-            Op::LessThan => write!(f, "<"),
-            Op::LessEqual => write!(f, "<="),
+            Op::Ashr => write!(f, "a>>"),
+            Op::Lshr => write!(f, "l>>"),
+            Op::SignedLessThan => write!(f, "s<"),
+            Op::SignedLessEqual => write!(f, "s<="),
+            Op::UnsignedLessThan => write!(f, "u<"),
+            Op::UnsignedLessEqual => write!(f, "u<="),
             Op::Equal => write!(f, "=="),
             Op::NotEqual => write!(f, "!="),
             Op::Load { array, index, len } => {
