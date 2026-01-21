@@ -361,6 +361,7 @@ mod tests {
     use crate::UntypedVar;
     use std::fs;
     use std::path::Path;
+    use serde_json::json;
 
     fn lower_fixture(src: &str, fn_name: &str) -> GhostFnDef<UntypedVar> {
         let program = parse_program(src).expect("fixture should parse");
@@ -543,11 +544,11 @@ mod tests {
             5,
             "sum should have 5 parameters (3 regular + 2 ghost, array param A eliminated)"
         );
-        assert_eq!(params[0], "i");
-        assert_eq!(params[1], "a");
-        assert_eq!(params[2], "N");
-        assert_eq!(params[3], "p_sync");
-        assert_eq!(params[4], "p_garb");
+        assert_eq!(params[0], json!({ "name": "i", "ty": { "int": 32 } }));
+        assert_eq!(params[1], json!({ "name": "a", "ty": { "int": 32 } }));
+        assert_eq!(params[2], json!({ "name": "N", "ty": { "int": 32 } }));
+        assert_eq!(params[3], json!({ "name": "p_sync", "ty": { "int": 0 } }));
+        assert_eq!(params[4], json!({ "name": "p_garb", "ty": { "int": 0 } }));
 
         // Verify body structure
         assert!(
