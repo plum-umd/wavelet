@@ -440,7 +440,7 @@ pub fn check_program_with_options<L: CapabilityLogic>(
     prog: &Program<UntypedVar>,
     logic: &L,
     options: CheckOptions,
-) -> Result<(), TypeError>
+) -> Result<Program<TypedVar>, TypeError>
 where
     L::Region: RegionModel,
 {
@@ -449,10 +449,13 @@ where
     for def in &prog.defs {
         registry.insert(def.clone());
     }
+
+    let mut typed_prog = Program::new();
     for def in &prog.defs {
-        check_fn_with_options(def, &registry, logic, options)?;
+        typed_prog.add_fn(check_fn_with_options(def, &registry, logic, options)?);
     }
-    Ok(())
+
+    Ok(typed_prog)
 }
 
 /// Check an entire program.  Currently this simply iterates over
@@ -460,7 +463,7 @@ where
 pub fn check_program<L: CapabilityLogic>(
     prog: &Program<UntypedVar>,
     logic: &L,
-) -> Result<(), TypeError>
+) -> Result<Program<TypedVar>, TypeError>
 where
     L::Region: RegionModel,
 {
@@ -472,7 +475,7 @@ pub fn check_fn<L: CapabilityLogic>(
     def: &FnDef<UntypedVar>,
     registry: &FnRegistry,
     logic: &L,
-) -> Result<(), TypeError>
+) -> Result<FnDef<TypedVar>, TypeError>
 where
     L::Region: RegionModel,
 {
@@ -485,7 +488,7 @@ pub fn check_fn_with_options<L: CapabilityLogic>(
     registry: &FnRegistry,
     logic: &L,
     options: CheckOptions,
-) -> Result<(), TypeError>
+) -> Result<FnDef<TypedVar>, TypeError>
 where
     L::Region: RegionModel,
 {
@@ -508,7 +511,14 @@ where
     if result.is_ok() {
         trace_context(&ctx, "Context after function body");
     }
-    result
+
+    Ok(FnDef {
+        name: def.name.clone(),
+        params: def.params.clone(),
+        caps: def.caps.clone(),
+        returns: def.returns.clone(),
+        body: result?,
+    })
 }
 
 /// Check an expression and ensure it produces a value of the expected type.
@@ -517,18 +527,19 @@ fn check_expr<L: CapabilityLogic>(
     expr: &Expr<UntypedVar>,
     expected: &Ty,
     registry: &FnRegistry,
-) -> Result<(), TypeError>
+) -> Result<Expr<TypedVar>, TypeError>
 where
     L::Region: RegionModel,
 {
     trace_context(ctx, "Entering expression");
 
     // Process statements sequentially.
+    let mut typed_stmts = Vec::new();
     for stmt in &expr.stmts {
         if ctx.verbose {
             println!("Processing statement: {}", render_stmt(stmt));
         }
-        check_stmt(ctx, stmt, registry)?;
+        typed_stmts.push(check_stmt(ctx, stmt, registry)?);
     }
 
     if ctx.verbose {
@@ -537,7 +548,7 @@ where
     }
 
     // Check tail.
-    let ty = check_tail(ctx, &expr.tail, registry)?;
+    let (ty, typed_tail) = check_tail(ctx, &expr.tail, registry)?;
 
     if ctx.verbose {
         println!(
@@ -554,7 +565,11 @@ where
             found: TypeError::type_name(&ty),
         });
     }
-    Ok(())
+
+    Ok(Expr {
+        stmts: typed_stmts,
+        tail: typed_tail,
+    })
 }
 
 /// Infer the type of an expression (for use in if-else branches).
@@ -562,18 +577,19 @@ fn infer_expr_type<L: CapabilityLogic>(
     ctx: &mut Ctx<L>,
     expr: &Expr<UntypedVar>,
     registry: &FnRegistry,
-) -> Result<Ty, TypeError>
+) -> Result<(Ty, Expr<TypedVar>), TypeError>
 where
     L::Region: RegionModel,
 {
     trace_context(ctx, "Inferring expression type");
 
     // Process statements sequentially.
+    let mut typed_stmts = Vec::new();
     for stmt in &expr.stmts {
         if ctx.verbose {
             println!("Processing statement (infer): {}", render_stmt(stmt));
         }
-        check_stmt(ctx, stmt, registry)?;
+        typed_stmts.push(check_stmt(ctx, stmt, registry)?);
     }
 
     if ctx.verbose {
@@ -582,7 +598,7 @@ where
     }
 
     // Check tail and return its type.
-    let ty = check_tail(ctx, &expr.tail, registry)?;
+    let (ty, typed_tail) = check_tail(ctx, &expr.tail, registry)?;
 
     if ctx.verbose {
         println!(
@@ -593,7 +609,13 @@ where
         print_context_contents(ctx);
     }
 
-    Ok(ty)
+    Ok((
+        ty,
+        Expr {
+            stmts: typed_stmts,
+            tail: typed_tail,
+        },
+    ))
 }
 
 /// Check a single statement.
@@ -601,12 +623,12 @@ fn check_stmt<L: CapabilityLogic>(
     ctx: &mut Ctx<L>,
     stmt: &Stmt<UntypedVar>,
     registry: &FnRegistry,
-) -> Result<(), TypeError>
+) -> Result<Stmt<TypedVar>, TypeError>
 where
     L::Region: RegionModel,
 {
     match stmt {
-        Stmt::LetVal { var, val, .. } => {
+        Stmt::LetVal { var, val, fence } => {
             // Determine literal type and bind it.
             let ty = match val {
                 Val::Int(n) => {
@@ -619,7 +641,7 @@ where
                 Val::Bool(_) => Ty::Bool,
                 Val::Unit => Ty::Unit,
             };
-            ctx.bind_var(&var.0, ty);
+            ctx.bind_var(&var.0, ty.clone());
             match val {
                 Val::Int(n) => ctx
                     .phi
@@ -629,7 +651,11 @@ where
                 Val::Unit => {}
             }
             finalize_statement(ctx, stmt);
-            Ok(())
+            Ok(Stmt::LetVal {
+                var: var.add_type(ty),
+                val: val.clone(),
+                fence: *fence,
+            })
         }
         Stmt::LetOp { vars, op, fence } => {
             let fenced = *fence;
@@ -661,7 +687,21 @@ where
                     }
                     ctx.bind_var(&vars[2].0, Ty::Int(result_sign));
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![
+                            vars[0].add_type(x_ty),
+                            vars[1].add_type(y_ty),
+                            vars[2].add_type(Ty::Int(result_sign)),
+                        ],
+                        op: match op {
+                            Op::Add => Op::Add,
+                            Op::Sub => Op::Sub,
+                            Op::Mul => Op::Mul,
+                            Op::Div => Op::Div,
+                            _ => unreachable!(),
+                        },
+                        fence: fenced,
+                    })
                 }
                 Op::And => {
                     if vars.len() != 3 {
@@ -684,7 +724,15 @@ where
                     ctx.phi.push(implies(res_atom.clone(), conjunction.clone()));
                     ctx.phi.push(implies(conjunction, res_atom));
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![
+                            vars[0].add_type(Ty::Bool),
+                            vars[1].add_type(Ty::Bool),
+                            vars[2].add_type(Ty::Bool),
+                        ],
+                        op: Op::And,
+                        fence: fenced,
+                    })
                 }
                 Op::Or => {
                     if vars.len() != 3 {
@@ -707,7 +755,15 @@ where
                     ctx.phi.push(implies(res_atom.clone(), disjunction.clone()));
                     ctx.phi.push(implies(disjunction, res_atom));
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![
+                            vars[0].add_type(Ty::Bool),
+                            vars[1].add_type(Ty::Bool),
+                            vars[2].add_type(Ty::Bool),
+                        ],
+                        op: Op::Or,
+                        fence: fenced,
+                    })
                 }
                 Op::Not => {
                     if vars.len() != 2 {
@@ -728,7 +784,11 @@ where
                     ctx.phi.push(implies(res_atom.clone(), negation.clone()));
                     ctx.phi.push(implies(negation, res_atom));
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![vars[0].add_type(Ty::Bool), vars[1].add_type(Ty::Bool)],
+                        op: Op::Not,
+                        fence: fenced,
+                    })
                 }
                 Op::BitAnd | Op::BitOr | Op::BitXor => {
                     if vars.len() != 3 {
@@ -748,7 +808,20 @@ where
                     let result_sign = combine_signedness(x_sign, y_sign);
                     ctx.bind_var(&vars[2].0, Ty::Int(result_sign));
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![
+                            vars[0].add_type(x_ty),
+                            vars[1].add_type(y_ty),
+                            vars[2].add_type(Ty::Int(result_sign)),
+                        ],
+                        op: match op {
+                            Op::BitAnd => Op::BitAnd,
+                            Op::BitOr => Op::BitOr,
+                            Op::BitXor => Op::BitXor,
+                            _ => unreachable!(),
+                        },
+                        fence: fenced,
+                    })
                 }
                 Op::Shl | Op::Shr => {
                     if vars.len() != 3 {
@@ -766,7 +839,19 @@ where
                     let x_sign = x_ty.signedness().unwrap();
                     ctx.bind_var(&vars[2].0, Ty::Int(x_sign));
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![
+                            vars[0].add_type(x_ty),
+                            vars[1].add_type(y_ty),
+                            vars[2].add_type(Ty::Int(x_sign)),
+                        ],
+                        op: match op {
+                            Op::Shl => Op::Shl,
+                            Op::Shr => Op::Shr,
+                            _ => unreachable!(),
+                        },
+                        fence: fenced,
+                    })
                 }
                 Op::LessThan | Op::LessEqual => {
                     if vars.len() != 3 {
@@ -796,7 +881,19 @@ where
                         .push(implies(not(result_atom.clone()), not(comparison)));
                     ctx.bind_var(&vars[2].0, Ty::Bool);
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![
+                            vars[0].add_type(x_ty),
+                            vars[1].add_type(y_ty),
+                            vars[2].add_type(Ty::Bool),
+                        ],
+                        op: match op {
+                            Op::LessThan => Op::LessThan,
+                            Op::LessEqual => Op::LessEqual,
+                            _ => unreachable!(),
+                        },
+                        fence: fenced,
+                    })
                 }
                 Op::Equal | Op::NotEqual => {
                     if vars.len() != 3 {
@@ -869,7 +966,19 @@ where
                         _ => {}
                     }
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![
+                            vars[0].add_type(x_ty),
+                            vars[1].add_type(y_ty),
+                            vars[2].add_type(Ty::Bool),
+                        ],
+                        op: match op {
+                            Op::Equal => Op::Equal,
+                            Op::NotEqual => Op::NotEqual,
+                            _ => unreachable!(),
+                        },
+                        fence: fenced,
+                    })
                 }
                 Op::Load { array, index, len } => {
                     // For a load we expect exactly one destination variable.
@@ -887,7 +996,7 @@ where
                     }
                     // Array must be a reference to the correct length.
                     let arr_ty = ctx.ty_of(array)?;
-                    let (arr_len, elem_ty) = match arr_ty {
+                    let (arr_len, elem_ty) = match arr_ty.clone() {
                         Ty::RefShrd { elem, len } | Ty::RefUniq { elem, len } => {
                             (len.clone(), elem.as_ref().clone())
                         }
@@ -939,10 +1048,17 @@ where
                             })?;
                     }
                     // Bind result.
-                    let dest = &vars[0];
-                    ctx.bind_var(&dest.0, elem_ty);
+                    ctx.bind_var(&vars[0].0, elem_ty.clone());
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![vars[0].add_type(elem_ty)],
+                        op: Op::Load {
+                            array: array.add_type(arr_ty),
+                            index: index.add_type(idx_ty),
+                            len: len.clone(),
+                        },
+                        fence: fenced,
+                    })
                 }
                 Op::Store {
                     array,
@@ -964,7 +1080,7 @@ where
                         });
                     }
                     let arr_ty = ctx.ty_of(array)?;
-                    let (arr_len, elem_ty) = match arr_ty {
+                    let (arr_len, elem_ty) = match arr_ty.clone() {
                         Ty::RefUniq { elem, len } | Ty::RefShrd { elem, len } => {
                             (len.clone(), elem.as_ref().clone())
                         }
@@ -1027,7 +1143,16 @@ where
                             })?;
                     }
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![],
+                        op: Op::Store {
+                            array: array.add_type(arr_ty),
+                            index: index.add_type(idx_ty),
+                            value: value.add_type(val_ty),
+                            len: len.clone(),
+                        },
+                        fence: fenced,
+                    })
                 }
             }
         }
@@ -1153,7 +1278,18 @@ where
             }
             ctx.bind_var(&vars[0].0, fn_def.returns.clone());
             finalize_statement(ctx, stmt);
-            Ok(())
+
+            let mut typed_args = Vec::new();
+            for arg in args.iter() {
+                typed_args.push(arg.add_type(ctx.ty_of(arg)?));
+            }
+
+            Ok(Stmt::LetCall {
+                vars: vec![vars[0].add_type(fn_def.returns.clone())],
+                func: func.clone(),
+                args: typed_args,
+                fence: *fence,
+            })
         }
     }
 }
@@ -1163,12 +1299,15 @@ fn check_tail<L: CapabilityLogic>(
     ctx: &mut Ctx<L>,
     tail: &Tail<UntypedVar>,
     registry: &FnRegistry,
-) -> Result<Ty, TypeError>
+) -> Result<(Ty, Tail<TypedVar>), TypeError>
 where
     L::Region: RegionModel,
 {
     match tail {
-        Tail::RetVar(var) => ctx.ty_of(var),
+        Tail::RetVar(var) => {
+            let ty = ctx.ty_of(var)?;
+            Ok((ty.clone(), Tail::RetVar(var.add_type(ty))))
+        }
         Tail::IfElse {
             cond,
             then_e,
@@ -1202,22 +1341,27 @@ where
             };
             ctx_el.phi.push(not(bool_atom(&cond.0)));
             // Type check both branches, allowing them to infer their return types.
-            let ty_then = infer_expr_type(&mut ctx_th, then_e, registry)?;
-            let ty_else = infer_expr_type(&mut ctx_el, else_e, registry)?;
+            let (ty_then, typed_then) = infer_expr_type(&mut ctx_th, then_e, registry)?;
+            let (ty_else, typed_else) = infer_expr_type(&mut ctx_el, else_e, registry)?;
+            let typed_tail = Tail::IfElse {
+                cond: cond.add_type(Ty::Bool),
+                then_e: typed_then.into(),
+                else_e: typed_else.into(),
+            };
             if ty_then != ty_else {
                 if ty_then.is_int() && ty_else.is_int() {
                     let combined = Ty::Int(combine_signedness(
                         ty_then.signedness().unwrap(),
                         ty_else.signedness().unwrap(),
                     ));
-                    return Ok(combined);
+                    return Ok((combined, typed_tail));
                 }
                 return Err(TypeError::TypeMismatch {
                     expected: TypeError::type_name(&ty_then),
                     found: TypeError::type_name(&ty_else),
                 });
             }
-            Ok(ty_then)
+            Ok((ty_then, typed_tail))
         }
         Tail::TailCall { func, args } => {
             // Look up function definition.
@@ -1321,7 +1465,20 @@ where
                 println!("Tail call to {} verified", func.0);
                 print_context_contents(ctx);
             }
-            Ok(fn_def.returns.clone())
+
+            // TODO: Check if signedness coercion works well with this.
+            let mut typed_args = Vec::new();
+            for arg in args.iter() {
+                typed_args.push(arg.add_type(ctx.ty_of(arg)?));
+            }
+
+            Ok((
+                fn_def.returns.clone(),
+                Tail::TailCall {
+                    func: func.clone(),
+                    args: typed_args,
+                },
+            ))
         }
     }
 }

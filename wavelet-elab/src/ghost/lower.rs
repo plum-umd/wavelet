@@ -1,13 +1,12 @@
 use crate::ghost::ir::{GhostExpr, GhostFnDef, GhostProgram, GhostStmt, GhostTail, GhostVar};
-use crate::ir::{Expr, FnDef, FnName, Op, Program, Stmt, Tail};
+use crate::ir::{Expr, FnDef, FnName, Op, Program, Stmt, Tail, Variable};
 use crate::Val;
 
 /// Synthesize a ghost-level program from the typed IR.
-pub fn synthesize_ghost_program<V: Clone>(prog: &Program<V>) -> GhostProgram<V> {
-    // let prog = prog.clone();
-    // TODO: put these in the type checker
-    // prog.desugar_tail_calls();
-    // prog.eliminate_array_params();
+pub fn synthesize_ghost_program<V: Variable>(prog: &Program<V>) -> GhostProgram<V> {
+    let mut prog = prog.clone();
+    prog.eliminate_array_params();
+
     let mut ghost = GhostProgram::new();
     for def in &prog.defs {
         ghost.add_fn(lower_fn(def));

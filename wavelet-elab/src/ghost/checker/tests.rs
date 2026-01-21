@@ -542,7 +542,7 @@ fn ghost_check_all_fixtures() {
             .unwrap_or_else(|err| panic!("failed to parse {:?}: {err}", path));
 
         let logic = crate::SemanticLogic::new();
-        if let Ok(()) = crate::check_program(&program, &logic) {
+        if let Ok(_) = crate::check_program(&program, &logic) {
             let ghost = crate::synthesize_ghost_program(&program);
 
             if let Err(err) = check_ghost_program_with_verbose(&ghost, true) {

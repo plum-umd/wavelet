@@ -13,6 +13,16 @@ impl<S: Into<String>> From<S> for UntypedVar {
     }
 }
 
+impl UntypedVar {
+    /// Annotates the type of the variable.
+    pub fn add_type(&self, ty: Ty) -> TypedVar {
+        TypedVar {
+            name: self.0.clone(),
+            ty,
+        }
+    }
+}
+
 /// A typed variable name.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypedVar {
@@ -516,15 +526,7 @@ impl<V> Default for Program<V> {
     }
 }
 
-impl Program<UntypedVar> {
-    /// Desugar tail calls to other functions into let-call followed by returns.
-    /// This transforms `f(x, y)` at tail position into `let ret = f(x, y); return ret`.
-    pub fn desugar_tail_calls(&mut self) {
-        for def in &mut self.defs {
-            def.desugar_tail_calls();
-        }
-    }
-
+impl<V: Variable> Program<V> {
     /// Array references (both shared and unique) are removed from parameter lists
     /// and argument lists, as they are assumed to be globally available.
     pub fn eliminate_array_params(&mut self) {
@@ -554,12 +556,7 @@ impl Program<UntypedVar> {
     }
 }
 
-impl FnDef<UntypedVar> {
-    pub fn desugar_tail_calls(&mut self) {
-        let fn_name = &self.name;
-        self.body.desugar_tail_calls(fn_name);
-    }
-
+impl<V: Variable> FnDef<V> {
     pub fn eliminate_array_params(&mut self) {
         let mut fn_array_indices = std::collections::HashMap::new();
         let array_param_indices: Vec<usize> = self
@@ -592,48 +589,8 @@ impl FnDef<UntypedVar> {
     }
 }
 
-impl Expr<UntypedVar> {
-    fn desugar_tail_calls(&mut self, current_fn: &FnName) {
-        for stmt in &mut self.stmts {
-            stmt.desugar_tail_calls(current_fn);
-        }
-        self.tail.desugar_tail_calls(current_fn);
-
-        // Check if the tail is a non-recursive tail call
-        if let Tail::TailCall { func, args } = &self.tail {
-            if func != current_fn {
-                let ret_var = self.fresh_var("_tail_ret");
-
-                // TailCall -> LetCall + RetVar
-                let call_stmt = Stmt::LetCall {
-                    vars: vec![ret_var.clone()],
-                    func: func.clone(),
-                    args: args.clone(),
-                    fence: false,
-                };
-
-                self.stmts.push(call_stmt);
-                self.tail = Tail::RetVar(ret_var);
-            }
-        }
-    }
-
-    fn fresh_var(&self, base: &str) -> UntypedVar {
-        let mut used_vars = std::collections::HashSet::new();
-        self.collect_vars(&mut used_vars);
-
-        let mut candidate = UntypedVar(base.to_string());
-        let mut counter = 0;
-
-        while used_vars.contains(&candidate) {
-            counter += 1;
-            candidate = UntypedVar(format!("{}_{}", base, counter));
-        }
-
-        candidate
-    }
-
-    fn collect_vars(&self, vars: &mut std::collections::HashSet<UntypedVar>) {
+impl<V: Variable> Expr<V> {
+    fn collect_vars(&self, vars: &mut std::collections::HashSet<String>) {
         for stmt in &self.stmts {
             stmt.collect_vars(vars);
         }
@@ -651,26 +608,24 @@ impl Expr<UntypedVar> {
     }
 }
 
-impl Stmt<UntypedVar> {
-    fn desugar_tail_calls(&mut self, _current_fn: &FnName) {}
-
-    fn collect_vars(&self, vars: &mut std::collections::HashSet<UntypedVar>) {
+impl<V: Variable> Stmt<V> {
+    fn collect_vars(&self, vars: &mut std::collections::HashSet<String>) {
         match self {
             Stmt::LetVal { var, .. } => {
-                vars.insert(var.clone());
+                vars.insert(var.name().to_string());
             }
             Stmt::LetOp { vars: vs, op, .. } => {
                 for v in vs {
-                    vars.insert(v.clone());
+                    vars.insert(v.name().to_string());
                 }
                 op.collect_vars(vars);
             }
             Stmt::LetCall { vars: vs, args, .. } => {
                 for v in vs {
-                    vars.insert(v.clone());
+                    vars.insert(v.name().to_string());
                 }
                 for arg in args {
-                    vars.insert(arg.clone());
+                    vars.insert(arg.name().to_string());
                 }
             }
         }
@@ -694,34 +649,24 @@ impl Stmt<UntypedVar> {
     }
 }
 
-impl Tail<UntypedVar> {
-    fn desugar_tail_calls(&mut self, current_fn: &FnName) {
-        match self {
-            Tail::IfElse { then_e, else_e, .. } => {
-                then_e.desugar_tail_calls(current_fn);
-                else_e.desugar_tail_calls(current_fn);
-            }
-            Tail::RetVar(_) | Tail::TailCall { .. } => {}
-        }
-    }
-
-    fn collect_vars(&self, vars: &mut std::collections::HashSet<UntypedVar>) {
+impl<V: Variable> Tail<V> {
+    fn collect_vars(&self, vars: &mut std::collections::HashSet<String>) {
         match self {
             Tail::RetVar(var) => {
-                vars.insert(var.clone());
+                vars.insert(var.name().to_string());
             }
             Tail::IfElse {
                 cond,
                 then_e,
                 else_e,
             } => {
-                vars.insert(cond.clone());
+                vars.insert(cond.name().to_string());
                 then_e.collect_vars(vars);
                 else_e.collect_vars(vars);
             }
             Tail::TailCall { args, .. } => {
                 for arg in args {
-                    vars.insert(arg.clone());
+                    vars.insert(arg.name().to_string());
                 }
             }
         }
@@ -752,12 +697,87 @@ impl Tail<UntypedVar> {
     }
 }
 
-impl Op<UntypedVar> {
-    fn collect_vars(&self, vars: &mut std::collections::HashSet<UntypedVar>) {
+impl Program<UntypedVar> {
+    /// Desugar tail calls to other functions into let-call followed by returns.
+    /// This transforms `f(x, y)` at tail position into `let ret = f(x, y); return ret`.
+    pub fn desugar_tail_calls(&mut self) {
+        for def in &mut self.defs {
+            def.desugar_tail_calls();
+        }
+    }
+}
+
+impl FnDef<UntypedVar> {
+    pub fn desugar_tail_calls(&mut self) {
+        let fn_name = &self.name;
+        self.body.desugar_tail_calls(fn_name);
+    }
+}
+
+impl Expr<UntypedVar> {
+    fn fresh_var(&self, base: &str) -> UntypedVar {
+        let mut used_vars = std::collections::HashSet::new();
+        self.collect_vars(&mut used_vars);
+
+        let mut candidate = UntypedVar(base.to_string());
+        let mut counter = 0;
+
+        while used_vars.contains(candidate.name()) {
+            counter += 1;
+            candidate = UntypedVar(format!("{}_{}", base, counter));
+        }
+
+        candidate
+    }
+
+    fn desugar_tail_calls(&mut self, current_fn: &FnName) {
+        for stmt in &mut self.stmts {
+            stmt.desugar_tail_calls(current_fn);
+        }
+        self.tail.desugar_tail_calls(current_fn);
+
+        // Check if the tail is a non-recursive tail call
+        if let Tail::TailCall { func, args } = &self.tail {
+            if func != current_fn {
+                let ret_var = self.fresh_var("_tail_ret");
+
+                // TailCall -> LetCall + RetVar
+                let call_stmt = Stmt::LetCall {
+                    vars: vec![ret_var.clone()],
+                    func: func.clone(),
+                    args: args.clone(),
+                    fence: false,
+                };
+
+                self.stmts.push(call_stmt);
+                self.tail = Tail::RetVar(ret_var);
+            }
+        }
+    }
+}
+
+impl Stmt<UntypedVar> {
+    fn desugar_tail_calls(&mut self, _current_fn: &FnName) {}
+}
+
+impl Tail<UntypedVar> {
+    fn desugar_tail_calls(&mut self, current_fn: &FnName) {
+        match self {
+            Tail::IfElse { then_e, else_e, .. } => {
+                then_e.desugar_tail_calls(current_fn);
+                else_e.desugar_tail_calls(current_fn);
+            }
+            Tail::RetVar(_) | Tail::TailCall { .. } => {}
+        }
+    }
+}
+
+impl<V: Variable> Op<V> {
+    fn collect_vars(&self, vars: &mut std::collections::HashSet<String>) {
         match self {
             Op::Load { array, index, .. } => {
-                vars.insert(array.clone());
-                vars.insert(index.clone());
+                vars.insert(array.name().to_string());
+                vars.insert(index.name().to_string());
             }
             Op::Store {
                 array,
@@ -765,9 +785,9 @@ impl Op<UntypedVar> {
                 value,
                 ..
             } => {
-                vars.insert(array.clone());
-                vars.insert(index.clone());
-                vars.insert(value.clone());
+                vars.insert(array.name().to_string());
+                vars.insert(index.name().to_string());
+                vars.insert(value.name().to_string());
             }
             _ => {}
         }

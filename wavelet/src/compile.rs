@@ -81,19 +81,22 @@ impl CompileArgs {
     pub fn run(&self) -> Result<(), CompileError> {
         // Load source program
         let src = std::fs::read_to_string(&self.input).context("when reading input file")?;
-        let prog = elab::parse_program(&src)?;
+        let mut prog = elab::parse_program(&src)?;
 
         if prog.defs.len() == 0 {
             return Err(CompileError::EmptyProgram);
         }
 
+        eprintln!("preprocessing...");
+        prog.desugar_tail_calls();
+
         // Type check
         eprintln!("type checking...");
         let smt = elab::SemanticLogic::new();
-        elab::check::check_program_with_options(&prog, &smt, Default::default())?;
+        let typed_prog = elab::check::check_program_with_options(&prog, &smt, Default::default())?;
 
         // Elaboration and validation
-        let elab_prog = elab::synthesize_ghost_program(&prog);
+        let elab_prog = elab::synthesize_ghost_program(&typed_prog);
         if self.ghost_check {
             eprintln!("validating token placement...");
             elab::ghost::check_ghost_program_with_verbose(&elab_prog, false)
