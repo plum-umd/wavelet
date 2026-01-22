@@ -1,7 +1,7 @@
 use crate::ghost::affine;
-use crate::ghost::ir::{GhostExpr, GhostFnDef, GhostProgram, GhostStmt, GhostTail};
-use crate::ir::Op;
-use crate::Val;
+use crate::ghost::ir::{GhostExpr, GhostFnDef, GhostProgram, GhostStmt, GhostTail, GhostVar};
+use crate::ir::{Op, Variable};
+use crate::{Ty, TypedVar, UntypedVar, Val};
 use serde::ser::{SerializeMap, Serializer};
 use serde::Serialize;
 use serde_json::{self, Value};
@@ -35,22 +35,24 @@ impl From<serde_json::Error> for ExportError {
 
 /// High-level entry point: serialize the ghost program into a JSON string
 /// that is intended to match the Lean `RawProg` schema.
-pub fn export_program_json(prog: &GhostProgram) -> Result<String, ExportError> {
-    let raw = RawProg::try_from(prog)?;
+pub fn export_program_json<V: Variable + Serialize + From<GhostVar>>(
+    prog: &GhostProgram<V>,
+) -> Result<String, ExportError> {
+    let raw = RawProg::<V>::try_from(prog)?;
     let raw = affine::enforce_affine(raw);
     serde_json::to_string_pretty(&raw).map_err(ExportError::from)
 }
 
 /// Structured representation mirroring the Lean `RawProg` definition.
 #[derive(Debug, Serialize)]
-pub struct RawProg {
-    pub fns: Vec<RawFn>,
+pub struct RawProg<V> {
+    pub fns: Vec<RawFn<V>>,
 }
 
-impl TryFrom<&GhostProgram> for RawProg {
+impl<V: Variable + From<GhostVar>> TryFrom<&GhostProgram<V>> for RawProg<V> {
     type Error = ExportError;
 
-    fn try_from(prog: &GhostProgram) -> Result<Self, Self::Error> {
+    fn try_from(prog: &GhostProgram<V>) -> Result<Self, Self::Error> {
         let mut fns = Vec::with_capacity(prog.defs.len());
         for def in &prog.defs {
             fns.push(RawFn::try_from(def)?);
@@ -61,33 +63,38 @@ impl TryFrom<&GhostProgram> for RawProg {
 
 /// Structured representation mirroring the Lean `RawFn` definition.
 #[derive(Debug, Serialize)]
-pub struct RawFn {
+pub struct RawFn<V> {
     pub name: String,
-    pub params: Vec<String>,
-    pub outputs: usize,
-    pub body: RawExpr,
+    pub params: Vec<TypedVar>,
+    pub rets: Vec<TypedVar>,
+    pub body: RawExpr<V>,
 }
 
-impl TryFrom<&GhostFnDef> for RawFn {
+impl<V: Variable + From<GhostVar>> TryFrom<&GhostFnDef<V>> for RawFn<V> {
     type Error = ExportError;
 
-    fn try_from(def: &GhostFnDef) -> Result<Self, Self::Error> {
+    fn try_from(def: &GhostFnDef<V>) -> Result<Self, Self::Error> {
         let name = def.name.0.clone();
         // Include both regular params and ghost params
-        let mut params: Vec<String> = def.params.iter().map(|(var, _)| var.0.clone()).collect();
-        params.extend(def.ghost_params.iter().map(|gv| gv.0.clone()));
-        let outputs = 2; // Fixed to 2: value + permission token
+        let mut params = def.params.clone();
+        params.extend(def.ghost_params.iter().map(|gv| gv.clone().into()));
         let body = serialize_body(&def.body)?;
         Ok(RawFn {
             name,
             params,
-            outputs,
+            // Fixed to 2: value + permission token
+            rets: vec![
+                TypedVar::new("ret".to_string(), def.returns.clone()),
+                TypedVar::new("perm".to_string(), Ty::Unit),
+            ],
             body,
         })
     }
 }
 
-fn serialize_body(expr: &GhostExpr) -> Result<RawExpr, ExportError> {
+fn serialize_body<V: Variable + From<GhostVar>>(
+    expr: &GhostExpr<V>,
+) -> Result<RawExpr<V>, ExportError> {
     let tail = serialize_tail(&expr.tail)?;
     expr.stmts
         .iter()
@@ -95,10 +102,12 @@ fn serialize_body(expr: &GhostExpr) -> Result<RawExpr, ExportError> {
         .try_fold(tail, |acc, stmt| wrap_stmt(stmt, acc))
 }
 
-fn serialize_tail(tail: &GhostTail) -> Result<RawExpr, ExportError> {
+fn serialize_tail<V: Variable + From<GhostVar>>(
+    tail: &GhostTail<V>,
+) -> Result<RawExpr<V>, ExportError> {
     match tail {
         GhostTail::Return { value, perm } => {
-            Ok(RawExpr::Ret(vec![value.0.clone(), perm.0.clone()]))
+            Ok(RawExpr::Ret(vec![value.clone(), perm.clone().into()]))
         }
         GhostTail::TailCall {
             func: _,
@@ -106,9 +115,9 @@ fn serialize_tail(tail: &GhostTail) -> Result<RawExpr, ExportError> {
             ghost_need,
             ghost_left,
         } => {
-            let mut tail_args = args.iter().map(|v| v.0.clone()).collect::<Vec<_>>();
-            tail_args.push(ghost_need.0.clone());
-            tail_args.push(ghost_left.0.clone());
+            let mut tail_args = args.iter().map(|v| v.clone()).collect::<Vec<_>>();
+            tail_args.push(ghost_need.clone().into());
+            tail_args.push(ghost_left.clone().into());
             Ok(RawExpr::Tail(tail_args))
         }
         GhostTail::IfElse {
@@ -116,7 +125,7 @@ fn serialize_tail(tail: &GhostTail) -> Result<RawExpr, ExportError> {
             then_expr,
             else_expr,
         } => {
-            let cond = cond.0.clone();
+            let cond = cond.clone();
             let left = serialize_body(then_expr)?;
             let right = serialize_body(else_expr)?;
             Ok(RawExpr::Br {
@@ -128,7 +137,10 @@ fn serialize_tail(tail: &GhostTail) -> Result<RawExpr, ExportError> {
     }
 }
 
-fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
+fn wrap_stmt<V: Variable + From<GhostVar>>(
+    stmt: &GhostStmt<V>,
+    cont: RawExpr<V>,
+) -> Result<RawExpr<V>, ExportError> {
     match stmt {
         GhostStmt::Pure {
             inputs,
@@ -140,8 +152,8 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
                 ghost: false,
                 op: map_sync_op(op)?,
             });
-            let args: Vec<String> = inputs.iter().map(|v| v.0.clone()).collect();
-            let outputs = vec![output.0.clone(), ghost_out.0.clone()];
+            let args: Vec<V> = inputs.clone();
+            let outputs = vec![output.clone(), ghost_out.clone().into()];
             Ok(RawExpr::Op {
                 op,
                 args,
@@ -170,8 +182,8 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
                 ghost: false,
                 op: SyncOp::Const { value: val },
             });
-            let args = vec![ghost_in.0.clone()];
-            let outputs = vec![output.0.clone(), ghost_out.0.clone()];
+            let args = vec![ghost_in.clone().into()];
+            let outputs = vec![output.clone(), ghost_out.clone().into()];
             Ok(RawExpr::Op {
                 op,
                 args,
@@ -189,11 +201,11 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
             let op = WithCall::Op(WithSpec::Spec {
                 ghost: true,
                 op: SyncOp::Load {
-                    loc: array.0.clone(),
+                    loc: array.name().to_string(),
                 },
             });
-            let args = vec![index.0.clone(), ghost_in.0.clone()];
-            let outputs = vec![output.0.clone(), ghost_out.0.clone()];
+            let args = vec![index.clone(), ghost_in.clone().into()];
+            let outputs = vec![output.clone(), ghost_out.clone().into()];
             Ok(RawExpr::Op {
                 op,
                 args,
@@ -211,11 +223,11 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
             let op = WithCall::Op(WithSpec::Spec {
                 ghost: true,
                 op: SyncOp::Store {
-                    loc: array.0.clone(),
+                    loc: array.name().to_string(),
                 },
             });
-            let args = vec![index.0.clone(), value.0.clone(), ghost_in.0.clone()];
-            let outputs = vec![ghost_out.0 .0.clone(), ghost_out.1 .0.clone()];
+            let args = vec![index.clone(), value.clone(), ghost_in.clone().into()];
+            let outputs = vec![ghost_out.0.clone().into(), ghost_out.0.clone().into()];
             Ok(RawExpr::Op {
                 op,
                 args,
@@ -231,8 +243,8 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
             let toks = inputs.len();
             let deps = 0; // No value dependencies for join/split
             let op = WithCall::Op(WithSpec::Join { toks, deps });
-            let args: Vec<String> = inputs.iter().map(|v| v.0.clone()).collect();
-            let outputs = vec![left.0.clone(), right.0.clone()];
+            let args: Vec<V> = inputs.iter().map(|v| v.clone().into()).collect();
+            let outputs = vec![left.clone().into(), right.clone().into()];
             Ok(RawExpr::Op {
                 op,
                 args,
@@ -249,12 +261,12 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
             ghost_ret,
         } => {
             let op = WithCall::Call(func.0.clone());
-            let mut call_args: Vec<String> = args.iter().map(|v| v.0.clone()).collect();
-            call_args.push(ghost_need.0.clone());
-            call_args.push(ghost_left.0.clone());
-            let rets: Vec<String> = outputs.iter().map(|v| v.0.clone()).collect();
+            let mut call_args: Vec<V> = args.clone();
+            call_args.push(ghost_need.clone().into());
+            call_args.push(ghost_left.clone().into());
+            let rets: Vec<V> = outputs.clone();
             let mut all_rets = rets;
-            all_rets.push(ghost_ret.0.clone());
+            all_rets.push(ghost_ret.clone().into());
             Ok(RawExpr::Op {
                 op,
                 args: call_args,
@@ -266,23 +278,23 @@ fn wrap_stmt(stmt: &GhostStmt, cont: RawExpr) -> Result<RawExpr, ExportError> {
 }
 
 #[derive(Debug)]
-pub enum RawExpr {
-    Ret(Vec<String>),
-    Tail(Vec<String>),
+pub enum RawExpr<V> {
+    Ret(Vec<V>),
+    Tail(Vec<V>),
     Op {
         op: WithCall,
-        args: Vec<String>,
-        rets: Vec<String>,
-        cont: Box<RawExpr>,
+        args: Vec<V>,
+        rets: Vec<V>,
+        cont: Box<RawExpr<V>>,
     },
     Br {
-        cond: String,
-        left: Box<RawExpr>,
-        right: Box<RawExpr>,
+        cond: V,
+        left: Box<RawExpr<V>>,
+        right: Box<RawExpr<V>>,
     },
 }
 
-impl Serialize for RawExpr {
+impl<V: Serialize> Serialize for RawExpr<V> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -397,6 +409,7 @@ pub enum SyncOp {
     Sub,
     Mul,
     Sdiv,
+    Udiv,
     Shl,
     Ashr,
     Lshr,
@@ -407,6 +420,8 @@ pub enum SyncOp {
     BitXor,
     Slt,
     Sle,
+    Ult,
+    Ule,
     And,
     Or,
     Load { loc: String },
@@ -444,6 +459,7 @@ impl Serialize for SyncOp {
             SyncOp::Sub => serializer.serialize_str("sub"),
             SyncOp::Mul => serializer.serialize_str("mul"),
             SyncOp::Sdiv => serializer.serialize_str("sdiv"),
+            SyncOp::Udiv => serializer.serialize_str("udiv"),
             SyncOp::Shl => serializer.serialize_str("shl"),
             SyncOp::Ashr => serializer.serialize_str("ashr"),
             SyncOp::Lshr => serializer.serialize_str("lshr"),
@@ -454,6 +470,8 @@ impl Serialize for SyncOp {
             SyncOp::BitXor => serializer.serialize_str("bitxor"),
             SyncOp::Slt => serializer.serialize_str("slt"),
             SyncOp::Sle => serializer.serialize_str("sle"),
+            SyncOp::Ult => serializer.serialize_str("ult"),
+            SyncOp::Ule => serializer.serialize_str("ule"),
             SyncOp::And => serializer.serialize_str("and"),
             SyncOp::Or => serializer.serialize_str("or"),
             SyncOp::Sel => serializer.serialize_str("sel"),
@@ -482,26 +500,76 @@ impl Serialize for SyncOp {
 }
 
 /// BUG: Div/LessThan/LessEqual should not always map to signed versions.
-fn map_sync_op(op: &Op) -> Result<SyncOp, ExportError> {
+fn map_sync_op<V: Variable>(op: &Op<V>) -> Result<SyncOp, ExportError> {
     match op {
         Op::Add => Ok(SyncOp::Add),
         Op::Sub => Ok(SyncOp::Sub),
         Op::Mul => Ok(SyncOp::Mul),
-        Op::Div => Ok(SyncOp::Sdiv),
+        Op::Sdiv => Ok(SyncOp::Sdiv),
+        Op::Udiv => Ok(SyncOp::Udiv),
         Op::And => Ok(SyncOp::And),
         Op::Or => Ok(SyncOp::Or),
         Op::Shl => Ok(SyncOp::Shl),
-        Op::Shr => Ok(SyncOp::Ashr),
+        Op::Ashr => Ok(SyncOp::Ashr),
+        Op::Lshr => Ok(SyncOp::Lshr),
         Op::Equal => Ok(SyncOp::Eq),
         Op::NotEqual => Ok(SyncOp::Neq),
         Op::BitAnd => Ok(SyncOp::BitAnd),
         Op::BitOr => Ok(SyncOp::BitOr),
         Op::BitXor => Ok(SyncOp::BitXor),
-        Op::LessThan => Ok(SyncOp::Slt),
-        Op::LessEqual => Ok(SyncOp::Sle),
+        Op::SignedLessThan => Ok(SyncOp::Slt),
+        Op::SignedLessEqual => Ok(SyncOp::Sle),
+        Op::UnsignedLessThan => Ok(SyncOp::Ult),
+        Op::UnsignedLessEqual => Ok(SyncOp::Ule),
         _ => Err(ExportError::Unsupported(format!(
             "pure operation {} not yet supported for serialization",
             op
         ))),
+    }
+}
+
+impl Serialize for UntypedVar {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl Serialize for TypedVar {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("name", &self.name)?;
+        map.serialize_entry("ty", &self.ty)?;
+        map.end()
+    }
+}
+
+impl Serialize for Ty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Ty::Int(..) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("int", &32)?;
+                map.end()
+            }
+            Ty::Bool => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("int", &1)?;
+                map.end()
+            }
+            Ty::Unit | Ty::RefShrd { .. } | Ty::RefUniq { .. } => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("int", &0)?;
+                map.end()
+            }
+        }
     }
 }

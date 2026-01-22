@@ -25,6 +25,8 @@ inductive Expr (Op : Type u) (χ : Type v) [instArity : Arity Op]
 /-- `Fn m n` is a function with `m` inputs and `n` outputs. -/
 structure Fn Op χ (V : Type u) [instArity : Arity Op] m n where
   params : Vector χ m
+  /-- Only used for type annotation currently. -/
+  rets : Vector χ n
   body : Expr Op χ m n
 
 inductive Cont Op χ [Arity Op] m n where

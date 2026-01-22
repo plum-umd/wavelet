@@ -2,6 +2,7 @@
 
 use crate::ghost::fracperms::FractionExpr;
 use crate::ghost::ir::{GhostStmt, GhostTail};
+use crate::ir::Variable;
 use crate::logic::semantic::region_set::RegionSetExpr;
 use crate::logic::semantic::solver::{Atom, Idx};
 
@@ -101,7 +102,7 @@ pub fn render_perm_expr(expr: &PermExpr) -> String {
     }
 }
 
-pub fn render_ghost_stmt(stmt: &GhostStmt) -> String {
+pub fn render_ghost_stmt<V: Variable>(stmt: &GhostStmt<V>) -> String {
     match stmt {
         GhostStmt::Pure {
             inputs,
@@ -111,10 +112,10 @@ pub fn render_ghost_stmt(stmt: &GhostStmt) -> String {
         } => {
             let inputs_str = inputs
                 .iter()
-                .map(|v| v.0.as_str())
+                .map(|v| v.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("({} = {}({}), [{}])", output.0, op, inputs_str, ghost_out.0)
+            format!("({} = {}({}), [{}])", output, op, inputs_str, ghost_out.0)
         }
         GhostStmt::JoinSplit {
             left,
@@ -136,7 +137,7 @@ pub fn render_ghost_stmt(stmt: &GhostStmt) -> String {
         } => {
             format!(
                 "{} = {}, [{} → {}])",
-                output.0, value, ghost_in.0, ghost_out.0
+                output, value, ghost_in.0, ghost_out.0
             )
         }
         GhostStmt::Load {
@@ -148,7 +149,7 @@ pub fn render_ghost_stmt(stmt: &GhostStmt) -> String {
         } => {
             format!(
                 "{} = {}[{}], [{} → {}]",
-                output.0, array.0, index.0, ghost_in.0, ghost_out.0
+                output, array, index, ghost_in.0, ghost_out.0
             )
         }
         GhostStmt::Store {
@@ -160,7 +161,7 @@ pub fn render_ghost_stmt(stmt: &GhostStmt) -> String {
         } => {
             format!(
                 "{}[{}] := {}, [{} → ({}, {})]",
-                array.0, index.0, value.0, ghost_in.0, ghost_out.0 .0, ghost_out.1 .0
+                array, index, value, ghost_in.0, ghost_out.0 .0, ghost_out.1 .0
             )
         }
         GhostStmt::Call {
@@ -173,12 +174,12 @@ pub fn render_ghost_stmt(stmt: &GhostStmt) -> String {
         } => {
             let outputs_str = outputs
                 .iter()
-                .map(|v| v.0.as_str())
+                .map(|v| v.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
             let args_str = args
                 .iter()
-                .map(|v| v.0.as_str())
+                .map(|v| v.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(
@@ -189,13 +190,13 @@ pub fn render_ghost_stmt(stmt: &GhostStmt) -> String {
     }
 }
 
-pub fn render_ghost_tail(tail: &GhostTail) -> String {
+pub fn render_ghost_tail<V: Variable>(tail: &GhostTail<V>) -> String {
     match tail {
         GhostTail::Return { value, perm } => {
-            format!("ret({}, perm: {})", value.0, perm.0)
+            format!("ret({}, perm: {})", value, perm.0)
         }
         GhostTail::IfElse { cond, .. } => {
-            format!("IfElse({})", cond.0)
+            format!("IfElse({})", cond)
         }
         GhostTail::TailCall {
             func,
@@ -205,7 +206,7 @@ pub fn render_ghost_tail(tail: &GhostTail) -> String {
         } => {
             let args_str = args
                 .iter()
-                .map(|v| v.0.as_str())
+                .map(|v| v.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(

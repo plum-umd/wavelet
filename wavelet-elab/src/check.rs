@@ -5,7 +5,7 @@ use std::fmt;
 
 use crate::env::{Ctx, FnRegistry};
 use crate::error::TypeError;
-use crate::ir::{Expr, FnDef, Op, Program, Signedness, Stmt, Tail, Ty, Val, Var};
+use crate::ir::{Expr, FnDef, Op, Program, Signedness, Stmt, Tail, Ty, TypedVar, UntypedVar, Val};
 use crate::logic::cap::{Cap, Delta, RegionModel};
 use crate::logic::region::Region;
 use crate::logic::semantic::solver::{Atom, Idx, Phi};
@@ -119,12 +119,12 @@ impl<'logic, L: CapabilityLogic> Ctx<'logic, L>
 where
     L::Region: RegionModel,
 {
-    fn bind_var(&mut self, var: &Var, ty: Ty) {
+    fn bind_var(&mut self, var: impl AsRef<str>, ty: Ty) {
         if let Ty::Int(Signedness::Unsigned) = ty {
             self.phi
-                .push(Atom::Le(Idx::Const(0), Idx::Var(var.0.clone())));
+                .push(Atom::Le(Idx::Const(0), Idx::Var(var.as_ref().to_string())));
         }
-        self.gamma.insert(var.clone(), ty);
+        self.gamma.insert(var.as_ref().to_string(), ty);
     }
 
     fn record_initial_delta(&mut self) {
@@ -135,23 +135,23 @@ where
         self.delta = self.initial_delta.clone();
     }
 
-    fn ensure_literal_binding(&mut self, var: &Var) -> Result<(), TypeError> {
+    fn ensure_literal_binding(&mut self, var: &UntypedVar) -> Result<(), TypeError> {
         if self.gamma.0.contains_key(&var.0) {
             return Ok(());
         }
         // Special case for unit literal (rare, should be handled by LetVal now)
         if var.0 == "_unit_literal" || var.0 == "_unit_ret" {
-            self.bind_var(var, Ty::Unit);
+            self.bind_var(&var.0, Ty::Unit);
             return Ok(());
         }
         Err(TypeError::UndeclaredVar(var.0.clone()))
     }
 
-    fn ty_of(&mut self, var: &Var) -> Result<Ty, TypeError> {
+    fn ty_of(&mut self, var: &UntypedVar) -> Result<Ty, TypeError> {
         if !self.gamma.0.contains_key(&var.0) {
             self.ensure_literal_binding(var)?;
         }
-        self.gamma.get(var)
+        self.gamma.get(&var.0)
     }
 }
 
@@ -260,30 +260,34 @@ fn render_array_len(len: &crate::ir::ArrayLen) -> String {
     len.display()
 }
 
-fn render_op(op: &Op, vars: &[Var]) -> String {
+fn render_op<V: std::fmt::Display>(op: &Op<V>, vars: &[V]) -> String {
     match op {
-        Op::Add => format!("{} = {} + {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Sub => format!("{} = {} - {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Mul => format!("{} = {} * {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Div => format!("{} = {} / {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::And => format!("{} = {} && {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Or => format!("{} = {} || {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Not => format!("{} = !{}", vars[1].0, vars[0].0),
-        Op::BitAnd => format!("{} = {} & {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::BitOr => format!("{} = {} | {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::BitXor => format!("{} = {} ^ {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Shl => format!("{} = {} << {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Shr => format!("{} = {} >> {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::LessThan => format!("{} = {} < {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::LessEqual => format!("{} = {} <= {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::Equal => format!("{} = {} == {}", vars[2].0, vars[0].0, vars[1].0),
-        Op::NotEqual => format!("{} = {} != {}", vars[2].0, vars[0].0, vars[1].0),
+        Op::Add => format!("{} = {} + {}", vars[2], vars[0], vars[1]),
+        Op::Sub => format!("{} = {} - {}", vars[2], vars[0], vars[1]),
+        Op::Mul => format!("{} = {} * {}", vars[2], vars[0], vars[1]),
+        Op::Sdiv => format!("{} = {} s/ {}", vars[2], vars[0], vars[1]),
+        Op::Udiv => format!("{} = {} u/ {}", vars[2], vars[0], vars[1]),
+        Op::And => format!("{} = {} && {}", vars[2], vars[0], vars[1]),
+        Op::Or => format!("{} = {} || {}", vars[2], vars[0], vars[1]),
+        Op::Not => format!("{} = !{}", vars[1], vars[0]),
+        Op::BitAnd => format!("{} = {} & {}", vars[2], vars[0], vars[1]),
+        Op::BitOr => format!("{} = {} | {}", vars[2], vars[0], vars[1]),
+        Op::BitXor => format!("{} = {} ^ {}", vars[2], vars[0], vars[1]),
+        Op::Shl => format!("{} = {} << {}", vars[2], vars[0], vars[1]),
+        Op::Ashr => format!("{} = {} a>> {}", vars[2], vars[0], vars[1]),
+        Op::Lshr => format!("{} = {} l>> {}", vars[2], vars[0], vars[1]),
+        Op::SignedLessThan => format!("{} = {} s< {}", vars[2], vars[0], vars[1]),
+        Op::SignedLessEqual => format!("{} = {} s<= {}", vars[2], vars[0], vars[1]),
+        Op::UnsignedLessThan => format!("{} = {} u< {}", vars[2], vars[0], vars[1]),
+        Op::UnsignedLessEqual => format!("{} = {} u<= {}", vars[2], vars[0], vars[1]),
+        Op::Equal => format!("{} = {} == {}", vars[2], vars[0], vars[1]),
+        Op::NotEqual => format!("{} = {} != {}", vars[2], vars[0], vars[1]),
         Op::Load { array, index, len } => {
             format!(
                 "{} = {}[{}] (len {})",
-                vars[0].0,
-                array.0,
-                index.0,
+                vars[0],
+                array,
+                index,
                 render_array_len(len)
             )
         }
@@ -295,19 +299,19 @@ fn render_op(op: &Op, vars: &[Var]) -> String {
         } => {
             format!(
                 "store {} -> {}[{}] (len {})",
-                value.0,
-                array.0,
-                index.0,
+                value,
+                array,
+                index,
                 render_array_len(len)
             )
         }
     }
 }
 
-fn render_stmt(stmt: &Stmt) -> String {
+fn render_stmt<V: std::fmt::Display>(stmt: &Stmt<V>) -> String {
     match stmt {
         Stmt::LetVal { var, val, fence } => {
-            let mut msg = format!("let {} = {}", var.0, render_val(val));
+            let mut msg = format!("let {} = {}", var, render_val(val));
             if *fence {
                 msg.push_str(" [fenced]");
             }
@@ -332,17 +336,17 @@ fn render_stmt(stmt: &Stmt) -> String {
             } else {
                 let dests = vars
                     .iter()
-                    .map(|v| v.0.as_str())
+                    .map(|v| v.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
                 msg.push_str(&format!("let {} = ", dests));
             }
             let arg_list = args
                 .iter()
-                .map(|v| v.0.as_str())
+                .map(|v| v.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
-            msg.push_str(&format!("{}({})", func.0, arg_list));
+            msg.push_str(&format!("{}({})", func, arg_list));
             if *fence {
                 msg.push_str(" [fenced]");
             }
@@ -351,17 +355,17 @@ fn render_stmt(stmt: &Stmt) -> String {
     }
 }
 
-fn render_tail(tail: &Tail) -> String {
+fn render_tail<V: std::fmt::Display>(tail: &Tail<V>) -> String {
     match tail {
-        Tail::RetVar(var) => format!("return {}", var.0),
-        Tail::IfElse { cond, .. } => format!("if {} {{ ... }} else {{ ... }}", cond.0),
+        Tail::RetVar(var) => format!("return {}", var),
+        Tail::IfElse { cond, .. } => format!("if {} {{ ... }} else {{ ... }}", cond),
         Tail::TailCall { func, args } => {
             let arg_list = args
                 .iter()
-                .map(|v| v.0.as_str())
+                .map(|v| v.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("tail call {}({})", func.0, arg_list)
+            format!("tail call {}({})", func, arg_list)
         }
     }
 }
@@ -414,7 +418,7 @@ where
 }
 
 // Optionally restore the initial capability environment (if fenced)
-fn finalize_statement<L: CapabilityLogic>(ctx: &mut Ctx<L>, stmt: &Stmt)
+fn finalize_statement<L: CapabilityLogic, V: std::fmt::Display>(ctx: &mut Ctx<L>, stmt: &Stmt<V>)
 where
     L::Region: RegionModel,
 {
@@ -437,10 +441,10 @@ where
 
 /// Check an entire program with the supplied options.
 pub fn check_program_with_options<L: CapabilityLogic>(
-    prog: &Program,
+    prog: &Program<UntypedVar>,
     logic: &L,
     options: CheckOptions,
-) -> Result<(), TypeError>
+) -> Result<Program<TypedVar>, TypeError>
 where
     L::Region: RegionModel,
 {
@@ -449,15 +453,21 @@ where
     for def in &prog.defs {
         registry.insert(def.clone());
     }
+
+    let mut typed_prog = Program::new();
     for def in &prog.defs {
-        check_fn_with_options(def, &registry, logic, options)?;
+        typed_prog.add_fn(check_fn_with_options(def, &registry, logic, options)?);
     }
-    Ok(())
+
+    Ok(typed_prog)
 }
 
 /// Check an entire program.  Currently this simply iterates over
 /// definitions and checks each in isolation.
-pub fn check_program<L: CapabilityLogic>(prog: &Program, logic: &L) -> Result<(), TypeError>
+pub fn check_program<L: CapabilityLogic>(
+    prog: &Program<UntypedVar>,
+    logic: &L,
+) -> Result<Program<TypedVar>, TypeError>
 where
     L::Region: RegionModel,
 {
@@ -466,10 +476,10 @@ where
 
 /// Check a single function definition.
 pub fn check_fn<L: CapabilityLogic>(
-    def: &FnDef,
+    def: &FnDef<UntypedVar>,
     registry: &FnRegistry,
     logic: &L,
-) -> Result<(), TypeError>
+) -> Result<FnDef<TypedVar>, TypeError>
 where
     L::Region: RegionModel,
 {
@@ -478,19 +488,19 @@ where
 
 /// Check a single function definition with explicit options.
 pub fn check_fn_with_options<L: CapabilityLogic>(
-    def: &FnDef,
+    def: &FnDef<UntypedVar>,
     registry: &FnRegistry,
     logic: &L,
     options: CheckOptions,
-) -> Result<(), TypeError>
+) -> Result<FnDef<TypedVar>, TypeError>
 where
     L::Region: RegionModel,
 {
     // Initialise context with parameter types.
     logic.set_query_logging(options.log_solver_queries);
     let mut ctx = Ctx::new(logic, options.verbose);
-    for (var, ty) in &def.params {
-        ctx.bind_var(var, ty.clone());
+    for TypedVar { name, ty } in &def.params {
+        ctx.bind_var(name, ty.clone());
     }
     // Initialise capability environment from the function’s cap pattern.
     for cap_pat in &def.caps {
@@ -505,27 +515,35 @@ where
     if result.is_ok() {
         trace_context(&ctx, "Context after function body");
     }
-    result
+
+    Ok(FnDef {
+        name: def.name.clone(),
+        params: def.params.clone(),
+        caps: def.caps.clone(),
+        returns: def.returns.clone(),
+        body: result?,
+    })
 }
 
 /// Check an expression and ensure it produces a value of the expected type.
 fn check_expr<L: CapabilityLogic>(
     ctx: &mut Ctx<L>,
-    expr: &Expr,
+    expr: &Expr<UntypedVar>,
     expected: &Ty,
     registry: &FnRegistry,
-) -> Result<(), TypeError>
+) -> Result<Expr<TypedVar>, TypeError>
 where
     L::Region: RegionModel,
 {
     trace_context(ctx, "Entering expression");
 
     // Process statements sequentially.
+    let mut typed_stmts = Vec::new();
     for stmt in &expr.stmts {
         if ctx.verbose {
             println!("Processing statement: {}", render_stmt(stmt));
         }
-        check_stmt(ctx, stmt, registry)?;
+        typed_stmts.push(check_stmt(ctx, stmt, registry)?);
     }
 
     if ctx.verbose {
@@ -534,7 +552,7 @@ where
     }
 
     // Check tail.
-    let ty = check_tail(ctx, &expr.tail, registry)?;
+    let (ty, typed_tail) = check_tail(ctx, &expr.tail, registry)?;
 
     if ctx.verbose {
         println!(
@@ -551,26 +569,31 @@ where
             found: TypeError::type_name(&ty),
         });
     }
-    Ok(())
+
+    Ok(Expr {
+        stmts: typed_stmts,
+        tail: typed_tail,
+    })
 }
 
 /// Infer the type of an expression (for use in if-else branches).
 fn infer_expr_type<L: CapabilityLogic>(
     ctx: &mut Ctx<L>,
-    expr: &Expr,
+    expr: &Expr<UntypedVar>,
     registry: &FnRegistry,
-) -> Result<Ty, TypeError>
+) -> Result<(Ty, Expr<TypedVar>), TypeError>
 where
     L::Region: RegionModel,
 {
     trace_context(ctx, "Inferring expression type");
 
     // Process statements sequentially.
+    let mut typed_stmts = Vec::new();
     for stmt in &expr.stmts {
         if ctx.verbose {
             println!("Processing statement (infer): {}", render_stmt(stmt));
         }
-        check_stmt(ctx, stmt, registry)?;
+        typed_stmts.push(check_stmt(ctx, stmt, registry)?);
     }
 
     if ctx.verbose {
@@ -579,7 +602,7 @@ where
     }
 
     // Check tail and return its type.
-    let ty = check_tail(ctx, &expr.tail, registry)?;
+    let (ty, typed_tail) = check_tail(ctx, &expr.tail, registry)?;
 
     if ctx.verbose {
         println!(
@@ -590,20 +613,26 @@ where
         print_context_contents(ctx);
     }
 
-    Ok(ty)
+    Ok((
+        ty,
+        Expr {
+            stmts: typed_stmts,
+            tail: typed_tail,
+        },
+    ))
 }
 
 /// Check a single statement.
 fn check_stmt<L: CapabilityLogic>(
     ctx: &mut Ctx<L>,
-    stmt: &Stmt,
+    stmt: &Stmt<UntypedVar>,
     registry: &FnRegistry,
-) -> Result<(), TypeError>
+) -> Result<Stmt<TypedVar>, TypeError>
 where
     L::Region: RegionModel,
 {
     match stmt {
-        Stmt::LetVal { var, val, .. } => {
+        Stmt::LetVal { var, val, fence } => {
             // Determine literal type and bind it.
             let ty = match val {
                 Val::Int(n) => {
@@ -616,7 +645,7 @@ where
                 Val::Bool(_) => Ty::Bool,
                 Val::Unit => Ty::Unit,
             };
-            ctx.bind_var(var, ty);
+            ctx.bind_var(&var.0, ty.clone());
             match val {
                 Val::Int(n) => ctx
                     .phi
@@ -626,12 +655,16 @@ where
                 Val::Unit => {}
             }
             finalize_statement(ctx, stmt);
-            Ok(())
+            Ok(Stmt::LetVal {
+                var: var.add_type(ty),
+                val: val.clone(),
+                fence: *fence,
+            })
         }
         Stmt::LetOp { vars, op, fence } => {
             let fenced = *fence;
             match op {
-                Op::Add | Op::Sub | Op::Mul | Op::Div => {
+                Op::Add | Op::Sub | Op::Mul | Op::Sdiv | Op::Udiv => {
                     // Binary integer arithmetic.  Expect two input vars and one output.
                     if vars.len() != 3 {
                         return Err(TypeError::InvalidOp {
@@ -653,12 +686,32 @@ where
                         Op::Mul => Idx::Mul(Box::new(x_idx), Box::new(y_idx)),
                         _ => result_idx.clone(),
                     };
-                    if !matches!(op, Op::Div) {
+                    if !matches!(op, Op::Sdiv) && !matches!(op, Op::Udiv) {
                         ctx.phi.push(Atom::Eq(result_idx, rhs));
                     }
-                    ctx.bind_var(&vars[2], Ty::Int(result_sign));
+                    ctx.bind_var(&vars[2].0, Ty::Int(result_sign));
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![
+                            vars[0].add_type(x_ty),
+                            vars[1].add_type(y_ty),
+                            vars[2].add_type(Ty::Int(result_sign)),
+                        ],
+                        op: match op {
+                            Op::Add => Op::Add,
+                            Op::Sub => Op::Sub,
+                            Op::Mul => Op::Mul,
+                            // Parser defaults to signed division
+                            // so we adjust here based on types.
+                            Op::Sdiv => match result_sign {
+                                Signedness::Signed => Op::Sdiv,
+                                Signedness::Unsigned => Op::Udiv,
+                            },
+                            Op::Udiv => Op::Udiv,
+                            _ => unreachable!(),
+                        },
+                        fence: fenced,
+                    })
                 }
                 Op::And => {
                     if vars.len() != 3 {
@@ -673,7 +726,7 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    ctx.bind_var(&vars[2], Ty::Bool);
+                    ctx.bind_var(&vars[2].0, Ty::Bool);
                     let lhs_atom = bool_atom(&vars[0].0);
                     let rhs_atom = bool_atom(&vars[1].0);
                     let res_atom = bool_atom(&vars[2].0);
@@ -681,7 +734,15 @@ where
                     ctx.phi.push(implies(res_atom.clone(), conjunction.clone()));
                     ctx.phi.push(implies(conjunction, res_atom));
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![
+                            vars[0].add_type(Ty::Bool),
+                            vars[1].add_type(Ty::Bool),
+                            vars[2].add_type(Ty::Bool),
+                        ],
+                        op: Op::And,
+                        fence: fenced,
+                    })
                 }
                 Op::Or => {
                     if vars.len() != 3 {
@@ -696,7 +757,7 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    ctx.bind_var(&vars[2], Ty::Bool);
+                    ctx.bind_var(&vars[2].0, Ty::Bool);
                     let lhs_atom = bool_atom(&vars[0].0);
                     let rhs_atom = bool_atom(&vars[1].0);
                     let res_atom = bool_atom(&vars[2].0);
@@ -704,7 +765,15 @@ where
                     ctx.phi.push(implies(res_atom.clone(), disjunction.clone()));
                     ctx.phi.push(implies(disjunction, res_atom));
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![
+                            vars[0].add_type(Ty::Bool),
+                            vars[1].add_type(Ty::Bool),
+                            vars[2].add_type(Ty::Bool),
+                        ],
+                        op: Op::Or,
+                        fence: fenced,
+                    })
                 }
                 Op::Not => {
                     if vars.len() != 2 {
@@ -718,14 +787,18 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    ctx.bind_var(&vars[1], Ty::Bool);
+                    ctx.bind_var(&vars[1].0, Ty::Bool);
                     let input_atom = bool_atom(&vars[0].0);
                     let res_atom = bool_atom(&vars[1].0);
                     let negation = not(input_atom.clone());
                     ctx.phi.push(implies(res_atom.clone(), negation.clone()));
                     ctx.phi.push(implies(negation, res_atom));
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![vars[0].add_type(Ty::Bool), vars[1].add_type(Ty::Bool)],
+                        op: Op::Not,
+                        fence: fenced,
+                    })
                 }
                 Op::BitAnd | Op::BitOr | Op::BitXor => {
                     if vars.len() != 3 {
@@ -743,11 +816,24 @@ where
                     let x_sign = x_ty.signedness().unwrap();
                     let y_sign = y_ty.signedness().unwrap();
                     let result_sign = combine_signedness(x_sign, y_sign);
-                    ctx.bind_var(&vars[2], Ty::Int(result_sign));
+                    ctx.bind_var(&vars[2].0, Ty::Int(result_sign));
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![
+                            vars[0].add_type(x_ty),
+                            vars[1].add_type(y_ty),
+                            vars[2].add_type(Ty::Int(result_sign)),
+                        ],
+                        op: match op {
+                            Op::BitAnd => Op::BitAnd,
+                            Op::BitOr => Op::BitOr,
+                            Op::BitXor => Op::BitXor,
+                            _ => unreachable!(),
+                        },
+                        fence: fenced,
+                    })
                 }
-                Op::Shl | Op::Shr => {
+                Op::Shl | Op::Ashr | Op::Lshr => {
                     if vars.len() != 3 {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
@@ -761,11 +847,30 @@ where
                         });
                     }
                     let x_sign = x_ty.signedness().unwrap();
-                    ctx.bind_var(&vars[2], Ty::Int(x_sign));
+                    ctx.bind_var(&vars[2].0, Ty::Int(x_sign));
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![
+                            vars[0].add_type(x_ty),
+                            vars[1].add_type(y_ty),
+                            vars[2].add_type(Ty::Int(x_sign)),
+                        ],
+                        op: match op {
+                            Op::Shl => Op::Shl,
+                            Op::Ashr => match x_sign {
+                                Signedness::Signed => Op::Ashr,
+                                Signedness::Unsigned => Op::Lshr,
+                            },
+                            Op::Lshr => Op::Lshr,
+                            _ => unreachable!(),
+                        },
+                        fence: fenced,
+                    })
                 }
-                Op::LessThan | Op::LessEqual => {
+                Op::SignedLessThan
+                | Op::SignedLessEqual
+                | Op::UnsignedLessThan
+                | Op::UnsignedLessEqual => {
                     if vars.len() != 3 {
                         return Err(TypeError::InvalidOp {
                             op: format!("{:?}", op),
@@ -778,12 +883,16 @@ where
                             op: format!("{:?}", op),
                         });
                     }
+                    let x_sign = x_ty.signedness().unwrap();
+                    let y_sign = y_ty.signedness().unwrap();
+                    let result_sign = combine_signedness(x_sign, y_sign);
                     // Record the comparison as a fact in Phi.
                     let x_idx = Idx::Var(vars[0].0.clone());
                     let y_idx = Idx::Var(vars[1].0.clone());
                     let comparison = match op {
-                        Op::LessThan => Atom::Lt(x_idx, y_idx),
-                        Op::LessEqual => Atom::Le(x_idx, y_idx),
+                        // TODO: Check if this is ok
+                        Op::SignedLessThan | Op::UnsignedLessThan => Atom::Lt(x_idx, y_idx),
+                        Op::SignedLessEqual | Op::UnsignedLessEqual => Atom::Le(x_idx, y_idx),
                         _ => unreachable!(),
                     };
                     let result_atom = bool_atom(&vars[2].0);
@@ -791,9 +900,29 @@ where
                         .push(implies(result_atom.clone(), comparison.clone()));
                     ctx.phi
                         .push(implies(not(result_atom.clone()), not(comparison)));
-                    ctx.bind_var(&vars[2], Ty::Bool);
+                    ctx.bind_var(&vars[2].0, Ty::Bool);
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![
+                            vars[0].add_type(x_ty),
+                            vars[1].add_type(y_ty),
+                            vars[2].add_type(Ty::Bool),
+                        ],
+                        op: match op {
+                            Op::SignedLessThan => match result_sign {
+                                Signedness::Signed => Op::SignedLessThan,
+                                Signedness::Unsigned => Op::UnsignedLessThan,
+                            },
+                            Op::SignedLessEqual => match result_sign {
+                                Signedness::Signed => Op::SignedLessEqual,
+                                Signedness::Unsigned => Op::UnsignedLessEqual,
+                            },
+                            Op::UnsignedLessThan => Op::UnsignedLessThan,
+                            Op::UnsignedLessEqual => Op::UnsignedLessEqual,
+                            _ => unreachable!(),
+                        },
+                        fence: fenced,
+                    })
                 }
                 Op::Equal | Op::NotEqual => {
                     if vars.len() != 3 {
@@ -814,7 +943,7 @@ where
                             op: format!("{:?}", op),
                         });
                     }
-                    ctx.bind_var(&vars[2], Ty::Bool);
+                    ctx.bind_var(&vars[2].0, Ty::Bool);
                     let result_atom = bool_atom(&vars[2].0);
                     match x_ty {
                         Ty::Int(_) => match op {
@@ -866,7 +995,19 @@ where
                         _ => {}
                     }
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![
+                            vars[0].add_type(x_ty),
+                            vars[1].add_type(y_ty),
+                            vars[2].add_type(Ty::Bool),
+                        ],
+                        op: match op {
+                            Op::Equal => Op::Equal,
+                            Op::NotEqual => Op::NotEqual,
+                            _ => unreachable!(),
+                        },
+                        fence: fenced,
+                    })
                 }
                 Op::Load { array, index, len } => {
                     // For a load we expect exactly one destination variable.
@@ -884,7 +1025,7 @@ where
                     }
                     // Array must be a reference to the correct length.
                     let arr_ty = ctx.ty_of(array)?;
-                    let (arr_len, elem_ty) = match arr_ty {
+                    let (arr_len, elem_ty) = match arr_ty.clone() {
                         Ty::RefShrd { elem, len } | Ty::RefUniq { elem, len } => {
                             (len.clone(), elem.as_ref().clone())
                         }
@@ -936,10 +1077,17 @@ where
                             })?;
                     }
                     // Bind result.
-                    let dest = &vars[0];
-                    ctx.bind_var(dest, elem_ty);
+                    ctx.bind_var(&vars[0].0, elem_ty.clone());
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![vars[0].add_type(elem_ty)],
+                        op: Op::Load {
+                            array: array.add_type(arr_ty),
+                            index: index.add_type(idx_ty),
+                            len: len.clone(),
+                        },
+                        fence: fenced,
+                    })
                 }
                 Op::Store {
                     array,
@@ -961,7 +1109,7 @@ where
                         });
                     }
                     let arr_ty = ctx.ty_of(array)?;
-                    let (arr_len, elem_ty) = match arr_ty {
+                    let (arr_len, elem_ty) = match arr_ty.clone() {
                         Ty::RefUniq { elem, len } | Ty::RefShrd { elem, len } => {
                             (len.clone(), elem.as_ref().clone())
                         }
@@ -1024,7 +1172,16 @@ where
                             })?;
                     }
                     finalize_statement(ctx, stmt);
-                    Ok(())
+                    Ok(Stmt::LetOp {
+                        vars: vec![],
+                        op: Op::Store {
+                            array: array.add_type(arr_ty),
+                            index: index.add_type(idx_ty),
+                            value: value.add_type(val_ty),
+                            len: len.clone(),
+                        },
+                        fence: fenced,
+                    })
                 }
             }
         }
@@ -1043,12 +1200,12 @@ where
             let value_params: Vec<_> = fn_def
                 .params
                 .iter()
-                .filter(|(_, ty)| !matches!(ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
+                .filter(|tvar| !matches!(tvar.ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
                 .collect();
             let array_params: Vec<_> = fn_def
                 .params
                 .iter()
-                .filter(|(_, ty)| matches!(ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
+                .filter(|tvar| matches!(tvar.ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
                 .collect();
 
             // Build substitution map for indices (param names -> arg vars).
@@ -1061,32 +1218,32 @@ where
                     op: format!("function call to {} has too few arguments", func.0),
                 });
             }
-            for (i, (param_var, param_ty)) in value_params.iter().enumerate() {
+            for (i, param) in value_params.iter().enumerate() {
                 let arg_var = &args[i];
                 let mut arg_ty = ctx.ty_of(arg_var)?;
-                if arg_ty != *param_ty {
+                if arg_ty != param.ty {
                     // Allow integer type coercion for literals or between signed/unsigned
-                    let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param_ty, Ty::Int(_));
+                    let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param.ty, Ty::Int(_));
                     if both_int {
                         // If it's a literal binding, rebind it to the expected type
                         if arg_var.0.starts_with("_lit_") {
-                            ctx.bind_var(arg_var, param_ty.clone());
-                            arg_ty = param_ty.clone();
+                            ctx.bind_var(&arg_var.0, param.ty.clone());
+                            arg_ty = param.ty.clone();
                         } else {
                             // For non-literal integers, allow implicit conversion between signed/unsigned
                             // This handles cases like `let x = 0; f(x)` where f expects i32
-                            arg_ty = param_ty.clone();
+                            arg_ty = param.ty.clone();
                         }
                     }
-                    if arg_ty != *param_ty {
+                    if arg_ty != param.ty {
                         return Err(TypeError::TypeMismatch {
-                            expected: TypeError::type_name(param_ty),
+                            expected: TypeError::type_name(&param.ty),
                             found: TypeError::type_name(&arg_ty),
                         });
                     }
                 }
                 // Record substitution for index expressions.
-                subst_map.insert(param_var.0.clone(), arg_var.0.clone());
+                subst_map.insert(param.name.clone(), arg_var.0.clone());
             }
 
             // Check array arguments and their capabilities.
@@ -1148,9 +1305,20 @@ where
                     ),
                 });
             }
-            ctx.bind_var(&vars[0], fn_def.returns.clone());
+            ctx.bind_var(&vars[0].0, fn_def.returns.clone());
             finalize_statement(ctx, stmt);
-            Ok(())
+
+            let mut typed_args = Vec::new();
+            for arg in args.iter() {
+                typed_args.push(arg.add_type(ctx.ty_of(arg)?));
+            }
+
+            Ok(Stmt::LetCall {
+                vars: vec![vars[0].add_type(fn_def.returns.clone())],
+                func: func.clone(),
+                args: typed_args,
+                fence: *fence,
+            })
         }
     }
 }
@@ -1158,14 +1326,17 @@ where
 /// Check a tail expression and return its type.
 fn check_tail<L: CapabilityLogic>(
     ctx: &mut Ctx<L>,
-    tail: &Tail,
+    tail: &Tail<UntypedVar>,
     registry: &FnRegistry,
-) -> Result<Ty, TypeError>
+) -> Result<(Ty, Tail<TypedVar>), TypeError>
 where
     L::Region: RegionModel,
 {
     match tail {
-        Tail::RetVar(var) => ctx.ty_of(var),
+        Tail::RetVar(var) => {
+            let ty = ctx.ty_of(var)?;
+            Ok((ty.clone(), Tail::RetVar(var.add_type(ty))))
+        }
         Tail::IfElse {
             cond,
             then_e,
@@ -1199,22 +1370,27 @@ where
             };
             ctx_el.phi.push(not(bool_atom(&cond.0)));
             // Type check both branches, allowing them to infer their return types.
-            let ty_then = infer_expr_type(&mut ctx_th, then_e, registry)?;
-            let ty_else = infer_expr_type(&mut ctx_el, else_e, registry)?;
+            let (ty_then, typed_then) = infer_expr_type(&mut ctx_th, then_e, registry)?;
+            let (ty_else, typed_else) = infer_expr_type(&mut ctx_el, else_e, registry)?;
+            let typed_tail = Tail::IfElse {
+                cond: cond.add_type(Ty::Bool),
+                then_e: typed_then.into(),
+                else_e: typed_else.into(),
+            };
             if ty_then != ty_else {
                 if ty_then.is_int() && ty_else.is_int() {
                     let combined = Ty::Int(combine_signedness(
                         ty_then.signedness().unwrap(),
                         ty_else.signedness().unwrap(),
                     ));
-                    return Ok(combined);
+                    return Ok((combined, typed_tail));
                 }
                 return Err(TypeError::TypeMismatch {
                     expected: TypeError::type_name(&ty_then),
                     found: TypeError::type_name(&ty_else),
                 });
             }
-            Ok(ty_then)
+            Ok((ty_then, typed_tail))
         }
         Tail::TailCall { func, args } => {
             // Look up function definition.
@@ -1226,12 +1402,12 @@ where
             let value_params: Vec<_> = fn_def
                 .params
                 .iter()
-                .filter(|(_, ty)| !matches!(ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
+                .filter(|tvar| !matches!(tvar.ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
                 .collect();
             let array_params: Vec<_> = fn_def
                 .params
                 .iter()
-                .filter(|(_, ty)| matches!(ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
+                .filter(|tvar| matches!(tvar.ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
                 .collect();
 
             // Build substitution map for indices (param names -> arg vars).
@@ -1244,32 +1420,32 @@ where
                     op: format!("tail call to {} has too few arguments", func.0),
                 });
             }
-            for (i, (param_var, param_ty)) in value_params.iter().enumerate() {
+            for (i, param) in value_params.iter().enumerate() {
                 let arg_var = &args[i];
                 let mut arg_ty = ctx.ty_of(arg_var)?;
-                if arg_ty != *param_ty {
+                if arg_ty != param.ty {
                     // Allow integer type coercion for literals or between signed/unsigned
-                    let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param_ty, Ty::Int(_));
+                    let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param.ty, Ty::Int(_));
                     if both_int {
                         // If it's a literal binding, rebind it to the expected type
                         if arg_var.0.starts_with("_lit_") {
-                            ctx.bind_var(arg_var, param_ty.clone());
-                            arg_ty = param_ty.clone();
+                            ctx.bind_var(&arg_var.0, param.ty.clone());
+                            arg_ty = param.ty.clone();
                         } else {
                             // For non-literal integers, allow implicit conversion between signed/unsigned
                             // This handles cases like `let x = 0; f(x)` where f expects i32
-                            arg_ty = param_ty.clone();
+                            arg_ty = param.ty.clone();
                         }
                     }
-                    if arg_ty != *param_ty {
+                    if arg_ty != param.ty {
                         return Err(TypeError::TypeMismatch {
-                            expected: TypeError::type_name(param_ty),
+                            expected: TypeError::type_name(&param.ty),
                             found: TypeError::type_name(&arg_ty),
                         });
                     }
                 }
                 // Record substitution for index expressions.
-                subst_map.insert(param_var.0.clone(), arg_var.0.clone());
+                subst_map.insert(param.name.clone(), arg_var.0.clone());
             }
 
             // Check array arguments and their capabilities.
@@ -1318,7 +1494,20 @@ where
                 println!("Tail call to {} verified", func.0);
                 print_context_contents(ctx);
             }
-            Ok(fn_def.returns.clone())
+
+            // TODO: Check if signedness coercion works well with this.
+            let mut typed_args = Vec::new();
+            for arg in args.iter() {
+                typed_args.push(arg.add_type(ctx.ty_of(arg)?));
+            }
+
+            Ok((
+                fn_def.returns.clone(),
+                Tail::TailCall {
+                    func: func.clone(),
+                    args: typed_args,
+                },
+            ))
         }
     }
 }

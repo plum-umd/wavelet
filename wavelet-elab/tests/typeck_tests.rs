@@ -5,8 +5,8 @@ use wavelet_elab::check::{check_fn_with_options, CheckOptions};
 use wavelet_elab::env::FnRegistry;
 use wavelet_elab::ir::FnDef;
 use wavelet_elab::logic::syntactic::SyntacticLogic;
-use wavelet_elab::parse_program;
 use wavelet_elab::SemanticLogic;
+use wavelet_elab::{parse_program, UntypedVar};
 
 // Define the fence macro as a no-op for parsing
 #[allow(unused_macros)]
@@ -14,7 +14,7 @@ macro_rules! fence {
     ($($tt:tt)*) => {};
 }
 
-fn parse_fixture(code: &str) -> HashMap<String, FnDef> {
+fn parse_fixture(code: &str) -> HashMap<String, FnDef<UntypedVar>> {
     let program = parse_program(code).expect("Failed to parse fixture file");
     program
         .defs
@@ -26,7 +26,7 @@ fn parse_fixture(code: &str) -> HashMap<String, FnDef> {
         .collect()
 }
 
-fn parse_fn_by_name(code: &str, fn_name: &str) -> FnDef {
+fn parse_fn_by_name(code: &str, fn_name: &str) -> FnDef<UntypedVar> {
     let program =
         parse_program(code).unwrap_or_else(|err| panic!("Failed to parse program: {:?}", err));
     program

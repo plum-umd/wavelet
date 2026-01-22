@@ -1,7 +1,7 @@
 //! Top-level program and function checking.
 
 use crate::ghost::ir::{GhostFnDef, GhostProgram};
-use crate::ir::{Signedness, Ty};
+use crate::ir::{Signedness, Ty, Variable};
 use crate::logic::semantic::solver::{Atom, Idx, SmtSolver};
 
 use super::context::{CheckContext, FunctionSignature};
@@ -9,13 +9,13 @@ use super::expr_checker::check_ghost_expr;
 use super::pretty_print::trace_context;
 
 /// Check a ghost program for permission correctness.
-pub fn check_ghost_program(program: &GhostProgram) -> Result<(), String> {
+pub fn check_ghost_program<V: Variable>(program: &GhostProgram<V>) -> Result<(), String> {
     check_ghost_program_with_verbose(program, false)
 }
 
 /// Check a ghost program for permission correctness with optional verbose mode.
-pub fn check_ghost_program_with_verbose(
-    program: &GhostProgram,
+pub fn check_ghost_program_with_verbose<V: Variable>(
+    program: &GhostProgram<V>,
     verbose: bool,
 ) -> Result<(), String> {
     let solver = SmtSolver::new();
@@ -33,7 +33,7 @@ pub fn check_ghost_program_with_verbose(
                 "  Parameters: {}",
                 def.params
                     .iter()
-                    .map(|(v, _)| v.0.as_str())
+                    .map(|v| v.to_string())
                     .collect::<Vec<_>>()
                     .join(", ")
             );
@@ -77,7 +77,7 @@ pub fn check_ghost_program_with_verbose(
 
 /// Build a function signature from a ghost function definition.
 /// This extracts the initial permission setup from CapPattern.
-fn build_function_signature(def: &GhostFnDef) -> FunctionSignature {
+fn build_function_signature<V: Variable>(def: &GhostFnDef<V>) -> FunctionSignature {
     use crate::ghost::ir::GhostVar;
 
     let params = def.params.clone();
@@ -109,7 +109,7 @@ fn build_function_signature(def: &GhostFnDef) -> FunctionSignature {
 }
 
 /// Check a single ghost function definition.
-fn check_ghost_fn(def: &GhostFnDef, ctx: &mut CheckContext) -> Result<(), String> {
+fn check_ghost_fn<V: Variable>(def: &GhostFnDef<V>, ctx: &mut CheckContext) -> Result<(), String> {
     use super::pretty_print::render_perm_expr;
 
     // clear propositional context and permission env
@@ -119,9 +119,9 @@ fn check_ghost_fn(def: &GhostFnDef, ctx: &mut CheckContext) -> Result<(), String
 
     trace_context(ctx, &format!("Initial context for function {}", def.name.0));
 
-    for (var, ty) in &def.params {
-        if let Ty::Int(Signedness::Unsigned) = ty {
-            ctx.add_constraint(Atom::Le(Idx::Const(0), Idx::Var(var.0.clone())));
+    for param in &def.params {
+        if let Ty::Int(Signedness::Unsigned) = param.ty {
+            ctx.add_constraint(Atom::Le(Idx::Const(0), Idx::Var(param.name.clone())));
         }
     }
 

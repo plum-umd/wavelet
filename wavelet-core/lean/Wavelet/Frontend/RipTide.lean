@@ -43,9 +43,9 @@ instance : ToString Value where
 
 /-- Synchronous operators in RipTide, parametrized by a type of location/array symbols. -/
 inductive SyncOp (Loc : Type u) : Type u where
-  | add | sub | mul | sdiv
+  | add | sub | mul | sdiv | udiv
   | shl | ashr | lshr
-  | eq | neq | slt | sle
+  | eq | neq | slt | sle | ult | ule
   | and
   | bitand
   | load (_ : Loc) | store (_ : Loc) | sel
@@ -54,16 +54,22 @@ inductive SyncOp (Loc : Type u) : Type u where
   deriving Repr, Lean.ToJson, Lean.FromJson
 
 instance : Arity (SyncOp Loc) where
-  ι | .add => 2 | .sub => 2 | .mul => 2 | .sdiv => 2
+  ι | .add => 2 | .sub => 2 | .mul => 2
+    | .sdiv => 2 | .udiv => 2
     | .shl => 2 | .ashr => 2 | .lshr => 2
-    | .eq => 2 | .neq => 2 | .slt => 2 | .sle => 2
+    | .eq => 2 | .neq => 2
+    | .slt => 2 | .sle => 2
+    | .ult => 2 | .ule => 2
     | .and => 2
     | .bitand => 2
     | .load _ => 1 | .store _ => 2 | .sel => 3
     | .const _ => 1 | .copy _ => 1
-  ω | .add => 1 | .sub => 1 | .mul => 1 | .sdiv => 1
+  ω | .add => 1 | .sub => 1 | .mul => 1
+    | .sdiv => 1 | .udiv => 1
     | .shl => 1 | .ashr => 1 | .lshr => 1
-    | .eq => 1 | .neq => 1 | .slt => 1 | .sle => 1
+    | .eq => 1 | .neq => 1
+    | .slt => 1 | .sle => 1
+    | .ult => 1 | .ule => 1
     | .and => 1
     | .bitand => 1
     | .load _ => 1 | .store _ => 1 | .sel => 1
@@ -290,7 +296,7 @@ def prog₁ :
     {
       name := "sum",
       params := ["sum", "i", "n", "t₀"],
-      outputs := 2,
+      rets := ["a", "b"],
       body :=
         .op (.op (.join 1 0 (λ _ => PCM.zero))) ["t₀"] ["t₁", "t₂"] <|
         .op (.op (.op false (.copy 3))) ["i"] ["i₁", "i₂", "i₃", "i₄", "dummy₁"] <|
@@ -316,14 +322,17 @@ instance [ToString Loc] : Dataflow.DotName (SyncOp Loc) where
     | .add => "\"+\""
     | .sub => "\"-\""
     | .mul => "\"*\""
-    | .sdiv => "\"/\""
+    | .sdiv => "\"s/\""
+    | .udiv => "\"u/\""
     | .shl => "\"<<\""
     | .ashr => "\"a>>\""
     | .lshr => "\"l>>\""
     | .eq => "\"=\""
-    | .slt => "\"<\""
-    | .sle => "\"<=\""
     | .neq => "\"!=\""
+    | .slt => "\"s<\""
+    | .sle => "\"s<=\""
+    | .ult => "\"u<\""
+    | .ule => "\"u<=\""
     | .and => "\"&&\""
     | .bitand => "\"&\""
     | .load loc => s!"<LD<sub>{loc}</sub>>"
@@ -433,15 +442,27 @@ open Compile Determinacy Seq Dataflow Semantics
 
 private abbrev Loc := String
 private abbrev FnName := String
-private abbrev VarName := String
+
+inductive PrimType where
+  | int (_ : Nat)
+  | unknown
+  deriving BEq, DecidableEq, Hashable, Repr, Lean.ToJson, Lean.FromJson
+
+def PrimType.unit : PrimType := .int 0
+def PrimType.bool : PrimType := .int 1
+
+structure VarName (α : Type u) where
+  name : α
+  ty : PrimType
+  deriving BEq, DecidableEq, Hashable, Repr, Lean.ToJson, Lean.FromJson
 
 -- Raw program and process formats used for encoding/decoding
-abbrev RawProg := Frontend.RawProg (WithCall (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) FnName) VarName
-abbrev RawProc := Frontend.RawProc (RipTide.SyncOp Loc) Nat RipTide.Value
+abbrev RawProg := Frontend.RawProg (WithCall (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) FnName) (VarName String)
+abbrev RawProc := Frontend.RawProc (RipTide.SyncOp Loc) (VarName Nat) RipTide.Value
 
 -- Actual program and process formats used for compilation
-abbrev EncapProg := Frontend.EncapProg (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) VarName RipTide.Value
-abbrev EncapProc := Frontend.EncapProc (RipTide.SyncOp Loc) Nat RipTide.Value
+abbrev EncapProg := Frontend.EncapProg (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) (VarName String) RipTide.Value
+abbrev EncapProc := Frontend.EncapProc (RipTide.SyncOp Loc) (VarName Nat) RipTide.Value
 
 /-- Validates static properties of a `Prog`. -/
 def validateProg (prog : RipTide.EncapProg) : Except String Unit := do
@@ -453,6 +474,76 @@ def validateProg (prog : RipTide.EncapProg) : Except String Unit := do
 def validateProc (proc : RipTide.EncapProc) : Except String Unit := do
   proc.proc.checkAffineChan
 
+/-- TODO: On certain (currently) unreachable cases
+(e.g., `.dest i` with `i` exceeding the number of
+return values), this function will return `.unknown`.
+Ideally we want to fail early instead of silently
+passing types of `.unknown` around. -/
+private def typeOfChanName
+  [Arity Op]
+  (fn : Fn Op (VarName β) V m n)
+  : ChanName (VarName α) → PrimType
+  | .input name
+  | .var name _ => name.ty
+  | .switch_cond _
+  | .merge_cond _
+  | .tail_cond _
+  | .tail_cond_carry
+  | .tail_cond_steer_dests
+  | .tail_cond_steer_tail_args => .bool
+  | .dest i _
+  | .final_dest i =>
+    if h : i < n then
+      (fn.rets[i]'h).ty
+    else
+      .unknown
+  | .tail_arg i _
+  | .final_tail_arg i =>
+    if h : i < m then
+      (fn.params[i]'h).ty
+    else
+      .unknown
+
+private def typeOfLinkChanName
+  (prog : EncapProg)
+  (curIdx : Nat)
+  : LinkName (ChanName (VarName α)) → PrimType
+  | .base name =>
+    if h : curIdx < prog.numFns then
+      typeOfChanName (prog.prog ⟨curIdx, h⟩) name
+    else
+      .unknown
+  | .main name => typeOfLinkChanName prog curIdx name
+  | .dep idx name => typeOfLinkChanName prog idx name
+
+private def typeOfEraseName
+  : EraseName (VarName α) → PrimType
+  | .base name => name.ty
+  | .input name => name.ty
+  | .output name => name.ty
+  | .join name _ => name.ty
+
+private def typeOfRewriteName
+  : RewriteName (VarName α) → PrimType
+  | .base name => name.ty
+  | .rw name => typeOfRewriteName name
+  | .rename _ name => typeOfRewriteName name
+
+/-- Renames a variable/channel name after linking and compilation,
+but preserves the type annotation. -/
+private def renameLinkChanName
+  (prog : EncapProg)
+  (idx : Nat) (name : LinkName (ChanName (VarName α))) : VarName Nat
+  := { name := idx, ty := typeOfLinkChanName prog (prog.numFns - 1) name }
+
+/-- Renames a variable after ghost erasure. -/
+private def renameEraseName (idx : Nat) (name : EraseName (VarName α)) : VarName Nat
+  := { name := idx, ty := typeOfEraseName name }
+
+/-- Renames a variable after rewriting. -/
+private def renameRewriteName (idx : Nat) (name : RewriteName (VarName α)) : VarName Nat
+  := { name := idx, ty := typeOfRewriteName name }
+
 /-- Converts the last function of the given program to a dataflow process.
 This compiles all imperative control-flow to dataflow, and also lowers all
 ghost operators/inputs/outputs to concrete order operators. -/
@@ -462,8 +553,10 @@ def lowerControlFlow (prog : RipTide.EncapProg) : Except String RipTide.EncapPro
     let last : Fin prog.numFns := ⟨prog.numFns - 1, by omega⟩
     -- Compile and link
     let proc := compileProg prog.prog last
+    let proc := proc.renameChans (renameLinkChanName prog)
     -- Erase ghost tokens
-    let proc := proc.renameChans.eraseGhost.renameChans
+    let proc := proc.eraseGhost
+    let proc := proc.renameChans renameEraseName
     return .fromProc proc
   else
     .error "compiling empty program"
@@ -481,10 +574,10 @@ def sinkLastNOutputs (n : Nat) (proc : RipTide.EncapProc) : RipTide.EncapProc :=
 
 /-- Rewrites the given dataflow process using the given rules. -/
 def rewriteProc
-  (rules : Rewrite (RipTide.SyncOp Loc) Nat RipTide.Value)
+  (rules : Rewrite (RipTide.SyncOp Loc) (VarName Nat) RipTide.Value)
   (proc : RipTide.EncapProc) :
   Nat × RewriteStats × RipTide.EncapProc :=
-  let (numRws, stats, proc) := Rewrite.applyUntilFailNat rules proc.proc
+  let (numRws, stats, proc) := Rewrite.applyUntilFailNat renameRewriteName rules proc.proc
   (numRws, stats, EncapProc.fromProc proc)
 
 end Passes

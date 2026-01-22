@@ -1,7 +1,7 @@
 //! Tests for the permission checker.
 
 use crate::ghost::fracperms::FractionExpr;
-use crate::ir::Var;
+use crate::ir::UntypedVar;
 use crate::logic::semantic::region_set::RegionSetExpr;
 use crate::logic::semantic::solver::{Atom, Idx, Phi, RealExpr, SmtSolver};
 
@@ -12,7 +12,7 @@ use super::program_checker::check_ghost_program_with_verbose;
 fn make_perm(fraction: FractionExpr, array: &str, lo: i64, hi: i64) -> PermExpr {
     PermExpr::singleton(Permission::new(
         fraction,
-        Var(array.to_string()),
+        UntypedVar(array.to_string()),
         RegionSetExpr::interval(Idx::Const(lo), Idx::Const(hi)),
     ))
 }
@@ -33,7 +33,7 @@ fn test_perm_normalize_adjacent_partitions() {
         Idx::Add(Box::new(Idx::Var("i".to_string())), Box::new(Idx::Const(1))),
     ));
 
-    let dst = Var("dst".to_string());
+    let dst = UntypedVar("dst".to_string());
     let total = RegionSetExpr::interval(Idx::Const(0), Idx::Var("N".to_string()));
     let region_i = RegionSetExpr::interval(Idx::Var("i".to_string()), Idx::Var("N".to_string()));
     let region_j = RegionSetExpr::interval(Idx::Var("j".to_string()), Idx::Var("N".to_string()));
@@ -78,7 +78,7 @@ fn test_permission_env() {
     let var = GhostVar("p1".to_string());
     let perm = Permission::new(
         FractionExpr::from_ratio(1, 2),
-        Var("A".to_string()),
+        UntypedVar("A".to_string()),
         RegionSetExpr::interval(Idx::Const(0), Idx::Const(10)),
     );
 
@@ -116,7 +116,7 @@ fn test_permission_substitution() {
     // Test Permission::substitute_region
     let perm = Permission::new(
         FractionExpr::from_ratio(1, 2),
-        Var("A".to_string()),
+        UntypedVar("A".to_string()),
         RegionSetExpr::interval(Idx::Var("i".to_string()), Idx::Var("N".to_string())),
     );
 
@@ -207,7 +207,7 @@ fn test_perm_sub_symbolic_fraction_valid() {
     let lhs = make_perm(FractionExpr::from_int(1), "A", 0, 10);
     let rhs = PermExpr::singleton(Permission::new(
         f,
-        Var("A".to_string()),
+        UntypedVar("A".to_string()),
         RegionSetExpr::interval(Idx::Const(0), Idx::Const(10)),
     ));
 
@@ -232,7 +232,7 @@ fn test_perm_sub_symbolic_fraction_invalid() {
     let lhs = make_perm(FractionExpr::from_int(1), "A", 0, 10);
     let rhs = PermExpr::singleton(Permission::new(
         f,
-        Var("A".to_string()),
+        UntypedVar("A".to_string()),
         RegionSetExpr::interval(Idx::Const(0), Idx::Const(10)),
     ));
 
@@ -258,12 +258,12 @@ fn test_perm_sub_symbolic_region_variable_indices() {
     // Create permissions: lhs = 1.0 @ A{i..N}, rhs = 1.0 @ A{j..N}
     let lhs = PermExpr::singleton(Permission::new(
         FractionExpr::from_int(1),
-        Var("A".to_string()),
+        UntypedVar("A".to_string()),
         RegionSetExpr::interval(Idx::Var("i".to_string()), Idx::Var("N".to_string())),
     ));
     let rhs = PermExpr::singleton(Permission::new(
         FractionExpr::from_int(1),
-        Var("A".to_string()),
+        UntypedVar("A".to_string()),
         RegionSetExpr::interval(Idx::Var("j".to_string()), Idx::Var("N".to_string())),
     ));
 
@@ -294,12 +294,12 @@ fn test_perm_sub_symbolic_region_non_subset() {
     // Since i..j does not contain k..N, this should fail
     let lhs = PermExpr::singleton(Permission::new(
         FractionExpr::from_int(1),
-        Var("A".to_string()),
+        UntypedVar("A".to_string()),
         RegionSetExpr::interval(Idx::Var("i".to_string()), Idx::Var("j".to_string())),
     ));
     let rhs = PermExpr::singleton(Permission::new(
         FractionExpr::from_int(1),
-        Var("A".to_string()),
+        UntypedVar("A".to_string()),
         RegionSetExpr::interval(Idx::Var("k".to_string()), Idx::Var("N".to_string())),
     ));
 
@@ -339,12 +339,12 @@ fn test_perm_sub_symbolic_fraction_and_region() {
     // Create permissions: lhs = f @ A{i..N}, rhs = g @ A{i..j}
     let lhs = PermExpr::singleton(Permission::new(
         f.clone(),
-        Var("A".to_string()),
+        UntypedVar("A".to_string()),
         RegionSetExpr::interval(Idx::Var("i".to_string()), Idx::Var("N".to_string())),
     ));
     let rhs = PermExpr::singleton(Permission::new(
         g.clone(),
-        Var("A".to_string()),
+        UntypedVar("A".to_string()),
         RegionSetExpr::interval(Idx::Var("i".to_string()), Idx::Var("j".to_string())),
     ));
 
@@ -371,12 +371,12 @@ fn test_perm_sub_leftover_region() {
     // After subtraction, we should have leftover region j..N
     let lhs = PermExpr::singleton(Permission::new(
         FractionExpr::from_int(1),
-        Var("A".to_string()),
+        UntypedVar("A".to_string()),
         RegionSetExpr::interval(Idx::Var("i".to_string()), Idx::Var("N".to_string())),
     ));
     let rhs = PermExpr::singleton(Permission::new(
         FractionExpr::from_int(1),
-        Var("A".to_string()),
+        UntypedVar("A".to_string()),
         RegionSetExpr::interval(Idx::Var("i".to_string()), Idx::Var("j".to_string())),
     ));
 
@@ -408,12 +408,12 @@ fn test_perm_sub_multiple_arrays() {
     // rhs = 1.0 @ A{0..5}
     let perm_a = PermExpr::singleton(Permission::new(
         FractionExpr::from_int(1),
-        Var("A".to_string()),
+        UntypedVar("A".to_string()),
         RegionSetExpr::interval(Idx::Const(0), Idx::Const(10)),
     ));
     let perm_b = PermExpr::singleton(Permission::new(
         FractionExpr::from_int(1),
-        Var("B".to_string()),
+        UntypedVar("B".to_string()),
         RegionSetExpr::interval(Idx::Const(0), Idx::Const(5)),
     ));
     let lhs = PermExpr::Add(vec![perm_a, perm_b]);
@@ -463,12 +463,12 @@ fn test_perm_sub_symbolic_both_decrease() {
     // Create permissions: lhs = f @ A{0..10}, rhs = g @ A{0..10}
     let lhs = PermExpr::singleton(Permission::new(
         f,
-        Var("A".to_string()),
+        UntypedVar("A".to_string()),
         RegionSetExpr::interval(Idx::Const(0), Idx::Const(10)),
     ));
     let rhs = PermExpr::singleton(Permission::new(
         g,
-        Var("A".to_string()),
+        UntypedVar("A".to_string()),
         RegionSetExpr::interval(Idx::Const(0), Idx::Const(10)),
     ));
 
@@ -542,7 +542,7 @@ fn ghost_check_all_fixtures() {
             .unwrap_or_else(|err| panic!("failed to parse {:?}: {err}", path));
 
         let logic = crate::SemanticLogic::new();
-        if let Ok(()) = crate::check_program(&program, &logic) {
+        if let Ok(_) = crate::check_program(&program, &logic) {
             let ghost = crate::synthesize_ghost_program(&program);
 
             if let Err(err) = check_ghost_program_with_verbose(&ghost, true) {

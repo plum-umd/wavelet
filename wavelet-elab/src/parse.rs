@@ -28,7 +28,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use syn::{self, Attribute, Expr, FnArg, ItemFn, Pat, Stmt, Type};
 
-use crate::ir::{self, ArrayLen, FnDef, FnName, Op, Program, Signedness, Tail, Var};
+use crate::ir::{
+    self, ArrayLen, FnDef, FnName, Op, Program, Signedness, Tail, TypedVar, UntypedVar,
+};
 use crate::logic::cap::CapPattern;
 use crate::logic::region::Region;
 use crate::logic::semantic::solver::Idx;
@@ -43,7 +45,7 @@ fn fresh_literal_name(base: &str) -> String {
 /// Context for tracking literal bindings during parsing
 struct ParseContext {
     /// Statements accumulated during parsing, including literal bindings
-    stmts: Vec<ir::Stmt>,
+    stmts: Vec<ir::Stmt<UntypedVar>>,
 }
 
 impl ParseContext {
@@ -61,7 +63,7 @@ impl ParseContext {
         };
 
         self.stmts.push(ir::Stmt::LetVal {
-            var: Var(var_name.clone()),
+            var: UntypedVar(var_name.clone()),
             val,
             fence: false,
         });
@@ -414,7 +416,7 @@ fn cap_annotation_to_pattern(
 }
 
 /// Parse a function definition and convert to IR.
-pub fn parse_fn_def(input: &str) -> Result<FnDef, ParseError> {
+pub fn parse_fn_def(input: &str) -> Result<FnDef<UntypedVar>, ParseError> {
     let item_fn: ItemFn = syn::parse_str(input)?;
 
     // Extract capability annotations
@@ -450,16 +452,16 @@ pub fn parse_fn_def(input: &str) -> Result<FnDef, ParseError> {
             let var_name = extract_var_name(&pat_type.pat)?;
             let ty = convert_type(&pat_type.ty, &const_generics)?;
             if matches!(ty, ir::Ty::RefShrd { .. } | ir::Ty::RefUniq { .. }) {
-                array_params.push((Var(var_name), ty));
+                array_params.push(TypedVar::new(var_name, ty));
             } else {
-                scalar_params.push((Var(var_name), ty));
+                scalar_params.push(TypedVar::new(var_name, ty));
             }
         }
     }
 
     // Add const generics as scalar parameters (needed for comparisons like i < N)
     for name in const_generic_names {
-        scalar_params.push((Var(name), ir::Ty::Int(Signedness::Unsigned)));
+        scalar_params.push(TypedVar::new(name, ir::Ty::Int(Signedness::Unsigned)));
     }
 
     // Combine: scalars first, then arrays (required by type checker)
@@ -474,9 +476,9 @@ pub fn parse_fn_def(input: &str) -> Result<FnDef, ParseError> {
 
     // Collect array variable names and their lengths for tail call reordering
     let mut array_lens: HashMap<String, ArrayLen> = HashMap::new();
-    for (var, ty) in &params {
-        if let ir::Ty::RefShrd { len, .. } | ir::Ty::RefUniq { len, .. } = ty {
-            array_lens.insert(var.0.clone(), len.clone());
+    for param in &params {
+        if let ir::Ty::RefShrd { len, .. } | ir::Ty::RefUniq { len, .. } = &param.ty {
+            array_lens.insert(param.name.clone(), len.clone());
         }
     }
 
@@ -503,7 +505,7 @@ pub fn parse_fn_def(input: &str) -> Result<FnDef, ParseError> {
 /// Functions that are not annotated with capabilities are still included; non-function
 /// items are ignored. Any parsing error from one of the functions aborts the whole
 /// process and returns the corresponding [`ParseError`].
-pub fn parse_program(input: &str) -> Result<Program, ParseError> {
+pub fn parse_program(input: &str) -> Result<Program<UntypedVar>, ParseError> {
     let file = syn::parse_file(input)?;
     let mut program = Program::new();
 
@@ -588,7 +590,7 @@ fn convert_type(ty: &Type, const_generics: &HashSet<String>) -> Result<ir::Ty, P
 fn parse_block(
     block: &syn::Block,
     array_lens: &HashMap<String, ArrayLen>,
-) -> Result<ir::Expr, ParseError> {
+) -> Result<ir::Expr<UntypedVar>, ParseError> {
     let mut ctx = ParseContext::new();
     let mut tail = None;
 
@@ -658,7 +660,7 @@ fn parse_block(
         t
     } else {
         // No explicit tail - bind unit and return it
-        let unit_var = Var("_unit_ret".to_string());
+        let unit_var = UntypedVar("_unit_ret".to_string());
         ctx.stmts.push(ir::Stmt::LetVal {
             var: unit_var.clone(),
             val: ir::Val::Unit,
@@ -693,7 +695,7 @@ fn is_fence_marker(expr: &Expr) -> bool {
 }
 
 /// Mark a statement as fenced
-fn mark_stmt_as_fenced(stmt: &mut ir::Stmt) {
+fn mark_stmt_as_fenced(stmt: &mut ir::Stmt<UntypedVar>) {
     match stmt {
         ir::Stmt::LetVal { fence, .. }
         | ir::Stmt::LetOp { fence, .. }
@@ -707,7 +709,7 @@ fn parse_local(
     local: &syn::Local,
     array_lens: &HashMap<String, ArrayLen>,
     ctx: &mut ParseContext,
-) -> Result<ir::Stmt, ParseError> {
+) -> Result<ir::Stmt<UntypedVar>, ParseError> {
     let var_name = extract_var_name(&local.pat)?;
 
     if let Some(init) = &local.init {
@@ -721,7 +723,7 @@ fn parse_local(
         // Otherwise, it's a simple value binding
         if let Some(val) = try_parse_as_val(expr)? {
             return Ok(ir::Stmt::LetVal {
-                var: Var(var_name),
+                var: UntypedVar(var_name),
                 val,
                 fence: false,
             });
@@ -762,7 +764,7 @@ fn try_parse_as_op(
     expr: &Expr,
     array_lens: &HashMap<String, ArrayLen>,
     ctx: &mut ParseContext,
-) -> Result<Option<ir::Stmt>, ParseError> {
+) -> Result<Option<ir::Stmt<UntypedVar>>, ParseError> {
     match expr {
         Expr::Unary(unary_expr) => {
             // Unary operators: currently only support ! (not)
@@ -770,7 +772,7 @@ fn try_parse_as_op(
                 syn::UnOp::Not(_) => {
                     let var = extract_var_from_expr(&unary_expr.expr, ctx)?;
                     Ok(Some(ir::Stmt::LetOp {
-                        vars: vec![Var(var), Var(result_var)],
+                        vars: vec![UntypedVar(var), UntypedVar(result_var)],
                         op: Op::Not,
                         fence: false,
                     }))
@@ -782,18 +784,21 @@ fn try_parse_as_op(
             let left = extract_var_from_expr(&bin_expr.left, ctx)?;
             let right = extract_var_from_expr(&bin_expr.right, ctx)?;
 
+            // For operators with signedness overloading (e.g. division, comparisons),
+            // we assume the signed version first, and then resolve the actual
+            // signedness during type checking.
             let op = match bin_expr.op {
                 syn::BinOp::Add(_) => Op::Add,
                 syn::BinOp::Sub(_) => Op::Sub,
                 syn::BinOp::Mul(_) => Op::Mul,
-                syn::BinOp::Div(_) => Op::Div,
+                syn::BinOp::Div(_) => Op::Sdiv,
                 syn::BinOp::BitAnd(_) => Op::BitAnd,
                 syn::BinOp::BitOr(_) => Op::BitOr,
                 syn::BinOp::BitXor(_) => Op::BitXor,
                 syn::BinOp::Shl(_) => Op::Shl,
-                syn::BinOp::Shr(_) => Op::Shr,
-                syn::BinOp::Lt(_) => Op::LessThan,
-                syn::BinOp::Le(_) => Op::LessEqual,
+                syn::BinOp::Shr(_) => Op::Ashr,
+                syn::BinOp::Lt(_) => Op::SignedLessThan,
+                syn::BinOp::Le(_) => Op::SignedLessEqual,
                 syn::BinOp::Eq(_) => Op::Equal,
                 syn::BinOp::Ne(_) => Op::NotEqual,
                 syn::BinOp::And(_) => Op::And,
@@ -804,7 +809,7 @@ fn try_parse_as_op(
             };
 
             Ok(Some(ir::Stmt::LetOp {
-                vars: vec![Var(left), Var(right), Var(result_var)],
+                vars: vec![UntypedVar(left), UntypedVar(right), UntypedVar(result_var)],
                 op,
                 fence: false,
             }))
@@ -817,10 +822,10 @@ fn try_parse_as_op(
             let len = lookup_array_len(array_lens, &array)?;
 
             Ok(Some(ir::Stmt::LetOp {
-                vars: vec![Var(result_var)],
+                vars: vec![UntypedVar(result_var)],
                 op: Op::Load {
-                    array: Var(array),
-                    index: Var(index),
+                    array: UntypedVar(array),
+                    index: UntypedVar(index),
                     len,
                 },
                 fence: false,
@@ -837,18 +842,18 @@ fn try_parse_as_op(
             for arg in &call_expr.args {
                 let var_name = extract_var_from_expr(arg, ctx)?;
                 if array_lens.contains_key(&var_name) {
-                    array_args.push(Var(var_name));
+                    array_args.push(UntypedVar(var_name));
                 } else {
-                    scalar_args.push(Var(var_name));
+                    scalar_args.push(UntypedVar(var_name));
                 }
             }
 
             let mut args = scalar_args;
-            args.extend(generic_args.into_iter().map(Var));
+            args.extend(generic_args.into_iter().map(UntypedVar));
             args.extend(array_args);
 
             Ok(Some(ir::Stmt::LetCall {
-                vars: vec![Var(result_var)],
+                vars: vec![UntypedVar(result_var)],
                 func: FnName(func_name),
                 args,
                 fence: false,
@@ -900,7 +905,7 @@ fn parse_expr_stmt(
     expr: &Expr,
     array_lens: &HashMap<String, ArrayLen>,
     ctx: &mut ParseContext,
-) -> Result<ir::Stmt, ParseError> {
+) -> Result<ir::Stmt<UntypedVar>, ParseError> {
     // Check for function calls (including unit-returning functions)
     if let Expr::Call(call_expr) = expr {
         let (func_name, generic_args) = extract_func_name_and_generics(&call_expr.func)?;
@@ -910,18 +915,18 @@ fn parse_expr_stmt(
         for arg in &call_expr.args {
             let var_name = extract_var_from_expr(arg, ctx)?;
             if array_lens.contains_key(&var_name) {
-                array_args.push(Var(var_name));
+                array_args.push(UntypedVar(var_name));
             } else {
-                scalar_args.push(Var(var_name));
+                scalar_args.push(UntypedVar(var_name));
             }
         }
 
         let mut args = scalar_args;
-        args.extend(generic_args.into_iter().map(Var));
+        args.extend(generic_args.into_iter().map(UntypedVar));
         args.extend(array_args);
 
         // Create a dummy variable for the result (may be unit)
-        let result_var = Var(fresh_literal_name("_call_result"));
+        let result_var = UntypedVar(fresh_literal_name("_call_result"));
 
         return Ok(ir::Stmt::LetCall {
             vars: vec![result_var],
@@ -953,9 +958,9 @@ fn parse_expr_stmt(
             return Ok(ir::Stmt::LetOp {
                 vars: vec![],
                 op: Op::Store {
-                    array: Var(array),
-                    index: Var(index),
-                    value: Var(value),
+                    array: UntypedVar(array),
+                    index: UntypedVar(index),
+                    value: UntypedVar(value),
                     len,
                 },
                 fence: false,
@@ -975,7 +980,7 @@ fn parse_expr_stmt(
             // Otherwise try as value
             if let Some(val) = try_parse_as_val(&assign_expr.right)? {
                 return Ok(ir::Stmt::LetVal {
-                    var: Var(var_name),
+                    var: UntypedVar(var_name),
                     val,
                     fence: false,
                 });
@@ -1001,7 +1006,7 @@ fn parse_tail_expr(
     expr: &Expr,
     array_lens: &HashMap<String, ArrayLen>,
     ctx: &mut ParseContext,
-) -> Result<Tail, ParseError> {
+) -> Result<Tail<UntypedVar>, ParseError> {
     match expr {
         Expr::If(if_expr) => {
             let cond = extract_var_from_expr(&if_expr.cond, ctx)?;
@@ -1022,7 +1027,7 @@ fn parse_tail_expr(
             };
 
             Ok(Tail::IfElse {
-                cond: Var(cond),
+                cond: UntypedVar(cond),
                 then_e: Box::new(then_branch),
                 else_e: Box::new(else_branch),
             })
@@ -1032,23 +1037,23 @@ fn parse_tail_expr(
             let (func_name, generic_args) = extract_func_name_and_generics(&call_expr.func)?;
 
             // Collect regular arguments, separating scalars from arrays
-            let mut scalar_args: Vec<Var> = Vec::new();
-            let mut array_args: Vec<Var> = Vec::new();
+            let mut scalar_args: Vec<UntypedVar> = Vec::new();
+            let mut array_args: Vec<UntypedVar> = Vec::new();
 
             for arg in &call_expr.args {
                 let var_name = extract_var_from_expr(arg, ctx)?;
 
                 // Check if this variable is an array using the array_vars set
                 if array_lens.contains_key(&var_name) {
-                    array_args.push(Var(var_name));
+                    array_args.push(UntypedVar(var_name));
                 } else {
-                    scalar_args.push(Var(var_name));
+                    scalar_args.push(UntypedVar(var_name));
                 }
             }
 
             // Build final args: scalars + generics + arrays
             let mut args = scalar_args;
-            args.extend(generic_args.into_iter().map(Var));
+            args.extend(generic_args.into_iter().map(UntypedVar));
             args.extend(array_args);
 
             Ok(Tail::TailCall {
@@ -1059,12 +1064,12 @@ fn parse_tail_expr(
         Expr::Tuple(tuple_expr) if tuple_expr.elems.is_empty() => {
             // Unit type () - should not happen since we handle empty tail in parse_block
             // But if it does, just return a dummy variable
-            Ok(Tail::RetVar(Var("_unit_literal".to_string())))
+            Ok(Tail::RetVar(UntypedVar("_unit_literal".to_string())))
         }
         Expr::Path(_) | Expr::Lit(_) => {
             // Return variable or literal
             let var_name = extract_var_from_expr(expr, ctx)?;
-            Ok(Tail::RetVar(Var(var_name)))
+            Ok(Tail::RetVar(UntypedVar(var_name)))
         }
         _ => Err(ParseError {
             message: format!("Unsupported tail expression: {:?}", expr),
