@@ -534,7 +534,11 @@ mod tests {
 
         let sum_fn = &fns[0];
         assert_eq!(sum_fn["name"], "sum");
-        assert_eq!(sum_fn["outputs"], 2, "sum should have 2 outputs");
+        assert_eq!(
+            sum_fn["rets"].as_array().unwrap().len(),
+            2,
+            "sum should have 2 outputs"
+        );
 
         let params = sum_fn["params"]
             .as_array()
