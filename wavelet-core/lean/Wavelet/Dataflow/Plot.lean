@@ -6,7 +6,7 @@ import Wavelet.Dataflow.Proc
 
 namespace Wavelet.Dataflow
 
-open Semantics Data
+open Semantics
 
 abbrev PlotM := IndentWriterT Unit String
 

@@ -22,6 +22,7 @@ inductive AsyncOp.MergeState where
   | popLeft
   | popRight
   | decider
+  deriving DecidableEq, Repr
 
 /-- Built-in asynchronous operators: `AsyncOp ... m n`
 is an asynchronous operator with a total of `m` inputs
@@ -41,6 +42,7 @@ inductive AsyncOp V where
   | sink (n : Nat) [NeZero n] : AsyncOp V
   | inv (flavor : Bool) (c : Option V) : AsyncOp V
   | inact (n : Nat) : AsyncOp V
+  deriving Repr
 
 /-- Input arity of an async operator. -/
 def AsyncOp.ι : AsyncOp V → Nat
