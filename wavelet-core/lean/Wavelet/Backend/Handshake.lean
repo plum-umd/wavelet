@@ -131,7 +131,7 @@ def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
     -- Carry requires an initial false/true decider token
     | .popLeft | .popRight =>
       let buf ← .freshVar
-      let attr := if state = .popLeft then "{initValues = [1]}" else "{initValues = [0]}"
+      let attr := if state = .popLeft then "{initValues = [0]}" else "{initValues = [1]}"
       .writeLn s!"{buf} = handshake.buffer [1] seq {← EmitVar.emit decider} {attr} : {PrimType.int 1}"
       .writeLn s!"{← EmitVar.emit output} = \
         handshake.mux {buf} [{← EmitVar.emit input₁}, {← EmitVar.emit input₂}] : {PrimType.int 1}, {outputTy}"
