@@ -80,7 +80,7 @@ variable [EmitType V] [EmitConst V]
 def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
   -- User-defined operators
   | .op o inputs outputs => EmitOp.emit o inputs outputs
-  -- `switch` maps to `handshake.conditional_branch`
+  -- `switch` maps to `handshake.cond_br`
   | .async (.switch 1) [decider, input] [output₁, output₂] => do
     let deciderTy ← EmitType.emit decider
     let inputTy ← EmitType.emit input
@@ -93,8 +93,8 @@ def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
     if outputTy₂ ≠ inputTy then
       throw s!"output type should match input type {inputTy}, but got {outputTy₂}"
     .writeLn s!"{← EmitVar.emit output₁}, {← EmitVar.emit output₂} = \
-      handshake.conditional_branch {← EmitVar.emit decider}, {← EmitVar.emit input} : {inputTy}"
-  -- `steer` maps to `handshake.conditional_branch` with one output
+      handshake.cond_br {← EmitVar.emit decider}, {← EmitVar.emit input} : {inputTy}"
+  -- `steer` maps to `handshake.cond_br` with one output
   | .async (.steer flavor 1) [decider, input] [output] => do
     let deciderTy ← EmitType.emit decider
     let inputTy ← EmitType.emit input
@@ -106,10 +106,10 @@ def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
     let dummy ← .freshVar
     if flavor then
       .writeLn s!"{← EmitVar.emit output}, {dummy} = \
-        handshake.conditional_branch {← EmitVar.emit decider}, {← EmitVar.emit input} : {inputTy}"
+        handshake.cond_br {← EmitVar.emit decider}, {← EmitVar.emit input} : {inputTy}"
     else
       .writeLn s!"{dummy}, {← EmitVar.emit output} = \
-        handshake.conditional_branch {← EmitVar.emit decider}, {← EmitVar.emit input} : {inputTy}"
+        handshake.cond_br {← EmitVar.emit decider}, {← EmitVar.emit input} : {inputTy}"
   -- `merge` maps to `handshake.mux`
   | .async (.merge state 1) [decider, input₁, input₂] [output] => do
     let deciderTy ← EmitType.emit decider
@@ -153,38 +153,46 @@ def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
     .writeLn s!"{forkOuts}:{n} = handshake.fork [{n}] {← EmitVar.emit input} : {inputTy}"
     -- Destruct fork results
     (outputs.mapIdx Prod.mk).forM λ ⟨i, output⟩ => do
-      .writeLn s!"{← EmitVar.emit output} = handshake.br {forkOuts}:{i} : {inputTy}"
+      .writeLn s!"{← EmitVar.emit output} = handshake.br {forkOuts}#{i} : {inputTy}"
   -- `order` maps to `handshake.sync` with rest of the outputs ignored
   | .async (AsyncOp.order _) (first :: rest) [output] => do
     let outputTy ← EmitType.emit output
     let firstTy ← EmitType.emit first
     if outputTy ≠ firstTy then
       throw s!"output type should match input type {firstTy}, but got {outputTy}"
-    let dummyOuts ← rest.mapM λ _ => .freshVar
-    let outs := ", ".intercalate <| (← EmitVar.emit output) :: dummyOuts
     let ins := ", ".intercalate <| (← EmitVar.emit first) :: (← rest.mapM λ r => EmitVar.emit r)
     let inTys := ", ".intercalate <| ToString.toString firstTy ::
       ((← rest.mapM λ r => EmitType.emit r).map toString)
-    .writeLn s!"{outs} = handshake.sync {ins} : {inTys}"
+    if outputTy = .none then
+      -- If the output is `none`, we directly use `handshake.join`
+      -- to avoid a `handshake.sync` issue when all inputs/outputs are `none`.
+      .writeLn s!"{← EmitVar.emit output} = handshake.join {ins} : {inTys}"
+    else
+      let dummyOuts ← rest.mapM λ _ => .freshVar
+      let outs := ", ".intercalate <| (← EmitVar.emit output) :: dummyOuts
+      .writeLn s!"{outs} = handshake.sync {ins} : {inTys}"
   -- `const` maps to `handshake.constant` (but we need to convert the activation
   -- signal to `none` if it is not already one)
   | .async (AsyncOp.const const 1) [act] [output] => do
-    let constTy ← EmitType.emit const
     let actTy ← EmitType.emit act
     let outputTy ← EmitType.emit output
-    if constTy ≠ outputTy then
-      throw s!"constant type should match output type {outputTy}, but got {constTy}"
-
-    let attr := "{value = " ++ s!"{← EmitConst.emit const} : {constTy}" ++ "}"
-    if actTy = .none then
+    let attr := "{value = " ++ s!"{← EmitConst.emit const} : {outputTy}" ++ "}"
+    match actTy, outputTy with
+    | .none, .none =>
+      -- Same as `br`
+      .writeLn s!"{← EmitVar.emit output} = handshake.br {← EmitVar.emit act} : {outputTy}"
+    | .none, _ =>
       .writeLn s!"{← EmitVar.emit output} = \
-        handshake.constant {← EmitVar.emit act} {attr} : {constTy}"
-    else
+        handshake.constant {← EmitVar.emit act} {attr} : {outputTy}"
+    | _, .none =>
+      -- Only need to convert `act` to `none`
+      .writeLn s!"{← EmitVar.emit output} = join {← EmitVar.emit act} : {actTy}"
+    | _, _ =>
       -- Convert `act` to `none` first, then call `constant`
       let act' ← .freshVar
       .writeLn s!"{act'} = join {← EmitVar.emit act} : {actTy}"
       .writeLn s!"{← EmitVar.emit output} = \
-        handshake.constant {act'} {attr} : {constTy}"
+        handshake.constant {act'} {attr} : {outputTy}"
   -- `sink` maps to `handshake.sink`
   | .async (AsyncOp.sink 1) [input] [] => do
     .writeLn s!"handshake.sink {← EmitVar.emit input} : {← EmitType.emit input}"

@@ -12,11 +12,12 @@ inductive EraseName (χ : Type u) where
   | input (name : χ)
   | output (name : χ)
   | join (name₁ : χ) (name₂ : χ)
+  | op_finish (name : χ)
   deriving Repr, DecidableEq, Lean.ToJson, Lean.FromJson
 
 /-- Translates operators with ghost tokens into the base operators. -/
 def AtomicProc.eraseGhost
-  [Arity Op] [instNZ : NeZeroArity Op] [PCM T]
+  [Arity Op] [instNZ : NeZeroArity Op] [InterpConsts V] [PCM T]
   {opSpec : OpSpec Op V T}
   : AtomicProc (WithSpec Op opSpec) χ V → AtomicProcs Op (EraseName χ) V
   | .op (.op ghost o) inputs outputs =>
@@ -35,8 +36,10 @@ def AtomicProc.eraseGhost
         -- Use an order operator to wait for permission token input
         .async (.order 2) [.base lastInput, .base inputPerm] [.input lastInput],
         -- Use a fork at the end to produce permission token output
-        -- TODO: fork may not have matching types here?
-        .async (.fork 2) [.output lastOutput] [.base lastOutput, .base outputPerm],
+        -- The additional `const` operator is used to ensure type correctness
+        -- when `lastOutput` and `outputPerm` have different types.
+        .async (.fork 2) [.output lastOutput] [.base lastOutput, .op_finish lastOutput],
+        .async (.const InterpConsts.junkVal 1) [.op_finish lastOutput] [.base outputPerm],
         .op o
           (inputs'.cast (by
             have : Arity.ι o ≠ 0 := (instNZ.neZeroᵢ o).ne
@@ -55,8 +58,10 @@ def AtomicProc.eraseGhost
       let outputs' := (outputs.pop.pop.map .base).push (.output lastOutput)
       [
         -- Use a fork at the end to produce permission token output
-        -- TODO: fork may not have matching types here?
-        .async (.fork 2) [.output lastOutput] [.base lastOutput, .base outputPerm],
+        -- The additional `const` operator is used to ensure type correctness
+        -- when `lastOutput` and `outputPerm` have different types.
+        .async (.fork 2) [.output lastOutput] [.base lastOutput, .op_finish lastOutput],
+        .async (.const InterpConsts.junkVal 1) [.op_finish lastOutput] [.base outputPerm],
         .op o
           ((inputs.map EraseName.base).cast (by simp [Arity.ι, h]))
           (outputs'.cast (by
@@ -75,14 +80,14 @@ def AtomicProc.eraseGhost
   | .async aop inputs outputs => [.async aop (inputs.map .base) (outputs.map .base)]
 
 def AtomicProcs.eraseGhost
-  [Arity Op] [NeZeroArity Op] [PCM T]
+  [Arity Op] [NeZeroArity Op] [InterpConsts V] [PCM T]
   {opSpec : OpSpec Op V T}
   (aps : AtomicProcs (WithSpec Op opSpec) χ V) :
     AtomicProcs Op (EraseName χ) V
   := (aps.map AtomicProc.eraseGhost).flatten
 
 def Proc.eraseGhost
-  [Arity Op] [NeZeroArity Op] [PCM T]
+  [Arity Op] [NeZeroArity Op] [InterpConsts V] [PCM T]
   {opSpec : OpSpec Op V T}
   (proc : Proc (WithSpec Op opSpec) χ V m n) :
     Proc Op (EraseName χ) V m n

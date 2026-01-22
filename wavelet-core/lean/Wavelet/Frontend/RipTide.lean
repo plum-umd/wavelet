@@ -20,6 +20,7 @@ open Semantics Determinacy Compile
 
 inductive Value where
   | int (w : Nat) (val : BitVec w)
+  | junk
   deriving BEq, DecidableEq, Hashable, Repr
 
 /-- A special value for control signals. -/
@@ -28,6 +29,7 @@ def Value.unit : Value := .int 0 0
 instance : Lean.ToJson Value where
   toJson
     | .int w val => json% { "int": { "width": $(w), "value": $(val.toNat) } }
+    | .junk => json% "junk"
 
 instance : Lean.FromJson Value where
   fromJson? json :=
@@ -41,6 +43,7 @@ instance : Lean.FromJson Value where
 instance : ToString Value where
   toString
     | .int w val => s!"{val.toInt}i{w}"
+    | .junk => "junk"
 
 /-- Synchronous operators in RipTide, parametrized by a type of location/array symbols. -/
 inductive SyncOp (Loc : Type u) : Type u where
@@ -84,7 +87,7 @@ instance : NeZeroArity (SyncOp Loc) where
 
 /-- Some constants used for compilation. -/
 instance : InterpConsts Value where
-  junkVal := .int 0 0
+  junkVal := .junk
   toBool | .int 1 0 => some false
          | .int 1 1 => some true
          | _ => none
@@ -122,6 +125,7 @@ private def applyBitVecBinOp
       return #v[.int w₁ v]
     else
       failure
+  | _, _ => failure
 
 private def applyBitVecBinPred
   [DecidableEq Loc] [Hashable Loc]
@@ -133,6 +137,7 @@ private def applyBitVecBinPred
       return #v[InterpConsts.fromBool b]
     else
       failure
+  | _, _ => failure
 
 instance instOpInterpM [DecidableEq Loc] [Hashable Loc] :
   OpInterpM (SyncOp Loc) Value (StateT (State Loc) Option) where
@@ -147,6 +152,7 @@ instance instOpInterpM [DecidableEq Loc] [Hashable Loc] :
     | .ashr, (inputs : Vector Value 2) =>
       match inputs[0], inputs[1] with
       | .int w v, .int _ shift => return #v[.int w (BitVec.sshiftRight v shift.toNat)]
+      | _, _ => failure
     | .load loc, (inputs : Vector Value 1) => return #v[← (← get).load loc inputs[0]]
     | .store loc, (inputs : Vector Value 2) => do
       modify (λ s => s.store loc inputs[0] inputs[1])
@@ -519,10 +525,11 @@ private def typeOfLinkChanName
 
 private def typeOfEraseName
   : EraseName (VarName α) → PrimType
-  | .base name => name.ty
-  | .input name => name.ty
-  | .output name => name.ty
-  | .join name _ => name.ty
+  | .base name
+  | .input name
+  | .output name
+  | .join name _
+  | .op_finish name => name.ty
 
 private def typeOfRewriteName
   : RewriteName (VarName α) → PrimType
@@ -604,9 +611,16 @@ instance : EmitType RipTide.Value where
   emit
     | .int 0 _ => return Handshake.PrimType.none
     | .int w _ => return Handshake.PrimType.int w
+    | .junk => .error "cannot emit type for junk value"
 
 instance : EmitConst Value where
-  emit | .int _ val => return ToString.toString val
+  emit
+    | .int w val =>
+      if w = 0 then
+        .error "cannot emit constant of type none"
+      else
+        return s!"{val.toNat}"
+    | .junk => return "0" -- TODO: This is a bit hacky
 
 private structure EmitState where
 
@@ -620,12 +634,12 @@ private def SyncOp.emitArith : RipTide.SyncOp Loc → Option String
   | .shl => some "arith.shli"
   | .ashr => some "arith.shrsi"
   | .lshr => some "arith.shrui"
-  | .eq => some "arith.cmpi eq"
-  | .neq => some "arith.cmpi ne"
-  | .slt => some "arith.cmpi slt"
-  | .sle => some "arith.cmpi sle"
-  | .ult => some "arith.cmpi ult"
-  | .ule => some "arith.cmpi ule"
+  | .eq => some "arith.cmpi eq,"
+  | .neq => some "arith.cmpi ne,"
+  | .slt => some "arith.cmpi slt,"
+  | .sle => some "arith.cmpi sle,"
+  | .ult => some "arith.cmpi ult,"
+  | .ule => some "arith.cmpi ule,"
   | .and => some "arith.andi"
   | .bitand => some "arith.andi"
   | _ => none
