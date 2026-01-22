@@ -308,7 +308,7 @@ pub fn check_ghost_stmt_joinsplit_load<V: Variable>(
 
     if ctx.verbose {
         println!(
-            "  Load from {}[{}], accessing region {}",
+            "  Load from {:?}[{:?}], accessing region {}",
             array,
             index,
             render_region(&access_region)
@@ -341,7 +341,7 @@ pub fn check_ghost_stmt_joinsplit_load<V: Variable>(
 
     let source_perm = candidate.ok_or_else(|| {
         format!(
-            "Load at {}[{}] requires a positive permission covering the index",
+            "Load at {:?}[{:?}] requires a positive permission covering the index",
             array, index
         )
     })?;
@@ -381,7 +381,7 @@ pub fn check_ghost_stmt_joinsplit_load<V: Variable>(
     let rem_perm = PermExpr::Sub(Box::new(joined_perm), Box::new(load_perm_expr.clone()));
     if !rem_perm.is_valid(&ctx.phi, &ctx.solver) {
         return Err(format!(
-            "Load at {}[{}] cannot split available permissions",
+            "Load at {:?}[{:?}] cannot split available permissions",
             array, index
         ));
     }
@@ -455,7 +455,7 @@ pub fn check_ghost_stmt_joinsplit_store<V: Variable>(
 
     if ctx.verbose {
         println!(
-            "  Store to {}[{}], region {}",
+            "  Store to {:?}[{:?}], region {}",
             array,
             index,
             render_region(&store_region)
@@ -474,7 +474,7 @@ pub fn check_ghost_stmt_joinsplit_store<V: Variable>(
 
     if !rem_perm.is_valid(&ctx.phi, &ctx.solver) {
         return Err(format!(
-            "Store at {} requires full permission on region containing {}",
+            "Store at {:?} requires full permission on region containing {:?}",
             array, index
         ));
     }
@@ -544,7 +544,7 @@ pub fn check_ghost_stmt_jnsplt_jnsplt_call<V: Variable>(
             "  Calling function: {}({})",
             func.0,
             args.iter()
-                .map(|v| v.to_string())
+                .map(|v| format!("{:?}", v))
                 .collect::<Vec<_>>()
                 .join(", ")
         );

@@ -149,7 +149,7 @@ impl Affinizer {
         let remaining = *self
             .remaining
             .get(var.name())
-            .unwrap_or_else(|| panic!("missing usage information for variable `{}`", var));
+            .unwrap_or_else(|| panic!("missing usage information for variable `{:?}`", var));
 
         if remaining > 1 {
             self.ensure_supply(var, remaining, ops);
@@ -161,7 +161,7 @@ impl Affinizer {
             .or_insert_with(|| VecDeque::from(vec![var.name().to_string()]));
         let alias = queue
             .pop_front()
-            .unwrap_or_else(|| panic!("no available copy of `{}`", var));
+            .unwrap_or_else(|| panic!("no available copy of `{:?}`", var));
 
         let entry = self
             .remaining

@@ -24,7 +24,7 @@ impl UntypedVar {
 }
 
 /// A typed variable name.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypedVar {
     pub name: String,
     pub ty: Ty,
@@ -39,8 +39,14 @@ impl TypedVar {
     }
 }
 
+impl std::fmt::Debug for TypedVar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.name, self.ty)
+    }
+}
+
 /// A common trait for untyped and typed variables.
-pub trait Variable: Clone + std::fmt::Display + std::fmt::Debug {
+pub trait Variable: Clone + std::fmt::Debug {
     fn name(&self) -> &str;
     fn rename(&self, new_name: String) -> Self;
 }
@@ -323,7 +329,7 @@ pub struct Program<V> {
     pub defs: Vec<FnDef<V>>,
 }
 
-impl<V: std::fmt::Display> std::fmt::Display for Program<V> {
+impl<V: Variable> std::fmt::Display for Program<V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, def) in self.defs.iter().enumerate() {
             if i > 0 {
@@ -335,7 +341,7 @@ impl<V: std::fmt::Display> std::fmt::Display for Program<V> {
     }
 }
 
-impl<V: std::fmt::Display> std::fmt::Display for FnDef<V> {
+impl<V: Variable> std::fmt::Display for FnDef<V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "fn {}(", self.name)?;
         for (i, tvar) in self.params.iter().enumerate() {
@@ -361,7 +367,7 @@ impl<V: std::fmt::Display> std::fmt::Display for FnDef<V> {
     }
 }
 
-impl<V: std::fmt::Display> std::fmt::Display for Expr<V> {
+impl<V: Variable> std::fmt::Display for Expr<V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for stmt in &self.stmts {
             writeln!(f, "  {}", stmt)?;
@@ -370,11 +376,17 @@ impl<V: std::fmt::Display> std::fmt::Display for Expr<V> {
     }
 }
 
-impl<V: std::fmt::Display> std::fmt::Display for Stmt<V> {
+impl<V: Variable> std::fmt::Display for Stmt<V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Stmt::LetVal { var, val, fence } => {
-                write!(f, "let {} = {}{};", var, if *fence { "@" } else { "" }, val)
+                write!(
+                    f,
+                    "let {:?} = {}{};",
+                    var,
+                    if *fence { "@" } else { "" },
+                    val
+                )
             }
             Stmt::LetOp { vars, op, fence } => {
                 write!(f, "let ")?;
@@ -382,7 +394,7 @@ impl<V: std::fmt::Display> std::fmt::Display for Stmt<V> {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", var)?;
+                    write!(f, "{:?}", var)?;
                 }
                 write!(f, " = {}{};", if *fence { "@" } else { "" }, op)
             }
@@ -397,14 +409,14 @@ impl<V: std::fmt::Display> std::fmt::Display for Stmt<V> {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", var)?;
+                    write!(f, "{:?}", var)?;
                 }
                 write!(f, " = {}{}(", if *fence { "@" } else { "" }, func)?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", arg)?;
+                    write!(f, "{:?}", arg)?;
                 }
                 write!(f, ");")
             }
@@ -412,16 +424,16 @@ impl<V: std::fmt::Display> std::fmt::Display for Stmt<V> {
     }
 }
 
-impl<V: std::fmt::Display> std::fmt::Display for Tail<V> {
+impl<V: Variable> std::fmt::Display for Tail<V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Tail::RetVar(var) => write!(f, "return {};", var),
+            Tail::RetVar(var) => write!(f, "return {:?};", var),
             Tail::IfElse {
                 cond,
                 then_e,
                 else_e,
             } => {
-                writeln!(f, "if {} {{", cond)?;
+                writeln!(f, "if {:?} {{", cond)?;
                 write!(f, "{}", then_e)?;
                 writeln!(f, "}} else {{")?;
                 write!(f, "{}", else_e)?;
@@ -433,7 +445,7 @@ impl<V: std::fmt::Display> std::fmt::Display for Tail<V> {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", arg)?;
+                    write!(f, "{:?}", arg)?;
                 }
                 write!(f, ");")
             }
@@ -441,7 +453,7 @@ impl<V: std::fmt::Display> std::fmt::Display for Tail<V> {
     }
 }
 
-impl<V: std::fmt::Display> std::fmt::Display for Op<V> {
+impl<V: Variable> std::fmt::Display for Op<V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Op::Add => write!(f, "+"),
@@ -465,7 +477,7 @@ impl<V: std::fmt::Display> std::fmt::Display for Op<V> {
             Op::Equal => write!(f, "=="),
             Op::NotEqual => write!(f, "!="),
             Op::Load { array, index, len } => {
-                write!(f, "{}[{}:{}]", array, index, len.display())
+                write!(f, "{:?}[{:?}:{}]", array, index, len.display())
             }
             Op::Store {
                 array,
@@ -473,7 +485,14 @@ impl<V: std::fmt::Display> std::fmt::Display for Op<V> {
                 value,
                 len,
             } => {
-                write!(f, "{}[{}:{}] = {}", array, index, len.display(), value)
+                write!(
+                    f,
+                    "{:?}[{:?}:{}] = {:?}",
+                    array,
+                    index,
+                    len.display(),
+                    value
+                )
             }
         }
     }
@@ -499,12 +518,6 @@ impl std::fmt::Display for Val {
             Val::Bool(b) => write!(f, "{}", b),
             Val::Unit => write!(f, "()"),
         }
-    }
-}
-
-impl std::fmt::Display for UntypedVar {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 

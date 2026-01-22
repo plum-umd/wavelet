@@ -5,7 +5,9 @@ use std::fmt;
 
 use crate::env::{Ctx, FnRegistry};
 use crate::error::TypeError;
-use crate::ir::{Expr, FnDef, Op, Program, Signedness, Stmt, Tail, Ty, TypedVar, UntypedVar, Val};
+use crate::ir::{
+    Expr, FnDef, Op, Program, Signedness, Stmt, Tail, Ty, TypedVar, UntypedVar, Val, Variable,
+};
 use crate::logic::cap::{Cap, Delta, RegionModel};
 use crate::logic::region::Region;
 use crate::logic::semantic::solver::{Atom, Idx, Phi};
@@ -260,31 +262,31 @@ fn render_array_len(len: &crate::ir::ArrayLen) -> String {
     len.display()
 }
 
-fn render_op<V: std::fmt::Display>(op: &Op<V>, vars: &[V]) -> String {
+fn render_op<V: Variable>(op: &Op<V>, vars: &[V]) -> String {
     match op {
-        Op::Add => format!("{} = {} + {}", vars[2], vars[0], vars[1]),
-        Op::Sub => format!("{} = {} - {}", vars[2], vars[0], vars[1]),
-        Op::Mul => format!("{} = {} * {}", vars[2], vars[0], vars[1]),
-        Op::Sdiv => format!("{} = {} s/ {}", vars[2], vars[0], vars[1]),
-        Op::Udiv => format!("{} = {} u/ {}", vars[2], vars[0], vars[1]),
-        Op::And => format!("{} = {} && {}", vars[2], vars[0], vars[1]),
-        Op::Or => format!("{} = {} || {}", vars[2], vars[0], vars[1]),
-        Op::Not => format!("{} = !{}", vars[1], vars[0]),
-        Op::BitAnd => format!("{} = {} & {}", vars[2], vars[0], vars[1]),
-        Op::BitOr => format!("{} = {} | {}", vars[2], vars[0], vars[1]),
-        Op::BitXor => format!("{} = {} ^ {}", vars[2], vars[0], vars[1]),
-        Op::Shl => format!("{} = {} << {}", vars[2], vars[0], vars[1]),
-        Op::Ashr => format!("{} = {} a>> {}", vars[2], vars[0], vars[1]),
-        Op::Lshr => format!("{} = {} l>> {}", vars[2], vars[0], vars[1]),
-        Op::SignedLessThan => format!("{} = {} s< {}", vars[2], vars[0], vars[1]),
-        Op::SignedLessEqual => format!("{} = {} s<= {}", vars[2], vars[0], vars[1]),
-        Op::UnsignedLessThan => format!("{} = {} u< {}", vars[2], vars[0], vars[1]),
-        Op::UnsignedLessEqual => format!("{} = {} u<= {}", vars[2], vars[0], vars[1]),
-        Op::Equal => format!("{} = {} == {}", vars[2], vars[0], vars[1]),
-        Op::NotEqual => format!("{} = {} != {}", vars[2], vars[0], vars[1]),
+        Op::Add => format!("{:?} = {:?} + {:?}", vars[2], vars[0], vars[1]),
+        Op::Sub => format!("{:?} = {:?} - {:?}", vars[2], vars[0], vars[1]),
+        Op::Mul => format!("{:?} = {:?} * {:?}", vars[2], vars[0], vars[1]),
+        Op::Sdiv => format!("{:?} = {:?} s/ {:?}", vars[2], vars[0], vars[1]),
+        Op::Udiv => format!("{:?} = {:?} u/ {:?}", vars[2], vars[0], vars[1]),
+        Op::And => format!("{:?} = {:?} && {:?}", vars[2], vars[0], vars[1]),
+        Op::Or => format!("{:?} = {:?} || {:?}", vars[2], vars[0], vars[1]),
+        Op::Not => format!("{:?} = !{:?}", vars[1], vars[0]),
+        Op::BitAnd => format!("{:?} = {:?} & {:?}", vars[2], vars[0], vars[1]),
+        Op::BitOr => format!("{:?} = {:?} | {:?}", vars[2], vars[0], vars[1]),
+        Op::BitXor => format!("{:?} = {:?} ^ {:?}", vars[2], vars[0], vars[1]),
+        Op::Shl => format!("{:?} = {:?} << {:?}", vars[2], vars[0], vars[1]),
+        Op::Ashr => format!("{:?} = {:?} a>> {:?}", vars[2], vars[0], vars[1]),
+        Op::Lshr => format!("{:?} = {:?} l>> {:?}", vars[2], vars[0], vars[1]),
+        Op::SignedLessThan => format!("{:?} = {:?} s< {:?}", vars[2], vars[0], vars[1]),
+        Op::SignedLessEqual => format!("{:?} = {:?} s<= {:?}", vars[2], vars[0], vars[1]),
+        Op::UnsignedLessThan => format!("{:?} = {:?} u< {:?}", vars[2], vars[0], vars[1]),
+        Op::UnsignedLessEqual => format!("{:?} = {:?} u<= {:?}", vars[2], vars[0], vars[1]),
+        Op::Equal => format!("{:?} = {:?} == {:?}", vars[2], vars[0], vars[1]),
+        Op::NotEqual => format!("{:?} = {:?} != {:?}", vars[2], vars[0], vars[1]),
         Op::Load { array, index, len } => {
             format!(
-                "{} = {}[{}] (len {})",
+                "{:?} = {:?}[{:?}] (len {})",
                 vars[0],
                 array,
                 index,
@@ -298,7 +300,7 @@ fn render_op<V: std::fmt::Display>(op: &Op<V>, vars: &[V]) -> String {
             len,
         } => {
             format!(
-                "store {} -> {}[{}] (len {})",
+                "store {:?} -> {:?}[{:?}] (len {})",
                 value,
                 array,
                 index,
@@ -308,10 +310,10 @@ fn render_op<V: std::fmt::Display>(op: &Op<V>, vars: &[V]) -> String {
     }
 }
 
-fn render_stmt<V: std::fmt::Display>(stmt: &Stmt<V>) -> String {
+fn render_stmt<V: Variable>(stmt: &Stmt<V>) -> String {
     match stmt {
         Stmt::LetVal { var, val, fence } => {
-            let mut msg = format!("let {} = {}", var, render_val(val));
+            let mut msg = format!("let {:?} = {}", var, render_val(val));
             if *fence {
                 msg.push_str(" [fenced]");
             }
@@ -336,14 +338,14 @@ fn render_stmt<V: std::fmt::Display>(stmt: &Stmt<V>) -> String {
             } else {
                 let dests = vars
                     .iter()
-                    .map(|v| v.to_string())
+                    .map(|v| format!("{:?}", v))
                     .collect::<Vec<_>>()
                     .join(", ");
                 msg.push_str(&format!("let {} = ", dests));
             }
             let arg_list = args
                 .iter()
-                .map(|v| v.to_string())
+                .map(|v| format!("{:?}", v))
                 .collect::<Vec<_>>()
                 .join(", ");
             msg.push_str(&format!("{}({})", func, arg_list));
@@ -355,14 +357,14 @@ fn render_stmt<V: std::fmt::Display>(stmt: &Stmt<V>) -> String {
     }
 }
 
-fn render_tail<V: std::fmt::Display>(tail: &Tail<V>) -> String {
+fn render_tail<V: Variable>(tail: &Tail<V>) -> String {
     match tail {
-        Tail::RetVar(var) => format!("return {}", var),
-        Tail::IfElse { cond, .. } => format!("if {} {{ ... }} else {{ ... }}", cond),
+        Tail::RetVar(var) => format!("return {:?}", var),
+        Tail::IfElse { cond, .. } => format!("if {:?} {{ ... }} else {{ ... }}", cond),
         Tail::TailCall { func, args } => {
             let arg_list = args
                 .iter()
-                .map(|v| v.to_string())
+                .map(|v| format!("{:?}", v))
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("tail call {}({})", func, arg_list)
@@ -418,7 +420,7 @@ where
 }
 
 // Optionally restore the initial capability environment (if fenced)
-fn finalize_statement<L: CapabilityLogic, V: std::fmt::Display>(ctx: &mut Ctx<L>, stmt: &Stmt<V>)
+fn finalize_statement<L: CapabilityLogic, V: Variable>(ctx: &mut Ctx<L>, stmt: &Stmt<V>)
 where
     L::Region: RegionModel,
 {

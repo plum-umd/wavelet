@@ -154,7 +154,7 @@ pub fn check_ghost_tail_with_two_joinsplits<V: Variable>(
                     "  Tail calling: {}({})",
                     func.0,
                     args.iter()
-                        .map(|v| v.to_string())
+                        .map(|v| format!("{:?}", v))
                         .collect::<Vec<_>>()
                         .join(", ")
                 );
@@ -581,7 +581,7 @@ pub fn check_ghost_tail_if<V: Variable>(
             else_expr,
         } => {
             if ctx.verbose {
-                println!("\n === Checking if-else with condition: {} ===", cond);
+                println!("\n === Checking if-else with condition: {:?} ===", cond);
             }
 
             // Branch: create two sub-contexts
@@ -594,13 +594,13 @@ pub fn check_ghost_tail_if<V: Variable>(
             else_ctx.add_constraint(Atom::Not(Box::new(cond_var)));
 
             if ctx.verbose {
-                println!("  ├─ Then branch (assuming {}):", cond);
+                println!("  ├─ Then branch (assuming {:?}):", cond);
             }
             // Check both branches
             super::expr_checker::check_ghost_expr(then_expr, &mut then_ctx)?;
 
             if ctx.verbose {
-                println!("  ├─ Else branch (assuming !{}):", cond);
+                println!("  ├─ Else branch (assuming !{:?}):", cond);
             }
             super::expr_checker::check_ghost_expr(else_expr, &mut else_ctx)?;
 

@@ -112,10 +112,10 @@ pub fn render_ghost_stmt<V: Variable>(stmt: &GhostStmt<V>) -> String {
         } => {
             let inputs_str = inputs
                 .iter()
-                .map(|v| v.to_string())
+                .map(|v| format!("{:?}", v))
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("({} = {}({}), [{}])", output, op, inputs_str, ghost_out.0)
+            format!("({:?} = {}({}), [{}])", output, op, inputs_str, ghost_out.0)
         }
         GhostStmt::JoinSplit {
             left,
@@ -136,7 +136,7 @@ pub fn render_ghost_stmt<V: Variable>(stmt: &GhostStmt<V>) -> String {
             ghost_out,
         } => {
             format!(
-                "{} = {}, [{} → {}])",
+                "{:?} = {}, [{} → {}])",
                 output, value, ghost_in.0, ghost_out.0
             )
         }
@@ -148,7 +148,7 @@ pub fn render_ghost_stmt<V: Variable>(stmt: &GhostStmt<V>) -> String {
             ghost_out,
         } => {
             format!(
-                "{} = {}[{}], [{} → {}]",
+                "{:?} = {:?}[{:?}], [{} → {}]",
                 output, array, index, ghost_in.0, ghost_out.0
             )
         }
@@ -160,7 +160,7 @@ pub fn render_ghost_stmt<V: Variable>(stmt: &GhostStmt<V>) -> String {
             ghost_out,
         } => {
             format!(
-                "{}[{}] := {}, [{} → ({}, {})]",
+                "{:?}[{:?}] := {:?}, [{} → ({}, {})]",
                 array, index, value, ghost_in.0, ghost_out.0 .0, ghost_out.1 .0
             )
         }
@@ -174,12 +174,12 @@ pub fn render_ghost_stmt<V: Variable>(stmt: &GhostStmt<V>) -> String {
         } => {
             let outputs_str = outputs
                 .iter()
-                .map(|v| v.to_string())
+                .map(|v| format!("{:?}", v))
                 .collect::<Vec<_>>()
                 .join(", ");
             let args_str = args
                 .iter()
-                .map(|v| v.to_string())
+                .map(|v| format!("{:?}", v))
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(
@@ -193,10 +193,10 @@ pub fn render_ghost_stmt<V: Variable>(stmt: &GhostStmt<V>) -> String {
 pub fn render_ghost_tail<V: Variable>(tail: &GhostTail<V>) -> String {
     match tail {
         GhostTail::Return { value, perm } => {
-            format!("ret({}, perm: {})", value, perm.0)
+            format!("ret({:?}, perm: {})", value, perm.0)
         }
         GhostTail::IfElse { cond, .. } => {
-            format!("IfElse({})", cond)
+            format!("IfElse({:?})", cond)
         }
         GhostTail::TailCall {
             func,
@@ -206,7 +206,7 @@ pub fn render_ghost_tail<V: Variable>(tail: &GhostTail<V>) -> String {
         } => {
             let args_str = args
                 .iter()
-                .map(|v| v.to_string())
+                .map(|v| format!("{:?}", v))
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(

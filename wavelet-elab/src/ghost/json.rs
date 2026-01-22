@@ -522,7 +522,7 @@ fn map_sync_op<V: Variable>(op: &Op<V>) -> Result<SyncOp, ExportError> {
         Op::UnsignedLessThan => Ok(SyncOp::Ult),
         Op::UnsignedLessEqual => Ok(SyncOp::Ule),
         _ => Err(ExportError::Unsupported(format!(
-            "pure operation {} not yet supported for serialization",
+            "pure operation {:?} not yet supported for serialization",
             op
         ))),
     }
