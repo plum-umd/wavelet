@@ -21,6 +21,29 @@ instance : ToString PrimType where
     | .int w => s!"i{w}"
     | .none => "none"
 
+structure EmitState (σ : Type u) where
+  freshCounter : Nat
+  userState : σ
+
+abbrev EmitM σ := IndentWriterT (EmitState σ) String
+
+def EmitM.freshVar : EmitM σ String := do
+  let s ← .get
+  .modify λ s => { s with freshCounter := s.freshCounter + 1 }
+  return s!"%_.{s.freshCounter}"
+
+def EmitM.get : EmitM σ σ := (·.userState) <$> IndentWriterT.get
+
+def EmitM.set (x : σ) : EmitM σ Unit := do
+  IndentWriterT.modify λ s => { s with userState := x }
+
+def EmitM.modify (f : σ → σ) : EmitM σ Unit := do
+  EmitM.set (f (← EmitM.get))
+
+def EmitM.run (m : EmitM σ Unit) (init : σ) : Except String (String × σ) := do
+  let (v, s) ← IndentWriterT.run m { freshCounter := 0, userState := init }
+  return ⟨v, s.userState⟩
+
 class EmitType (χ : Type u) where
   emit : χ → Except String PrimType
 
@@ -30,25 +53,25 @@ class EmitVar (χ : Type u) where
 class EmitConst (V : Type u) where
   emit : V → Except String String
 
-class EmitOp (Op : Type u) (χ : Type v) [Arity Op] where
-  emit : (op : Op) → Vector χ (Arity.ι op) → Vector χ (Arity.ω op) → Except String String
+/-- User-defined operators are emitted via a custom state monad. -/
+class EmitOp σ (Op : Type u) (χ : Type v) [Arity Op] where
+  emit : (op : Op)
+    → Vector χ (Arity.ι op)
+    → Vector χ (Arity.ω op)
+    → EmitM σ String
 
-structure EmitState where
-  freshCounter : Nat
+  /-- There might be some finalizing operators to call. -/
+  finalize : EmitM σ String
 
-abbrev EmitM := IndentWriterT EmitState String
+section Emit
 
-def EmitM.freshVar : EmitM String := do
-  let s ← .get
-  .modify λ s => { s with freshCounter := s.freshCounter + 1 }
-  return s!"%_.{s.freshCounter}"
+variable {Op χ V σ}
+variable [Repr Op] [Repr χ] [Repr V]
+variable [Arity Op]
+variable [EmitOp σ Op χ] [EmitType χ] [EmitVar χ] [EmitType V] [EmitConst V]
 
 /-- Translates the given atomic process to an MLIR/Handshake operation. -/
-def emitAtomicProc
-  [Repr Op] [Repr χ] [Repr V]
-  [Arity Op] [EmitOp Op χ]
-  [EmitType χ] [EmitVar χ] [EmitType V] [EmitConst V]
-  : AtomicProc Op χ V → EmitM Unit
+def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
   -- User-defined operators
   | .op o inputs outputs => do
     .writeLn (← EmitOp.emit o inputs outputs)
@@ -165,5 +188,28 @@ def emitAtomicProc
     .writeLn s!"{← EmitVar.emit output} = handshake.never : {← EmitType.emit output}"
   | ap =>
     throw s!"unsupported atomic process: {repr ap}"
+
+def emitAtomicProcs (aps : AtomicProcs Op χ V) : EmitM σ Unit :=
+  aps.forM emitAtomicProc
+
+def emitProc (proc : Proc Op χ V m n) : EmitM σ Unit := do
+  -- Emit function header
+  let args ← proc.inputs.toList.mapM λ v => do
+    return s!"{← EmitVar.emit v}: {← EmitType.emit v}"
+  let retTys ← proc.outputs.toList.mapM λ v => ToString.toString <$> EmitType.emit v
+  let argNames := proc.inputs.toList.mapIdx λ i _ => s!"\"in{i}\""
+  let retNames := proc.outputs.toList.mapIdx λ i _ => s!"\"out{i}\""
+  let attrs := s!"argNames = [{", ".intercalate argNames}], \
+    resNames = [{", ".intercalate retNames}]"
+  let attrs := "{" ++ attrs ++ "}"
+  .writeLn <| s!"handshake.func @proc({", ".intercalate args}) \
+    -> ({", ".intercalate retTys}) attributes {attrs}" ++ " {"
+  .indentBy 2
+  -- Emit body
+  emitAtomicProcs proc.atoms
+  .dedentBy 2
+  .writeLn "}"
+
+end Emit
 
 end Wavelet.Backend.Handshake

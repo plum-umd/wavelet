@@ -22,7 +22,7 @@ def PlotM.cmd (cmd : String) : PlotM Unit := .writeLn cmd
 
 /-- Generates the final plot in DOT format. -/
 def PlotM.run (plot : PlotM Unit) : Except String String :=
-  Prod.snd <$> IndentWriterT.run plot ()
+  Prod.fst <$> IndentWriterT.run plot ()
 
 /-- Find sender(s) of a channel name. The return value is a tuple (atom idx, output port idx, atom). -/
 def Proc.sendersOf [Arity Op] [DecidableEq χ]
