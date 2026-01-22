@@ -1,5 +1,5 @@
 import Wavelet.Data.IndentWriter
-import Wavelet.Frontend.RipTide
+import Wavelet.Dataflow.Proc
 
 /-!
 A (unverified) backend that compiles dataflow graphs
@@ -8,9 +8,9 @@ to a dataflow circuit in the CIRCT Handshake dialect.
 
 namespace Wavelet.Backend.Handshake
 
-open Frontend Semantics Dataflow
+open Semantics Dataflow
 
-/-- MLIR/Handshake primitive types. -/
+/-- CIRCT/Handshake primitive types. -/
 inductive PrimType where
   | int (w : Nat)
   | none
@@ -21,7 +21,7 @@ instance : ToString PrimType where
     | .int w => s!"i{w}"
     | .none => "none"
 
-structure EmitState (σ : Type u) where
+private structure EmitState (σ : Type u) where
   freshCounter : Nat
   userState : σ
 
@@ -44,6 +44,11 @@ def EmitM.run (m : EmitM σ Unit) (init : σ) : Except String (String × σ) := 
   let (v, s) ← IndentWriterT.run m { freshCounter := 0, userState := init }
   return ⟨v, s.userState⟩
 
+def EmitM.context (m : EmitM σ α) (ctx : String) : EmitM σ α := do
+  match StateT.run m (← StateT.get) with
+  | .ok (v, s) => StateT.set s; return v
+  | .error err => throw (s!"{ctx}: {err}")
+
 class EmitType (χ : Type u) where
   emit : χ → Except String PrimType
 
@@ -58,23 +63,23 @@ class EmitOp σ (Op : Type u) (χ : Type v) [Arity Op] where
   emit : (op : Op)
     → Vector χ (Arity.ι op)
     → Vector χ (Arity.ω op)
-    → EmitM σ String
+    → EmitM σ Unit
 
   /-- There might be some finalizing operators to call. -/
-  finalize : EmitM σ String
+  finalize : EmitM σ Unit
 
 section Emit
 
 variable {Op χ V σ}
 variable [Repr Op] [Repr χ] [Repr V]
 variable [Arity Op]
-variable [EmitOp σ Op χ] [EmitType χ] [EmitVar χ] [EmitType V] [EmitConst V]
+variable [instEmitOp : EmitOp σ Op χ] [EmitType χ] [EmitVar χ]
+variable [EmitType V] [EmitConst V]
 
-/-- Translates the given atomic process to an MLIR/Handshake operation. -/
+/-- Translates the given atomic process to an CIRCT/Handshake operation. -/
 def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
   -- User-defined operators
-  | .op o inputs outputs => do
-    .writeLn (← EmitOp.emit o inputs outputs)
+  | .op o inputs outputs => EmitOp.emit o inputs outputs
   -- `switch` maps to `handshake.conditional_branch`
   | .async (.switch 1) [decider, input] [output₁, output₂] => do
     let deciderTy ← EmitType.emit decider
@@ -190,7 +195,8 @@ def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
     throw s!"unsupported atomic process: {repr ap}"
 
 def emitAtomicProcs (aps : AtomicProcs Op χ V) : EmitM σ Unit :=
-  aps.forM emitAtomicProc
+  aps.forM λ ap =>
+    emitAtomicProc ap |>.context s!"when emitting atomic process {repr ap}"
 
 def emitProc (proc : Proc Op χ V m n) : EmitM σ Unit := do
   -- Emit function header
@@ -202,11 +208,17 @@ def emitProc (proc : Proc Op χ V m n) : EmitM σ Unit := do
   let attrs := s!"argNames = [{", ".intercalate argNames}], \
     resNames = [{", ".intercalate retNames}]"
   let attrs := "{" ++ attrs ++ "}"
-  .writeLn <| s!"handshake.func @proc({", ".intercalate args}) \
+  .writeLn <| s!"handshake.func @top({", ".intercalate args}) \
     -> ({", ".intercalate retTys}) attributes {attrs}" ++ " {"
   .indentBy 2
   -- Emit body
   emitAtomicProcs proc.atoms
+  -- Finalize
+  instEmitOp.finalize
+  -- Emit return operation
+  let retVars ← proc.outputs.toList.mapM λ v => EmitVar.emit v
+  let retTys ← proc.outputs.toList.mapM λ v => ToString.toString <$> EmitType.emit v
+  .writeLn s!"return {", ".intercalate retVars} : {", ".intercalate retTys}"
   .dedentBy 2
   .writeLn "}"
 

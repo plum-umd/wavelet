@@ -21,6 +21,10 @@ enum Target {
     Unopt,
     /// Optimized dataflow process
     Opt,
+    /// CIRCT Handshake dialect
+    Handshake,
+    /// DOT format
+    Dot,
 }
 
 #[derive(Debug, Parser)]
@@ -155,6 +159,22 @@ impl CompileArgs {
             core_proc.num_atoms(),
             core_proc.num_non_trivial_atoms()
         );
+
+        if self.target == Target::Handshake {
+            return self.output(
+                core_proc
+                    .to_handshake()
+                    .context("when compiling to handshake dialect")?,
+            );
+        }
+
+        if self.target == Target::Dot {
+            return self.output(
+                core_proc
+                    .to_dot()
+                    .context("when generating the graph in DOT format")?,
+            );
+        }
 
         return self.output(core_proc.to_json());
     }

@@ -18,6 +18,8 @@ unsafe extern "C" {
 
     fn wavelet_riptide_proc_to_dot(arg: lean_obj_arg) -> lean_obj_res;
 
+    fn wavelet_riptide_proc_to_handshake(arg: lean_obj_arg) -> lean_obj_res;
+
     fn wavelet_riptide_prog_lower_control_flow(arg: lean_obj_arg) -> lean_obj_res;
 
     fn wavelet_riptide_proc_sink_last_n_outputs(n: size_t, arg: lean_obj_arg) -> lean_obj_res;
@@ -43,6 +45,8 @@ pub enum RipTideError {
     ProcParseError(String),
     #[error("dot format generation error: {0}")]
     DotFormatError(String),
+    #[error("handshake generation error: {0}")]
+    HandshakeError(String),
     #[error("control-flow lowering failed: {0}")]
     ControlFlowLoweringError(String),
 }
@@ -140,6 +144,18 @@ impl Proc {
         match res.as_except()? {
             Ok(dot) => Ok(dot.as_str()?.to_string()),
             Err(err) => Err(RipTideError::DotFormatError(err.as_str()?.to_string())),
+        }
+    }
+
+    /// Compiles the `Proc` to CIRCT Handshake dialect.
+    pub fn to_handshake(&self) -> Result<String, RipTideError> {
+        ensure_init_lean();
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_proc_to_handshake(self.0.clone().to_lean_obj_arg())
+        });
+        match res.as_except()? {
+            Ok(hs) => Ok(hs.as_str()?.to_string()),
+            Err(err) => Err(RipTideError::HandshakeError(err.as_str()?.to_string())),
         }
     }
 

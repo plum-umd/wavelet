@@ -1,2 +1,2 @@
 import Wavelet.Data.Basic
-import Wavelet.Data.IdentWriter
+import Wavelet.Data.IndentWriter

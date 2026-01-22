@@ -30,21 +30,31 @@ def FFI.procToJson (proc : RipTide.EncapProc) : String :=
 def FFI.procToDot (proc : RipTide.EncapProc) : Except String String :=
   proc.proc.plot.run
 
+/-- Outputs `RipTide.EncapProc` in CIRCT Handshake IR. -/
+@[export wavelet_riptide_proc_to_handshake]
+def FFI.procToHandshake (proc : RipTide.EncapProc) : Except String String :=
+  proc.emitHandshake
+
 /-- Control-flow lowering. -/
 @[export wavelet_riptide_prog_lower_control_flow]
 def FFI.lowerControlFlow (prog : RipTide.EncapProg) : Except String RipTide.EncapProc :=
-  RipTide.lowerControlFlow prog
+  prog.lowerControlFlow
 
 /-- Attaches sinks to the last `n` outputs. -/
 @[export wavelet_riptide_proc_sink_last_n_outputs]
 def FFI.sinkLastNOutputs (n : USize) (proc : RipTide.EncapProc) : RipTide.EncapProc :=
-  RipTide.sinkLastNOutputs n.toNat proc
+  proc.sinkLastNOutputs n.toNat
 
 /-- Applies selected legalizations and optimizations. -/
 @[export wavelet_riptide_proc_optimize]
 def FFI.optimizeProc (proc : RipTide.EncapProc) : RipTide.EncapProc :=
-  let (_, _, proc) := Frontend.RipTide.rewriteProc
-    (naryLowering <|> deadCodeElim <|> RipTide.operatorSel) proc
+  let (_, _, proc) := proc.rewriteProc
+    (naryLowering <|> deadCodeElim <|> RipTide.operatorSel)
+    -- TODO: For debugging only!
+    [
+      "carry-fork-steer-to-inv-left",
+      "carry-fork-steer-to-inv-right",
+    ]
   proc
 
 /-- Returns the number of atomic processes. -/

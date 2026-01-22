@@ -10,6 +10,7 @@ import Wavelet.Compile
 
 import Wavelet.Frontend.Dataflow
 import Wavelet.Frontend.Seq
+import Wavelet.Backend.Handshake
 
 /-! A formalization of the operator set of RipTide (https://ieeexplore.ieee.org/document/9923793). -/
 
@@ -349,10 +350,10 @@ def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite (RipTide.SyncOp Loc) χ
   .choose λ
   -- Lower `copy` to `fork`
   | .op (.copy n) inputs outputs =>
-    return .mk "riptide-copy" [.fork (inputs[0]'(by simp [Arity.ι])) outputs]
+    .apply "riptide-copy" [.fork (inputs[0]'(by simp [Arity.ι])) outputs]
   -- Lower `const` to the built-in `const`
   | .op (.const v) inputs outputs =>
-    return .mk "riptide-const" [.const v (inputs[0]'(by simp [Arity.ι])) outputs]
+    .apply "riptide-const" [.const v (inputs[0]'(by simp [Arity.ι])) outputs]
   -- Select with equal inputs can be rewritten to a forward
   | .op .sel (inputs : Vector _ 3) (outputs : Vector _ 1) => do
     let cond := inputs[0]
@@ -360,7 +361,7 @@ def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite (RipTide.SyncOp Loc) χ
     let input₂ := inputs[2]
     let output := outputs[0]
     .assumeFromSameFork input₁ input₂
-    return .mk "riptide-sel-eq" [
+    .apply "riptide-sel-eq" [
       .forward #v[input₁] #v[output],
       .sink #v[cond, input₂],
     ]
@@ -372,7 +373,7 @@ def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite (RipTide.SyncOp Loc) χ
       let input := inputs[1]'(by omega)
       let output₁ := outputs[0]'(by omega)
       let output₂ := outputs[1]'(by omega)
-      return .mk "riptide-switch" [
+      .apply "riptide-switch" [
         .fork input #v[.rename 0 input, .rename 1 input],
         .fork decider #v[.rename 0 decider, .rename 1 decider],
         .steer true (.rename 0 decider) #v[.rename 0 input] #v[output₁],
@@ -402,7 +403,7 @@ def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite (RipTide.SyncOp Loc) χ
         let output₂ := outputs₂[0]'(by omega)
         .assumeFromSameFork decider decider₂
         if flavor₁ = false ∧ flavor₂ = true ∧ output₁ = inputL ∧ output₂ = inputR then
-          return .mk "riptide-merge-steer-steer-to-sel" [
+          .apply "riptide-merge-steer-steer-to-sel" [
             .op .sel #v[decider, input₂, input₁] #v[output],
             .sink #v[decider₁, decider₂],
           ]
@@ -428,7 +429,7 @@ def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite (RipTide.SyncOp Loc) χ
             have : NeZero (Arity.ι op) := by infer_instance
             have := this.ne
             omega
-          return .mk "riptide-order-sync" [
+          .apply "riptide-order-sync" [
             .order ((inputs.removeAll outputs'.toList) ++ inputs'.toList).toVector output,
           ]
         else failure
@@ -465,13 +466,13 @@ abbrev EncapProg := Frontend.EncapProg (WithSpec (RipTide.SyncOp Loc) RipTide.op
 abbrev EncapProc := Frontend.EncapProc (RipTide.SyncOp Loc) (VarName Nat) RipTide.Value
 
 /-- Validates static properties of a `Prog`. -/
-def validateProg (prog : RipTide.EncapProg) : Except String Unit := do
+def EncapProg.validate (prog : RipTide.EncapProg) : Except String Unit := do
   for i in List.finRange prog.numFns do
     let name := prog.names[i]? |>.getD s!"unknown"
     (prog.prog i).checkAffineVar.resolve.context s!"function {i} ({name})"
 
 /-- Validates static properties of a `Proc`. -/
-def validateProc (proc : RipTide.EncapProc) : Except String Unit := do
+def EncapProc.validate (proc : RipTide.EncapProc) : Except String Unit := do
   proc.proc.checkAffineChan
 
 /-- TODO: On certain (currently) unreachable cases
@@ -547,7 +548,7 @@ private def renameRewriteName (idx : Nat) (name : RewriteName (VarName α)) : Va
 /-- Converts the last function of the given program to a dataflow process.
 This compiles all imperative control-flow to dataflow, and also lowers all
 ghost operators/inputs/outputs to concrete order operators. -/
-def lowerControlFlow (prog : RipTide.EncapProg) : Except String RipTide.EncapProc := do
+def EncapProg.lowerControlFlow (prog : RipTide.EncapProg) : Except String RipTide.EncapProc := do
   if h : prog.numFns > 0 then
     let : NeZeroSigs prog.sigs := prog.neZero
     let last : Fin prog.numFns := ⟨prog.numFns - 1, by omega⟩
@@ -564,7 +565,7 @@ def lowerControlFlow (prog : RipTide.EncapProg) : Except String RipTide.EncapPro
 /-- Connects the last `n` output channels of the process to `sink`s.
 This is useful in avoiding unnecessary outputs (like for ghost permissions)
 and reducing the size of the dataflow graph. -/
-def sinkLastNOutputs (n : Nat) (proc : RipTide.EncapProc) : RipTide.EncapProc :=
+def EncapProc.sinkLastNOutputs (n : Nat) (proc : RipTide.EncapProc) : RipTide.EncapProc :=
   let rem := proc.numOuts - n
   EncapProc.fromProc {
     proc.proc with
@@ -573,13 +574,97 @@ def sinkLastNOutputs (n : Nat) (proc : RipTide.EncapProc) : RipTide.EncapProc :=
   }
 
 /-- Rewrites the given dataflow process using the given rules. -/
-def rewriteProc
+def EncapProc.rewriteProc
   (rules : Rewrite (RipTide.SyncOp Loc) (VarName Nat) RipTide.Value)
-  (proc : RipTide.EncapProc) :
+  (proc : RipTide.EncapProc)
+  (disabledRules : List String := []) :
   Nat × RewriteStats × RipTide.EncapProc :=
-  let (numRws, stats, proc) := Rewrite.applyUntilFailNat renameRewriteName rules proc.proc
+  let (numRws, stats, proc) := Rewrite.applyUntilFailNat
+    renameRewriteName rules proc.proc disabledRules
   (numRws, stats, EncapProc.fromProc proc)
 
 end Passes
+
+/-! Emitting CIRCT Handshake operation(s) for each operator.
+TODO: Move this section to `Wavelet.Backend`? -/
+section Handshake
+
+open Backend Handshake
+
+instance [Repr α] : EmitType (VarName α) where
+  emit v := match v.ty with
+    | .int 0 => return Handshake.PrimType.none
+    | .int w => return Handshake.PrimType.int w
+    | .unknown => .error s!"cannot emit unknown type for variable {repr v}"
+
+instance [ToString α] : EmitVar (VarName α) where
+  emit v := return s!"%v{v.name}"
+
+instance : EmitType RipTide.Value where
+  emit
+    | .int 0 _ => return Handshake.PrimType.none
+    | .int w _ => return Handshake.PrimType.int w
+
+instance : EmitConst Value where
+  emit | .int _ val => return ToString.toString val
+
+private structure EmitState where
+
+/-- Some simple ops that have a direct correspondence with an `arith` operation. -/
+private def SyncOp.emitArith : RipTide.SyncOp Loc → Option String
+  | .add => some "arith.addi"
+  | .sub => some "arith.subi"
+  | .mul => some "arith.muli"
+  | .sdiv => some "arith.divsi"
+  | .udiv => some "arith.divsi"
+  | .shl => some "arith.shli"
+  | .ashr => some "arith.shrsi"
+  | .lshr => some "arith.shrui"
+  | .eq => some "arith.cmpi eq"
+  | .neq => some "arith.cmpi ne"
+  | .slt => some "arith.cmpi slt"
+  | .sle => some "arith.cmpi sle"
+  | .ult => some "arith.cmpi ult"
+  | .ule => some "arith.cmpi ule"
+  | .and => some "arith.andi"
+  | .bitand => some "arith.andi"
+  | _ => none
+
+/-- TODO: Check types. -/
+instance [Repr α] [ToString α] : EmitOp EmitState (RipTide.SyncOp Loc) (VarName α) where
+  emit
+  -- TODO: Memory
+  -- | .load loc, inputs, outputs => sorry
+  -- | .store loc, inputs, outputs => sorry
+  -- `const` and `copy` should be already lowered to the built-in versions
+  -- | .const v, inputs, outputs
+  -- | .copy n, inputs, outputs
+  | .sel, inputs, outputs => do
+    -- Similar to the cases below, but the type needs
+    -- to be taken from one of the data inputs
+    let inputVars ← inputs.toList.mapM λ v => EmitVar.emit v
+    let ty ← EmitType.emit inputs[1]
+    .writeLn s!"{← EmitVar.emit outputs[0]} = \
+        arith.select {", ".intercalate inputVars} : {ty}"
+  | op, inputs, outputs => do
+    if let some arithOp := op.emitArith then
+      -- Simple arithmetic operators
+      let firstIn := inputs[0]'(by cases op <;> simp [Arity.ι])
+      let inputTy ← EmitType.emit firstIn
+      let inputVars ← inputs.toList.mapM λ v => EmitVar.emit v
+      let outputVars ← outputs.toList.mapM λ v => EmitVar.emit v
+      .writeLn s!"{", ".intercalate outputVars} = \
+        {arithOp} {", ".intercalate inputVars} : {inputTy}"
+    else throw s!"operator {repr op} not yet implemented"
+
+  finalize := return
+
+/-- Compiles the given RipTide process to CIRCT/Handshake. -/
+def EncapProc.emitHandshake
+  (proc : RipTide.EncapProc) : Except String String := do
+  let (res, _) ← (emitProc proc.proc).run EmitState.mk
+  return res
+
+end Handshake
 
 end Wavelet.Frontend.RipTide

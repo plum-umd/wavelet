@@ -22,6 +22,7 @@ structure RewriteState Op χ V [Arity Op] [DecidableEq χ] [Hashable χ] where
   aps : AtomicProcs Op (RewriteName χ) V
   chanToAtoms : Std.HashMap (RewriteName χ) (List (Fin aps.length))
   matched : List Nat
+  disabledRules : List String
 
 def RewriteState.buildChanToAtomsMap [Arity Op] [DecidableEq χ] [Hashable χ]
   (aps : AtomicProcs Op (RewriteName χ) V) :
@@ -34,22 +35,39 @@ def RewriteState.buildChanToAtomsMap [Arity Op] [DecidableEq χ] [Hashable χ]
       (Std.HashMap.emptyWithCapacity (2 * aps.length))
 
 def RewriteState.init [Arity Op] [DecidableEq χ] [Hashable χ]
-  (aps : AtomicProcs Op (RewriteName χ) V) : RewriteState Op χ V :=
+  (aps : AtomicProcs Op (RewriteName χ) V)
+  (disabledRules : List String) : RewriteState Op χ V :=
   {
     aps,
     -- Builds a map from channel names to "related" atom indices
     -- for faster lookup.
     chanToAtoms := buildChanToAtomsMap aps,
-    matched := []
+    matched := [],
+    disabledRules,
   }
 
 abbrev RewriteM Op χ V [Arity Op] [DecidableEq χ] [Hashable χ] :=
   StateT (RewriteState Op χ V) Option
 
+abbrev RewriteResult Op χ V [Arity Op] :=
+  String × AtomicProcs Op (RewriteName χ) V
+
+/-- Constructs the result of a rewriting, fails if the rule is specifically forbidden. -/
+def RewriteM.apply
+  [Arity Op] [DecidableEq χ] [Hashable χ]
+  (name : String)
+  (res : AtomicProcs Op (RewriteName χ) V)
+  : RewriteM Op χ V (RewriteResult Op χ V) := do
+  let s ← get
+  if name ∈ s.disabledRules then
+    failure
+  else
+    return (name, res)
+
 /-- A successful rewrite would return a name for the rewrite rule applied,
 and the rewritten atoms. -/
 abbrev Rewrite Op χ V [Arity Op] [DecidableEq χ] [Hashable χ] :=
-  RewriteM Op χ V (String × AtomicProcs Op (RewriteName χ) V)
+  RewriteM Op χ V (RewriteResult Op χ V)
 
 /-- For debugging purposes. -/
 def allRewriteNames : List String := [
@@ -104,9 +122,10 @@ def allRewriteNames : List String := [
 
 def Rewrite.apply [Arity Op] [DecidableEq χ] [Hashable χ]
   (rw : Rewrite Op χ V)
-  (proc : Proc Op (RewriteName χ) V m n) :
+  (proc : Proc Op (RewriteName χ) V m n)
+  (disabledRules : List String := []) :
     Option (String × Proc Op (RewriteName χ) V m n) := do
-  let ((rwName, aps'), s) ← rw.run (.init proc.atoms)
+  let ((rwName, aps'), s) ← rw.run (.init proc.atoms disabledRules)
   let unmatched := s.aps.mapIdx (·, ·)
     |>.filter (λ (i, _) => i ∉ s.matched)
     |>.map (·.snd)
@@ -121,11 +140,12 @@ def Rewrite.apply [Arity Op] [DecidableEq χ] [Hashable χ]
 partial def Rewrite.applyUntilFail
   [Arity Op] [DecidableEq χ] [Hashable χ]
   (rw : Rewrite Op χ V)
-  (proc : Proc Op (RewriteName χ) V m n) : Nat × Proc Op (RewriteName χ) V m n :=
+  (proc : Proc Op (RewriteName χ) V m n)
+  (disabledRules : List String := []) : Nat × Proc Op (RewriteName χ) V m n :=
     loop 0 proc
   where
     loop numRewrites proc : Nat × Proc Op (RewriteName χ) V m n :=
-      match rw.apply proc with
+      match rw.apply proc disabledRules with
       | some (_rwName, proc') => loop (numRewrites + 1) proc'
       | none => (numRewrites, proc)
 
@@ -138,13 +158,14 @@ partial def Rewrite.applyUntilFailNat
   [Arity Op] [DecidableEq χ] [Hashable χ]
   (renamer : Nat → RewriteName χ → χ)
   (rw : Rewrite Op χ V)
-  (proc : Proc Op χ V m n) : Nat × RewriteStats × Proc Op χ V m n :=
+  (proc : Proc Op χ V m n)
+  (disabledRules : List String := []) : Nat × RewriteStats × Proc Op χ V m n :=
     loop 0 proc initStats
   where
     initStats := allRewriteNames.foldl (λ m name => m.insert name 0)
       (Std.HashMap.emptyWithCapacity allRewriteNames.length)
     loop numRewrites proc stats :=
-      match rw.apply (proc.mapChans .base) with
+      match rw.apply (proc.mapChans .base) disabledRules with
       | some (rwName, proc') =>
         let stats := stats.insert rwName (stats.getD rwName 0 + 1)
         loop (numRewrites + 1) (proc'.renameChans renamer) stats
@@ -305,7 +326,7 @@ def naryLowering
     let inputs ← inputs.toVectorDyn k
     let outputs₁ ← (outputs.take k).toVectorDyn k
     let outputs₂ ← (outputs.drop k).toVectorDyn k
-    return .mk "n-ary-switch" <| .fork decider deciders ::
+    .apply "n-ary-switch" <| .fork decider deciders ::
       (deciders ⊗ inputs ⊗ outputs₁ ⊗ outputs₂ |>.map
         λ ⟨d, i, o₁, o₂⟩ => .switch d #v[i] #v[o₁] #v[o₂]).toList
   | .async (AsyncOp.merge st k) (decider :: inputs) outputs =>
@@ -314,7 +335,7 @@ def naryLowering
     let inputs₁ ← (inputs.take k).toVectorDyn k
     let inputs₂ ← (inputs.drop k).toVectorDyn k
     let outputs ← outputs.toVectorDyn k
-    return .mk "n-ary-merge" <| .fork decider deciders ::
+    .apply "n-ary-merge" <| .fork decider deciders ::
       (deciders ⊗ inputs₁ ⊗ inputs₂ ⊗ outputs |>.map
         λ ⟨d, i₁, i₂, o⟩ => .carry st d #v[i₁] #v[i₂] #v[o]).toList
   | .async (AsyncOp.steer flavor k) (decider :: inputs) outputs =>
@@ -322,7 +343,7 @@ def naryLowering
     let deciders := (Vector.finRange k).map (.rename · decider)
     let inputs ← inputs.toVectorDyn k
     let outputs ← outputs.toVectorDyn k
-    return .mk "n-ary-steer" <| .fork decider deciders ::
+    .apply "n-ary-steer" <| .fork decider deciders ::
       (deciders ⊗ inputs ⊗ outputs |>.map
         λ ⟨d, i, o⟩ => .steer flavor d #v[i] #v[o]).toList
   -- Rewrite `const v k` with a fork and `k` unary `const`s
@@ -332,7 +353,7 @@ def naryLowering
     -- Copy activation signals
     let acts := (Vector.finRange k).map (.rename · act)
     let outputs : Vector _ k := outputs.toVector.cast (by omega)
-    return .mk "n-ary-const" <| .fork act acts ::
+    .apply "n-ary-const" <| .fork act acts ::
       (acts ⊗ outputs |>.map λ ⟨act, o⟩ => .const v act #v[o]).toList
   -- Break `forwardc` into a `forward`, a `fork`, and multiple `const`s
   | .async (AsyncOp.forwardc n m consts) inputs outputs =>
@@ -346,7 +367,7 @@ def naryLowering
     let inputs : Vector _ n := (inputs.toVector.pop.push actₘ).cast (by omega)
     let outputs₁ : Vector _ n := (outputs.take n).toVector.cast (by simp; omega)
     let outputs₂ : Vector _ m := (outputs.drop n).toVector.cast (by simp; omega)
-    return .mk "n-ary-forwardc" (
+    .apply "n-ary-forwardc" (
       -- Forward the inputs as before
       .forward inputs outputs₁ ::
       -- Fork the activation signal (last input) to trigger constants
@@ -358,13 +379,13 @@ def naryLowering
     .assume (n > 1 ∧ inputs.length = n ∧ outputs.length = n) λ h => do
     let inputs : Vector _ n := inputs.toVector.cast (by omega)
     let outputs : Vector _ n := outputs.toVector.cast (by omega)
-    return .mk "n-ary-forward"
+    .apply "n-ary-forward"
       (inputs ⊗ outputs |>.map λ ⟨i, o⟩ => .forward #v[i] #v[o]).toList
   | .async (AsyncOp.sink n) inputs outputs =>
     .assume (n > 1 ∧ inputs.length = n ∧ outputs.length = 0) λ h => do
     let inputs : Vector _ n := inputs.toVector.cast (by omega)
-    return .mk "n-ary-sink" (inputs.map λ i => .sink #v[i]).toList
-  | .async (.inact 0) _ _ => return .mk "inact-0" []
+    .apply "n-ary-sink" (inputs.map λ i => .sink #v[i]).toList
+  | .async (.inact 0) _ _ => .apply "inact-0" []
   | _ => failure
 
 /-- Optimizing combinations of various operators. -/
@@ -393,7 +414,7 @@ def deadCodeElim
               subst h₄
               simp at h
               omega
-            return .mk "sync-order-order" [
+            .apply "sync-order-order" [
               .op _ (inputs.replace output₁ input₁) outputs,
               .order (inputs₁.tail ++ inputs₂).toVector output₂,
             ]
@@ -410,15 +431,15 @@ def deadCodeElim
     .chooseWithNames [input, output] λ
     | .async aop inputs' outputs' => do
       if output ∈ inputs' then
-        return .mk "fold-forward-aop-receiver" [.async aop (inputs'.replace output input) outputs']
+        .apply "fold-forward-aop-receiver" [.async aop (inputs'.replace output input) outputs']
       else if input ∈ outputs' then
-        return .mk "fold-forward-aop-sender" [.async aop inputs' (outputs'.replace input output)]
+        .apply "fold-forward-aop-sender" [.async aop inputs' (outputs'.replace input output)]
       else failure
     | .op op inputs' outputs' => do
       if output ∈ inputs' then
-        return .mk "fold-forward-op-receiver" [.op op (inputs'.replace output input) outputs']
+        .apply "fold-forward-op-receiver" [.op op (inputs'.replace output input) outputs']
       else if input ∈ outputs' then
-        return .mk "fold-forward-op-sender" [.op op inputs' (outputs'.replace input output)]
+        .apply "fold-forward-op-sender" [.op op inputs' (outputs'.replace input output)]
       else failure
   | .async (.switch 1) inputs outputs =>
     .assume (inputs.length = 2 ∧ outputs.length = 2) λ h => do
@@ -432,9 +453,9 @@ def deadCodeElim
       .assume (inputs'.length = 1 ∧ outputs'.length = 0) λ h => do
       let sink := inputs'[0]'(by omega)
       if output₁ = sink then
-        return .mk "switch-sink-left" [.steer false decider #v[input] #v[output₂]]
+        .apply "switch-sink-left" [.steer false decider #v[input] #v[output₂]]
       else if output₂ = sink then
-        return .mk "switch-sink-right" [.steer true decider #v[input] #v[output₁]]
+        .apply "switch-sink-right" [.steer true decider #v[input] #v[output₁]]
       else failure
     | _ => failure
   | .async (.steer flavor 1) inputs outputs =>
@@ -447,21 +468,21 @@ def deadCodeElim
       let val ← .checkFromConst decider
       if let some val := InterpConsts.toBool val then
         if val = flavor then
-          return .mk "steer-const-true" [.order #v[input, decider] output]
+          .apply "steer-const-true" [.order #v[input, decider] output]
         else
-          return .mk "steer-const-false" [
+          .apply "steer-const-false" [
             .sink #v[input],
             .sink #v[decider],
             .inact #v[output],
           ]
-      failure) <|>
+      else failure) <|>
     .chooseWithNames (inputs ++ outputs) λ
     -- Steer with a sink output can be reduced to two sinks on the decider and the input
     | .async (.sink 1) inputs' outputs' =>
       .assume (inputs'.length = 1 ∧ outputs'.length = 0) λ h => do
       let sink := inputs'[0]'(by omega)
       if output = sink then
-        return .mk "steer-sink" [
+        .apply "steer-sink" [
           .sink #v[input],
           .sink #v[decider],
         ]
@@ -474,7 +495,7 @@ def deadCodeElim
       .assumeFromSameFork decider decider'
       if flavor = flavor' ∧ output = input' then
         -- Two consecutive steers with the same flavor and same decider can be folded
-        return .mk "steer-steer" [
+        .apply "steer-steer" [
           .steer flavor decider #v[input] #v[output'],
           .sink #v[decider'],
         ]
@@ -495,7 +516,7 @@ def deadCodeElim
           let output'' := outputs''[0]'(by omega)
           if flavor = flavor'' ∧ output' = input'' then
             .assumeFromSameFork decider decider''
-            return .mk "steer-order-steer" [
+            .apply "steer-order-steer" [
               .steer flavor decider #v[input] #v[output], -- Same steer
               .order inputs' output'', -- order directly send to second steer output
               .sink #v[decider''],
@@ -518,7 +539,7 @@ def deadCodeElim
           -- Two parallel steers with the same flavor and same input can be combined
           (do
             .assumeFromSameFork input input''
-            return .mk "par-steer-steer" [
+            .apply "par-steer-steer" [
               .fork input' outputs',
               .steer flavor decider #v[input] #v[.rename 0 output],
               .sink #v[decider''],
@@ -528,7 +549,7 @@ def deadCodeElim
           -- Two consecutive steers (gated by a fork) with the same flavor can be folded
           (do
             if input'' ∈ outputs' ∧ input' ∈ outputs then
-              return .mk "steer-fork-steer" [
+              .apply "steer-fork-steer" [
                 .fork input' (outputs'.push output''), -- Add one more result to fork
                 .sink #v[decider''], -- Following steer removed
                 .sink #v[input''],
@@ -544,7 +565,7 @@ def deadCodeElim
       let act := inputs'[0]'(by omega)
       let output' := outputs'[0]'(by omega)
       if output' = input then
-        return .mk "const-steer" [
+        .apply "const-steer" [
           .steer flavor decider #v[act] #v[output'],
           .const v output' #v[output],
         ]
@@ -553,11 +574,11 @@ def deadCodeElim
   -- Fork with zero outputs can be replaced with a sink (which enables further rewrites)
   | .async (.fork 0) inputs outputs =>
     .assume (inputs.length = 1 ∧ outputs.length = 0) λ h => do
-    return .mk "fork-0" [.sink inputs.toVector]
+    .apply "fork-0" [.sink inputs.toVector]
   -- Fork with exactly one output is a forward
   | .async (.fork 1) inputs outputs =>
     .assume (inputs.length = 1 ∧ outputs.length = 1) λ h => do
-    return .mk "fork-1" [.forward #v[inputs[0]] #v[outputs[0]]]
+    .apply "fork-1" [.forward #v[inputs[0]] #v[outputs[0]]]
   -- Fork with one of the outputs being a sink or another fork
   | .async (.fork n) inputs outputs =>
     .assume (inputs.length = 1 ∧ outputs.length = n) λ h => do
@@ -567,14 +588,14 @@ def deadCodeElim
       .assume (inputs'.length = 1 ∧ outputs'.length = 0) λ h => do
       let sink := inputs'[0]'(by omega)
       if sink ∈ outputs then
-        return .mk "fork-sink" [.fork input (outputs.erase sink).toVector]
+        .apply "fork-sink" [.fork input (outputs.erase sink).toVector]
       else failure
     -- Folding two consecutive forks
     | .async (.fork m) inputs' outputs' =>
       .assume (inputs'.length = 1 ∧ outputs'.length = m) λ h => do
       let input' := inputs'[0]'(by omega)
       if input' ∈ outputs then
-        return .mk "fork-fork" [.fork input (outputs.erase input' ++ outputs').toVector]
+        .apply "fork-fork" [.fork input (outputs.erase input' ++ outputs').toVector]
       else failure
     | _ => failure
   -- Order with one input can be rewritten to a forward
@@ -582,7 +603,7 @@ def deadCodeElim
     .assume (inputs.length = 1 ∧ outputs.length = 1) λ h => do
     let input := inputs[0]'(by omega)
     let output := outputs[0]'(by omega)
-    return .mk "order-1" [.forward #v[input] #v[output]]
+    .apply "order-1" [.forward #v[input] #v[output]]
   | .async (AsyncOp.order n) inputs outputs =>
     .assume (n > 1 ∧ inputs.length = n ∧ outputs.length = 1) λ h => do
     let output := outputs[0]'(by omega)
@@ -597,7 +618,7 @@ def deadCodeElim
           |>.flatten
         .assume (newInputs'.length ≠ 0) λ h' => do
         let : NeZero newInputs'.length := by constructor; omega
-        return .mk "order-order" [
+        .apply "order-order" [
           .order newInputs'.toVector output',
         ]
       else
@@ -617,7 +638,7 @@ def deadCodeElim
               let newOutputs' := outputs'.erase input₁
               .assume (newInputs.length ≠ 0) λ h' => do
               let : NeZero newInputs.length := by constructor; omega
-              return .mk "order-sync-path" [
+              .apply "order-sync-path" [
                 .fork input' newOutputs'.toVector,
                 .order newInputs.toVector output,
               ]
@@ -627,7 +648,7 @@ def deadCodeElim
     | .async (AsyncOp.sink n) inputs' outputs' =>
       .assume (n > 0 ∧ inputs'.length = n ∧ outputs'.length = 0) λ h => do
       if output ∈ inputs' then
-        return .mk "order-sink" [
+        .apply "order-sink" [
           .sink inputs.toVector,
           .sink (inputs'.erase output).toVector,
         ]
@@ -639,12 +660,12 @@ def deadCodeElim
       let output' := outputs'[0]'(by omega)
       if output' ∈ inputs ∧ output' ≠ inputs[0] then
         let : NeZero (inputs.erase output' ++ [act]).length := by constructor; simp
-        return .mk "order-const" [
+        .apply "order-const" [
           .order (inputs.erase output' ++ [act]).toVector output,
         ]
       else if output' = inputs[0] then
         let : NeZero (act :: inputs.tail).length := by constructor; simp
-        return .mk "order-const-head" [
+        .apply "order-const-head" [
           .order (act :: inputs.tail).toVector output',
           .const v output' #v[output],
         ]
@@ -668,7 +689,7 @@ def deadCodeElim
         let output₂ := outputs₂[0]'(by omega)
         .assumeFromSameFork decider₁ decider₂
         if flavor = flavor' ∧ output₁ = orderInput₁ ∧ output₂ = orderInput₂ then
-          return .mk "order-steer-steer" [
+          .apply "order-steer-steer" [
             .order #v[input₁, input₂] output₁,
             .steer flavor decider₁ #v[output₁] #v[output],
             .sink #v[decider₂],
@@ -686,7 +707,7 @@ def deadCodeElim
       .assume (inputs'.length = 1 ∧ outputs'.length = 0) λ h => do
       let sink := inputs'[0]'(by omega)
       if output = sink then
-        return .mk "const-sink" [.sink #v[act]]
+        .apply "const-sink" [.sink #v[act]]
       else failure
     | _ => failure
   | .async (.inact n) inputs outputs =>
@@ -696,7 +717,7 @@ def deadCodeElim
     | .async (AsyncOp.sink m) inputs' outputs' =>
       .assume (inputs'.length = m ∧ outputs'.length = 0) λ h => do
       if ¬ outputs.Disjoint inputs' then
-        return .mk "inact-sink" [
+        .apply "inact-sink" [
           .inact (outputs.removeAll inputs').toVector,
           .sink (inputs'.removeAll outputs).toVector,
         ]
@@ -737,12 +758,12 @@ def deadCodeElim
             .assumeFromSameFork decider decider''
             if output'' = inputR then
               if input'' = output₁' then
-                return .mk "carry-fork-steer-to-inv-left" [
+                .apply "carry-fork-steer-to-inv-left" [
                   .inv true none decider inputL output₂',
                   .sink #v[decider''],
                 ]
               else if input'' = output₂' then
-                return .mk "carry-fork-steer-to-inv-right" [
+                .apply "carry-fork-steer-to-inv-right" [
                   .inv true none decider inputL output₁',
                   .sink #v[decider''],
                 ]
@@ -762,7 +783,7 @@ def deadCodeElim
           -- carry -> steer -> (back to carry)
           -- such that carry and steer share the same decider
           -- Then this is essentially a sink (assuming no deadlocks in the original program)
-          return .mk "carry-steer-cycle-to-sink" [.sink #v[decider, decider', inputL]]
+          .apply "carry-steer-cycle-to-sink" [.sink #v[decider, decider', inputL]]
         else
           -- Similar to the case above, if we have:
           --   |
@@ -774,7 +795,7 @@ def deadCodeElim
             .assume (n > 0 ∧ inputs''.length = n ∧ outputs''.length = 1) λ h => do
             let output'' := outputs''[0]'(by omega)
             if output = input' ∧ output' ∈ inputs'' ∧ output'' = inputR then
-              return .mk "carry-order-steer-cycle-to-sink" [
+              .apply "carry-order-steer-cycle-to-sink" [
                 .sink (#v[
                   decider, decider', inputL,
                 ] ++ (inputs''.erase output').toVector)
@@ -788,7 +809,7 @@ def deadCodeElim
       if let some val := InterpConsts.toBool val then
         if ¬val then
           -- The right input is never consumed
-          return .mk "carry-false" [
+          return ← .apply "carry-false" [
             .forward #v[inputL] #v[output],
             .sink #v[decider],
             .sink #v[inputR],
@@ -806,7 +827,7 @@ def deadCodeElim
     if let some val := InterpConsts.toBool val then
       if val then
         -- The left input is never consumed
-        return .mk "carry-true" [
+        return ← .apply "carry-true" [
           .forward #v[inputR] #v[output],
           .sink #v[decider],
           .sink #v[inputL],
@@ -823,7 +844,7 @@ def deadCodeElim
     | .async (AsyncOp.sink n) inputs' outputs' =>
       .assume (n > 0 ∧ inputs'.length = n ∧ outputs'.length = 0) λ h => do
       if output ∈ inputs' then
-        return .mk "merge-sink" [
+        .apply "merge-sink" [
           .sink #v[decider],
           .sink #v[inputL],
           .sink #v[inputR],
@@ -840,13 +861,13 @@ def deadCodeElim
       .assumeFromSameFork decider decider'
       if output = input' then
         if flavor then
-          return .mk "merge-steer-true" [
+          .apply "merge-steer-true" [
             -- Pass RHS (true side) through and sink LHS (false side)
             .forward #v[inputR] #v[output'],
             .sink #v[decider, decider', inputL],
           ]
         else
-          return .mk "merge-steer-false" [
+          .apply "merge-steer-false" [
             -- Pass LHS (false side) through and sink RHS (true side)
             .forward #v[inputL] #v[output'],
             .sink #v[decider, decider', inputR],
@@ -867,7 +888,7 @@ def deadCodeElim
         .assumeFromSameFork decider decider'
         .assumeFromSameFork inputL inputL'
         .assumeFromSameFork inputR inputR'
-        return .mk "merge-dedup" [
+        .apply "merge-dedup" [
           .async (.fork n) inputs₀ outputs₀,
           .merge decider #v[inputL] #v[inputR] #v[.rename 0 output],
           .fork (.rename 0 output) #v[output, output'],
@@ -887,13 +908,13 @@ def deadCodeElim
         if inputL = outputs₁ ∧ inputR = outputs₂ then
           if v₁ = v₂ then
             -- Merging the same constant: push the constant to merge output
-            return .mk "merge-same-const" [
+            .apply "merge-same-const" [
               .merge decider #v[input₁] #v[input₂] #v[.rename 0 output],
               .const v₁ (.rename 0 output) #v[output],
             ]
           else  if InterpConsts.toBool v₁ = some false ∧
             InterpConsts.toBool v₂ = some true then
-            return .mk "merge-true-false-const" [
+            .apply "merge-true-false-const" [
               .forward #v[decider] #v[output],
               .sink #v[inputs₁[0]'(by omega)],
               .sink #v[inputs₂[0]'(by omega)],
