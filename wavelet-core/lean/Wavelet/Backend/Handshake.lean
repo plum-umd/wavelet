@@ -21,6 +21,10 @@ instance : ToString PrimType where
     | .int w => s!"i{w}"
     | .none => "none"
 
+private def PrimType.defaultValue : PrimType → Except String String
+  | .int _ => return "0"
+  | .none => .error "no default value for type none"
+
 private structure EmitState (σ : Type u) where
   freshCounter : Nat
   userState : σ
@@ -72,7 +76,7 @@ section Emit
 
 variable {Op χ V σ}
 variable [Repr Op] [Repr χ] [Repr V]
-variable [Arity Op]
+variable [Arity Op] [InterpConsts V] [DecidableEq V]
 variable [instEmitOp : EmitOp σ Op χ] [EmitType χ] [EmitVar χ]
 variable [EmitType V] [EmitConst V]
 
@@ -176,23 +180,34 @@ def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
   | .async (AsyncOp.const const 1) [act] [output] => do
     let actTy ← EmitType.emit act
     let outputTy ← EmitType.emit output
-    let attr := "{value = " ++ s!"{← EmitConst.emit const} : {outputTy}" ++ "}"
-    match actTy, outputTy with
-    | .none, .none =>
-      -- Same as `br`
-      .writeLn s!"{← EmitVar.emit output} = handshake.br {← EmitVar.emit act} : {outputTy}"
-    | .none, _ =>
-      .writeLn s!"{← EmitVar.emit output} = \
-        handshake.constant {← EmitVar.emit act} {attr} : {outputTy}"
-    | _, .none =>
-      -- Only need to convert `act` to `none`
-      .writeLn s!"{← EmitVar.emit output} = join {← EmitVar.emit act} : {actTy}"
-    | _, _ =>
-      -- Convert `act` to `none` first, then call `constant`
-      let act' ← .freshVar
-      .writeLn s!"{act'} = join {← EmitVar.emit act} : {actTy}"
-      .writeLn s!"{← EmitVar.emit output} = \
-        handshake.constant {act'} {attr} : {outputTy}"
+
+    -- Since we cannot create a `none` constant in MLIR,
+    -- we have to handle four cases here.
+    -- TODO: Check if this is actually the case.
+    if outputTy = .none then
+      if actTy = .none then
+        .writeLn s!"{← EmitVar.emit output} = handshake.br {← EmitVar.emit act} : {outputTy}"
+      else
+        .writeLn s!"{← EmitVar.emit output} = join {← EmitVar.emit act} : {actTy}"
+    else
+      -- In the special case when `const` is `junkVal`, we
+      -- emit the default constant of the output type.
+      let attr ← if const = InterpConsts.junkVal then
+        pure <| "{value = " ++ s!"{← outputTy.defaultValue} : {outputTy}" ++ "}"
+      else
+        let constTy ← EmitType.emit const
+        if constTy ≠ outputTy then
+          throw s!"constant type should match output type {outputTy}, but got {constTy}"
+        pure <| "{value = " ++ s!"{← EmitConst.emit const} : {outputTy}" ++ "}"
+      if actTy = .none then
+        .writeLn s!"{← EmitVar.emit output} = \
+          handshake.constant {← EmitVar.emit act} {attr} : {outputTy}"
+      else
+        -- Convert `act` to `none` first, then call `constant`
+        let act' ← .freshVar
+        .writeLn s!"{act'} = join {← EmitVar.emit act} : {actTy}"
+        .writeLn s!"{← EmitVar.emit output} = \
+          handshake.constant {act'} {attr} : {outputTy}"
   -- `sink` maps to `handshake.sink`
   | .async (AsyncOp.sink 1) [input] [] => do
     .writeLn s!"handshake.sink {← EmitVar.emit input} : {← EmitType.emit input}"

@@ -620,7 +620,7 @@ instance : EmitConst Value where
         .error "cannot emit constant of type none"
       else
         return s!"{val.toNat}"
-    | .junk => return "0" -- TODO: This is a bit hacky
+    | .junk => .error "cannot emit constant of type junk"
 
 private structure EmitState where
 
