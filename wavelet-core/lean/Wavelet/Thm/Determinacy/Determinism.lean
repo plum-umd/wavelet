@@ -59,7 +59,7 @@ theorem proc_indexed_guarded_step_unique_label
       simp at h₃
       have ⟨h₃₁, h₃₂⟩ := h₃
       subst h₃₁
-      simp [Vector.push_eq_push] at h₄
+      simp at h₄
       simp [h₄]
     any_goals rfl
     any_goals
@@ -170,10 +170,15 @@ theorem proc_indexed_unguarded_step_det_mod
         have ⟨h₁, h₂, h₃⟩ := hyield₁
         have ⟨h₁', h₂', h₃'⟩ := hyield₂
         subst h₁
-        simp at h₂ h₃ h₂' h₃'
-        simp [← h₃, ← h₃']
-        apply Vector.forall₂_to_forall₂_push_toList
-        · simp [EqModGhost]
+        simp at h₂ h₃ h₂' h₃' hyield₂
+        have ⟨h, _⟩ := hyield₂
+        subst h
+        simp at h₃'
+        simp [← h₃, ← h₃', WithSpec.opOutputs]
+        split
+        · apply Vector.forall₂_to_forall₂_push_toList
+          · simp [EqModGhost]
+          · simp [EqModGhost]
         · simp [EqModGhost]
       case triv_join.triv_join =>
         intros op inputVals outputVals₁ outputVals₂ hyield₁ hyield₂

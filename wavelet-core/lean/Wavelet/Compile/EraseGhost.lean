@@ -25,7 +25,7 @@ def AtomicProc.eraseGhost
       let hne₁ : NeZero (Arity.ι (WithSpec.op ghost o) - 1) := by
         simp [Arity.ι, h]; infer_instance
       let hne₂ : NeZero (Arity.ω (WithSpec.op ghost o) - 1) := by
-        simp [Arity.ω]; infer_instance
+        simp [Arity.ω, h]; infer_instance
       let lastInput := @Vector.back _ _ hne₁ inputs.pop
       let lastOutput := @Vector.back _ _ hne₂ outputs.pop
       let inputPerm := inputs.back
@@ -47,27 +47,14 @@ def AtomicProc.eraseGhost
             omega))
           (outputs'.cast (by
             have : Arity.ω o ≠ 0 := (instNZ.neZeroₒ o).ne
-            simp [Arity.ω]
+            simp [Arity.ω, h]
             omega))
       ]
     else
-      let hne₂ : NeZero (Arity.ω (WithSpec.op ghost o) - 1) := by
-        simp [Arity.ω]; infer_instance
-      let lastOutput := @Vector.back _ _ hne₂ outputs.pop
-      let outputPerm := outputs.back
-      let outputs' := (outputs.pop.pop.map .base).push (.output lastOutput)
       [
-        -- Use a fork at the end to produce permission token output
-        -- The additional `const` operator is used to ensure type correctness
-        -- when `lastOutput` and `outputPerm` have different types.
-        .async (.fork 2) [.output lastOutput] [.base lastOutput, .op_finish lastOutput],
-        .async (.const InterpConsts.junkVal 1) [.op_finish lastOutput] [.base outputPerm],
         .op o
           ((inputs.map EraseName.base).cast (by simp [Arity.ι, h]))
-          (outputs'.cast (by
-            have : Arity.ω o ≠ 0 := (instNZ.neZeroₒ o).ne
-            simp [Arity.ω]
-            omega))
+          ((outputs.map EraseName.base).cast (by simp [Arity.ω, h]))
       ]
   | .op (WithSpec.join k l req) inputs outputs =>
     let output₁ := outputs[0]'(by simp [Arity.ω])

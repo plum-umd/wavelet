@@ -18,11 +18,11 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let finalOutputPath := outputPath?.getD s!"{outputPrefix}.dfg.json"
 
   let rawProg : RipTide.RawProg ← Lean.Json.decodeFile inputPath
-  let prog ← rawProg.toProg.unwrapIO "failed to convert RawProg to Prog"
+  let prog : RipTide.EncapProg ← rawProg.toProg.unwrapIO "failed to convert RawProg to Prog"
 
-  RipTide.validateProg prog |>.unwrapIO "input program validation failed"
-  let proc ← RipTide.lowerControlFlow prog |>.unwrapIO "control-flow lowering failed"
-  RipTide.validateProc proc |>.unwrapIO "invalid proc after control-flow lowering"
+  prog.validate |>.unwrapIO "input program validation failed"
+  let proc ← prog.lowerControlFlow |>.unwrapIO "control-flow lowering failed"
+  proc.validate |>.unwrapIO "invalid proc after control-flow lowering"
 
   if enableUnopt then
     dbg_trace s!"writing unoptimized dfg to {unoptPath}..."
@@ -33,18 +33,18 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
       if enableSinkAllOut then
         -- If we enable the more aggressive no-output mode,
         -- sink all outputs of the dataflow graph
-        RipTide.sinkLastNOutputs proc.numOuts proc
+        proc.sinkLastNOutputs proc.numOuts
       else
         -- If we don't need output permission from the entire graph,
         -- the last output (which assumed to be a ghost permission output)
         -- can be replaced with a sink to enable more optimizations.
-        RipTide.sinkLastNOutputs 1 proc
+        proc.sinkLastNOutputs 1
     else proc
 
   -- Legalizations and optimizations
-  let (numRws, stats, proc) := RipTide.rewriteProc
-    (naryLowering <|> deadCodeElim <|> RipTide.operatorSel) proc
-  RipTide.validateProc proc |>.unwrapIO "invalid proc after rewrites"
+  let (numRws, stats, proc) := proc.rewriteProc
+    (naryLowering <|> deadCodeElim <|> RipTide.operatorSel)
+  proc.validate |>.unwrapIO "invalid proc after rewrites"
   dbg_trace s!"{numRws} rewrites. graph size: {proc.proc.atoms.length} ops"
 
   -- Print stats if enabled

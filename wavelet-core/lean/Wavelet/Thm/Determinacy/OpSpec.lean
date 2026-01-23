@@ -85,6 +85,17 @@ def WithSpec.opInputs
   else
     (inputs.map .inl).cast (by simp [h]; rfl)
 
+def WithSpec.opOutputs
+  [Arity Op]
+  {opSpec : OpSpec Op V T}
+  (ghost : Bool) (o : Op)
+  (outputs : Vector V (Arity.ω o))
+  (tok : T) : Vector (V ⊕ T) (Arity.ω (WithSpec.op (spec := opSpec) ghost o)) :=
+  if h : ghost then
+    ((outputs.map .inl).push (.inr tok)).cast (by simp [h]; rfl)
+  else
+    (outputs.map .inl).cast (by simp [h]; rfl)
+
 @[simp]
 theorem WithSpec.opInputs.inj
   [Arity Op] {o : Op}
@@ -115,6 +126,36 @@ theorem WithSpec.opInputs.inj
     else
       simp [h₁, opInputs, h₃]
 
+@[simp]
+theorem WithSpec.opOutputs.inj
+  [Arity Op] {o : Op}
+  {opSpec : OpSpec Op V T}
+  {outputs₁ : Vector V (Arity.ω o)}
+  {outputs₂ : Vector V (Arity.ω o)} :
+    (opOutputs (opSpec := opSpec) ghost o outputs₁ tok₁ =
+      opOutputs (opSpec := opSpec) ghost o outputs₂ tok₂)
+    ↔ (outputs₁ = outputs₂ ∧ (ghost → tok₁ = tok₂))
+  := by
+  constructor
+  · intros h
+    if h₁ : ghost then
+      subst h₁
+      simp [opOutputs, Vector.push_eq_push] at h
+      simp [h]
+    else
+      simp at h₁
+      subst h₁
+      simp [opOutputs] at h
+      simp [h]
+  · intros h
+    have ⟨h₁, h₂⟩ := h
+    if h₃ : ghost then
+      simp [h₃] at h₂
+      subst h₁ h₂
+      rfl
+    else
+      simp [h₁, opOutputs, h₃]
+
 /-- Interprets the labels with ghost values using the base operators,
 but with dynamic checks for ghost tokens satisfying the specs. -/
 inductive OpSpec.Guard
@@ -131,7 +172,7 @@ inductive OpSpec.Guard
     Guard opSpec ioSpec
       (.yield (.op ghost op)
         (WithSpec.opInputs ghost op inputs (opSpec.pre op inputs))
-        ((outputs.map .inl).push (.inr (opSpec.post op inputs outputs))))
+        (WithSpec.opOutputs ghost op outputs (opSpec.post op inputs outputs)))
       (.yield op inputs outputs)
   | spec_join [NeZero k]
     {toks : Vector T k}
@@ -170,7 +211,7 @@ inductive OpSpec.TrivGuard [Arity Op]
     opSpec.TrivGuard ioSpec
       (.yield (.op ghost op)
         (WithSpec.opInputs ghost op inputs tok₁)
-        ((outputs.map .inl).push (.inr tok₂)))
+        (WithSpec.opOutputs ghost op outputs tok₂))
       (.yield op inputs outputs)
   | triv_join [NeZero k]
     {toks : Vector T k}

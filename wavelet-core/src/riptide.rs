@@ -12,6 +12,8 @@ use crate::ffi::{ensure_init_lean, LeanObject, LeanObjectError};
 unsafe extern "C" {
     fn wavelet_riptide_prog_from_json(arg: lean_obj_arg) -> lean_obj_res;
 
+    fn wavelet_riptide_prog_validate(arg: lean_obj_arg) -> lean_obj_res;
+
     fn wavelet_riptide_proc_from_json(arg: lean_obj_arg) -> lean_obj_res;
 
     fn wavelet_riptide_proc_to_json(arg: lean_obj_arg) -> lean_obj_res;
@@ -19,6 +21,8 @@ unsafe extern "C" {
     fn wavelet_riptide_proc_to_dot(arg: lean_obj_arg) -> lean_obj_res;
 
     fn wavelet_riptide_proc_to_handshake(arg: lean_obj_arg) -> lean_obj_res;
+
+    fn wavelet_riptide_proc_validate(arg: lean_obj_arg) -> lean_obj_res;
 
     fn wavelet_riptide_prog_lower_control_flow(arg: lean_obj_arg) -> lean_obj_res;
 
@@ -41,8 +45,12 @@ pub enum RipTideError {
     LeanObjectError(#[from] LeanObjectError),
     #[error("program parsing error: {0}")]
     ProgParseError(String),
+    #[error("program validation error: {0}")]
+    ProgValidationError(String),
     #[error("dataflow graph parsing error: {0}")]
     ProcParseError(String),
+    #[error("dataflow validation error: {0}")]
+    ProcValidationError(String),
     #[error("dot format generation error: {0}")]
     DotFormatError(String),
     #[error("handshake generation error: {0}")]
@@ -68,6 +76,18 @@ impl Prog {
         match res.as_except()? {
             Ok(prog) => Ok(Prog(prog)),
             Err(err) => Err(RipTideError::ProgParseError(err.as_str()?.to_string())),
+        }
+    }
+
+    /// Validates some static properties.
+    pub fn validate(&self) -> Result<(), RipTideError> {
+        ensure_init_lean();
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_prog_validate(self.0.clone().to_lean_obj_arg())
+        });
+        match res.as_except()? {
+            Ok(_) => Ok(()),
+            Err(err) => Err(RipTideError::ProgValidationError(err.as_str()?.to_string())),
         }
     }
 
@@ -156,6 +176,18 @@ impl Proc {
         match res.as_except()? {
             Ok(hs) => Ok(hs.as_str()?.to_string()),
             Err(err) => Err(RipTideError::HandshakeError(err.as_str()?.to_string())),
+        }
+    }
+
+    /// Validates some static properties.
+    pub fn validate(&self) -> Result<(), RipTideError> {
+        ensure_init_lean();
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_proc_validate(self.0.clone().to_lean_obj_arg())
+        });
+        match res.as_except()? {
+            Ok(_) => Ok(()),
+            Err(err) => Err(RipTideError::ProcValidationError(err.as_str()?.to_string())),
         }
     }
 

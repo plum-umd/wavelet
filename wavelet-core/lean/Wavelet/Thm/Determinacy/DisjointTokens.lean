@@ -600,13 +600,11 @@ theorem Config.DisjointTokens.guarded_inv
         apply ChanMap.DisjointWith.imp_frame_preserving _ hdisj'
         cases ghost with
         | true =>
-          simp [Vector.toList_push, Vector.toList_map, asTok, WithSpec.opInputs]
+          simp [Vector.toList_push, Vector.toList_map, asTok, WithSpec.opInputs, WithSpec.opOutputs]
           apply hfp
         | false =>
           simp at hpre
-          simp [Vector.toList_push, Vector.toList_map, asTok, WithSpec.opInputs]
-          simp [← hpre]
-          apply hfp
+          simp [Vector.toList_map, WithSpec.opInputs, WithSpec.opOutputs, PCM.framePreserving]
     | spec_join houtputs₀ houtputs₁ hsum =>
       rename_i k l req rem inst toks vals outputVals
       -- Join

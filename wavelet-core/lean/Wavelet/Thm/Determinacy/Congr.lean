@@ -499,11 +499,11 @@ theorem congr_eq_spec_guard
         generalize hinputs₁' :
           WithSpec.opInputs ghost op inputs₁ (opSpec.pre op inputs₁) = inputs₁'
         generalize houtputs₁' :
-          (Vector.map Sum.inl outputs₁).push (Sum.inr (opSpec.post op inputs₁ outputs₁)) = outputs₁'
+          WithSpec.opOutputs ghost op outputs₁ (opSpec.post op inputs₁ outputs₁) = outputs₁'
         rw [hinputs₁', houtputs₁'] at hguard₂
         cases hguard₂
         rename_i inputs₂ outputs₂
-        simp [Vector.push_eq_push] at hinputs₁' houtputs₁'
+        simp at hinputs₁' houtputs₁'
         simp [hinputs₁', houtputs₁']
     | join k l req =>
       cases hguard₁ with | spec_join h₁ h₂ =>
@@ -564,8 +564,7 @@ theorem congr_eq_mod_ghost_triv_guard
       simp [heq₂, heq₃]
     | false =>
       simp [WithSpec.opInputs, Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₂
-      replace ⟨heq₃, _⟩ := Vector.forall₂_push_toList_to_forall₂ heq₃
-      simp [Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₃
+      simp [WithSpec.opOutputs, Vector.toList_map, EqModGhost, Vector.toList_inj] at heq₃
       simp [heq₂, heq₃]
   case input.input.triv_input.triv_input =>
     have ⟨heq₁, heq₂⟩ := Vector.forall₂_append_toList_to_forall₂ heq

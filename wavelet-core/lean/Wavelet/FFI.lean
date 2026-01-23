@@ -13,6 +13,11 @@ def FFI.progFromJson (input : String) : Except String RipTide.EncapProg :=
 
 -- TODO: Outputs `RipTide.EncapProg` in JSON.
 
+/-- Validates some static properties. -/
+@[export wavelet_riptide_prog_validate]
+def FFI.validateProg (prog : RipTide.EncapProg) : Except String Unit :=
+  prog.validate
+
 /-- Parses the JSON input as `RipTide.EncapProc`. -/
 @[export wavelet_riptide_proc_from_json]
 def FFI.procFromJson (input : String) : Except String RipTide.EncapProc := do
@@ -34,6 +39,11 @@ def FFI.procToDot (proc : RipTide.EncapProc) : Except String String :=
 @[export wavelet_riptide_proc_to_handshake]
 def FFI.procToHandshake (proc : RipTide.EncapProc) : Except String String :=
   proc.emitHandshake
+
+/-- Validates some static properties. -/
+@[export wavelet_riptide_proc_validate]
+def FFI.validateProc (proc : RipTide.EncapProc) : Except String Unit :=
+  proc.validate
 
 /-- Control-flow lowering. -/
 @[export wavelet_riptide_prog_lower_control_flow]

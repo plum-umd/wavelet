@@ -35,7 +35,7 @@ pub enum GhostStmt<V> {
         output: V,
         op: crate::ir::Op<V>,
         // ghost_in: GhostVar, // pureops now need no token to fire
-        ghost_out: GhostVar,
+        // ghost_out: GhostVar,
     },
     Const {
         value: Val,
@@ -181,12 +181,7 @@ impl<V: Variable> std::fmt::Display for GhostStmt<V> {
                 }
                 Ok(())
             }
-            GhostStmt::Pure {
-                inputs,
-                output,
-                op,
-                ghost_out,
-            } => {
+            GhostStmt::Pure { inputs, output, op } => {
                 // output should look like: out = op(inp1, inp2, ...) [-> ghost_out]
                 write!(f, "{:?} = {}(", output, op)?;
                 for (i, inp) in inputs.iter().enumerate() {
@@ -195,7 +190,7 @@ impl<V: Variable> std::fmt::Display for GhostStmt<V> {
                     }
                     write!(f, "{:?}", inp)?;
                 }
-                write!(f, ") [-> {}]", ghost_out.0)
+                write!(f, ")")
             }
             GhostStmt::Const {
                 value,

@@ -22,12 +22,7 @@ pub fn check_ghost_stmt_pure<V: Variable>(
     ctx: &mut CheckContext,
 ) -> Result<(), String> {
     let (inputs, output, op) = match stmt {
-        GhostStmt::Pure {
-            inputs,
-            output,
-            op,
-            ghost_out: _,
-        } => (inputs, output, op),
+        GhostStmt::Pure { inputs, output, op } => (inputs, output, op),
         _ => unreachable!(),
     };
 

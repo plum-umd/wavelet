@@ -234,14 +234,11 @@ impl FunctionLowerer {
                 ctx.restore.push(ghost_out_real);
             }
             _ => {
-                // NOTE: pureop needs no token and output a zero token
-                // let (ghost_in, _) = self.split_sync(builder, ctx);
-                let ghost_out = self.fresh();
+                // NOTE: pureop needs no token input or output
                 builder.push(GhostStmt::Pure {
                     inputs: pure_inputs(vars),
                     output: pure_output(vars),
                     op: op.clone(),
-                    ghost_out: ghost_out.clone(),
                 });
                 // dummy zero token can be dropped
                 // ctx.garb.push(ghost_out);

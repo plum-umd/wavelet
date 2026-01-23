@@ -142,18 +142,13 @@ fn wrap_stmt<V: Variable + From<GhostVar>>(
     cont: RawExpr<V>,
 ) -> Result<RawExpr<V>, ExportError> {
     match stmt {
-        GhostStmt::Pure {
-            inputs,
-            output,
-            op,
-            ghost_out,
-        } => {
+        GhostStmt::Pure { inputs, output, op } => {
             let op = WithCall::Op(WithSpec::Spec {
                 ghost: false,
                 op: map_sync_op(op)?,
             });
             let args: Vec<V> = inputs.clone();
-            let outputs = vec![output.clone(), ghost_out.clone().into()];
+            let outputs = vec![output.clone()];
             Ok(RawExpr::Op {
                 op,
                 args,
@@ -482,7 +477,7 @@ impl Serialize for SyncOp {
             }
             SyncOp::Copy { n } => {
                 let mut map = serializer.serialize_map(Some(1))?;
-                map.serialize_entry("copy", &(n - 2))?;
+                map.serialize_entry("copy", &(n - 1))?;
                 map.end()
             }
             SyncOp::Load { loc } => {

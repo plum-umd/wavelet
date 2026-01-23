@@ -104,18 +104,13 @@ pub fn render_perm_expr(expr: &PermExpr) -> String {
 
 pub fn render_ghost_stmt<V: Variable>(stmt: &GhostStmt<V>) -> String {
     match stmt {
-        GhostStmt::Pure {
-            inputs,
-            output,
-            op,
-            ghost_out,
-        } => {
+        GhostStmt::Pure { inputs, output, op } => {
             let inputs_str = inputs
                 .iter()
                 .map(|v| format!("{:?}", v))
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("({:?} = {}({}), [{}])", output, op, inputs_str, ghost_out.0)
+            format!("({:?} = {}({}))", output, op, inputs_str)
         }
         GhostStmt::JoinSplit {
             left,

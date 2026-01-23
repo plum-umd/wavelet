@@ -72,7 +72,8 @@ instance instArityWithSpec
   ι | .op true o => arity.ι o + 1
     | .op false o => arity.ι o
     | WithSpec.join k l _ => k + l
-  ω | .op _ o => arity.ω o + 1
+  ω | .op true o => arity.ω o + 1
+    | .op false o => arity.ω o
     | WithSpec.join _ _ _ => 2
 
 instance [Arity Op] [NeZeroArity Op] {spec : OpSpec Op V T} : NeZeroArity (WithSpec Op spec) where
@@ -81,7 +82,8 @@ instance [Arity Op] [NeZeroArity Op] {spec : OpSpec Op V T} : NeZeroArity (WithS
           | WithSpec.join k l _ => by
             simp [Arity.ι]
             infer_instance
-  neZeroₒ | .op _ o => by infer_instance
+  neZeroₒ | .op true o => by infer_instance
+          | .op false o => by simp [Arity.ω]; infer_instance
           | WithSpec.join _ _ _ => by infer_instance
 
 end Wavelet.Determinacy

@@ -121,6 +121,12 @@ impl CompileArgs {
         let core_prog = riptide::Prog::from_json(&json)
             .context("when converting elaborated program to lean")?;
 
+        // Validation
+        eprintln!("validating core program...");
+        core_prog
+            .validate()
+            .context("when validating core program")?;
+
         // Lower control-flow to pure dataflow
         eprintln!("lowering control-flow...");
         let core_proc = core_prog
@@ -131,6 +137,11 @@ impl CompileArgs {
             core_proc.num_atoms(),
             core_proc.num_non_trivial_atoms()
         );
+
+        core_proc
+            .validate()
+            .context("when validating dataflow after control-flow lowering")?;
+
         if self.target == Target::Unopt {
             return self.output(core_proc.to_json());
         }
@@ -159,6 +170,10 @@ impl CompileArgs {
             core_proc.num_atoms(),
             core_proc.num_non_trivial_atoms()
         );
+
+        core_proc
+            .validate()
+            .context("when validating final dataflow")?;
 
         if self.target == Target::Handshake {
             return self.output(
