@@ -193,13 +193,12 @@ pub fn check_ghost_stmt_joinsplit_const<V: Variable>(
     ctx.bind_perm(right, joined_perm);
 
     // Process Const
-    let (value, output, ghost_in, _ghost_out) = match const_stmt {
+    let (value, output, ghost_in) = match const_stmt {
         GhostStmt::Const {
             value,
             output,
             ghost_in,
-            ghost_out,
-        } => (value, output, ghost_in, ghost_out),
+        } => (value, output, ghost_in),
         _ => unreachable!(),
     };
 

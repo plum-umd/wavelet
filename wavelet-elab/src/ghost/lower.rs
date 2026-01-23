@@ -179,12 +179,10 @@ impl FunctionLowerer {
         ctx: &mut PermCtx,
     ) {
         let (ghost_in, _) = self.split_sync(builder, ctx);
-        let ghost_out = self.fresh();
         builder.push(GhostStmt::Const {
             value: val.clone(),
             output: var.clone(),
             ghost_in,
-            ghost_out: ghost_out.clone(),
         });
 
         // dummy zero token can be dropped

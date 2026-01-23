@@ -128,12 +128,8 @@ pub fn render_ghost_stmt<V: Variable>(stmt: &GhostStmt<V>) -> String {
             value,
             output,
             ghost_in,
-            ghost_out,
         } => {
-            format!(
-                "{:?} = {}, [{} → {}])",
-                output, value, ghost_in.0, ghost_out.0
-            )
+            format!("{:?} = {}, [{}])", output, value, ghost_in.0,)
         }
         GhostStmt::Load {
             array,

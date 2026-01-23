@@ -160,7 +160,6 @@ fn wrap_stmt<V: Variable + From<GhostVar>>(
             value,
             output,
             ghost_in,
-            ghost_out,
         } => {
             let val = match value {
                 Val::Int(i) => ConstValue::Int(32, *i as u64),
@@ -178,7 +177,7 @@ fn wrap_stmt<V: Variable + From<GhostVar>>(
                 op: SyncOp::Const { value: val },
             });
             let args = vec![ghost_in.clone().into()];
-            let outputs = vec![output.clone(), ghost_out.clone().into()];
+            let outputs = vec![output.clone()];
             Ok(RawExpr::Op {
                 op,
                 args,

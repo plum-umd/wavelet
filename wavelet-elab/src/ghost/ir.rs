@@ -41,7 +41,6 @@ pub enum GhostStmt<V> {
         value: Val,
         output: V,
         ghost_in: GhostVar,
-        ghost_out: GhostVar,
     },
     Load {
         output: V,
@@ -196,13 +195,8 @@ impl<V: Variable> std::fmt::Display for GhostStmt<V> {
                 value,
                 output,
                 ghost_in,
-                ghost_out,
             } => {
-                write!(
-                    f,
-                    "{:?} = const({}) [{} -> {}]",
-                    output, value, ghost_in.0, ghost_out.0
-                )
+                write!(f, "{:?} = const({}) [{}]", output, value, ghost_in.0,)
             }
             GhostStmt::Load {
                 output,
