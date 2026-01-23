@@ -908,9 +908,11 @@ def deadCodeElim
         if inputL = outputs₁ ∧ inputR = outputs₂ then
           if v₁ = v₂ then
             -- Merging the same constant: push the constant to merge output
+            -- TODO: This is really assuming that `input₁` and `input₂`
+            -- have the same type; but this may not be the case.
             .apply "merge-same-const" [
-              .merge decider #v[input₁] #v[input₂] #v[.rename 0 output],
-              .const v₁ (.rename 0 output) #v[output],
+              .merge decider #v[input₁] #v[input₂] #v[.rename 0 input₁],
+              .const v₁ (.rename 0 input₁) #v[output],
             ]
           else  if InterpConsts.toBool v₁ = some false ∧
             InterpConsts.toBool v₂ = some true then

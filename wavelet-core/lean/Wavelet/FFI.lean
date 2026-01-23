@@ -59,7 +59,7 @@ def FFI.sinkLastNOutputs (n : USize) (proc : RipTide.EncapProc) : RipTide.EncapP
 @[export wavelet_riptide_proc_optimize]
 def FFI.optimizeProc (proc : RipTide.EncapProc) : RipTide.EncapProc :=
   let (_, _, proc) := proc.rewriteProc
-    (naryLowering <|> RipTide.operatorSel)
+    (naryLowering <|> deadCodeElim <|> RipTide.operatorSel)
     -- TODO: For debugging only!
     [
       "carry-fork-steer-to-inv-left",
