@@ -221,7 +221,7 @@ fn wrap_stmt<V: Variable + From<GhostVar>>(
                 },
             });
             let args = vec![index.clone(), value.clone(), ghost_in.clone().into()];
-            let outputs = vec![ghost_out.0.clone().into(), ghost_out.0.clone().into()];
+            let outputs = vec![ghost_out.0.clone().into(), ghost_out.1.clone().into()];
             Ok(RawExpr::Op {
                 op,
                 args,
