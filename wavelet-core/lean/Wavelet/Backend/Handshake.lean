@@ -153,11 +153,8 @@ def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
       let outputTy ← EmitType.emit output
       if inputTy ≠ outputTy then
         throw s!"input type should match output type {outputTy}, but got {inputTy}"
-    let forkOuts ← .freshVar
-    .writeLn s!"{forkOuts}:{n} = handshake.fork [{n}] {← EmitVar.emit input} : {inputTy}"
-    -- Destruct fork results
-    (outputs.mapIdx Prod.mk).forM λ ⟨i, output⟩ => do
-      .writeLn s!"{← EmitVar.emit output} = handshake.br {forkOuts}#{i} : {inputTy}"
+    let forkOuts ← outputs.mapM λ o => EmitVar.emit o
+    .writeLn s!"{", ".intercalate forkOuts} = handshake.fork [{n}] {← EmitVar.emit input} : {inputTy}"
   -- `order` maps to `handshake.sync` with rest of the outputs ignored
   | .async (AsyncOp.order _) (first :: rest) [output] => do
     let outputTy ← EmitType.emit output

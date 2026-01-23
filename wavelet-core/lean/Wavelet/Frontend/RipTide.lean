@@ -622,7 +622,47 @@ instance : EmitConst Value where
         return s!"{val.toNat}"
     | .junk => .error "cannot emit constant of type junk"
 
+private inductive MemAccess where | load | store
+  deriving DecidableEq, Repr
+
+/-- Each memory access is assigned a port to
+send the actual values and signals. -/
+private structure MemPort where
+  loc : Loc
+  access : MemAccess
+  addrTy : Handshake.PrimType
+  valTy : Handshake.PrimType
+
+/-- Records required memory ports for all accesses. -/
 private structure EmitState where
+  ports : List MemPort
+
+def EmitState.init : EmitState :=
+  { ports := [] }
+
+def EmitState.loadPortAddr (loc : Loc) (idx : Nat) : String := s!"%mem.{loc}.load.addr.{idx}"
+def EmitState.loadPortVal (loc : Loc) (idx : Nat) : String := s!"%mem.{loc}.load.val.{idx}"
+
+def EmitState.storePortAddr (loc : Loc) (idx : Nat) : String := s!"%mem.{loc}.store.addr.{idx}"
+def EmitState.storePortVal (loc : Loc) (idx : Nat) : String := s!"%mem.{loc}.store.val.{idx}"
+def EmitState.storePortDone (loc : Loc) (idx : Nat) : String := s!"%mem.{loc}.store.done.{idx}"
+
+/-- Registers a new memory port and returns its index for generating unique variables. -/
+def EmitState.addPort (port : MemPort) : EmitM EmitState Nat := do
+  let s ← .get
+  let idx := s.ports.length
+  -- Check that previous accesses to the same location
+  -- have the same address and value types
+  for prevPort in s.ports do
+    if prevPort.loc = port.loc then
+      if prevPort.addrTy ≠ port.addrTy then
+        throw s!"conflicting address types for memory `{port.loc}`: \
+          previous {prevPort.addrTy}, new {port.addrTy}"
+      if prevPort.valTy ≠ port.valTy then
+        throw s!"conflicting value types for memory `{port.loc}`: \
+          previous {prevPort.valTy}, new {port.valTy}"
+  .set { s with ports := s.ports.concat port }
+  return idx
 
 /-- Some simple ops that have a direct correspondence with an `arith` operation. -/
 private def SyncOp.emitArith : RipTide.SyncOp Loc → Option String
@@ -647,10 +687,48 @@ private def SyncOp.emitArith : RipTide.SyncOp Loc → Option String
 /-- TODO: Check types. -/
 instance [Repr α] [ToString α] : EmitOp EmitState (RipTide.SyncOp Loc) (VarName α) where
   emit
-  -- TODO: Memory
-  -- | .load loc, inputs, outputs => sorry
-  -- | .store loc, inputs, outputs => sorry
-  -- `const` and `copy` should be already lowered to the built-in versions
+  | .load loc, inputs, outputs => do
+    let addr := inputs[0]'(by simp [Arity.ι])
+    let val := outputs[0]'(by simp [Arity.ω])
+    let addrTy ← EmitType.emit addr
+    let valTy ← EmitType.emit val
+    let port := { loc, access := .load, addrTy, valTy : MemPort }
+    let idx ← EmitState.addPort port
+    let ctrl ← .freshVar
+    let portAddr := EmitState.loadPortAddr loc idx
+    let portVal := EmitState.loadPortVal loc idx
+    -- Wait for the address input to arrive, interact with the memory port
+    -- and then forward the loaded value.
+    let addrCopy1 ← .freshVar
+    let addrCopy2 ← .freshVar
+    .writeLn s!"{addrCopy1}, {addrCopy2} = handshake.fork [2] {← EmitVar.emit addr} : {addrTy}"
+    .writeLn s!"{ctrl} = handshake.join {addrCopy1} : {addrTy}"
+    .writeLn s!"{← EmitVar.emit val}, {portAddr} = handshake.load [{addrCopy2}] {portVal}, {ctrl} : {addrTy}, {valTy}"
+  -- The `done` signal of a store operator has the `unit`/`none` type.
+  | .store loc, inputs, outputs => do
+    let addr := inputs[0]'(by simp [Arity.ι])
+    let val := inputs[1]'(by simp [Arity.ι])
+    let done := outputs[0]'(by simp [Arity.ω])
+    let addrTy ← EmitType.emit addr
+    let valTy ← EmitType.emit val
+    let port := { loc, access := .store, addrTy, valTy : MemPort }
+    let idx ← EmitState.addPort port
+    let ctrl ← .freshVar
+    let portAddr := EmitState.storePortAddr loc idx
+    let portVal := EmitState.storePortVal loc idx
+    let portDone := EmitState.storePortDone loc idx
+    -- Wait for all inputs to arrive, interact with the memory port
+    -- and then forward the done signal.
+    let addrCopy1 ← .freshVar
+    let addrCopy2 ← .freshVar
+    let valCopy1 ← .freshVar
+    let valCopy2 ← .freshVar
+    .writeLn s!"{addrCopy1}, {addrCopy2} = handshake.fork [2] {← EmitVar.emit addr} : {addrTy}"
+    .writeLn s!"{valCopy1}, {valCopy2} = handshake.fork [2] {← EmitVar.emit val} : {valTy}"
+    .writeLn s!"{ctrl} = handshake.join {addrCopy1}, {valCopy1} : {addrTy}, {valTy}"
+    .writeLn s!"{portVal}, {portAddr} = handshake.store [{addrCopy2}] {valCopy2}, {ctrl} : \
+      {addrTy}, {valTy}"
+    .writeLn <| s!"{← EmitVar.emit done} = handshake.br {portDone} : {Handshake.PrimType.none}"
   -- | .const v, inputs, outputs
   -- | .copy n, inputs, outputs
   | .sel, inputs, outputs => do
@@ -671,12 +749,60 @@ instance [Repr α] [ToString α] : EmitOp EmitState (RipTide.SyncOp Loc) (VarNam
         {arithOp} {", ".intercalate inputVars} : {inputTy}"
     else throw s!"operator {repr op} not yet implemented"
 
-  finalize := return
+  /-
+  Generates templates for actual memory definitions (`handshake.memory`).
+  TODO:
+    - `handshake.memory` or `handshake.extmemory`?
+    - User input for memory sizes
+  -/
+  finalize := do
+    let s ← .get
+    let locs := s.ports.map (·.loc) |>.removeDup |>.mapIdx Prod.mk
+    for (locIdx, loc) in locs do
+      let ports := s.ports.mapIdx Prod.mk |>.filter (·.snd.loc = loc)
+      if let some (_, firstPort) := ports.head? then
+        let addrTy := firstPort.addrTy
+        let valTy := firstPort.valTy
+        -- See <https://circt.llvm.org/docs/Dialects/Handshake/#handshakememory-circthandshakememoryop>
+        -- for the order of inputs and outputs.
+        let loads := ports.filter (·.snd.access = .load)
+        let stores := ports.filter (·.snd.access = .store)
+        let inputs :=
+          (stores.map λ (idx, _) =>
+            [
+              EmitState.storePortVal loc idx,
+              EmitState.storePortAddr loc idx,
+            ]).flatten ++
+          (loads.map λ (idx, _) =>
+            EmitState.loadPortAddr loc idx)
+        let inputTys :=
+          (stores.map λ _ => [valTy, addrTy]).flatten ++
+          (loads.map λ _ => addrTy)
+        let inputTys := inputTys.map ToString.toString
+        let outputs :=
+          (loads.map λ (idx, _) =>
+            EmitState.loadPortVal loc idx) ++
+          (stores.map λ (idx, _) =>
+            EmitState.storePortDone loc idx) ++
+          -- Dummy outputs for unused load "done" signals
+          (← loads.mapM λ _ => .freshVar)
+        let outputTys :=
+          (loads.map λ _ => valTy) ++
+          (stores.map λ _ => Handshake.PrimType.none) ++
+          -- Dummy outputs for unused load "done" signals
+          (loads.map λ _ => Handshake.PrimType.none)
+        let outputTys := outputTys.map ToString.toString
+        let attr := "{id = " ++ s!"{locIdx}" ++ " : i32, lsq = false}"
+        IndentWriterT.writeLn s!"{", ".intercalate outputs} = \
+          handshake.memory [ld = {loads.length}, st = {stores.length}] \
+          ({", ".intercalate inputs}) {attr} : \
+          memref<??x{valTy}>, \
+          ({", ".intercalate inputTys}) -> ({", ".intercalate outputTys})"
 
 /-- Compiles the given RipTide process to CIRCT/Handshake. -/
 def EncapProc.emitHandshake
   (proc : RipTide.EncapProc) : Except String String := do
-  let (res, _) ← (emitProc proc.proc).run EmitState.mk
+  let (res, _) ← (emitProc proc.proc).run EmitState.init
   return res
 
 end Handshake

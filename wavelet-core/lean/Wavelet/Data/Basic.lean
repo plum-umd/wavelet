@@ -46,6 +46,9 @@ def toVectorDyn [Alternative M] (xs : List α) n : M (Vector α n) :=
   else
     failure
 
+def removeDup [DecidableEq α] (xs : List α) : List α :=
+  xs.foldl (λ acc x => if x ∈ acc then acc else x :: acc) [] |>.reverse
+
 /-- Same as `List.instMonad` in mathlib, duplicated to remove dependency. -/
 instance : Monad List.{u} where
   pure x := [x]
@@ -71,7 +74,6 @@ instance instDecidableDisjoint [DecidableEq α] {xs ys : List α} : Decidable (x
       isFalse (by
         simp [List.Disjoint] at h ⊢
         exact h)
-
 
 theorem all_some_implies_mapM_some {α β} {f : α → Option β} {xs : List α}
   (h : ∀ x ∈ xs, ∃ y, f x = some y) :
