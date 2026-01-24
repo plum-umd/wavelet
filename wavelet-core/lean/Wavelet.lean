@@ -1,3 +1,4 @@
+import Wavelet.Backend
 import Wavelet.Compile
 import Wavelet.Data
 import Wavelet.Dataflow

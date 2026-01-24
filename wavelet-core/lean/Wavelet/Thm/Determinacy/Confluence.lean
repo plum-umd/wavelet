@@ -314,7 +314,7 @@ private theorem invert_compat_spec_guard
     simp [← hinputs₁'] at hinputs₂'
     replace ⟨heq_inputs, hinputs₂'⟩ := hinputs₂'
     subst heq_inputs
-    simp [← houtputs₁', ← houtputs₂', Vector.push_eq_push]
+    simp [← houtputs₁', ← houtputs₂']
     simp [Label.Deterministic] at hcompat
     have heq_outputs : outputs₁ = outputs₂ := by
       apply hcompat
@@ -362,9 +362,13 @@ private theorem invert_compat_triv_guard
     subst heq_outputs
     simp at houtputs₁' houtputs₂'
     simp [← houtputs₁', ← houtputs₂']
-    apply Vector.forall₂_to_forall₂_push_toList
-    · simp [EqModGhost]
-    · simp [EqModGhost]
+    if h : ghost₂ then
+      simp [h, WithSpec.opOutputs]
+      apply Vector.forall₂_to_forall₂_push_toList
+      · simp [EqModGhost]
+      · simp [EqModGhost]
+    else
+      simp [h, WithSpec.opOutputs, EqModGhost]
   case yield.yield.triv_join.triv_join.join =>
     intros
     rename_i houtputs₁ _ _ _ _ houtputs₂

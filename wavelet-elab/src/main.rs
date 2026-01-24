@@ -278,7 +278,8 @@ fn process_single_file(
     if emit_ghost {
         println!("{}", ghost);
     }
-    let rendered = export_program_json(&ghost).map_err(|source| CliError::Export { source })?;
+    let rendered =
+        export_program_json(vec![], &ghost).map_err(|source| CliError::Export { source })?;
 
     if let Some(out_path) = output {
         fs::write(&out_path, rendered).map_err(|source| CliError::WriteFile {

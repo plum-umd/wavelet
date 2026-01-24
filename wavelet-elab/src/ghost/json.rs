@@ -36,28 +36,40 @@ impl From<serde_json::Error> for ExportError {
 /// High-level entry point: serialize the ghost program into a JSON string
 /// that is intended to match the Lean `RawProg` schema.
 pub fn export_program_json<V: Variable + Serialize + From<GhostVar>>(
+    arrays: Vec<RawArrayDecl>,
     prog: &GhostProgram<V>,
 ) -> Result<String, ExportError> {
-    let raw = RawProg::<V>::try_from(prog)?;
+    let raw = RawProg::try_from(arrays, prog)?;
     let raw = affine::enforce_affine(raw);
     serde_json::to_string_pretty(&raw).map_err(ExportError::from)
+}
+
+/// A global array declaration.
+#[derive(Debug, Serialize)]
+
+pub struct RawArrayDecl {
+    pub loc: String,
+    pub elem: Ty,
+    pub size: usize,
 }
 
 /// Structured representation mirroring the Lean `RawProg` definition.
 #[derive(Debug, Serialize)]
 pub struct RawProg<V> {
+    pub arrays: Vec<RawArrayDecl>,
     pub fns: Vec<RawFn<V>>,
 }
 
-impl<V: Variable + From<GhostVar>> TryFrom<&GhostProgram<V>> for RawProg<V> {
-    type Error = ExportError;
-
-    fn try_from(prog: &GhostProgram<V>) -> Result<Self, Self::Error> {
+impl<V: Variable + From<GhostVar>> RawProg<V> {
+    pub fn try_from(
+        arrays: Vec<RawArrayDecl>,
+        prog: &GhostProgram<V>,
+    ) -> Result<Self, ExportError> {
         let mut fns = Vec::with_capacity(prog.defs.len());
         for def in &prog.defs {
             fns.push(RawFn::try_from(def)?);
         }
-        Ok(RawProg { fns })
+        Ok(RawProg { arrays, fns })
     }
 }
 
@@ -142,18 +154,13 @@ fn wrap_stmt<V: Variable + From<GhostVar>>(
     cont: RawExpr<V>,
 ) -> Result<RawExpr<V>, ExportError> {
     match stmt {
-        GhostStmt::Pure {
-            inputs,
-            output,
-            op,
-            ghost_out,
-        } => {
+        GhostStmt::Pure { inputs, output, op } => {
             let op = WithCall::Op(WithSpec::Spec {
                 ghost: false,
                 op: map_sync_op(op)?,
             });
             let args: Vec<V> = inputs.clone();
-            let outputs = vec![output.clone(), ghost_out.clone().into()];
+            let outputs = vec![output.clone()];
             Ok(RawExpr::Op {
                 op,
                 args,
@@ -165,7 +172,6 @@ fn wrap_stmt<V: Variable + From<GhostVar>>(
             value,
             output,
             ghost_in,
-            ghost_out,
         } => {
             let val = match value {
                 Val::Int(i) => ConstValue::Int(32, *i as u64),
@@ -183,7 +189,7 @@ fn wrap_stmt<V: Variable + From<GhostVar>>(
                 op: SyncOp::Const { value: val },
             });
             let args = vec![ghost_in.clone().into()];
-            let outputs = vec![output.clone(), ghost_out.clone().into()];
+            let outputs = vec![output.clone()];
             Ok(RawExpr::Op {
                 op,
                 args,
@@ -227,7 +233,7 @@ fn wrap_stmt<V: Variable + From<GhostVar>>(
                 },
             });
             let args = vec![index.clone(), value.clone(), ghost_in.clone().into()];
-            let outputs = vec![ghost_out.0.clone().into(), ghost_out.0.clone().into()];
+            let outputs = vec![ghost_out.0.clone().into(), ghost_out.1.clone().into()];
             Ok(RawExpr::Op {
                 op,
                 args,
@@ -482,7 +488,7 @@ impl Serialize for SyncOp {
             }
             SyncOp::Copy { n } => {
                 let mut map = serializer.serialize_map(Some(1))?;
-                map.serialize_entry("copy", &(n - 2))?;
+                map.serialize_entry("copy", &(n - 1))?;
                 map.end()
             }
             SyncOp::Load { loc } => {
@@ -522,7 +528,7 @@ fn map_sync_op<V: Variable>(op: &Op<V>) -> Result<SyncOp, ExportError> {
         Op::UnsignedLessThan => Ok(SyncOp::Ult),
         Op::UnsignedLessEqual => Ok(SyncOp::Ule),
         _ => Err(ExportError::Unsupported(format!(
-            "pure operation {} not yet supported for serialization",
+            "pure operation {:?} not yet supported for serialization",
             op
         ))),
     }

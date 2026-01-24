@@ -1,5 +1,5 @@
 use crate::{
-    ir::{FnName, Ty, TypedVar, UntypedVar},
+    ir::{FnName, Ty, TypedVar, UntypedVar, Variable},
     Val,
 };
 
@@ -35,13 +35,12 @@ pub enum GhostStmt<V> {
         output: V,
         op: crate::ir::Op<V>,
         // ghost_in: GhostVar, // pureops now need no token to fire
-        ghost_out: GhostVar,
+        // ghost_out: GhostVar,
     },
     Const {
         value: Val,
         output: V,
         ghost_in: GhostVar,
-        ghost_out: GhostVar,
     },
     Load {
         output: V,
@@ -119,7 +118,7 @@ pub struct GhostProgram<V> {
 
 const GHOST_DISPLAY_INDENT: usize = 2;
 
-impl<V: std::fmt::Display> std::fmt::Display for GhostProgram<V> {
+impl<V: Variable> std::fmt::Display for GhostProgram<V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, def) in self.defs.iter().enumerate() {
             if i > 0 {
@@ -131,7 +130,7 @@ impl<V: std::fmt::Display> std::fmt::Display for GhostProgram<V> {
     }
 }
 
-impl<V: std::fmt::Display> std::fmt::Display for GhostFnDef<V> {
+impl<V: Variable> std::fmt::Display for GhostFnDef<V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "fn {}(", self.name.0)?;
         for (i, param) in self.params.iter().enumerate() {
@@ -155,7 +154,7 @@ impl<V: std::fmt::Display> std::fmt::Display for GhostFnDef<V> {
     }
 }
 
-impl<V: std::fmt::Display> std::fmt::Display for GhostExpr<V> {
+impl<V: Variable> std::fmt::Display for GhostExpr<V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for stmt in &self.stmts {
             writeln!(f, "{}", stmt)?;
@@ -164,7 +163,7 @@ impl<V: std::fmt::Display> std::fmt::Display for GhostExpr<V> {
     }
 }
 
-impl<V: std::fmt::Display> std::fmt::Display for GhostStmt<V> {
+impl<V: Variable> std::fmt::Display for GhostStmt<V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             GhostStmt::JoinSplit {
@@ -181,33 +180,23 @@ impl<V: std::fmt::Display> std::fmt::Display for GhostStmt<V> {
                 }
                 Ok(())
             }
-            GhostStmt::Pure {
-                inputs,
-                output,
-                op,
-                ghost_out,
-            } => {
+            GhostStmt::Pure { inputs, output, op } => {
                 // output should look like: out = op(inp1, inp2, ...) [-> ghost_out]
-                write!(f, "{} = {}(", output, op)?;
+                write!(f, "{:?} = {}(", output, op)?;
                 for (i, inp) in inputs.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", inp)?;
+                    write!(f, "{:?}", inp)?;
                 }
-                write!(f, ") [-> {}]", ghost_out.0)
+                write!(f, ")")
             }
             GhostStmt::Const {
                 value,
                 output,
                 ghost_in,
-                ghost_out,
             } => {
-                write!(
-                    f,
-                    "{} = const({}) [{} -> {}]",
-                    output, value, ghost_in.0, ghost_out.0
-                )
+                write!(f, "{:?} = const({}) [{}]", output, value, ghost_in.0,)
             }
             GhostStmt::Load {
                 output,
@@ -218,7 +207,7 @@ impl<V: std::fmt::Display> std::fmt::Display for GhostStmt<V> {
             } => {
                 write!(
                     f,
-                    "{} = load {}[{}] [{} -> {}]",
+                    "{:?} = load {:?}[{:?}] [{} -> {}]",
                     output, array, index, ghost_in.0, ghost_out.0
                 )
             }
@@ -231,7 +220,7 @@ impl<V: std::fmt::Display> std::fmt::Display for GhostStmt<V> {
             } => {
                 write!(
                     f,
-                    "store {}[{}] = {} [{} -> {}, {}]",
+                    "store {:?}[{:?}] = {:?} [{} -> {}, {}]",
                     array, index, value, ghost_in.0, ghost_out.0 .0, ghost_out.1 .0
                 )
             }
@@ -247,14 +236,14 @@ impl<V: std::fmt::Display> std::fmt::Display for GhostStmt<V> {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", out)?;
+                    write!(f, "{:?}", out)?;
                 }
                 write!(f, " = {}(", func.0)?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", arg)?;
+                    write!(f, "{:?}", arg)?;
                 }
                 write!(
                     f,
@@ -266,11 +255,11 @@ impl<V: std::fmt::Display> std::fmt::Display for GhostStmt<V> {
     }
 }
 
-impl<V: std::fmt::Display> std::fmt::Display for GhostTail<V> {
+impl<V: Variable> std::fmt::Display for GhostTail<V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             GhostTail::Return { value, perm } => {
-                write!(f, "return {} [{}]", value, perm.0)
+                write!(f, "return {:?} [{}]", value, perm.0)
             }
             GhostTail::TailCall {
                 func,
@@ -283,7 +272,7 @@ impl<V: std::fmt::Display> std::fmt::Display for GhostTail<V> {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", arg)?;
+                    write!(f, "{:?}", arg)?;
                 }
                 write!(f, "; {}, {})", ghost_need.0, ghost_left.0)
             }
@@ -292,7 +281,7 @@ impl<V: std::fmt::Display> std::fmt::Display for GhostTail<V> {
                 then_expr,
                 else_expr,
             } => {
-                writeln!(f, "if {} {{", cond)?;
+                writeln!(f, "if {:?} {{", cond)?;
                 for line in format!("{}", then_expr).lines() {
                     writeln!(f, "{:indent$}{}", "", line, indent = GHOST_DISPLAY_INDENT)?;
                 }

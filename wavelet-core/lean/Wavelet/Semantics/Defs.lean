@@ -35,8 +35,6 @@ instance [Arity Op₁] [Arity Op₂] [NeZeroArity Op₁] [NeZeroArity Op₂] :
 
 /-- Some required constants in compilation and semantics. -/
 class InterpConsts (V : Type v) where
-  -- Placeholder value
-  junkVal : V
   -- Booleans
   toBool : V → Option Bool
   fromBool : Bool → V
@@ -45,6 +43,13 @@ class InterpConsts (V : Type v) where
   -- Clonable values
   isClonable : V → Bool
   bool_clonable : ∀ b, isClonable (fromBool b) = true
+  /-- This special value is used in compilation
+  to denote values that will be immediately discarded
+  (e.g., a placeholder for a return value when actually
+  a tail call is made). Ideally, we should modify the
+  dataflow semantics to generate a non-deterministic value,
+  but this encoding makes proofs simpler. -/
+  junkVal : V
 
 inductive Label (Op : Type u) V m n [Arity Op] where
   | yield (o : Op) (inputs : Vector V (Arity.ι o)) (outputs : Vector V (Arity.ω o))

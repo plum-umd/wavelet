@@ -18,6 +18,7 @@ open Semantics
 inductive AtomicProc (Op : Type u) χ V [Arity Op] where
   | op (op : Op) (inputs : Vector χ (Arity.ι op)) (outputs : Vector χ (Arity.ω op))
   | async (aop : AsyncOp V) (inputs : List χ) (outputs : List χ)
+  deriving Repr
 
 def AtomicProc.inputs [Arity Op] : AtomicProc Op χ V → List χ
   | .op _ inputs _ => inputs.toList

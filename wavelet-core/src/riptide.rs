@@ -5,12 +5,14 @@ use lean_sys::{lean_obj_arg, lean_obj_res};
 use libc::size_t;
 use thiserror::Error;
 
-use crate::ffi::{ensure_init_lean, LeanObject, LeanObjectError};
+use crate::ffi::{ensure_init_lean, LeanArray, LeanObject, LeanObjectError};
 
 // Raw FFI bindings to exported functions declared in `lean/Wavelet/FFI.lean`.
 #[link(name = "Wavelet", kind = "static")]
 unsafe extern "C" {
     fn wavelet_riptide_prog_from_json(arg: lean_obj_arg) -> lean_obj_res;
+
+    fn wavelet_riptide_prog_validate(arg: lean_obj_arg) -> lean_obj_res;
 
     fn wavelet_riptide_proc_from_json(arg: lean_obj_arg) -> lean_obj_res;
 
@@ -18,11 +20,18 @@ unsafe extern "C" {
 
     fn wavelet_riptide_proc_to_dot(arg: lean_obj_arg) -> lean_obj_res;
 
+    fn wavelet_riptide_proc_to_handshake(arg: lean_obj_arg) -> lean_obj_res;
+
+    fn wavelet_riptide_proc_validate(arg: lean_obj_arg) -> lean_obj_res;
+
     fn wavelet_riptide_prog_lower_control_flow(arg: lean_obj_arg) -> lean_obj_res;
 
     fn wavelet_riptide_proc_sink_last_n_outputs(n: size_t, arg: lean_obj_arg) -> lean_obj_res;
 
-    fn wavelet_riptide_proc_optimize(arg: lean_obj_arg) -> lean_obj_res;
+    fn wavelet_riptide_proc_optimize(
+        arg: lean_obj_arg,
+        disabled_rules: lean_obj_arg,
+    ) -> lean_obj_res;
 
     fn wavelet_riptide_proc_num_atoms(arg: lean_obj_arg) -> size_t;
 
@@ -39,10 +48,16 @@ pub enum RipTideError {
     LeanObjectError(#[from] LeanObjectError),
     #[error("program parsing error: {0}")]
     ProgParseError(String),
+    #[error("program validation error: {0}")]
+    ProgValidationError(String),
     #[error("dataflow graph parsing error: {0}")]
     ProcParseError(String),
+    #[error("dataflow validation error: {0}")]
+    ProcValidationError(String),
     #[error("dot format generation error: {0}")]
     DotFormatError(String),
+    #[error("handshake generation error: {0}")]
+    HandshakeError(String),
     #[error("control-flow lowering failed: {0}")]
     ControlFlowLoweringError(String),
 }
@@ -64,6 +79,18 @@ impl Prog {
         match res.as_except()? {
             Ok(prog) => Ok(Prog(prog)),
             Err(err) => Err(RipTideError::ProgParseError(err.as_str()?.to_string())),
+        }
+    }
+
+    /// Validates some static properties.
+    pub fn validate(&self) -> Result<(), RipTideError> {
+        ensure_init_lean();
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_prog_validate(self.0.clone().to_lean_obj_arg())
+        });
+        match res.as_except()? {
+            Ok(_) => Ok(()),
+            Err(err) => Err(RipTideError::ProgValidationError(err.as_str()?.to_string())),
         }
     }
 
@@ -143,6 +170,30 @@ impl Proc {
         }
     }
 
+    /// Compiles the `Proc` to CIRCT Handshake dialect.
+    pub fn to_handshake(&self) -> Result<String, RipTideError> {
+        ensure_init_lean();
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_proc_to_handshake(self.0.clone().to_lean_obj_arg())
+        });
+        match res.as_except()? {
+            Ok(hs) => Ok(hs.as_str()?.to_string()),
+            Err(err) => Err(RipTideError::HandshakeError(err.as_str()?.to_string())),
+        }
+    }
+
+    /// Validates some static properties.
+    pub fn validate(&self) -> Result<(), RipTideError> {
+        ensure_init_lean();
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_proc_validate(self.0.clone().to_lean_obj_arg())
+        });
+        match res.as_except()? {
+            Ok(_) => Ok(()),
+            Err(err) => Err(RipTideError::ProcValidationError(err.as_str()?.to_string())),
+        }
+    }
+
     /// Sinks the last `n` outputs.
     pub fn sink_last_n_outputs(&self, n: usize) -> Proc {
         ensure_init_lean();
@@ -153,10 +204,23 @@ impl Proc {
     }
 
     /// Performs various legalizations and optimizations on the dataflow process.
-    pub fn optimize(&self) -> Proc {
+    pub fn optimize<S>(&self, disabled_rules: impl AsRef<[S]>) -> Proc
+    where
+        S: AsRef<str>,
+    {
         ensure_init_lean();
+        let arr = LeanArray::from_vec(
+            disabled_rules
+                .as_ref()
+                .iter()
+                .map(|s| LeanObject::from_str(s.as_ref()))
+                .collect(),
+        );
         let res = LeanObject::from_lean_obj_res(unsafe {
-            wavelet_riptide_proc_optimize(self.0.clone().to_lean_obj_arg())
+            wavelet_riptide_proc_optimize(
+                self.0.clone().to_lean_obj_arg(),
+                arr.to_obj().to_lean_obj_arg(),
+            )
         });
         Proc(res)
     }

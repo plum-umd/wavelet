@@ -179,12 +179,10 @@ impl FunctionLowerer {
         ctx: &mut PermCtx,
     ) {
         let (ghost_in, _) = self.split_sync(builder, ctx);
-        let ghost_out = self.fresh();
         builder.push(GhostStmt::Const {
             value: val.clone(),
             output: var.clone(),
             ghost_in,
-            ghost_out: ghost_out.clone(),
         });
 
         // dummy zero token can be dropped
@@ -234,14 +232,11 @@ impl FunctionLowerer {
                 ctx.restore.push(ghost_out_real);
             }
             _ => {
-                // NOTE: pureop needs no token and output a zero token
-                // let (ghost_in, _) = self.split_sync(builder, ctx);
-                let ghost_out = self.fresh();
+                // NOTE: pureop needs no token input or output
                 builder.push(GhostStmt::Pure {
                     inputs: pure_inputs(vars),
                     output: pure_output(vars),
                     op: op.clone(),
-                    ghost_out: ghost_out.clone(),
                 });
                 // dummy zero token can be dropped
                 // ctx.garb.push(ghost_out);
@@ -522,7 +517,7 @@ mod tests {
                 .expect("sum.rs should parse"),
         );
 
-        let json = export_program_json(&ghost).expect("should serialize to JSON");
+        let json = export_program_json(vec![], &ghost).expect("should serialize to JSON");
         println!("Exported JSON:\n{}", json);
 
         // Verify it's valid JSON
@@ -571,7 +566,7 @@ mod tests {
                 .expect("zero_out.rs should parse"),
         );
 
-        let json = export_program_json(&ghost).expect("should serialize to JSON");
+        let json = export_program_json(vec![], &ghost).expect("should serialize to JSON");
         println!(
             "Exported zero_out JSON (first 500 chars):\n{}",
             &json.chars().take(500).collect::<String>()

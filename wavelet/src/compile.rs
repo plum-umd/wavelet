@@ -1,14 +1,15 @@
 //! Implementation of the `compile` subcommand.
 
-use std::io::Write;
 use std::path::PathBuf;
+use std::{collections::HashMap, io::Write};
 
 use anyhow::Context;
 use clap::{Parser, ValueEnum};
 use thiserror::Error;
 
 use wavelet_core::riptide;
-use wavelet_elab as elab;
+use wavelet_elab::ir::ArrayLen;
+use wavelet_elab::{self as elab, ghost::json::RawArrayDecl, Ty};
 
 /// Target IR to output.
 #[derive(Debug, Parser, ValueEnum, Clone, PartialEq, Eq)]
@@ -21,6 +22,10 @@ enum Target {
     Unopt,
     /// Optimized dataflow process
     Opt,
+    /// CIRCT Handshake dialect
+    Handshake,
+    /// DOT format
+    Dot,
 }
 
 #[derive(Debug, Parser)]
@@ -43,6 +48,11 @@ pub struct CompileArgs {
     /// Target IR to output.
     #[arg(long, default_value = "opt")]
     target: Target,
+
+    /// Instantiate constants to actual values ("K1=V1,K2=V2,...").
+    /// Primarily used for lowering to CIRCT/Handshake.
+    #[arg(long, default_value = "")]
+    consts: String,
 }
 
 #[derive(Debug, Error)]
@@ -51,6 +61,8 @@ pub enum CompileError {
     EmptyProgram,
     #[error(transparent)]
     AnyhowError(#[from] anyhow::Error),
+    #[error("invalid constant bindings: {0}")]
+    InvalidConstBindings(String),
     #[error("parse error: {0}")]
     ElabParseError(#[from] wavelet_elab::ParseError),
     #[error("type error: {0}")]
@@ -59,6 +71,10 @@ pub enum CompileError {
     ElabValidationError(String),
     #[error("elaboration export error: {0}")]
     ElabExportError(#[from] wavelet_elab::ghost::json::ExportError),
+    #[error("failed to evaluate array length `{0:?}`: {1}")]
+    ArrayLenEvalError(ArrayLen, #[source] wavelet_elab::ir::ArrayLenError),
+    #[error("negative array length `{0:?} = {1}`")]
+    NegativeArrayLength(ArrayLen, i64),
 }
 
 impl CompileArgs {
@@ -82,6 +98,26 @@ impl CompileArgs {
         // Load source program
         let src = std::fs::read_to_string(&self.input).context("when reading input file")?;
         let mut prog = elab::parse_program(&src)?;
+
+        // Parse constant bindings
+        let bindings = if self.consts.trim().is_empty() {
+            HashMap::new()
+        } else {
+            self.consts
+                .split(',')
+                .map(|pair| {
+                    pair.split_once('=').and_then(|(k, v)| {
+                        Some((
+                            k.trim().to_string(),
+                            v.trim().to_string().parse::<i64>().ok()?,
+                        ))
+                    })
+                })
+                .collect::<Option<Vec<(String, i64)>>>()
+                .ok_or(CompileError::InvalidConstBindings(self.consts.to_string()))?
+                .into_iter()
+                .collect()
+        };
 
         if prog.defs.len() == 0 {
             return Err(CompileError::EmptyProgram);
@@ -108,14 +144,52 @@ impl CompileArgs {
             return self.output(format!("{}", elab_prog));
         }
 
+        // Collect all global array declarations and compute their concrete sizes.
+        // TODO: this is assuming that all functions refer to the same set of global arrays
+        // without renaming.
+        let mut arrays = Vec::new();
+        if self.target == Target::Handshake {
+            if let Some(main_fn) = typed_prog.defs.last() {
+                for param in &main_fn.params {
+                    match &param.ty {
+                        Ty::RefShrd { elem, len } | Ty::RefUniq { elem, len } => {
+                            let eval_len = len
+                                .eval(&bindings)
+                                .map_err(|e| CompileError::ArrayLenEvalError(len.clone(), e))?;
+
+                            if eval_len < 0 {
+                                return Err(CompileError::NegativeArrayLength(
+                                    len.clone(),
+                                    eval_len,
+                                ));
+                            }
+
+                            arrays.push(RawArrayDecl {
+                                loc: param.name.clone(),
+                                elem: elem.as_ref().clone(),
+                                size: eval_len as usize,
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
         // Transfer to the Lean side through FFI
-        let json = elab::ghost::json::export_program_json(&elab_prog)?;
+        let json = elab::ghost::json::export_program_json(arrays, &elab_prog)?;
         if self.target == Target::ElabJson {
             return self.output(json);
         }
 
         let core_prog = riptide::Prog::from_json(&json)
             .context("when converting elaborated program to lean")?;
+
+        // Validation
+        eprintln!("validating core program...");
+        core_prog
+            .validate()
+            .context("when validating core program")?;
 
         // Lower control-flow to pure dataflow
         eprintln!("lowering control-flow...");
@@ -127,6 +201,11 @@ impl CompileArgs {
             core_proc.num_atoms(),
             core_proc.num_non_trivial_atoms()
         );
+
+        core_proc
+            .validate()
+            .context("when validating dataflow after control-flow lowering")?;
+
         if self.target == Target::Unopt {
             return self.output(core_proc.to_json());
         }
@@ -149,12 +228,41 @@ impl CompileArgs {
 
         // Optimize
         eprintln!("optimizing...");
-        let core_proc = core_proc.optimize();
+        let disabled_rules = if self.target == Target::Handshake {
+            // Handshake backend does not support `inv` operator yet.
+            vec![
+                "carry-fork-steer-to-inv-left",
+                "carry-fork-steer-to-inv-right",
+            ]
+        } else {
+            vec![]
+        };
+        let core_proc = core_proc.optimize(disabled_rules);
         eprintln!(
             "final: {} ({}) ops",
             core_proc.num_atoms(),
             core_proc.num_non_trivial_atoms()
         );
+
+        core_proc
+            .validate()
+            .context("when validating final dataflow")?;
+
+        if self.target == Target::Handshake {
+            return self.output(
+                core_proc
+                    .to_handshake()
+                    .context("when compiling to handshake dialect")?,
+            );
+        }
+
+        if self.target == Target::Dot {
+            return self.output(
+                core_proc
+                    .to_dot()
+                    .context("when generating the graph in DOT format")?,
+            );
+        }
 
         return self.output(core_proc.to_json());
     }
