@@ -6,75 +6,71 @@ namespace Wavelet.Frontend.RipTide
 
 open Frontend Compile Dataflow
 
-/-- Parses the JSON input as `RipTide.EncapProg`. -/
+/-- Parses the JSON input as `RipTide.Prog`. -/
 @[export wavelet_riptide_prog_from_json]
-def FFI.progFromJson (input : String) : Except String RipTide.EncapProg :=
+def FFI.progFromJson (input : String) : Except String RipTide.Prog :=
   Lean.Json.decode input >>= RawProg.toProg
 
--- TODO: Outputs `RipTide.EncapProg` in JSON.
+-- TODO: Outputs `RipTide.Prog` in JSON.
 
 /-- Validates some static properties. -/
 @[export wavelet_riptide_prog_validate]
-def FFI.validateProg (prog : RipTide.EncapProg) : Except String Unit :=
+def FFI.validateProg (prog : RipTide.Prog) : Except String Unit :=
   prog.validate
 
-/-- Parses the JSON input as `RipTide.EncapProc`. -/
+/-- Parses the JSON input as `RipTide.Proc`. -/
 @[export wavelet_riptide_proc_from_json]
-def FFI.procFromJson (input : String) : Except String RipTide.EncapProc := do
+def FFI.procFromJson (input : String) : Except String RipTide.Proc := do
   let rawProc : RipTide.RawProc ← Lean.Json.decode input
   let proc ← rawProc.toProc
   return .fromProc proc
 
-/-- Outputs `RipTide.EncapProc` in JSON. -/
+/-- Outputs `RipTide.Proc` in JSON. -/
 @[export wavelet_riptide_proc_to_json]
-def FFI.procToJson (proc : RipTide.EncapProc) : String :=
+def FFI.procToJson (proc : RipTide.Proc) : String :=
   Lean.Json.encodeCompact (RawProc.fromProc proc.proc)
 
-/-- Outputs `RipTide.EncapProc` in DOT. -/
+/-- Outputs `RipTide.Proc` in DOT. -/
 @[export wavelet_riptide_proc_to_dot]
-def FFI.procToDot (proc : RipTide.EncapProc) : Except String String :=
+def FFI.procToDot (proc : RipTide.Proc) : Except String String :=
   proc.proc.plot.run
 
-/-- Outputs `RipTide.EncapProc` in CIRCT Handshake IR. -/
+/-- Outputs `RipTide.Proc` in CIRCT Handshake IR. -/
 @[export wavelet_riptide_proc_to_handshake]
-def FFI.procToHandshake (proc : RipTide.EncapProc) : Except String String :=
+def FFI.procToHandshake (proc : RipTide.Proc) : Except String String :=
   proc.emitHandshake
 
 /-- Validates some static properties. -/
 @[export wavelet_riptide_proc_validate]
-def FFI.validateProc (proc : RipTide.EncapProc) : Except String Unit :=
+def FFI.validateProc (proc : RipTide.Proc) : Except String Unit :=
   proc.validate
 
 /-- Control-flow lowering. -/
 @[export wavelet_riptide_prog_lower_control_flow]
-def FFI.lowerControlFlow (prog : RipTide.EncapProg) : Except String RipTide.EncapProc :=
+def FFI.lowerControlFlow (prog : RipTide.Prog) : Except String RipTide.Proc :=
   prog.lowerControlFlow
 
 /-- Attaches sinks to the last `n` outputs. -/
 @[export wavelet_riptide_proc_sink_last_n_outputs]
-def FFI.sinkLastNOutputs (n : USize) (proc : RipTide.EncapProc) : RipTide.EncapProc :=
+def FFI.sinkLastNOutputs (n : USize) (proc : RipTide.Proc) : RipTide.Proc :=
   proc.sinkLastNOutputs n.toNat
 
 /-- Applies selected legalizations and optimizations. -/
 @[export wavelet_riptide_proc_optimize]
-def FFI.optimizeProc (proc : RipTide.EncapProc) : RipTide.EncapProc :=
+def FFI.optimizeProc (proc : RipTide.Proc) (disabledRules : Array String) : RipTide.Proc :=
   let (_, _, proc) := proc.rewriteProc
     (naryLowering <|> deadCodeElim <|> RipTide.operatorSel)
-    -- TODO: For debugging only!
-    [
-      "carry-fork-steer-to-inv-left",
-      "carry-fork-steer-to-inv-right",
-    ]
+    disabledRules.toList
   proc
 
 /-- Returns the number of atomic processes. -/
 @[export wavelet_riptide_proc_num_atoms]
-def FFI.procNumAtoms (proc : RipTide.EncapProc) : USize :=
+def FFI.procNumAtoms (proc : RipTide.Proc) : USize :=
   USize.ofNat proc.proc.atoms.length
 
 /-- Returns the number of "non-trivial" atoms. -/
 @[export wavelet_riptide_proc_num_non_trivial_atoms]
-def FFI.procNumNonTrivialAtoms (proc : RipTide.EncapProc) : USize :=
+def FFI.procNumNonTrivialAtoms (proc : RipTide.Proc) : USize :=
   USize.ofNat <|
     (proc.proc.atoms
     |>.filter (λ
@@ -89,12 +85,12 @@ def FFI.procNumNonTrivialAtoms (proc : RipTide.EncapProc) : USize :=
 
 /-- Returns the number of inputs. -/
 @[export wavelet_riptide_proc_num_inputs]
-def FFI.procNumInputs (proc : RipTide.EncapProc) : USize :=
+def FFI.procNumInputs (proc : RipTide.Proc) : USize :=
   USize.ofNat proc.numIns
 
 /-- Returns the number of outputs. -/
 @[export wavelet_riptide_proc_num_outputs]
-def FFI.procNumOutputs (proc : RipTide.EncapProc) : USize :=
+def FFI.procNumOutputs (proc : RipTide.Proc) : USize :=
   USize.ofNat proc.numOuts
 
 end Wavelet.Frontend.RipTide

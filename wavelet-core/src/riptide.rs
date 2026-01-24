@@ -5,7 +5,7 @@ use lean_sys::{lean_obj_arg, lean_obj_res};
 use libc::size_t;
 use thiserror::Error;
 
-use crate::ffi::{ensure_init_lean, LeanObject, LeanObjectError};
+use crate::ffi::{ensure_init_lean, LeanArray, LeanObject, LeanObjectError};
 
 // Raw FFI bindings to exported functions declared in `lean/Wavelet/FFI.lean`.
 #[link(name = "Wavelet", kind = "static")]
@@ -28,7 +28,10 @@ unsafe extern "C" {
 
     fn wavelet_riptide_proc_sink_last_n_outputs(n: size_t, arg: lean_obj_arg) -> lean_obj_res;
 
-    fn wavelet_riptide_proc_optimize(arg: lean_obj_arg) -> lean_obj_res;
+    fn wavelet_riptide_proc_optimize(
+        arg: lean_obj_arg,
+        disabled_rules: lean_obj_arg,
+    ) -> lean_obj_res;
 
     fn wavelet_riptide_proc_num_atoms(arg: lean_obj_arg) -> size_t;
 
@@ -201,10 +204,23 @@ impl Proc {
     }
 
     /// Performs various legalizations and optimizations on the dataflow process.
-    pub fn optimize(&self) -> Proc {
+    pub fn optimize<S>(&self, disabled_rules: impl AsRef<[S]>) -> Proc
+    where
+        S: AsRef<str>,
+    {
         ensure_init_lean();
+        let arr = LeanArray::from_vec(
+            disabled_rules
+                .as_ref()
+                .iter()
+                .map(|s| LeanObject::from_str(s.as_ref()))
+                .collect(),
+        );
         let res = LeanObject::from_lean_obj_res(unsafe {
-            wavelet_riptide_proc_optimize(self.0.clone().to_lean_obj_arg())
+            wavelet_riptide_proc_optimize(
+                self.0.clone().to_lean_obj_arg(),
+                arr.to_obj().to_lean_obj_arg(),
+            )
         });
         Proc(res)
     }

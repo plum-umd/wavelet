@@ -18,6 +18,12 @@ namespace Wavelet.Frontend.RipTide
 
 open Semantics Determinacy Compile
 
+/-- A memory location name. -/
+abbrev Loc := String
+
+/-- A function name. -/
+abbrev FnName := String
+
 inductive Value where
   | int (w : Nat) (val : BitVec w)
   | junk
@@ -46,7 +52,7 @@ instance : ToString Value where
     | .junk => "junk"
 
 /-- Synchronous operators in RipTide, parametrized by a type of location/array symbols. -/
-inductive SyncOp (Loc : Type u) : Type u where
+inductive SyncOp where
   | add | sub | mul | sdiv | udiv
   | shl | ashr | lshr
   | eq | neq | slt | sle | ult | ule
@@ -57,7 +63,7 @@ inductive SyncOp (Loc : Type u) : Type u where
   | copy (_ : Nat)
   deriving Repr, Lean.ToJson, Lean.FromJson
 
-instance : Arity (SyncOp Loc) where
+instance : Arity SyncOp where
   ι | .add => 2 | .sub => 2 | .mul => 2
     | .sdiv => 2 | .udiv => 2
     | .shl => 2 | .ashr => 2 | .lshr => 2
@@ -81,7 +87,7 @@ instance : Arity (SyncOp Loc) where
     -- NOTE: `copy n` outputs `n + 1` values
     | .copy n => n + 1
 
-instance : NeZeroArity (SyncOp Loc) where
+instance : NeZeroArity SyncOp where
   neZeroᵢ op := by cases op <;> infer_instance
   neZeroₒ op := by cases op <;> infer_instance
 
@@ -98,27 +104,26 @@ instance : InterpConsts Value where
   isClonable _ := true
   bool_clonable := by simp
 
-structure State (Loc : Type u) [DecidableEq Loc] [Hashable Loc] : Type u where
+section Semantics
+
+structure State where
   -- memory : Loc → Value → Option Value
   memory : Std.HashMap Loc (Std.HashMap Value Value)
 
-def State.init [DecidableEq Loc] [Hashable Loc] : State Loc
+def State.init : State
   := { memory := .emptyWithCapacity }
 
-def State.load [DecidableEq Loc] [Hashable Loc]
-  (s : State Loc) (loc : Loc) (addr : Value) : Option Value :=
+def State.load (s : State) (loc : Loc) (addr : Value) : Option Value :=
   s.memory.get? loc >>= (·.get? addr)
 
-def State.store [DecidableEq Loc] [Hashable Loc]
-  (s : State Loc) (loc : Loc) (addr : Value) (val : Value) : State Loc :=
+def State.store (s : State) (loc : Loc) (addr : Value) (val : Value) : State :=
   { s with
     memory := s.memory.insert loc
       ((s.memory.getD loc .emptyWithCapacity).insert addr val) }
 
 private def applyBitVecBinOp
-  [DecidableEq Loc] [Hashable Loc]
   (f : ∀ {w : Nat}, BitVec w → BitVec w → BitVec w) :
-    Value → Value → StateT (State Loc) Option (Vector Value 1)
+    Value → Value → StateT State Option (Vector Value 1)
   | .int w₁ v₁, .int w₂ v₂ =>
     if h : w₁ = w₂ then
       let v := f v₁ (v₂.cast h.symm)
@@ -128,9 +133,8 @@ private def applyBitVecBinOp
   | _, _ => failure
 
 private def applyBitVecBinPred
-  [DecidableEq Loc] [Hashable Loc]
   (f : ∀ {w : Nat}, BitVec w → BitVec w → Bool) :
-    Value → Value → StateT (State Loc) Option (Vector Value 1)
+    Value → Value → StateT State Option (Vector Value 1)
   | .int w₁ v₁, .int w₂ v₂ =>
     if h : w₁ = w₂ then
       let b := f v₁ (v₂.cast h.symm)
@@ -139,8 +143,7 @@ private def applyBitVecBinPred
       failure
   | _, _ => failure
 
-instance instOpInterpM [DecidableEq Loc] [Hashable Loc] :
-  OpInterpM (SyncOp Loc) Value (StateT (State Loc) Option) where
+instance instOpInterpM : OpInterpM SyncOp Value (StateT State Option) where
   interp
     | .add, (inputs : Vector Value 2) => applyBitVecBinOp BitVec.add inputs[0] inputs[1]
     | .mul, (inputs : Vector Value 2) => applyBitVecBinOp BitVec.mul inputs[0] inputs[1]
@@ -166,27 +169,27 @@ instance instOpInterpM [DecidableEq Loc] [Hashable Loc] :
     | _, _ => failure
 
 /-- Converts the monadic interpretation to a relation. -/
-inductive SyncOp.Step [DecidableEq Loc] [Hashable Loc] :
-  Lts (State Loc) (RespLabel (SyncOp Loc) Value) where
+inductive SyncOp.Step : Lts State (RespLabel SyncOp Value) where
   | step :
     (instOpInterpM.interp op inputVals).run s = some (outputVals, s') →
     Step s (.respond op inputVals outputVals) s'
 
-def opInterp [DecidableEq Loc] [Hashable Loc] :
-  OpInterp (SyncOp Loc) Value := {
-    S := State Loc,
+def opInterp : OpInterp SyncOp Value := {
+    S := State,
     init := State.init,
     lts := SyncOp.Step,
   }
 
 /-- TODO: Actually define the pre/post conditions. -/
-def opSpec : OpSpec (SyncOp Loc) Value PCM.Triv :=
+def opSpec : OpSpec SyncOp Value PCM.Triv :=
   {
     pre | _, _ => PCM.zero,
     post | _, _, _ => PCM.zero,
   }
 
-instance [Lean.FromJson Loc] : Lean.FromJson (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) where
+end Semantics
+
+instance : Lean.FromJson (WithSpec SyncOp RipTide.opSpec) where
   fromJson? json :=
     (do
       let obj ← json.getObjVal? "op_ghost"
@@ -206,7 +209,7 @@ instance [Lean.FromJson Loc] : Lean.FromJson (WithSpec (RipTide.SyncOp Loc) RipT
         return .join k l (λ _ => PCM.zero)) <|>
     (.error s!"failed to parse RipTide operator {json}")
 
-instance [Lean.ToJson Loc] : Lean.ToJson (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) where
+instance : Lean.ToJson (WithSpec RipTide.SyncOp RipTide.opSpec) where
   toJson
     | WithSpec.op true op =>
       json% { "op_ghost": $(op) }
@@ -215,7 +218,7 @@ instance [Lean.ToJson Loc] : Lean.ToJson (WithSpec (RipTide.SyncOp Loc) RipTide.
     | WithSpec.join k l _ =>
       json% { "join": { "toks": $(k), "deps": $(l) } }
 
-instance [DecidableEq Loc] [Hashable Loc] [Lean.FromJson Loc] : Lean.FromJson (State Loc) where
+instance : Lean.FromJson State where
   fromJson? json := do
     (← json.getArr?).foldlM (λ state entry => do
       let loc ← entry.getObjValAs? Loc "loc"
@@ -223,7 +226,7 @@ instance [DecidableEq Loc] [Hashable Loc] [Lean.FromJson Loc] : Lean.FromJson (S
       return vals.foldl (λ state (addr, val) => state.store loc addr val) state)
       ⟨.emptyWithCapacity⟩
 
-instance [DecidableEq Loc] [Hashable Loc] [Lean.ToJson Loc] : Lean.ToJson (State Loc) where
+instance : Lean.ToJson State where
   toJson s :=
     Lean.ToJson.toJson <| s.memory.toArray.map (λ (loc, vals) =>
       let values := vals.toArray.map (λ item : Value × Value =>
@@ -234,41 +237,40 @@ instance [DecidableEq Loc] [Hashable Loc] [Lean.ToJson Loc] : Lean.ToJson (State
       })
 
 /-- Test inputs. -/
-structure Testbench Loc [DecidableEq Loc] [Hashable Loc] where
+structure Testbench where
   inputs : List Value
-  state : State Loc
+  state : State
   deriving Lean.FromJson, Lean.ToJson
 
 /-- Run the test vector on the given process until termination. -/
 partial def Testbench.run
-  [DecidableEq χ] [Repr χ] [DecidableEq Loc] [Hashable Loc] [Repr Loc]
-  [Lean.ToJson Loc] [Lean.ToJson χ]
-  (tv : Testbench Loc)
-  (proc : Dataflow.Proc (SyncOp Loc) χ Value m n) :
+  [DecidableEq χ] [Repr χ] [Lean.ToJson χ]
+  (tv : Testbench)
+  (proc : Dataflow.Proc SyncOp χ Value m n) :
     Except String (
-      List (Nat × Label (SyncOp Loc) Value m n) × -- Execution trace
+      List (Nat × Label SyncOp Value m n) × -- Execution trace
       List Value × -- Output values
-      State Loc -- Final state
+      State -- Final state
     ) := do
   let c := Dataflow.Config.init proc
   let st := tv.state
   let inputs ← (tv.inputs.toVectorDyn m : Option _).toExcept
     s!"test vector has incorrect number of inputs: expected {m}, got {tv.inputs.length}"
   let c := c.pushInputs inputs
-  let inst₁ : OpInterpM (SyncOp Loc) Value (StateT (State Loc) Option) := instOpInterpM
-  let inst₂ : Monad (StateT (State Loc) Option) := by infer_instance
-  let rec loop (tr : List (Nat × Label (SyncOp Loc) Value m n)) c st : Except String
+  let inst₁ : OpInterpM SyncOp Value (StateT State Option) := instOpInterpM
+  let inst₂ : Monad (StateT State Option) := by infer_instance
+  let rec loop (tr : List (Nat × Label SyncOp Value m n)) c st : Except String
     (
-      List (Nat × Label (SyncOp Loc) Value m n) ×
-      Dataflow.Config (SyncOp Loc) χ Value m n ×
-      State Loc
+      List (Nat × Label SyncOp Value m n) ×
+      Dataflow.Config SyncOp χ Value m n ×
+      State
     ) := do
     let nextSteps := @Dataflow.Config.step _ χ _ _ _ _ inst₁ inst₂ _ _ _ c
     match nextSteps with
     | [] => pure (tr, c, st)
     | (idx, m) :: _ =>
       let atom ← (c.proc.atoms[idx]?).toExcept s!"invalid operator index {idx}"
-      let rawAtom : RawAtomicProc (SyncOp Loc) χ Value := ↑atom
+      let rawAtom : RawAtomicProc SyncOp χ Value := ↑atom
       let ((lbl, c'), st') ← (m.run st).toExcept
         s!"execution encountered a runtime error at operator index {idx} : {Lean.ToJson.toJson rawAtom}"
       -- dbg_trace s!"### step {tr.length + 1} ###\n  operator index {idx}\n  atom: {Lean.ToJson.toJson rawAtom}\n  label: {repr lbl}"
@@ -281,7 +283,7 @@ partial def Testbench.run
 
   -- Checks if all channels are empty
   for atom in c.proc.atoms do
-    let rawAtom : RawAtomicProc (SyncOp Loc) χ Value := ↑atom
+    let rawAtom : RawAtomicProc SyncOp χ Value := ↑atom
     for name in atom.inputs do
       let buf := c.chans name
       if ¬ buf.isEmpty then
@@ -297,7 +299,7 @@ section Examples
 
 def prog₁ :
     RawProg
-      (WithCall (WithSpec (RipTide.SyncOp String) RipTide.opSpec) String)
+      (WithCall (WithSpec RipTide.SyncOp RipTide.opSpec) String)
       String
   := ⟨[
     {
@@ -324,7 +326,7 @@ def prog₁ :
 
 end Examples
 
-instance [ToString Loc] : Dataflow.DotName (SyncOp Loc) where
+instance [ToString Loc] : Dataflow.DotName SyncOp where
   dotName
     | .add => "\"+\""
     | .sub => "\"-\""
@@ -352,7 +354,7 @@ instance : Dataflow.DotName Value where
   dotName v := s!"\"{v}\""
 
 /-- Custom rewrites for RipTide. -/
-def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite (RipTide.SyncOp Loc) χ Value :=
+def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite SyncOp χ Value :=
   .choose λ
   -- Lower `copy` to `fork`
   | .op (.copy n) inputs outputs =>
@@ -447,9 +449,6 @@ section Passes
 
 open Compile Determinacy Seq Dataflow Semantics
 
-private abbrev Loc := String
-private abbrev FnName := String
-
 inductive PrimType where
   | int (_ : Nat)
   | unknown
@@ -464,21 +463,21 @@ structure VarName (α : Type u) where
   deriving BEq, DecidableEq, Hashable, Repr, Lean.ToJson, Lean.FromJson
 
 -- Raw program and process formats used for encoding/decoding
-abbrev RawProg := Frontend.RawProg (WithCall (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) FnName) (VarName String)
-abbrev RawProc := Frontend.RawProc (RipTide.SyncOp Loc) (VarName Nat) RipTide.Value
+abbrev RawProg := Frontend.RawProg (WithCall (WithSpec SyncOp RipTide.opSpec) FnName) (VarName String)
+abbrev RawProc := Frontend.RawProc SyncOp (VarName Nat) RipTide.Value
 
 -- Actual program and process formats used for compilation
-abbrev EncapProg := Frontend.EncapProg (WithSpec (RipTide.SyncOp Loc) RipTide.opSpec) (VarName String) RipTide.Value
-abbrev EncapProc := Frontend.EncapProc (RipTide.SyncOp Loc) (VarName Nat) RipTide.Value
+abbrev Prog := Frontend.EncapProg (WithSpec SyncOp RipTide.opSpec) (VarName String) RipTide.Value
+abbrev Proc := Frontend.EncapProc SyncOp (VarName Nat) RipTide.Value
 
 /-- Validates static properties of a `Prog`. -/
-def EncapProg.validate (prog : RipTide.EncapProg) : Except String Unit := do
+def Prog.validate (prog : RipTide.Prog) : Except String Unit := do
   for i in List.finRange prog.numFns do
     let name := prog.names[i]? |>.getD s!"unknown"
     (prog.prog i).checkAffineVar.resolve.context s!"function {i} ({name})"
 
 /-- Validates static properties of a `Proc`. -/
-def EncapProc.validate (proc : RipTide.EncapProc) : Except String Unit := do
+def Proc.validate (proc : RipTide.Proc) : Except String Unit := do
   proc.proc.checkAffineChan
 
 /-- TODO: On certain (currently) unreachable cases
@@ -512,7 +511,7 @@ private def typeOfChanName
       .unknown
 
 private def typeOfLinkChanName
-  (prog : EncapProg)
+  (prog : RipTide.Prog)
   (curIdx : Nat)
   : LinkName (ChanName (VarName α)) → PrimType
   | .base name =>
@@ -540,7 +539,7 @@ private def typeOfRewriteName
 /-- Renames a variable/channel name after linking and compilation,
 but preserves the type annotation. -/
 private def renameLinkChanName
-  (prog : EncapProg)
+  (prog : RipTide.Prog)
   (idx : Nat) (name : LinkName (ChanName (VarName α))) : VarName Nat
   := { name := idx, ty := typeOfLinkChanName prog (prog.numFns - 1) name }
 
@@ -555,7 +554,7 @@ private def renameRewriteName (idx : Nat) (name : RewriteName (VarName α)) : Va
 /-- Converts the last function of the given program to a dataflow process.
 This compiles all imperative control-flow to dataflow, and also lowers all
 ghost operators/inputs/outputs to concrete order operators. -/
-def EncapProg.lowerControlFlow (prog : RipTide.EncapProg) : Except String RipTide.EncapProc := do
+def Prog.lowerControlFlow (prog : RipTide.Prog) : Except String RipTide.Proc := do
   if h : prog.numFns > 0 then
     let : NeZeroSigs prog.sigs := prog.neZero
     let last : Fin prog.numFns := ⟨prog.numFns - 1, by omega⟩
@@ -572,23 +571,23 @@ def EncapProg.lowerControlFlow (prog : RipTide.EncapProg) : Except String RipTid
 /-- Connects the last `n` output channels of the process to `sink`s.
 This is useful in avoiding unnecessary outputs (like for ghost permissions)
 and reducing the size of the dataflow graph. -/
-def EncapProc.sinkLastNOutputs (n : Nat) (proc : RipTide.EncapProc) : RipTide.EncapProc :=
+def Proc.sinkLastNOutputs (n : Nat) (proc : RipTide.Proc) : RipTide.Proc :=
   let rem := proc.numOuts - n
-  EncapProc.fromProc {
+  .fromProc {
     proc.proc with
     outputs := proc.proc.outputs.take rem,
     atoms := .sink (proc.proc.outputs.drop rem) :: proc.proc.atoms
   }
 
 /-- Rewrites the given dataflow process using the given rules. -/
-def EncapProc.rewriteProc
-  (rules : Rewrite (RipTide.SyncOp Loc) (VarName Nat) RipTide.Value)
-  (proc : RipTide.EncapProc)
+def Proc.rewriteProc
+  (rules : Rewrite SyncOp (VarName Nat) RipTide.Value)
+  (proc : RipTide.Proc)
   (disabledRules : List String := []) :
-  Nat × RewriteStats × RipTide.EncapProc :=
+  Nat × RewriteStats × RipTide.Proc :=
   let (numRws, stats, proc) := Rewrite.applyUntilFailNat
     renameRewriteName rules proc.proc disabledRules
-  (numRws, stats, EncapProc.fromProc proc)
+  (numRws, stats, .fromProc proc)
 
 end Passes
 
@@ -665,7 +664,7 @@ def EmitState.addPort (port : MemPort) : EmitM EmitState Nat := do
   return idx
 
 /-- Some simple ops that have a direct correspondence with an `arith` operation. -/
-private def SyncOp.emitArith : RipTide.SyncOp Loc → Option String
+private def SyncOp.emitArith : SyncOp → Option String
   | .add => some "arith.addi"
   | .sub => some "arith.subi"
   | .mul => some "arith.muli"
@@ -685,7 +684,7 @@ private def SyncOp.emitArith : RipTide.SyncOp Loc → Option String
   | _ => none
 
 /-- TODO: Check types. -/
-instance [Repr α] [ToString α] : EmitOp EmitState (RipTide.SyncOp Loc) (VarName α) where
+instance [Repr α] [ToString α] : EmitOp EmitState SyncOp (VarName α) where
   emit
   | .load loc, inputs, outputs => do
     let addr := inputs[0]'(by simp [Arity.ι])
@@ -800,8 +799,8 @@ instance [Repr α] [ToString α] : EmitOp EmitState (RipTide.SyncOp Loc) (VarNam
           ({", ".intercalate inputTys}) -> ({", ".intercalate outputTys})"
 
 /-- Compiles the given RipTide process to CIRCT/Handshake. -/
-def EncapProc.emitHandshake
-  (proc : RipTide.EncapProc) : Except String String := do
+def Proc.emitHandshake
+  (proc : RipTide.Proc) : Except String String := do
   let (res, _) ← (emitProc proc.proc).run EmitState.init
   return res
 

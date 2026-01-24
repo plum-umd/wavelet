@@ -164,7 +164,16 @@ impl CompileArgs {
 
         // Optimize
         eprintln!("optimizing...");
-        let core_proc = core_proc.optimize();
+        let disabled_rules = if self.target == Target::Handshake {
+            // Handshake backend does not support `inv` operator yet.
+            vec![
+                "carry-fork-steer-to-inv-left",
+                "carry-fork-steer-to-inv-right",
+            ]
+        } else {
+            vec![]
+        };
+        let core_proc = core_proc.optimize(disabled_rules);
         eprintln!(
             "final: {} ({}) ops",
             core_proc.num_atoms(),
