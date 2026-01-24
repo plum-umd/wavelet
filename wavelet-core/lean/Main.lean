@@ -18,7 +18,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let finalOutputPath := outputPath?.getD s!"{outputPrefix}.dfg.json"
 
   let rawProg : RipTide.RawProg ← Lean.Json.decodeFile inputPath
-  let prog : RipTide.EncapProg ← rawProg.toProg.unwrapIO "failed to convert RawProg to Prog"
+  let prog : RipTide.Prog ← rawProg.toProg.unwrapIO "failed to convert RawProg to Prog"
 
   prog.validate |>.unwrapIO "input program validation failed"
   let proc ← prog.lowerControlFlow |>.unwrapIO "control-flow lowering failed"
@@ -119,7 +119,7 @@ def runTestCmd (p : Cli.Parsed) : IO UInt32 := do
   let rawProc : RipTide.RawProc ← Lean.Json.decodeFile inputPath
   let proc ← rawProc.toProc.unwrapIO "failed to convert RawProc to Proc"
 
-  let tbs : List (RipTide.Testbench _) ← Lean.Json.decodeFile testbenchPath
+  let tbs : List RipTide.Testbench ← Lean.Json.decodeFile testbenchPath
   dbg_trace s!"running {tbs.length} tests from {testbenchPath}..."
 
   let mut numFailed := 0

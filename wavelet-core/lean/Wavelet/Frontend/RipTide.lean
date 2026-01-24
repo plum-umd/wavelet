@@ -18,6 +18,8 @@ namespace Wavelet.Frontend.RipTide
 
 open Semantics Determinacy Compile
 
+section Syntax
+
 /-- A memory location name. -/
 abbrev Loc := String
 
@@ -45,11 +47,6 @@ instance : Lean.FromJson Value where
     let v ← obj.getObjValAs? Nat "value"
     return .int w (BitVec.ofNat w v)) <|>
   .error "failed to parse Value"
-
-instance : ToString Value where
-  toString
-    | .int w val => s!"{val.toInt}i{w}"
-    | .junk => "junk"
 
 /-- Synchronous operators in RipTide, parametrized by a type of location/array symbols. -/
 inductive SyncOp where
@@ -103,6 +100,8 @@ instance : InterpConsts Value where
     split at h <;> simp at h <;> subst h <;> simp
   isClonable _ := true
   bool_clonable := by simp
+
+end Syntax
 
 section Semantics
 
@@ -189,6 +188,8 @@ def opSpec : OpSpec SyncOp Value PCM.Triv :=
 
 end Semantics
 
+section Json
+
 instance : Lean.FromJson (WithSpec SyncOp RipTide.opSpec) where
   fromJson? json :=
     (do
@@ -235,6 +236,10 @@ instance : Lean.ToJson State where
         "loc": $(loc),
         "values": $(values)
       })
+
+end Json
+
+section Testbench
 
 /-- Test inputs. -/
 structure Testbench where
@@ -287,13 +292,15 @@ partial def Testbench.run
     for name in atom.inputs do
       let buf := c.chans name
       if ¬ buf.isEmpty then
-        dbg_trace s!"channel {repr name} (input of {Lean.ToJson.toJson rawAtom}) not empty at termination: {buf}"
+        dbg_trace s!"channel {repr name} (input of {Lean.ToJson.toJson rawAtom}) not empty at termination: {repr buf}"
     for name in atom.outputs do
       let buf := c.chans name
       if ¬ buf.isEmpty then
-        dbg_trace s!"channel {repr name} (output of {Lean.ToJson.toJson rawAtom}) not empty at termination: {buf}"
+        dbg_trace s!"channel {repr name} (output of {Lean.ToJson.toJson rawAtom}) not empty at termination: {repr buf}"
 
   return (tr, outputs.toList, st)
+
+end Testbench
 
 section Examples
 
@@ -326,6 +333,13 @@ def prog₁ :
 
 end Examples
 
+section ToString
+
+instance : ToString Value where
+  toString
+    | .int w val => s!"{val.toInt}i{w}"
+    | .junk => "junk"
+
 instance [ToString Loc] : Dataflow.DotName SyncOp where
   dotName
     | .add => "\"+\""
@@ -353,101 +367,12 @@ instance [ToString Loc] : Dataflow.DotName SyncOp where
 instance : Dataflow.DotName Value where
   dotName v := s!"\"{v}\""
 
-/-- Custom rewrites for RipTide. -/
-def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite SyncOp χ Value :=
-  .choose λ
-  -- Lower `copy` to `fork`
-  | .op (.copy n) inputs outputs =>
-    .apply "riptide-copy" [.fork (inputs[0]'(by simp [Arity.ι])) outputs]
-  -- Lower `const` to the built-in `const`
-  | .op (.const v) inputs outputs =>
-    .apply "riptide-const" [.const v (inputs[0]'(by simp [Arity.ι])) outputs]
-  -- Select with equal inputs can be rewritten to a forward
-  | .op .sel (inputs : Vector _ 3) (outputs : Vector _ 1) => do
-    let cond := inputs[0]
-    let input₁ := inputs[1]
-    let input₂ := inputs[2]
-    let output := outputs[0]
-    .assumeFromSameFork input₁ input₂
-    .apply "riptide-sel-eq" [
-      .forward #v[input₁] #v[output],
-      .sink #v[cond, input₂],
-    ]
-  -- Lower `switch` to two `steer`s
-  -- This is optional but may enable more rewrites
-  | .async (.switch 1) inputs outputs =>
-    if h : inputs.length = 2 ∧ outputs.length = 2 then
-      let decider := inputs[0]'(by omega)
-      let input := inputs[1]'(by omega)
-      let output₁ := outputs[0]'(by omega)
-      let output₂ := outputs[1]'(by omega)
-      .apply "riptide-switch" [
-        .fork input #v[.rename 0 input, .rename 1 input],
-        .fork decider #v[.rename 0 decider, .rename 1 decider],
-        .steer true (.rename 0 decider) #v[.rename 0 input] #v[output₁],
-        .steer false (.rename 1 decider) #v[.rename 1 input] #v[output₂],
-      ]
-    else failure
-  -- Merging opposite steers with the same decider
-  -- is equivalent to a select operator
-  | .async (.merge .decider 1) inputs outputs =>
-    .assume (inputs.length = 3 ∧ outputs.length = 1) λ h => do
-    let decider := inputs[0]'(by omega)
-    let inputL := inputs[1]'(by omega)
-    let inputR := inputs[2]'(by omega)
-    let output := outputs[0]'(by omega)
-    .chooseWithNames (inputs ++ outputs) λ
-    | .async (.steer flavor₁ 1) inputs₁ outputs₁ =>
-      .assume (inputs₁.length = 2 ∧ outputs₁.length = 1) λ h₁ => do
-      let decider₁ := inputs₁[0]'(by omega)
-      let input₁ := inputs₁[1]'(by omega)
-      let output₁ := outputs₁[0]'(by omega)
-      .assumeFromSameFork decider decider₁
-      .chooseWithNames (inputs ++ outputs) λ
-      | .async (.steer flavor₂ 1) inputs₂ outputs₂ =>
-        .assume (inputs₂.length = 2 ∧ outputs₂.length = 1) λ h₂ => do
-        let decider₂ := inputs₂[0]'(by omega)
-        let input₂ := inputs₂[1]'(by omega)
-        let output₂ := outputs₂[0]'(by omega)
-        .assumeFromSameFork decider decider₂
-        if flavor₁ = false ∧ flavor₂ = true ∧ output₁ = inputL ∧ output₂ = inputR then
-          .apply "riptide-merge-steer-steer-to-sel" [
-            .op .sel #v[decider, input₂, input₁] #v[output],
-            .sink #v[decider₁, decider₂],
-          ]
-        else failure
-      | _ => failure
-    | _ => failure
-  -- A pure synchronous operator can be merged into a non-first input
-  -- of an order operator.
-  | .async (Dataflow.AsyncOp.order n) inputs outputs =>
-    .assume (n > 0 ∧ inputs.length = n ∧ outputs.length = 1) λ h => do
-    let input₁ := inputs[0]'(by omega)
-    let output := outputs[0]'(by omega)
-    .chooseWithNames (inputs ++ outputs) λ
-    | .op op inputs' outputs' =>
-      match op with
-      | .load .. | .store .. => failure
-      | op =>
-        if input₁ ∉ outputs' ∧ outputs'.toList ⊆ inputs then
-          have : NeZero (inputs.removeAll outputs'.toList ++ inputs'.toList).length := by
-            constructor
-            simp
-            intros h₁ h₂
-            have : NeZero (Arity.ι op) := by infer_instance
-            have := this.ne
-            omega
-          .apply "riptide-order-sync" [
-            .order ((inputs.removeAll outputs'.toList) ++ inputs'.toList).toVector output,
-          ]
-        else failure
-    | _ => failure
-  | _ => failure
+end ToString
 
 /-! Instances of various compilation passes to RipTide. -/
 section Passes
 
-open Compile Determinacy Seq Dataflow Semantics
+open Seq Dataflow
 
 inductive PrimType where
   | int (_ : Nat)
@@ -588,6 +513,97 @@ def Proc.rewriteProc
   let (numRws, stats, proc) := Rewrite.applyUntilFailNat
     renameRewriteName rules proc.proc disabledRules
   (numRws, stats, .fromProc proc)
+
+/-- Custom rewrites for RipTide. -/
+def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite SyncOp χ Value :=
+  .choose λ
+  -- Lower `copy` to `fork`
+  | .op (.copy n) inputs outputs =>
+    .apply "riptide-copy" [.fork (inputs[0]'(by simp [Arity.ι])) outputs]
+  -- Lower `const` to the built-in `const`
+  | .op (.const v) inputs outputs =>
+    .apply "riptide-const" [.const v (inputs[0]'(by simp [Arity.ι])) outputs]
+  -- Select with equal inputs can be rewritten to a forward
+  | .op .sel (inputs : Vector _ 3) (outputs : Vector _ 1) => do
+    let cond := inputs[0]
+    let input₁ := inputs[1]
+    let input₂ := inputs[2]
+    let output := outputs[0]
+    .assumeFromSameFork input₁ input₂
+    .apply "riptide-sel-eq" [
+      .forward #v[input₁] #v[output],
+      .sink #v[cond, input₂],
+    ]
+  -- Lower `switch` to two `steer`s
+  -- This is optional but may enable more rewrites
+  | .async (.switch 1) inputs outputs =>
+    if h : inputs.length = 2 ∧ outputs.length = 2 then
+      let decider := inputs[0]'(by omega)
+      let input := inputs[1]'(by omega)
+      let output₁ := outputs[0]'(by omega)
+      let output₂ := outputs[1]'(by omega)
+      .apply "riptide-switch" [
+        .fork input #v[.rename 0 input, .rename 1 input],
+        .fork decider #v[.rename 0 decider, .rename 1 decider],
+        .steer true (.rename 0 decider) #v[.rename 0 input] #v[output₁],
+        .steer false (.rename 1 decider) #v[.rename 1 input] #v[output₂],
+      ]
+    else failure
+  -- Merging opposite steers with the same decider
+  -- is equivalent to a select operator
+  | .async (.merge .decider 1) inputs outputs =>
+    .assume (inputs.length = 3 ∧ outputs.length = 1) λ h => do
+    let decider := inputs[0]'(by omega)
+    let inputL := inputs[1]'(by omega)
+    let inputR := inputs[2]'(by omega)
+    let output := outputs[0]'(by omega)
+    .chooseWithNames (inputs ++ outputs) λ
+    | .async (.steer flavor₁ 1) inputs₁ outputs₁ =>
+      .assume (inputs₁.length = 2 ∧ outputs₁.length = 1) λ h₁ => do
+      let decider₁ := inputs₁[0]'(by omega)
+      let input₁ := inputs₁[1]'(by omega)
+      let output₁ := outputs₁[0]'(by omega)
+      .assumeFromSameFork decider decider₁
+      .chooseWithNames (inputs ++ outputs) λ
+      | .async (.steer flavor₂ 1) inputs₂ outputs₂ =>
+        .assume (inputs₂.length = 2 ∧ outputs₂.length = 1) λ h₂ => do
+        let decider₂ := inputs₂[0]'(by omega)
+        let input₂ := inputs₂[1]'(by omega)
+        let output₂ := outputs₂[0]'(by omega)
+        .assumeFromSameFork decider decider₂
+        if flavor₁ = false ∧ flavor₂ = true ∧ output₁ = inputL ∧ output₂ = inputR then
+          .apply "riptide-merge-steer-steer-to-sel" [
+            .op .sel #v[decider, input₂, input₁] #v[output],
+            .sink #v[decider₁, decider₂],
+          ]
+        else failure
+      | _ => failure
+    | _ => failure
+  -- A pure synchronous operator can be merged into a non-first input
+  -- of an order operator.
+  | .async (Dataflow.AsyncOp.order n) inputs outputs =>
+    .assume (n > 0 ∧ inputs.length = n ∧ outputs.length = 1) λ h => do
+    let input₁ := inputs[0]'(by omega)
+    let output := outputs[0]'(by omega)
+    .chooseWithNames (inputs ++ outputs) λ
+    | .op op inputs' outputs' =>
+      match op with
+      | .load .. | .store .. => failure
+      | op =>
+        if input₁ ∉ outputs' ∧ outputs'.toList ⊆ inputs then
+          have : NeZero (inputs.removeAll outputs'.toList ++ inputs'.toList).length := by
+            constructor
+            simp
+            intros h₁ h₂
+            have : NeZero (Arity.ι op) := by infer_instance
+            have := this.ne
+            omega
+          .apply "riptide-order-sync" [
+            .order ((inputs.removeAll outputs'.toList) ++ inputs'.toList).toVector output,
+          ]
+        else failure
+    | _ => failure
+  | _ => failure
 
 end Passes
 
