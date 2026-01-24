@@ -387,23 +387,94 @@ structure VarName (α : Type u) where
   ty : PrimType
   deriving BEq, DecidableEq, Hashable, Repr, Lean.ToJson, Lean.FromJson
 
--- Raw program and process formats used for encoding/decoding
-abbrev RawProg := Frontend.RawProg (WithCall (WithSpec SyncOp RipTide.opSpec) FnName) (VarName String)
-abbrev RawProc := Frontend.RawProc SyncOp (VarName Nat) RipTide.Value
+/-- Global array/memory declaration. -/
+structure ArrayDecl where
+  loc : Loc
+  elem : PrimType
+  size : Nat
+  deriving Repr, Lean.ToJson, Lean.FromJson
 
--- Actual program and process formats used for compilation
-abbrev Prog := Frontend.EncapProg (WithSpec SyncOp RipTide.opSpec) (VarName String) RipTide.Value
-abbrev Proc := Frontend.EncapProc SyncOp (VarName Nat) RipTide.Value
+/-- Raw program format used for encoding/decoding。 -/
+structure RawProg where
+  arrays : List ArrayDecl
+  inner : Frontend.RawProg (WithCall (WithSpec SyncOp RipTide.opSpec) FnName) (VarName String)
+  deriving Repr
+
+/-- Raw process format used for encoding/decoding. -/
+structure RawProc where
+  arrays : List ArrayDecl
+  inner : Frontend.RawProc SyncOp (VarName Nat) RipTide.Value
+  deriving Repr
+
+instance : Lean.FromJson RawProg where
+  fromJson? json :=
+    return {
+      arrays := ← Lean.FromJson.fromJson? (← json.getObjVal? "arrays"),
+      inner := ← Lean.FromJson.fromJson? json,
+    }
+
+instance : Lean.ToJson RawProg where
+  toJson raw :=
+    let base := Lean.ToJson.toJson raw.inner
+    base.setObjVal! "arrays" (Lean.ToJson.toJson raw.arrays)
+
+
+instance : Lean.FromJson RawProc where
+  fromJson? json :=
+    return {
+      arrays := ← Lean.FromJson.fromJson? (← json.getObjVal? "arrays"),
+      inner := ← Lean.FromJson.fromJson? json,
+    }
+
+instance : Lean.ToJson RawProc where
+  toJson raw :=
+    let base := Lean.ToJson.toJson raw.inner
+    base.setObjVal! "arrays" (Lean.ToJson.toJson raw.arrays)
+
+structure Prog where
+  arrays : List ArrayDecl
+  inner : Frontend.EncapProg (WithSpec SyncOp RipTide.opSpec) (VarName String) RipTide.Value
+
+structure Proc where
+  arrays : List ArrayDecl
+  inner : Frontend.EncapProc SyncOp (VarName Nat) RipTide.Value
+
+def RawProg.toProg (raw : RawProg) : Except String RipTide.Prog :=
+  return {
+    arrays := raw.arrays,
+    inner := ← raw.inner.toProg,
+  }
+
+/-- Checks if there are duplicate declarations, etc. -/
+def ArrayDecl.validate (arrays : List ArrayDecl) : Except String Unit := do
+  let noDup := arrays.map (·.loc) |>.removeDup
+  if noDup.length ≠ arrays.length then
+    throw "duplicate array declarations"
+  else
+    return ()
+
+def RawProc.toProc (raw : RawProc) : Except String RipTide.Proc := do
+  ArrayDecl.validate raw.arrays
+  return {
+    arrays := raw.arrays,
+    inner := .fromProc (← raw.inner.toProc),
+  }
+
+def RawProc.fromProc (proc : RipTide.Proc) : RawProc :=
+  {
+    arrays := proc.arrays,
+    inner := Frontend.RawProc.fromProc proc.inner.proc,
+  }
 
 /-- Validates static properties of a `Prog`. -/
 def Prog.validate (prog : RipTide.Prog) : Except String Unit := do
-  for i in List.finRange prog.numFns do
-    let name := prog.names[i]? |>.getD s!"unknown"
-    (prog.prog i).checkAffineVar.resolve.context s!"function {i} ({name})"
+  for i in List.finRange prog.inner.numFns do
+    let name := prog.inner.names[i]? |>.getD s!"unknown"
+    (prog.inner.prog i).checkAffineVar.resolve.context s!"function {i} ({name})"
 
 /-- Validates static properties of a `Proc`. -/
 def Proc.validate (proc : RipTide.Proc) : Except String Unit := do
-  proc.proc.checkAffineChan
+  proc.inner.proc.checkAffineChan
 
 /-- TODO: On certain (currently) unreachable cases
 (e.g., `.dest i` with `i` exceeding the number of
@@ -440,8 +511,8 @@ private def typeOfLinkChanName
   (curIdx : Nat)
   : LinkName (ChanName (VarName α)) → PrimType
   | .base name =>
-    if h : curIdx < prog.numFns then
-      typeOfChanName (prog.prog ⟨curIdx, h⟩) name
+    if h : curIdx < prog.inner.numFns then
+      typeOfChanName (prog.inner.prog ⟨curIdx, h⟩) name
     else
       .unknown
   | .main name => typeOfLinkChanName prog curIdx name
@@ -466,7 +537,7 @@ but preserves the type annotation. -/
 private def renameLinkChanName
   (prog : RipTide.Prog)
   (idx : Nat) (name : LinkName (ChanName (VarName α))) : VarName Nat
-  := { name := idx, ty := typeOfLinkChanName prog (prog.numFns - 1) name }
+  := { name := idx, ty := typeOfLinkChanName prog (prog.inner.numFns - 1) name }
 
 /-- Renames a variable after ghost erasure. -/
 private def renameEraseName (idx : Nat) (name : EraseName (VarName α)) : VarName Nat
@@ -480,16 +551,19 @@ private def renameRewriteName (idx : Nat) (name : RewriteName (VarName α)) : Va
 This compiles all imperative control-flow to dataflow, and also lowers all
 ghost operators/inputs/outputs to concrete order operators. -/
 def Prog.lowerControlFlow (prog : RipTide.Prog) : Except String RipTide.Proc := do
-  if h : prog.numFns > 0 then
-    let : NeZeroSigs prog.sigs := prog.neZero
-    let last : Fin prog.numFns := ⟨prog.numFns - 1, by omega⟩
+  if h : prog.inner.numFns > 0 then
+    let : NeZeroSigs prog.inner.sigs := prog.inner.neZero
+    let last : Fin prog.inner.numFns := ⟨prog.inner.numFns - 1, by omega⟩
     -- Compile and link
-    let proc := compileProg prog.prog last
+    let proc := compileProg prog.inner.prog last
     let proc := proc.renameChans (renameLinkChanName prog)
     -- Erase ghost tokens
     let proc := proc.eraseGhost
     let proc := proc.renameChans renameEraseName
-    return .fromProc proc
+    return {
+      arrays := prog.arrays,
+      inner := .fromProc proc,
+    }
   else
     .error "compiling empty program"
 
@@ -497,11 +571,14 @@ def Prog.lowerControlFlow (prog : RipTide.Prog) : Except String RipTide.Proc := 
 This is useful in avoiding unnecessary outputs (like for ghost permissions)
 and reducing the size of the dataflow graph. -/
 def Proc.sinkLastNOutputs (n : Nat) (proc : RipTide.Proc) : RipTide.Proc :=
-  let rem := proc.numOuts - n
-  .fromProc {
-    proc.proc with
-    outputs := proc.proc.outputs.take rem,
-    atoms := .sink (proc.proc.outputs.drop rem) :: proc.proc.atoms
+  let rem := proc.inner.numOuts - n
+  {
+    proc with
+    inner := .fromProc {
+      proc.inner.proc with
+      outputs := proc.inner.proc.outputs.take rem,
+      atoms := .sink (proc.inner.proc.outputs.drop rem) :: proc.inner.proc.atoms
+    }
   }
 
 /-- Rewrites the given dataflow process using the given rules. -/
@@ -510,9 +587,9 @@ def Proc.rewriteProc
   (proc : RipTide.Proc)
   (disabledRules : List String := []) :
   Nat × RewriteStats × RipTide.Proc :=
-  let (numRws, stats, proc) := Rewrite.applyUntilFailNat
-    renameRewriteName rules proc.proc disabledRules
-  (numRws, stats, .fromProc proc)
+  let (numRws, stats, rewritten) := Rewrite.applyUntilFailNat
+    renameRewriteName rules proc.inner.proc disabledRules
+  (numRws, stats, { proc with inner := .fromProc rewritten })
 
 /-- Custom rewrites for RipTide. -/
 def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite SyncOp χ Value :=
@@ -613,11 +690,14 @@ section Handshake
 
 open Backend Handshake
 
-instance [Repr α] : EmitType (VarName α) where
-  emit v := match v.ty with
+instance : EmitType PrimType where
+  emit
     | .int 0 => return Handshake.PrimType.none
     | .int w => return Handshake.PrimType.int w
-    | .unknown => .error s!"cannot emit unknown type for variable {repr v}"
+    | .unknown => .error "cannot emit unknown primitive type"
+
+instance [Repr α] : EmitType (VarName α) where
+  emit v := EmitType.emit v.ty
 
 instance [ToString α] : EmitVar (VarName α) where
   emit v := return s!"%v{v.name}"
@@ -650,10 +730,11 @@ private structure MemPort where
 
 /-- Records required memory ports for all accesses. -/
 private structure EmitState where
+  arrays : List ArrayDecl
   ports : List MemPort
 
-def EmitState.init : EmitState :=
-  { ports := [] }
+def EmitState.init (proc : RipTide.Proc) : EmitState :=
+  { arrays := proc.arrays, ports := [] }
 
 def EmitState.loadPortAddr (loc : Loc) (idx : Nat) : String := s!"%mem.{loc}.load.addr.{idx}"
 def EmitState.loadPortVal (loc : Loc) (idx : Nat) : String := s!"%mem.{loc}.load.val.{idx}"
@@ -666,6 +747,14 @@ def EmitState.storePortDone (loc : Loc) (idx : Nat) : String := s!"%mem.{loc}.st
 def EmitState.addPort (port : MemPort) : EmitM EmitState Nat := do
   let s ← .get
   let idx := s.ports.length
+  -- Check if the location is declared and matches the element type
+  if let .some arr := s.arrays.find? (·.loc = port.loc) then
+    let elemTy ← EmitType.emit arr.elem
+    if elemTy ≠ port.valTy then
+      throw s!"conflicting value type for memory `{port.loc}`: \
+        declared {elemTy}, accessed {port.valTy}"
+  else
+    throw s!"undeclared memory location `{port.loc}`"
   -- Check that previous accesses to the same location
   -- have the same address and value types
   for prevPort in s.ports do
@@ -772,9 +861,9 @@ instance [Repr α] [ToString α] : EmitOp EmitState SyncOp (VarName α) where
   -/
   finalize := do
     let s ← .get
-    let locs := s.ports.map (·.loc) |>.removeDup |>.mapIdx Prod.mk
-    for (locIdx, loc) in locs do
-      let ports := s.ports.mapIdx Prod.mk |>.filter (·.snd.loc = loc)
+    -- Generate one `handshake.memory` op for each declared array
+    for (locIdx, arr) in s.arrays.mapIdx Prod.mk do
+      let ports := s.ports.mapIdx Prod.mk |>.filter (·.snd.loc = arr.loc)
       if let some (_, firstPort) := ports.head? then
         let addrTy := firstPort.addrTy
         let valTy := firstPort.valTy
@@ -785,20 +874,20 @@ instance [Repr α] [ToString α] : EmitOp EmitState SyncOp (VarName α) where
         let inputs :=
           (stores.map λ (idx, _) =>
             [
-              EmitState.storePortVal loc idx,
-              EmitState.storePortAddr loc idx,
+              EmitState.storePortVal arr.loc idx,
+              EmitState.storePortAddr arr.loc idx,
             ]).flatten ++
           (loads.map λ (idx, _) =>
-            EmitState.loadPortAddr loc idx)
+            EmitState.loadPortAddr arr.loc idx)
         let inputTys :=
           (stores.map λ _ => [valTy, addrTy]).flatten ++
           (loads.map λ _ => addrTy)
         let inputTys := inputTys.map ToString.toString
         let outputs :=
           (loads.map λ (idx, _) =>
-            EmitState.loadPortVal loc idx) ++
+            EmitState.loadPortVal arr.loc idx) ++
           (stores.map λ (idx, _) =>
-            EmitState.storePortDone loc idx) ++
+            EmitState.storePortDone arr.loc idx) ++
           -- Dummy outputs for unused load "done" signals
           (← loads.mapM λ _ => .freshVar)
         let outputTys :=
@@ -811,13 +900,13 @@ instance [Repr α] [ToString α] : EmitOp EmitState SyncOp (VarName α) where
         IndentWriterT.writeLn s!"{", ".intercalate outputs} = \
           handshake.memory [ld = {loads.length}, st = {stores.length}] \
           ({", ".intercalate inputs}) {attr} : \
-          memref<??x{valTy}>, \
+          memref<{arr.size}x{valTy}>, \
           ({", ".intercalate inputTys}) -> ({", ".intercalate outputTys})"
 
 /-- Compiles the given RipTide process to CIRCT/Handshake. -/
 def Proc.emitHandshake
   (proc : RipTide.Proc) : Except String String := do
-  let (res, _) ← (emitProc proc.proc).run EmitState.init
+  let (res, _) ← (emitProc proc.inner.proc).run (EmitState.init proc)
   return res
 
 end Handshake

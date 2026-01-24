@@ -17,7 +17,10 @@ pub fn enforce_affine<V: Variable>(prog: RawProg<V>) -> RawProg<V> {
         .into_iter()
         .map(|func| enforce_affine_fn(func, Rc::clone(&names)))
         .collect();
-    RawProg { fns }
+    RawProg {
+        arrays: prog.arrays,
+        fns,
+    }
 }
 
 fn enforce_affine_fn<V: Variable>(func: RawFn<V>, names: Rc<RefCell<NameGenerator>>) -> RawFn<V> {
@@ -341,6 +344,7 @@ mod tests {
         };
 
         let prog = RawProg {
+            arrays: vec![],
             fns: vec![RawFn {
                 name: "double".into(),
                 params: vec![TypedVar::new("x", Ty::Unit)],
@@ -460,7 +464,8 @@ mod tests {
         let program = parse_program(include_str!("../../tests/test_files/sum.rs"))
             .expect("sum fixture should parse");
         let ghost = synthesize_ghost_program(&program);
-        let raw = RawProg::try_from(&ghost).expect("ghost to raw conversion should succeed");
+        let raw =
+            RawProg::try_from(vec![], &ghost).expect("ghost to raw conversion should succeed");
         let affine = enforce_affine(raw);
 
         let mut total_copys = 0;
@@ -497,7 +502,7 @@ mod tests {
             let program = parse_program(&source)
                 .unwrap_or_else(|err| panic!("failed to parse fixture {}: {err}", path.display()));
             let ghost = synthesize_ghost_program(&program);
-            let raw = match RawProg::try_from(&ghost) {
+            let raw = match RawProg::try_from(vec![], &ghost) {
                 Ok(raw) => raw,
                 Err(ExportError::Unsupported(_)) => continue,
                 Err(err) => {

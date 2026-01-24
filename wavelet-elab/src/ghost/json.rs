@@ -36,28 +36,40 @@ impl From<serde_json::Error> for ExportError {
 /// High-level entry point: serialize the ghost program into a JSON string
 /// that is intended to match the Lean `RawProg` schema.
 pub fn export_program_json<V: Variable + Serialize + From<GhostVar>>(
+    arrays: Vec<RawArrayDecl>,
     prog: &GhostProgram<V>,
 ) -> Result<String, ExportError> {
-    let raw = RawProg::<V>::try_from(prog)?;
+    let raw = RawProg::try_from(arrays, prog)?;
     let raw = affine::enforce_affine(raw);
     serde_json::to_string_pretty(&raw).map_err(ExportError::from)
+}
+
+/// A global array declaration.
+#[derive(Debug, Serialize)]
+
+pub struct RawArrayDecl {
+    pub loc: String,
+    pub elem: Ty,
+    pub size: usize,
 }
 
 /// Structured representation mirroring the Lean `RawProg` definition.
 #[derive(Debug, Serialize)]
 pub struct RawProg<V> {
+    pub arrays: Vec<RawArrayDecl>,
     pub fns: Vec<RawFn<V>>,
 }
 
-impl<V: Variable + From<GhostVar>> TryFrom<&GhostProgram<V>> for RawProg<V> {
-    type Error = ExportError;
-
-    fn try_from(prog: &GhostProgram<V>) -> Result<Self, Self::Error> {
+impl<V: Variable + From<GhostVar>> RawProg<V> {
+    pub fn try_from(
+        arrays: Vec<RawArrayDecl>,
+        prog: &GhostProgram<V>,
+    ) -> Result<Self, ExportError> {
         let mut fns = Vec::with_capacity(prog.defs.len());
         for def in &prog.defs {
             fns.push(RawFn::try_from(def)?);
         }
-        Ok(RawProg { fns })
+        Ok(RawProg { arrays, fns })
     }
 }
 

@@ -96,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ghost_program = synthesize_ghost_program(&program);
 
             // Export to JSON
-            let json = match export_program_json(&ghost_program) {
+            let json = match export_program_json(vec![], &ghost_program) {
                 Ok(json) => json,
                 Err(e) => {
                     println!("✗ JSON export failed: {}", e);

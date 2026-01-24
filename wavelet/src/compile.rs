@@ -113,7 +113,7 @@ impl CompileArgs {
         }
 
         // Transfer to the Lean side through FFI
-        let json = elab::ghost::json::export_program_json(&elab_prog)?;
+        let json = elab::ghost::json::export_program_json(vec![], &elab_prog)?;
         if self.target == Target::ElabJson {
             return self.output(json);
         }

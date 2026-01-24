@@ -22,18 +22,17 @@ def FFI.validateProg (prog : RipTide.Prog) : Except String Unit :=
 @[export wavelet_riptide_proc_from_json]
 def FFI.procFromJson (input : String) : Except String RipTide.Proc := do
   let rawProc : RipTide.RawProc ← Lean.Json.decode input
-  let proc ← rawProc.toProc
-  return .fromProc proc
+  rawProc.toProc
 
 /-- Outputs `RipTide.Proc` in JSON. -/
 @[export wavelet_riptide_proc_to_json]
 def FFI.procToJson (proc : RipTide.Proc) : String :=
-  Lean.Json.encodeCompact (RawProc.fromProc proc.proc)
+  Lean.Json.encodeCompact (RawProc.fromProc proc)
 
 /-- Outputs `RipTide.Proc` in DOT. -/
 @[export wavelet_riptide_proc_to_dot]
 def FFI.procToDot (proc : RipTide.Proc) : Except String String :=
-  proc.proc.plot.run
+  proc.inner.proc.plot.run
 
 /-- Outputs `RipTide.Proc` in CIRCT Handshake IR. -/
 @[export wavelet_riptide_proc_to_handshake]
@@ -66,13 +65,13 @@ def FFI.optimizeProc (proc : RipTide.Proc) (disabledRules : Array String) : RipT
 /-- Returns the number of atomic processes. -/
 @[export wavelet_riptide_proc_num_atoms]
 def FFI.procNumAtoms (proc : RipTide.Proc) : USize :=
-  USize.ofNat proc.proc.atoms.length
+  USize.ofNat proc.inner.proc.atoms.length
 
 /-- Returns the number of "non-trivial" atoms. -/
 @[export wavelet_riptide_proc_num_non_trivial_atoms]
 def FFI.procNumNonTrivialAtoms (proc : RipTide.Proc) : USize :=
   USize.ofNat <|
-    (proc.proc.atoms
+    (proc.inner.proc.atoms
     |>.filter (λ
       | .async (AsyncOp.fork ..) ..
       | .async (AsyncOp.forward ..) ..
@@ -86,11 +85,11 @@ def FFI.procNumNonTrivialAtoms (proc : RipTide.Proc) : USize :=
 /-- Returns the number of inputs. -/
 @[export wavelet_riptide_proc_num_inputs]
 def FFI.procNumInputs (proc : RipTide.Proc) : USize :=
-  USize.ofNat proc.numIns
+  USize.ofNat proc.inner.numIns
 
 /-- Returns the number of outputs. -/
 @[export wavelet_riptide_proc_num_outputs]
 def FFI.procNumOutputs (proc : RipTide.Proc) : USize :=
-  USize.ofNat proc.numOuts
+  USize.ofNat proc.inner.numOuts
 
 end Wavelet.Frontend.RipTide
