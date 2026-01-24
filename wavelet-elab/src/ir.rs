@@ -1,5 +1,9 @@
 //! Intermediate representation for the restricted language.
 
+use std::collections::HashMap;
+
+use thiserror::Error;
+
 use crate::logic::cap::CapPattern;
 use crate::logic::semantic::solver::Idx;
 
@@ -90,6 +94,12 @@ pub enum ArrayLen {
     Expr(Idx),
 }
 
+#[derive(Debug, Error)]
+pub enum ArrayLenError {
+    #[error("constant '{0}' not instantiated")]
+    ConstNotInstantiated(String),
+}
+
 impl ArrayLen {
     /// Return a human-readable representation used in error messages.
     pub fn display(&self) -> String {
@@ -97,6 +107,34 @@ impl ArrayLen {
             ArrayLen::Const(n) => n.to_string(),
             ArrayLen::Symbol(name) => name.clone(),
             ArrayLen::Expr(expr) => format!("{}", expr),
+        }
+    }
+
+    /// Evaluates the array length to a constant given the provided mappings.
+    pub fn eval(&self, bindings: &HashMap<String, i64>) -> Result<i64, ArrayLenError> {
+        match self {
+            ArrayLen::Const(n) => Ok(*n as i64),
+            ArrayLen::Symbol(name) => bindings
+                .get(name)
+                .ok_or(ArrayLenError::ConstNotInstantiated(name.clone()))
+                .cloned(),
+            ArrayLen::Expr(expr) => expr.eval(bindings),
+        }
+    }
+}
+
+impl Idx {
+    /// Evaluates the index expression to a constant.
+    fn eval(&self, bindings: &HashMap<String, i64>) -> Result<i64, ArrayLenError> {
+        match self {
+            Idx::Const(n) => Ok(*n),
+            Idx::Var(name) => bindings
+                .get(name)
+                .cloned()
+                .ok_or(ArrayLenError::ConstNotInstantiated(name.clone())),
+            Idx::Add(lhs, rhs) => Ok(lhs.eval(bindings)? + rhs.eval(bindings)?),
+            Idx::Mul(lhs, rhs) => Ok(lhs.eval(bindings)? * rhs.eval(bindings)?),
+            Idx::Sub(lhs, rhs) => Ok(lhs.eval(bindings)? - rhs.eval(bindings)?),
         }
     }
 }
