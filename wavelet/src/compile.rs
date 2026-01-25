@@ -8,8 +8,7 @@ use clap::{Parser, ValueEnum};
 use thiserror::Error;
 
 use wavelet_core::riptide;
-use wavelet_elab::ir::ArrayLen;
-use wavelet_elab::{self as elab, ghost::json::RawArrayDecl, Ty};
+use wavelet_elab as elab;
 
 /// Target IR to output.
 #[derive(Debug, Parser, ValueEnum, Clone, PartialEq, Eq)]
@@ -64,17 +63,13 @@ pub enum CompileError {
     #[error("invalid constant binding(s): {0}")]
     InvalidConstBindings(String),
     #[error("parse error: {0}")]
-    ElabParseError(#[from] wavelet_elab::ParseError),
+    ElabParseError(#[from] elab::ParseError),
     #[error("type error: {0}")]
-    ElabTypeError(#[from] wavelet_elab::TypeError),
+    ElabTypeError(#[from] elab::TypeError),
     #[error("validation error: {0}")]
     ElabValidationError(String),
     #[error("elaboration export error: {0}")]
-    ElabExportError(#[from] wavelet_elab::ghost::json::ExportError),
-    #[error("failed to evaluate array length `{0:?}`: {1}")]
-    ArrayLenEvalError(ArrayLen, #[source] wavelet_elab::ir::ArrayLenError),
-    #[error("negative array length `{0:?} = {1}`")]
-    NegativeArrayLength(ArrayLen, i64),
+    ElabExportError(#[from] elab::ghost::json::ExportError),
 }
 
 impl CompileArgs {
@@ -151,34 +146,12 @@ impl CompileArgs {
         }
 
         // Collect all global array declarations and compute their concrete sizes.
-        // TODO: this is assuming that all functions refer to the same set of global arrays
-        // without renaming.
         let mut arrays = Vec::new();
         if self.target == Target::Handshake {
             if let Some(main_fn) = typed_prog.defs.last() {
-                for param in &main_fn.params {
-                    match &param.ty {
-                        Ty::RefShrd { elem, len } | Ty::RefUniq { elem, len } => {
-                            let eval_len = len
-                                .eval(&bindings)
-                                .map_err(|e| CompileError::ArrayLenEvalError(len.clone(), e))?;
-
-                            if eval_len < 0 {
-                                return Err(CompileError::NegativeArrayLength(
-                                    len.clone(),
-                                    eval_len,
-                                ));
-                            }
-
-                            arrays.push(RawArrayDecl {
-                                loc: param.name.clone(),
-                                elem: elem.as_ref().clone(),
-                                size: eval_len as usize,
-                            });
-                        }
-                        _ => {}
-                    }
-                }
+                // TODO: this is assuming that all functions use the same set
+                // of global arrays without renaming.
+                arrays.extend(main_fn.get_array_decls(&bindings)?);
             }
         }
 

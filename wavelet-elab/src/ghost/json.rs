@@ -1,36 +1,27 @@
 use crate::ghost::affine;
 use crate::ghost::ir::{GhostExpr, GhostFnDef, GhostProgram, GhostStmt, GhostTail, GhostVar};
-use crate::ir::{Op, Variable};
-use crate::{Ty, TypedVar, UntypedVar, Val};
+use crate::ir::{ArrayLen, ArrayLenError, Op, Variable};
+use crate::{FnDef, Ty, TypedVar, UntypedVar, Val};
+
 use serde::ser::{SerializeMap, Serializer};
 use serde::Serialize;
 use serde_json::{self, Value};
-use std::fmt;
+use std::collections::HashMap;
+use thiserror::Error;
 
 /// Errors that can occur while serializing the ghost IR to the Lean-facing JSON format.
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum ExportError {
     /// A required portion of the serializer has not been implemented yet.
+    #[error("unsupported: {0}")]
     Unsupported(String),
     /// Wrapper around JSON encoding failures.
-    Serde(serde_json::Error),
-}
-
-impl fmt::Display for ExportError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ExportError::Unsupported(msg) => write!(f, "serialization not implemented: {msg}"),
-            ExportError::Serde(err) => write!(f, "failed to encode JSON: {err}"),
-        }
-    }
-}
-
-impl std::error::Error for ExportError {}
-
-impl From<serde_json::Error> for ExportError {
-    fn from(err: serde_json::Error) -> Self {
-        ExportError::Serde(err)
-    }
+    #[error("JSON serialization error: {0}")]
+    Serde(#[from] serde_json::Error),
+    #[error("failed to evaluate array length `{0:?}`: {1}")]
+    ArrayLenEvalError(ArrayLen, #[source] ArrayLenError),
+    #[error("negative array length `{0:?} = {1}`")]
+    NegativeArrayLength(ArrayLen, i64),
 }
 
 /// High-level entry point: serialize the ghost program into a JSON string
@@ -101,6 +92,37 @@ impl<V: Variable + From<GhostVar>> TryFrom<&GhostFnDef<V>> for RawFn<V> {
             ],
             body,
         })
+    }
+}
+
+impl<V> FnDef<V> {
+    /// Returns all array declarations used in the function
+    pub fn get_array_decls(
+        &self,
+        bindings: &HashMap<String, i64>,
+    ) -> Result<Vec<RawArrayDecl>, ExportError> {
+        let mut arrays = Vec::new();
+        for param in &self.params {
+            match &param.ty {
+                Ty::RefShrd { elem, len } | Ty::RefUniq { elem, len } => {
+                    let eval_len = len
+                        .eval(&bindings)
+                        .map_err(|e| ExportError::ArrayLenEvalError(len.clone(), e))?;
+
+                    if eval_len < 0 {
+                        return Err(ExportError::NegativeArrayLength(len.clone(), eval_len));
+                    }
+
+                    arrays.push(RawArrayDecl {
+                        loc: param.name.clone(),
+                        elem: elem.as_ref().clone(),
+                        size: eval_len as usize,
+                    });
+                }
+                _ => {}
+            }
+        }
+        Ok(arrays)
     }
 }
 
