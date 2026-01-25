@@ -42,6 +42,7 @@ pub struct RawArrayDecl {
     pub loc: String,
     pub elem: Ty,
     pub size: usize,
+    pub external: bool,
 }
 
 /// Structured representation mirroring the Lean `RawProg` definition.
@@ -117,6 +118,8 @@ impl<V> FnDef<V> {
                         loc: param.name.clone(),
                         elem: elem.as_ref().clone(),
                         size: eval_len as usize,
+                        // TODO: Allow this to be configurable
+                        external: true,
                     });
                 }
                 _ => {}

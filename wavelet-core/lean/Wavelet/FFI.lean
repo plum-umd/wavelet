@@ -38,7 +38,7 @@ def FFI.procToDot (proc : RipTide.Proc) : Except String String :=
 /-- Outputs `RipTide.Proc` in CIRCT Handshake IR. -/
 @[export wavelet_riptide_proc_to_handshake]
 def FFI.procToHandshake (proc : RipTide.Proc) : Except String String :=
-  Handshake.RipTide.emitHandshake proc
+  Handshake.RipTide.emitProc proc
 
 /-- Validates some static properties. -/
 @[export wavelet_riptide_proc_validate]

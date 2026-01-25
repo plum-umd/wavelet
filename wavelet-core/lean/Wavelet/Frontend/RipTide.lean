@@ -391,6 +391,7 @@ structure ArrayDecl where
   loc : Loc
   elem : PrimType
   size : Nat
+  external : Bool
   deriving Repr, Lean.ToJson, Lean.FromJson
 
 /-- Raw program format used for encoding/decoding。 -/
