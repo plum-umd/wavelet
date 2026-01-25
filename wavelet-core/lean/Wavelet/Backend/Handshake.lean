@@ -70,14 +70,11 @@ class EmitConst (V : Type u) where
   emit : V → Except String String
 
 structure Input where
-  /-- Raw MLIR argument. -/
-  decl : String
-  /-- Name used for simulation. -/
+  /-- Name when used as an MLIR variable. -/
   name : String
-
-structure Output where
+  /-- External name. -/
+  extName : String
   ty : PrimType
-  name : String
 
 /-- User-defined operators are emitted via a custom state monad. -/
 class EmitOp σ (Op : Type u) (χ : Type v) [Arity Op] where
@@ -243,7 +240,7 @@ def emitHeader (proc : Proc Op χ V m n) : EmitM σ Unit := do
   let additionalIns ← instEmitOp.additionalInputs
   let args ← proc.inputs.toList.mapM λ v => do
     return s!"{← EmitVar.emit v}: {← EmitType.emit v}"
-  let args := args ++ additionalIns.map (·.decl)
+  let args := args ++ additionalIns.map λ i => s!"{i.name}: {i.ty}"
   let retTys ← proc.outputs.toList.mapM λ v => ToString.toString <$> EmitType.emit v
   let argNames := proc.inputs.toList.mapIdx λ i _ => s!"\"in{i}\""
   let argNames := argNames ++ additionalIns.map (λ i => s!"\"{i.name}\"")
@@ -464,8 +461,9 @@ instance [Repr α] [ToString α]
         let ty ← EmitType.emit arr.elem
         let ty := Handshake.PrimType.memref arr.size ty
         return some {
-          decl := s!"{EmitState.externalMemRef arr.loc} : {ty}",
-          name := s!"extmem.{arr.loc}"
+          name := EmitState.externalMemRef arr.loc,
+          extName := s!"extmem.{arr.loc}"
+          ty,
         }
       else
         return none
