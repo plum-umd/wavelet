@@ -1,10 +1,11 @@
 import Wavelet.Frontend.RipTide
+import Wavelet.Backend.Handshake
 
 /-! Foreign interfaces for using Wavelet as a library. -/
 
 namespace Wavelet.Frontend.RipTide
 
-open Frontend Compile Dataflow
+open Frontend Backend Compile Dataflow
 
 /-- Parses the JSON input as `RipTide.Prog`. -/
 @[export wavelet_riptide_prog_from_json]
@@ -37,7 +38,7 @@ def FFI.procToDot (proc : RipTide.Proc) : Except String String :=
 /-- Outputs `RipTide.Proc` in CIRCT Handshake IR. -/
 @[export wavelet_riptide_proc_to_handshake]
 def FFI.procToHandshake (proc : RipTide.Proc) : Except String String :=
-  proc.emitHandshake
+  Handshake.RipTide.emitHandshake proc
 
 /-- Validates some static properties. -/
 @[export wavelet_riptide_proc_validate]

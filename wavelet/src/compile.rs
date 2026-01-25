@@ -49,10 +49,10 @@ pub struct CompileArgs {
     #[arg(long, default_value = "opt")]
     target: Target,
 
-    /// Instantiate constants to actual values ("K1=V1,K2=V2,...").
+    /// Instantiate constants to concrete values ("K1=V1,K2=V2,...").
     /// Primarily used for lowering to CIRCT/Handshake.
-    #[arg(long, default_value = "")]
-    consts: String,
+    #[arg(short, long, num_args = 0..)]
+    consts: Vec<String>,
 }
 
 #[derive(Debug, Error)]
@@ -61,7 +61,7 @@ pub enum CompileError {
     EmptyProgram,
     #[error(transparent)]
     AnyhowError(#[from] anyhow::Error),
-    #[error("invalid constant bindings: {0}")]
+    #[error("invalid constant binding(s): {0}")]
     InvalidConstBindings(String),
     #[error("parse error: {0}")]
     ElabParseError(#[from] wavelet_elab::ParseError),
@@ -94,30 +94,36 @@ impl CompileArgs {
         Ok(())
     }
 
+    /// Parses user provided constant bindings.
+    fn parse_consts(&self) -> Result<HashMap<String, i64>, CompileError> {
+        let mut bindings = HashMap::new();
+        for consts in &self.consts {
+            for pair in consts.split(',') {
+                let pair = pair.trim();
+                if !pair.is_empty() {
+                    if let Some((k, v)) = pair.split_once('=') {
+                        let key = k.trim().to_string();
+                        let value = v
+                            .trim()
+                            .parse::<i64>()
+                            .map_err(|_| CompileError::InvalidConstBindings(consts.clone()))?;
+                        bindings.insert(key, value);
+                    } else {
+                        return Err(CompileError::InvalidConstBindings(consts.clone()));
+                    }
+                }
+            }
+        }
+        Ok(bindings)
+    }
+
     pub fn run(&self) -> Result<(), CompileError> {
         // Load source program
         let src = std::fs::read_to_string(&self.input).context("when reading input file")?;
         let mut prog = elab::parse_program(&src)?;
 
         // Parse constant bindings
-        let bindings = if self.consts.trim().is_empty() {
-            HashMap::new()
-        } else {
-            self.consts
-                .split(',')
-                .map(|pair| {
-                    pair.split_once('=').and_then(|(k, v)| {
-                        Some((
-                            k.trim().to_string(),
-                            v.trim().to_string().parse::<i64>().ok()?,
-                        ))
-                    })
-                })
-                .collect::<Option<Vec<(String, i64)>>>()
-                .ok_or(CompileError::InvalidConstBindings(self.consts.to_string()))?
-                .into_iter()
-                .collect()
-        };
+        let bindings = self.parse_consts()?;
 
         if prog.defs.len() == 0 {
             return Err(CompileError::EmptyProgram);
