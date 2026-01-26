@@ -446,13 +446,22 @@ pub fn parse_fn_def(input: &str) -> Result<FnDef<UntypedVar>, ParseError> {
     // Extract parameters - separate scalars and arrays
     let mut scalar_params = Vec::new();
     let mut array_params = Vec::new();
+    let mut alloc_arrays = Vec::new();
 
     for input in &item_fn.sig.inputs {
         if let FnArg::Typed(pat_type) = input {
             let var_name = extract_var_name(&pat_type.pat)?;
             let ty = convert_type(&pat_type.ty, &const_generics)?;
             if matches!(ty, ir::Ty::RefShrd { .. } | ir::Ty::RefUniq { .. }) {
-                array_params.push(TypedVar::new(var_name, ty));
+                array_params.push(TypedVar::new(var_name.clone(), ty));
+
+                if pat_type
+                    .attrs
+                    .iter()
+                    .any(|attr| attr.path().is_ident("alloc"))
+                {
+                    alloc_arrays.push(var_name);
+                }
             } else {
                 scalar_params.push(TypedVar::new(var_name, ty));
             }
@@ -494,6 +503,7 @@ pub fn parse_fn_def(input: &str) -> Result<FnDef<UntypedVar>, ParseError> {
     Ok(FnDef {
         name: fn_name,
         params,
+        alloc_arrays,
         caps,
         returns: return_ty,
         body,

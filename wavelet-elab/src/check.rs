@@ -521,6 +521,7 @@ where
     Ok(FnDef {
         name: def.name.clone(),
         params: def.params.clone(),
+        alloc_arrays: def.alloc_arrays.clone(),
         caps: def.caps.clone(),
         returns: def.returns.clone(),
         body: result?,

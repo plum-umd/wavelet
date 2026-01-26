@@ -118,8 +118,7 @@ impl<V> FnDef<V> {
                         loc: param.name.clone(),
                         elem: elem.as_ref().clone(),
                         size: eval_len as usize,
-                        // TODO: Allow this to be configurable
-                        external: true,
+                        external: !self.alloc_arrays.contains(&param.name),
                     });
                 }
                 _ => {}
