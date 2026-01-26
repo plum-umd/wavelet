@@ -55,6 +55,11 @@ def FFI.lowerControlFlow (prog : RipTide.Prog) : Except String RipTide.Proc :=
 def FFI.sinkLastNOutputs (n : USize) (proc : RipTide.Proc) : RipTide.Proc :=
   proc.sinkLastNOutputs n.toNat
 
+/-- Trims the inputs/outputs to remove any redundant unit inputs/outputs. -/
+@[export wavelet_riptide_proc_trim_unit_io]
+def FFI.trimUnitIO (proc : RipTide.Proc) : RipTide.Proc :=
+  proc.trimUnitIO
+
 /-- Applies selected legalizations and optimizations. -/
 @[export wavelet_riptide_proc_optimize]
 def FFI.optimizeProc (proc : RipTide.Proc) (disabledRules : Array String) : RipTide.Proc :=

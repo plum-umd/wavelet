@@ -26,7 +26,7 @@ unsafe extern "C" {
 
     fn wavelet_riptide_prog_lower_control_flow(arg: lean_obj_arg) -> lean_obj_res;
 
-    fn wavelet_riptide_proc_sink_last_n_outputs(n: size_t, arg: lean_obj_arg) -> lean_obj_res;
+    fn wavelet_riptide_proc_trim_unit_io(arg: lean_obj_arg) -> lean_obj_res;
 
     fn wavelet_riptide_proc_optimize(
         arg: lean_obj_arg,
@@ -194,11 +194,11 @@ impl Proc {
         }
     }
 
-    /// Sinks the last `n` outputs.
-    pub fn sink_last_n_outputs(&self, n: usize) -> Proc {
+    /// Removes any redundant unit inputs/outputs.
+    pub fn trim_unit_io(&self) -> Proc {
         ensure_init_lean();
         let res = LeanObject::from_lean_obj_res(unsafe {
-            wavelet_riptide_proc_sink_last_n_outputs(n as size_t, self.0.clone().to_lean_obj_arg())
+            wavelet_riptide_proc_trim_unit_io(self.0.clone().to_lean_obj_arg())
         });
         Proc(res)
     }

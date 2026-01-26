@@ -36,9 +36,9 @@ pub struct CompileArgs {
     #[arg(short, long)]
     output: Option<PathBuf>,
 
-    /// Remove ghost and unit output ports for a smaller dataflow graph.
+    /// Do not remove redundant unit inputs/outputs in the final dataflow.
     #[arg(long)]
-    trim_output: bool,
+    no_trim_io: bool,
 
     /// Enable translation validation for ghost token insertion.
     #[arg(long)]
@@ -139,7 +139,6 @@ impl CompileArgs {
             elab::ghost::check_ghost_program_with_verbose(&elab_prog, false)
                 .map_err(CompileError::ElabValidationError)?;
         }
-        let elab_main_fn = elab_prog.defs.last().ok_or(CompileError::EmptyProgram)?;
 
         if self.target == Target::Elab {
             return self.output(format!("{}", elab_prog));
@@ -190,19 +189,11 @@ impl CompileArgs {
         }
 
         // Remove unnecessary output(s).
-        let core_proc = if self.trim_output {
-            // The current elaborator should generate exactly two outputs:
-            // one for the actual output, and one for the ghost permission token.
-            assert!(core_proc.num_outputs() == 2);
-            eprintln!("trimming ghost and unit outputs...");
-
-            if elab_main_fn.returns.is_unit() {
-                core_proc.sink_last_n_outputs(2)
-            } else {
-                core_proc.sink_last_n_outputs(1)
-            }
-        } else {
+        let core_proc = if self.no_trim_io {
             core_proc
+        } else {
+            eprintln!("trimming ghost and unit outputs...");
+            core_proc.trim_unit_io()
         };
 
         // Optimize
