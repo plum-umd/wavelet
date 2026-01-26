@@ -339,8 +339,8 @@ instance : ToString Value where
     | .int 0 _ => "()"
     | .int 1 0 => "f"
     | .int 1 1 => "t"
-    | .int w val => s!"{val.toInt}i{w}"
-    | .junk => "junk"
+    | .int _ val => s!"{val.toInt}"
+    | .junk => "?"
 
 instance [ToString Loc] : Dataflow.DotName SyncOp where
   dotName
