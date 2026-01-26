@@ -3,7 +3,12 @@ REPO_DIR := $(abspath $(MAKEFILE_DIR)/..)
 WAVELET := $(REPO_DIR)/target/debug/wavelet
 
 TEST_NAMES := $(basename $(notdir $(wildcard tests/*/*.rs)))
-ALL_RESULTS := $(addsuffix /results.xml,$(addprefix tests/,$(TEST_NAMES)))
+
+.PHONY: default
+default: tests
+
+# Do not delete intermediate files
+.SECONDARY:
 
 # Configure CIRCT/LLVM
 build/Makefile: circt
@@ -54,12 +59,32 @@ tests/%/cocotb.makefile:
 	python3 -m venv .venv
 	source .venv/bin/activate && pip install -r requirements.txt
 
-tests/%/results.xml: .venv/bin/activate tests/%/cocotb.makefile tests/%/*.sv
+.PHONY: test-%
+test-%: .venv/bin/activate tests/%/cocotb.makefile
 	@echo "================== testing $* =================="
-	source .venv/bin/activate && make -f tests/$*/cocotb.makefile tests/$*/results.xml
+	@$(MAKE) tests/$*/$*.sv
 	rm -f tests/$*/results.xml
+	-source .venv/bin/activate && make -f tests/$*/cocotb.makefile tests/$*/results.xml
 	@echo "================== completed $* =================="
 
-.PHONY: all-tests
-all-tests: $(ALL_RESULTS)
-	@echo "all tests passed"
+# Loop through $(ALL_RESULTS), call make on each, and count the number of passes and fails
+.PHONY: tests
+tests:
+	@PASS=0; FAIL=0; \
+	for name in $(TEST_NAMES); do \
+		if $(MAKE) test-$$name; then \
+			PASS=$$((PASS + 1)); \
+		else \
+			FAIL=$$((FAIL + 1)); \
+		fi; \
+	done; \
+	echo "================== summary =================="; \
+	echo "passed: $$PASS"; \
+	echo "failed: $$FAIL"; \
+	if [ $$FAIL -ne 0 ]; then \
+		exit 1; \
+	fi
+
+.PHONY: clean-tests
+clean-tests:
+	rm -f tests/*/*.sv tests/*/*.handshake.mlir tests/*/cocotb.makefile tests/*/results.xml
