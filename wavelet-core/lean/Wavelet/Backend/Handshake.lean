@@ -41,7 +41,7 @@ abbrev EmitM σ := IndentWriterT (EmitState σ) String
 def EmitM.freshVar : EmitM σ String := do
   let s ← .get
   .modify λ s => { s with freshCounter := s.freshCounter + 1 }
-  return s!"%_.{s.freshCounter}"
+  return s!"%_{s.freshCounter}"
 
 def EmitM.get : EmitM σ σ := (·.userState) <$> IndentWriterT.get
 
@@ -243,7 +243,7 @@ def emitHeader (proc : Proc Op χ V m n) : EmitM σ Unit := do
   let args := args ++ additionalIns.map λ i => s!"{i.name}: {i.ty}"
   let retTys ← proc.outputs.toList.mapM λ v => ToString.toString <$> EmitType.emit v
   let argNames := proc.inputs.toList.mapIdx λ i _ => s!"\"in{i}\""
-  let argNames := argNames ++ additionalIns.map (λ i => s!"\"{i.name}\"")
+  let argNames := argNames ++ additionalIns.map (λ i => s!"\"{i.extName}\"")
   let retNames := proc.outputs.toList.mapIdx λ i _ => s!"\"out{i}\""
   let attrs := s!"argNames = [{", ".intercalate argNames}], \
     resNames = [{", ".intercalate retNames}]"
@@ -318,7 +318,7 @@ private structure EmitState where
 def EmitState.init (proc : RipTide.Proc) : EmitState :=
   { arrays := proc.arrays, ports := [] }
 
-def EmitState.externalMemRef (loc : RipTide.Loc) : String := s!"%extmem.{loc}"
+def EmitState.externalMemRef (loc : RipTide.Loc) : String := s!"%mem.{loc}"
 
 def EmitState.loadPortAddr (loc : RipTide.Loc) (idx : Nat) : String := s!"%mem.{loc}.load.addr.{idx}"
 def EmitState.loadPortVal (loc : RipTide.Loc) (idx : Nat) : String := s!"%mem.{loc}.load.val.{idx}"
@@ -462,7 +462,7 @@ instance [Repr α] [ToString α]
         let ty := Handshake.PrimType.memref arr.size ty
         return some {
           name := EmitState.externalMemRef arr.loc,
-          extName := s!"extmem.{arr.loc}"
+          extName := s!"mem.{arr.loc}"
           ty,
         }
       else
