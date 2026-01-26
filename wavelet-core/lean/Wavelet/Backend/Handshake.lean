@@ -474,56 +474,55 @@ instance [Repr α] [ToString α]
     -- Generate one `handshake.memory` op for each declared array
     for (locIdx, arr) in s.arrays.mapIdx Prod.mk do
       let ports := s.ports.mapIdx Prod.mk |>.filter (·.snd.loc = arr.loc)
-      if let some (_, firstPort) := ports.head? then
-        let addrTy := .index
-        let valTy := firstPort.valTy
-        -- See <https://circt.llvm.org/docs/Dialects/Handshake/#handshakememory-circthandshakememoryop>
-        -- for the order of inputs and outputs.
-        let loads := ports.filter (·.snd.access = .load)
-        let stores := ports.filter (·.snd.access = .store)
-        let inputs :=
-          (stores.map λ (idx, _) =>
-            [
-              EmitState.storePortVal arr.loc idx,
-              EmitState.storePortAddr arr.loc idx,
-            ]).flatten ++
-          (loads.map λ (idx, _) =>
-            EmitState.loadPortAddr arr.loc idx)
-        let inputTys :=
-          (stores.map λ _ => [valTy, addrTy]).flatten ++
-          (loads.map λ _ => addrTy)
-        let inputTys := inputTys.map ToString.toString
-        let outputs :=
-          (loads.map λ (idx, _) =>
-            EmitState.loadPortVal arr.loc idx) ++
-          (stores.map λ (idx, _) =>
-            EmitState.storePortDone arr.loc idx) ++
-          -- Dummy outputs for unused load "done" signals
-          (← loads.mapM λ _ => .freshVar)
-        let outputTys :=
-          (loads.map λ _ => valTy) ++
-          (stores.map λ _ => Handshake.PrimType.none) ++
-          -- Dummy outputs for unused load "done" signals
-          (loads.map λ _ => Handshake.PrimType.none)
-        let outputTys := outputTys.map ToString.toString
-        let attr := "{id = " ++ s!"{locIdx}" ++ " : i32, lsq = false}"
+      let addrTy := .index
+      let valTy ← EmitType.emit arr.elem
+      -- See <https://circt.llvm.org/docs/Dialects/Handshake/#handshakememory-circthandshakememoryop>
+      -- for the order of inputs and outputs.
+      let loads := ports.filter (·.snd.access = .load)
+      let stores := ports.filter (·.snd.access = .store)
+      let inputs :=
+        (stores.map λ (idx, _) =>
+          [
+            EmitState.storePortVal arr.loc idx,
+            EmitState.storePortAddr arr.loc idx,
+          ]).flatten ++
+        (loads.map λ (idx, _) =>
+          EmitState.loadPortAddr arr.loc idx)
+      let inputTys :=
+        (stores.map λ _ => [valTy, addrTy]).flatten ++
+        (loads.map λ _ => addrTy)
+      let inputTys := inputTys.map ToString.toString
+      let outputs :=
+        (loads.map λ (idx, _) =>
+          EmitState.loadPortVal arr.loc idx) ++
+        (stores.map λ (idx, _) =>
+          EmitState.storePortDone arr.loc idx) ++
+        -- Dummy outputs for unused load "done" signals
+        (← loads.mapM λ _ => .freshVar)
+      let outputTys :=
+        (loads.map λ _ => valTy) ++
+        (stores.map λ _ => Handshake.PrimType.none) ++
+        -- Dummy outputs for unused load "done" signals
+        (loads.map λ _ => Handshake.PrimType.none)
+      let outputTys := outputTys.map ToString.toString
+      let attr := "{id = " ++ s!"{locIdx}" ++ " : i32, lsq = false}"
 
-        if arr.external then
-          -- Generates an external memory interface
-          let ty ← EmitType.emit arr.elem
-          let ty := Handshake.PrimType.memref arr.size ty
-          IndentWriterT.writeLn s!"{", ".intercalate outputs} = \
-            handshake.extmemory [ld = {loads.length}, st = {stores.length}] \
-            ({EmitState.externalMemRef arr.loc}: {ty}) \
-            ({", ".intercalate inputs}) {attr} : \
-            ({", ".intercalate inputTys}) -> ({", ".intercalate outputTys})"
-        else
-          -- Generates an internal memory definition
-          IndentWriterT.writeLn s!"{", ".intercalate outputs} = \
-            handshake.memory [ld = {loads.length}, st = {stores.length}] \
-            ({", ".intercalate inputs}) {attr} : \
-            memref<{arr.size}x{valTy}>, \
-            ({", ".intercalate inputTys}) -> ({", ".intercalate outputTys})"
+      if arr.external then
+        -- Generates an external memory interface
+        let ty ← EmitType.emit arr.elem
+        let ty := Handshake.PrimType.memref arr.size ty
+        let outputBinder := if outputs.isEmpty then "" else s!"{", ".intercalate outputs} = "
+        IndentWriterT.writeLn s!"{outputBinder}handshake.extmemory [ld = {loads.length}, st = {stores.length}] \
+          ({EmitState.externalMemRef arr.loc}: {ty}) \
+          ({", ".intercalate inputs}) {attr} : \
+          ({", ".intercalate inputTys}) -> ({", ".intercalate outputTys})"
+      else
+        -- Generates an internal memory definition
+        IndentWriterT.writeLn s!"{", ".intercalate outputs} = \
+          handshake.memory [ld = {loads.length}, st = {stores.length}] \
+          ({", ".intercalate inputs}) {attr} : \
+          memref<{arr.size}x{valTy}>, \
+          ({", ".intercalate inputTys}) -> ({", ".intercalate outputTys})"
 
 /-- Compiles the given RipTide process to CIRCT/Handshake. -/
 def emitProc

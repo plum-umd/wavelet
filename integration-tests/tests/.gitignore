@@ -1,0 +1,7 @@
+*.sv
+*.handshake.mlir
+Makefile
+
+# cocotb artifacts
+results.xml
+sim_build/
