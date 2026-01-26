@@ -38,7 +38,7 @@ def FFI.procToDot (proc : RipTide.Proc) : Except String String :=
 /-- Outputs `RipTide.Proc` in CIRCT Handshake IR. -/
 @[export wavelet_riptide_proc_to_handshake]
 def FFI.procToHandshake (proc : RipTide.Proc) : Except String String :=
-  Handshake.RipTide.emitHandshake proc
+  Handshake.RipTide.emitProc proc
 
 /-- Validates some static properties. -/
 @[export wavelet_riptide_proc_validate]
@@ -54,6 +54,11 @@ def FFI.lowerControlFlow (prog : RipTide.Prog) : Except String RipTide.Proc :=
 @[export wavelet_riptide_proc_sink_last_n_outputs]
 def FFI.sinkLastNOutputs (n : USize) (proc : RipTide.Proc) : RipTide.Proc :=
   proc.sinkLastNOutputs n.toNat
+
+/-- Trims the inputs/outputs to remove any redundant unit inputs/outputs. -/
+@[export wavelet_riptide_proc_trim_unit_io]
+def FFI.trimUnitIO (proc : RipTide.Proc) : RipTide.Proc :=
+  proc.trimUnitIO
 
 /-- Applies selected legalizations and optimizations. -/
 @[export wavelet_riptide_proc_optimize]

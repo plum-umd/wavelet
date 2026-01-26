@@ -8,8 +8,7 @@ use clap::{Parser, ValueEnum};
 use thiserror::Error;
 
 use wavelet_core::riptide;
-use wavelet_elab::ir::ArrayLen;
-use wavelet_elab::{self as elab, ghost::json::RawArrayDecl, Ty};
+use wavelet_elab as elab;
 
 /// Target IR to output.
 #[derive(Debug, Parser, ValueEnum, Clone, PartialEq, Eq)]
@@ -37,9 +36,9 @@ pub struct CompileArgs {
     #[arg(short, long)]
     output: Option<PathBuf>,
 
-    /// Remove ghost and unit output ports for a smaller dataflow graph.
+    /// Do not remove redundant unit inputs/outputs in the final dataflow.
     #[arg(long)]
-    trim_output: bool,
+    no_trim_io: bool,
 
     /// Enable translation validation for ghost token insertion.
     #[arg(long)]
@@ -64,17 +63,13 @@ pub enum CompileError {
     #[error("invalid constant binding(s): {0}")]
     InvalidConstBindings(String),
     #[error("parse error: {0}")]
-    ElabParseError(#[from] wavelet_elab::ParseError),
+    ElabParseError(#[from] elab::ParseError),
     #[error("type error: {0}")]
-    ElabTypeError(#[from] wavelet_elab::TypeError),
+    ElabTypeError(#[from] elab::TypeError),
     #[error("validation error: {0}")]
     ElabValidationError(String),
     #[error("elaboration export error: {0}")]
-    ElabExportError(#[from] wavelet_elab::ghost::json::ExportError),
-    #[error("failed to evaluate array length `{0:?}`: {1}")]
-    ArrayLenEvalError(ArrayLen, #[source] wavelet_elab::ir::ArrayLenError),
-    #[error("negative array length `{0:?} = {1}`")]
-    NegativeArrayLength(ArrayLen, i64),
+    ElabExportError(#[from] elab::ghost::json::ExportError),
 }
 
 impl CompileArgs {
@@ -144,41 +139,18 @@ impl CompileArgs {
             elab::ghost::check_ghost_program_with_verbose(&elab_prog, false)
                 .map_err(CompileError::ElabValidationError)?;
         }
-        let elab_main_fn = elab_prog.defs.last().ok_or(CompileError::EmptyProgram)?;
 
         if self.target == Target::Elab {
             return self.output(format!("{}", elab_prog));
         }
 
         // Collect all global array declarations and compute their concrete sizes.
-        // TODO: this is assuming that all functions refer to the same set of global arrays
-        // without renaming.
         let mut arrays = Vec::new();
         if self.target == Target::Handshake {
             if let Some(main_fn) = typed_prog.defs.last() {
-                for param in &main_fn.params {
-                    match &param.ty {
-                        Ty::RefShrd { elem, len } | Ty::RefUniq { elem, len } => {
-                            let eval_len = len
-                                .eval(&bindings)
-                                .map_err(|e| CompileError::ArrayLenEvalError(len.clone(), e))?;
-
-                            if eval_len < 0 {
-                                return Err(CompileError::NegativeArrayLength(
-                                    len.clone(),
-                                    eval_len,
-                                ));
-                            }
-
-                            arrays.push(RawArrayDecl {
-                                loc: param.name.clone(),
-                                elem: elem.as_ref().clone(),
-                                size: eval_len as usize,
-                            });
-                        }
-                        _ => {}
-                    }
-                }
+                // TODO: this is assuming that all functions use the same set
+                // of global arrays without renaming.
+                arrays.extend(main_fn.get_array_decls(&bindings)?);
             }
         }
 
@@ -217,19 +189,11 @@ impl CompileArgs {
         }
 
         // Remove unnecessary output(s).
-        let core_proc = if self.trim_output {
-            // The current elaborator should generate exactly two outputs:
-            // one for the actual output, and one for the ghost permission token.
-            assert!(core_proc.num_outputs() == 2);
-            eprintln!("trimming ghost and unit outputs...");
-
-            if elab_main_fn.returns.is_unit() {
-                core_proc.sink_last_n_outputs(2)
-            } else {
-                core_proc.sink_last_n_outputs(1)
-            }
-        } else {
+        let core_proc = if self.no_trim_io {
             core_proc
+        } else {
+            eprintln!("trimming ghost and unit outputs...");
+            core_proc.trim_unit_io()
         };
 
         // Optimize

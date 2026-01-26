@@ -336,8 +336,11 @@ section ToString
 
 instance : ToString Value where
   toString
-    | .int w val => s!"{val.toInt}i{w}"
-    | .junk => "junk"
+    | .int 0 _ => "()"
+    | .int 1 0 => "f"
+    | .int 1 1 => "t"
+    | .int _ val => s!"{val.toInt}"
+    | .junk => "?"
 
 instance [ToString Loc] : Dataflow.DotName SyncOp where
   dotName
@@ -391,6 +394,7 @@ structure ArrayDecl where
   loc : Loc
   elem : PrimType
   size : Nat
+  external : Bool
   deriving Repr, Lean.ToJson, Lean.FromJson
 
 /-- Raw program format used for encoding/decoding。 -/
@@ -579,6 +583,102 @@ def Proc.sinkLastNOutputs (n : Nat) (proc : RipTide.Proc) : RipTide.Proc :=
       atoms := .sink (proc.inner.proc.outputs.drop rem) :: proc.inner.proc.atoms
     }
   }
+
+/-- Generates a fresh variable name not appearing in the given process. -/
+private def Proc.freshName (ty : PrimType) (proc : RipTide.Proc) (offset := 1) : VarName Nat :=
+  let used := proc.inner.proc.atoms.map (λ atom =>
+      atom.inputs.map (·.name) ++ atom.outputs.map (·.name)) |>.flatten
+  let used := used ++
+    proc.inner.proc.inputs.toList.map (·.name) ++
+    proc.inner.proc.outputs.toList.map (·.name)
+  let fresh := offset + used.foldl Nat.max 0
+  { name := fresh, ty }
+
+/--
+Trims the inputs (outputs) of the process so that:
+- If there is a non-unit input (output), all other unit inputs (outputs) are removed
+  (with suitable forks/orders added);
+- If all inputs (outputs) are units, only one is kept.
+
+TODO: Maybe a bit too complicated than necessary.
+-/
+def Proc.trimUnitIO (proc : RipTide.Proc) : RipTide.Proc :=
+  trimOutputs <| trimInputs proc
+  where
+    trimInputs proc :=
+      let unitInputs :=
+        proc.inner.proc.inputs.toList.filter (·.ty = PrimType.unit)
+      let nonUnitInputs :=
+        proc.inner.proc.inputs.toList.filter (·.ty ≠ PrimType.unit)
+      if let firstNonUnit :: restNonUnit := nonUnitInputs then
+        -- Some non-unit inputs, remove all unit inputs
+        let newInput := proc.freshName firstNonUnit.ty 1
+        let newInputFork := proc.freshName firstNonUnit.ty 2
+        {
+          proc with
+          inner := .fromProc {
+            proc.inner.proc with
+            inputs := (newInput :: restNonUnit).toVector,
+            atoms :=
+              .fork newInput #v[newInputFork, firstNonUnit] ::
+              .const Value.unit newInputFork unitInputs.toVector ::
+              proc.inner.proc.atoms
+          }
+        }
+      else
+        -- All inputs are units, join them to one
+        if proc.inner.numIns > 1 then
+          let newInput := proc.freshName .unit 1
+          {
+            proc with
+            inner := .fromProc {
+              proc.inner.proc with
+              inputs := #v[newInput],
+              atoms :=
+                .fork newInput proc.inner.proc.inputs :: proc.inner.proc.atoms
+            }
+          }
+        else
+          -- Only one input, do nothing
+          proc
+    trimOutputs proc :=
+      let unitOuputs :=
+        proc.inner.proc.outputs.toList.filter (·.ty = PrimType.unit)
+      let nonUnitOutputs :=
+        proc.inner.proc.outputs.toList.filter (·.ty ≠ PrimType.unit)
+      if let firstNonUnit :: restNonUnit := nonUnitOutputs then
+        -- Some non-unit outputs, remove all unit outputs
+        let newOutput := proc.freshName firstNonUnit.ty 1
+        let newOutputFork := proc.freshName firstNonUnit.ty 2
+        let : NeZero (firstNonUnit :: unitOuputs).length := ⟨by simp⟩
+        {
+          proc with
+          inner := .fromProc {
+            proc.inner.proc with
+            outputs := (newOutput :: restNonUnit).toVector,
+            atoms :=
+              .order (firstNonUnit :: unitOuputs).toVector newOutput ::
+              proc.inner.proc.atoms
+          }
+        }
+      else
+        -- All outputs are units, join them to one with a order
+        if h : proc.inner.numOuts > 1 then
+          let newOutput := proc.freshName .unit 1
+          let : NeZero proc.inner.numOuts := ⟨by omega⟩
+          {
+            proc with
+            inner := .fromProc {
+              proc.inner.proc with
+              outputs := #v[newOutput],
+              atoms :=
+                .order proc.inner.proc.outputs newOutput ::
+                proc.inner.proc.atoms
+            }
+          }
+        else
+          -- Only one output, do nothing
+          proc
 
 /-- Rewrites the given dataflow process using the given rules. -/
 def Proc.rewriteProc

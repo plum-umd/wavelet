@@ -352,6 +352,9 @@ pub struct FnDef<V> {
     pub name: FnName,
     /// Parameter list.
     pub params: Vec<TypedVar>,
+    /// Arrays variable names that should be allocated locally.
+    /// TODO: Not the most ideal way to store this.
+    pub alloc_arrays: Vec<String>,
     /// Capability patterns required by this function.
     pub caps: Vec<CapPattern>,
     /// Return type.
@@ -885,6 +888,7 @@ mod tests {
                     ty: Ty::Int(Signedness::Signed),
                 },
             ],
+            alloc_arrays: vec![],
             caps: vec![],
             returns: Ty::Int(Signedness::Signed),
             body: foo_body,
@@ -933,6 +937,7 @@ mod tests {
                 name: "n".into(),
                 ty: Ty::Int(Signedness::Signed),
             }],
+            alloc_arrays: vec![],
             caps: vec![],
             returns: Ty::Int(Signedness::Signed),
             body: recursive_body,
@@ -983,6 +988,7 @@ mod tests {
         let mut foo_def = FnDef {
             name: FnName("foo".into()),
             params: vec![TypedVar::new("cond", Ty::Bool)],
+            alloc_arrays: vec![],
             caps: vec![],
             returns: Ty::Unit,
             body: foo_body,
@@ -1046,6 +1052,7 @@ mod tests {
                     },
                 ),
             ],
+            alloc_arrays: vec![],
             caps: vec![],
             returns: Ty::Unit,
             body: Expr::new(vec![foo_call], Tail::RetVar(UntypedVar("_".into()))),
