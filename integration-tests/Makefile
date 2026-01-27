@@ -42,7 +42,7 @@ $(WAVELET): $(REPO_DIR)/wavelet $(REPO_DIR)/wavelet-core $(REPO_DIR)/wavelet-ela
 		--lowering-options=disallowLocalVariables \
 		--verify-each \
 		--verbose-pass-executions \
-		> $@.tmp
+		> $@.tmp || (rm -f $@.tmp && exit 1)
 	mv $@.tmp $@
 
 # Generates a cocotb Makefile for each test
@@ -53,6 +53,7 @@ tests/%/cocotb.makefile:
 	echo "COCOTB_TOPLEVEL = top" >> $@
 	echo "COCOTB_TEST_MODULES = tests.$*.$*" >> $@
 	echo "COCOTB_RESULTS_FILE = tests/$*/results.xml" >> $@
+	echo "SIM_BUILD = tests/$*/sim_build" >> $@
 	echo "include \$$(shell cocotb-config --makefiles)/Makefile.sim" >> $@
 
 .venv/bin/activate: requirements.txt

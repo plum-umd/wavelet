@@ -564,11 +564,13 @@ instance [Repr α] [ToString α]
         let outputVars := outputs.map (·.name)
         let outputTys := outputs.map (ToString.toString ·.ty)
         let attr := "{id = " ++ s!"{locIdx}" ++ " : i32, lsq = false}"
+        let size ← if let .some s := arr.size then pure s else
+          throw s!"cannot emit internal memory of unknown size for array `{arr.loc}`"
         -- Generates an internal memory definition
         IndentWriterT.writeLn s!"{", ".intercalate outputVars} = \
           handshake.memory [ld = {numLoads}, st = {numStores}] \
           ({", ".intercalate inputVars}) {attr} : \
-          memref<{arr.size}x{valTy}>, \
+          memref<{size}x{valTy}>, \
           ({", ".intercalate inputTys}) -> ({", ".intercalate outputTys})"
 
   finalize := pure ()
