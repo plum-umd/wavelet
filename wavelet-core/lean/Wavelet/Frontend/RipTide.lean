@@ -393,7 +393,7 @@ structure VarName (α : Type u) where
 structure ArrayDecl where
   loc : Loc
   elem : PrimType
-  size : Nat
+  size : Option Nat
   external : Bool
   deriving Repr, Lean.ToJson, Lean.FromJson
 

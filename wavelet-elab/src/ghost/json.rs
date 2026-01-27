@@ -41,7 +41,8 @@ pub fn export_program_json<V: Variable + Serialize + From<GhostVar>>(
 pub struct RawArrayDecl {
     pub loc: String,
     pub elem: Ty,
-    pub size: usize,
+    /// If `external` is true, then the size can be omitted.
+    pub size: Option<usize>,
     pub external: bool,
 }
 
@@ -106,20 +107,29 @@ impl<V> FnDef<V> {
         for param in &self.params {
             match &param.ty {
                 Ty::RefShrd { elem, len } | Ty::RefUniq { elem, len } => {
-                    let eval_len = len
-                        .eval(&bindings)
-                        .map_err(|e| ExportError::ArrayLenEvalError(len.clone(), e))?;
+                    if self.alloc_arrays.contains(&param.name) {
+                        let eval_len = len
+                            .eval(&bindings)
+                            .map_err(|e| ExportError::ArrayLenEvalError(len.clone(), e))?;
 
-                    if eval_len < 0 {
-                        return Err(ExportError::NegativeArrayLength(len.clone(), eval_len));
+                        if eval_len < 0 {
+                            return Err(ExportError::NegativeArrayLength(len.clone(), eval_len));
+                        }
+
+                        arrays.push(RawArrayDecl {
+                            loc: param.name.clone(),
+                            elem: elem.as_ref().clone(),
+                            size: Some(eval_len as usize),
+                            external: false,
+                        });
+                    } else {
+                        arrays.push(RawArrayDecl {
+                            loc: param.name.clone(),
+                            elem: elem.as_ref().clone(),
+                            size: None,
+                            external: true,
+                        });
                     }
-
-                    arrays.push(RawArrayDecl {
-                        loc: param.name.clone(),
-                        elem: elem.as_ref().clone(),
-                        size: eval_len as usize,
-                        external: !self.alloc_arrays.contains(&param.name),
-                    });
                 }
                 _ => {}
             }

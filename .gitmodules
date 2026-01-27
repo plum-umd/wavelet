@@ -1,0 +1,3 @@
+[submodule "integration-tests/circt"]
+	path = integration-tests/circt
+	url = https://github.com/llvm/circt.git

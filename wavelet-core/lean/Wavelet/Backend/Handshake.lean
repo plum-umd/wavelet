@@ -41,7 +41,7 @@ abbrev EmitM σ := IndentWriterT (EmitState σ) String
 def EmitM.freshVar : EmitM σ String := do
   let s ← .get
   .modify λ s => { s with freshCounter := s.freshCounter + 1 }
-  return s!"%_.{s.freshCounter}"
+  return s!"%_{s.freshCounter}"
 
 def EmitM.get : EmitM σ σ := (·.userState) <$> IndentWriterT.get
 
@@ -69,10 +69,11 @@ class EmitVar (χ : Type u) where
 class EmitConst (V : Type u) where
   emit : V → Except String String
 
-structure Input where
+/-- External port is an input or output of the top-level circuit. -/
+structure ExternalPort where
   /-- Name when used as an MLIR variable. -/
   name : String
-  /-- External name. -/
+  /-- External name used in Verilog. -/
   extName : String
   ty : PrimType
 
@@ -84,7 +85,13 @@ class EmitOp σ (Op : Type u) (χ : Type v) [Arity Op] where
     → EmitM σ Unit
 
   /-- Declares additional inputs/arguments, called before the body compilation. -/
-  additionalInputs : EmitM σ (List Input)
+  additionalInputs : EmitM σ (List ExternalPort)
+
+  /-- Declares additional outputs, called before the body compilation. -/
+  additionalOutputs : EmitM σ (List ExternalPort)
+
+  /-- Generates initializing operations. -/
+  init : EmitM σ Unit
 
   /-- Generates finalizing operations. -/
   finalize : EmitM σ Unit
@@ -236,15 +243,22 @@ def emitAtomicProcs (aps : AtomicProcs Op χ V) : EmitM σ Unit :=
     emitAtomicProc ap |>.context s!"when emitting atomic process {repr ap}"
 
 /-- Generates handshake function header. -/
-def emitHeader (proc : Proc Op χ V m n) : EmitM σ Unit := do
-  let additionalIns ← instEmitOp.additionalInputs
+def emitHeader
+  (proc : Proc Op χ V m n)
+  (additionalIns : List ExternalPort)
+  (additionalOuts : List ExternalPort) : EmitM σ Unit := do
+  -- Arguments and their external names.
   let args ← proc.inputs.toList.mapM λ v => do
     return s!"{← EmitVar.emit v}: {← EmitType.emit v}"
   let args := args ++ additionalIns.map λ i => s!"{i.name}: {i.ty}"
-  let retTys ← proc.outputs.toList.mapM λ v => ToString.toString <$> EmitType.emit v
   let argNames := proc.inputs.toList.mapIdx λ i _ => s!"\"in{i}\""
-  let argNames := argNames ++ additionalIns.map (λ i => s!"\"{i.name}\"")
+  let argNames := argNames ++ additionalIns.map λ i => s!"\"{i.extName}\""
+  -- Return (types) and their external names.
+  let retTys ← proc.outputs.toList.mapM λ v => ToString.toString <$> EmitType.emit v
+  let retTys := retTys ++ additionalOuts.map (ToString.toString ·.ty)
   let retNames := proc.outputs.toList.mapIdx λ i _ => s!"\"out{i}\""
+  let retNames := retNames ++ additionalOuts.map λ o => s!"\"{o.extName}\""
+  -- Generate the final header
   let attrs := s!"argNames = [{", ".intercalate argNames}], \
     resNames = [{", ".intercalate retNames}]"
   let attrs := "{" ++ attrs ++ "}"
@@ -252,17 +266,22 @@ def emitHeader (proc : Proc Op χ V m n) : EmitM σ Unit := do
     -> ({", ".intercalate retTys}) attributes {attrs}" ++ " {"
 
 /-- Emits the final return operation. -/
-def emitReturn (proc : Proc Op χ V m n) : EmitM σ Unit := do
+def emitReturn (proc : Proc Op χ V m n) (additionalOuts : List ExternalPort) : EmitM σ Unit := do
   let retVars ← proc.outputs.toList.mapM λ v => EmitVar.emit v
+  let retVars := retVars ++ additionalOuts.map (·.name)
   let retTys ← proc.outputs.toList.mapM λ v => ToString.toString <$> EmitType.emit v
+  let retTys := retTys ++ additionalOuts.map (ToString.toString ·.ty)
   .writeLn s!"return {", ".intercalate retVars} : {", ".intercalate retTys}"
 
 def emitProc (proc : Proc Op χ V m n) : EmitM σ Unit := do
-  emitHeader proc
+  let additionalIns ← instEmitOp.additionalInputs
+  let additionalOuts ← instEmitOp.additionalOutputs
+  emitHeader proc additionalIns additionalOuts
   .indentBy 2
+  instEmitOp.init
   emitAtomicProcs proc.atoms
   instEmitOp.finalize
-  emitReturn proc
+  emitReturn proc additionalOuts
   .dedentBy 2
   .writeLn "}"
 
@@ -303,51 +322,108 @@ instance : EmitConst RipTide.Value where
 private inductive MemAccess where | load | store
   deriving DecidableEq, Repr
 
-/-- Each memory access is assigned a port to
-send the actual values and signals. -/
+instance : ToString MemAccess where
+  toString
+    | .load => "load"
+    | .store => "store"
+
+/-- Each memory access is assigned a port to send the actual
+values and addresses. The value of `MemPort` should be unique
+for each memory access. -/
 private structure MemPort where
   loc : RipTide.Loc
   access : MemAccess
-  valTy : Handshake.PrimType
+  idx : Nat
+  deriving DecidableEq, Repr
+
+/- MLIR variable names of a memory port. -/
+def MemPort.addrVar (port : MemPort) : String := s!"%mem.{port.loc}.{port.access}{port.idx}.addr"
+def MemPort.dataVar (port : MemPort) : String := s!"%mem.{port.loc}.{port.access}{port.idx}.data"
+def MemPort.doneVar (port : MemPort) : String := s!"%mem.{port.loc}.{port.access}{port.idx}.done"
 
 /-- Records required memory ports for all accesses. -/
 private structure EmitState where
-  arrays : List RipTide.ArrayDecl
+  proc : RipTide.Proc
   ports : List MemPort
 
 def EmitState.init (proc : RipTide.Proc) : EmitState :=
-  { arrays := proc.arrays, ports := [] }
+  { proc, ports := initPorts }
+  where
+    /-- Iterates through all atomic processes and assigns
+    unique ports to all memory accesses. -/
+    initPorts : List MemPort :=
+      proc.inner.proc.atoms.foldl
+        (λ acc ap =>
+          match ap with
+          | .op (RipTide.SyncOp.load loc) _ _ =>
+            let idx := acc.countP λ p => p.loc = loc ∧ p.access = .load
+            acc.concat { loc, access := .load, idx }
+          | .op (RipTide.SyncOp.store loc) _ _ =>
+            let idx := acc.countP λ p => p.loc = loc ∧ p.access = .store
+            acc.concat { loc, access := .store, idx }
+          | _ => acc)
+        []
 
-def EmitState.externalMemRef (loc : RipTide.Loc) : String := s!"%extmem.{loc}"
+/--
+Generates a list of input/output variables for a particular array `arr`,
+in the same order as required by `handshake.memory`.
 
-def EmitState.loadPortAddr (loc : RipTide.Loc) (idx : Nat) : String := s!"%mem.{loc}.load.addr.{idx}"
-def EmitState.loadPortVal (loc : RipTide.Loc) (idx : Nat) : String := s!"%mem.{loc}.load.val.{idx}"
-
-def EmitState.storePortAddr (loc : RipTide.Loc) (idx : Nat) : String := s!"%mem.{loc}.store.addr.{idx}"
-def EmitState.storePortVal (loc : RipTide.Loc) (idx : Nat) : String := s!"%mem.{loc}.store.val.{idx}"
-def EmitState.storePortDone (loc : RipTide.Loc) (idx : Nat) : String := s!"%mem.{loc}.store.done.{idx}"
-
-/-- Registers a new memory port and returns its index for generating unique variables. -/
-def EmitState.addPort (port : MemPort) : EmitM EmitState Nat := do
+See <https://circt.llvm.org/docs/Dialects/Handshake/#handshakememory-circthandshakememoryop>
+for the order of inputs and outputs.
+-/
+def EmitState.getMemIO (arr : RipTide.ArrayDecl) : EmitM EmitState (List ExternalPort × List ExternalPort) := do
   let s ← .get
-  let idx := s.ports.length
-  -- Check if the location is declared and matches the element type
-  if let .some arr := s.arrays.find? (·.loc = port.loc) then
-    let elemTy ← EmitType.emit arr.elem
-    if elemTy ≠ port.valTy then
-      throw s!"conflicting value type for memory `{port.loc}`: \
-        declared {elemTy}, accessed {port.valTy}"
-  else
-    throw s!"undeclared memory location `{port.loc}`"
-  -- Check that previous accesses to the same location
-  -- have the same address and value types
-  for prevPort in s.ports do
-    if prevPort.loc = port.loc then
-      if prevPort.valTy ≠ port.valTy then
-        throw s!"conflicting value types for memory `{port.loc}`: \
-          previous {prevPort.valTy}, new {port.valTy}"
-  .set { s with ports := s.ports.concat port }
-  return idx
+  let ports := s.ports.filter (·.loc = arr.loc)
+  let valTy ← EmitType.emit arr.elem
+  let loads := ports.filter (·.access = .load)
+  let stores := ports.filter (·.access = .store)
+  let inputs :=
+    (stores.map λ port => [
+      { name := port.dataVar,
+        extName := s!"mem.{arr.loc}.store{port.idx}.data",
+        ty := valTy },
+      { name := port.addrVar,
+        extName := s!"mem.{arr.loc}.store{port.idx}.addr",
+        ty := .index }
+    ]).flatten ++
+    (loads.map λ port => {
+      name := port.addrVar,
+      extName := s!"mem.{arr.loc}.load{port.idx}.addr",
+      ty := .index
+    })
+  let outputs :=
+    (loads.map λ port => {
+      name := port.dataVar,
+      extName := s!"mem.{arr.loc}.load{port.idx}.data",
+      ty := valTy
+    }) ++
+    (stores.map λ port => {
+      name := port.doneVar,
+      extName := s!"mem.{arr.loc}.store{port.idx}.done",
+      ty := Handshake.PrimType.none
+    }) ++
+    (loads.map λ port => {
+      name := port.doneVar,
+      extName := s!"mem.{arr.loc}.load{port.idx}.done",
+      ty := Handshake.PrimType.none
+    })
+  return (inputs, outputs)
+
+/-- Checks if the given memory is external. -/
+def EmitState.isExternal (loc : RipTide.Loc) : EmitM EmitState  Bool := do
+  let s ← .get
+  return s.proc.arrays.any (λ arr => arr.loc = loc ∧ arr.external)
+
+/-- Finds and removes the next available port for loading/storing to `loc`. -/
+def EmitState.useNextPort (loc : RipTide.Loc) (access : MemAccess) : EmitM EmitState MemPort := do
+  let s ← .get
+  match s.ports.find? λ p => p.loc = loc ∧ p.access = access with
+  | .some port =>
+    .set { s with ports := s.ports.erase port }
+    return port
+  | .none =>
+    -- NOTE: This is likely a bug.
+    throw s!"no available port for {access} at memory `{loc}`"
 
 /-- Some simple ops that have a direct correspondence with an `arith` operation. -/
 private def emitArithOp : RipTide.SyncOp → Option String
@@ -388,11 +464,20 @@ instance [Repr α] [ToString α]
       EmitVar.emit addr
     let addrTy := PrimType.index
     let valTy ← EmitType.emit val
-    let port := { loc, access := .load, valTy : MemPort }
-    let idx ← EmitState.addPort port
+    let port ← EmitState.useNextPort loc .load
     let ctrl ← .freshVar
-    let portAddr := EmitState.loadPortAddr loc idx
-    let portVal := EmitState.loadPortVal loc idx
+    -- For external memory, we need to conservatively insert
+    -- additional buffers to avoid deadlocks.
+    -- TODO: Figure out a better solution.
+    let (portAddr, portVal) ← if ← EmitState.isExternal loc then
+      let portAddrBuf ← .freshVar
+      let portValBuf ← .freshVar
+      .writeLn s!"{port.addrVar} = handshake.buffer [1] seq {portAddrBuf} : {addrTy}"
+      .writeLn s!"{portValBuf} = handshake.buffer [1] seq {port.dataVar} : {valTy}"
+      -- port.doneVar should be automatically sunk for load
+      pure (portAddrBuf, portValBuf)
+    else
+      pure (port.addrVar, port.dataVar)
     -- Wait for the address input to arrive, interact with the memory port
     -- and then forward the loaded value.
     let addrCopy1 ← .freshVar
@@ -415,12 +500,21 @@ instance [Repr α] [ToString α]
       EmitVar.emit addr
     let addrTy := PrimType.index
     let valTy ← EmitType.emit val
-    let port := { loc, access := .store, valTy : MemPort }
-    let idx ← EmitState.addPort port
+    let port ← EmitState.useNextPort loc .store
     let ctrl ← .freshVar
-    let portAddr := EmitState.storePortAddr loc idx
-    let portVal := EmitState.storePortVal loc idx
-    let portDone := EmitState.storePortDone loc idx
+    -- For external memory, we need to conservatively insert
+    -- additional buffers to avoid deadlocks.
+    -- TODO: Figure out a better solution.
+    let (portAddr, portVal, portDone) ← if ← EmitState.isExternal loc then
+      let portAddrBuf ← .freshVar
+      let portValBuf ← .freshVar
+      let portDoneBuf ← .freshVar
+      .writeLn s!"{port.addrVar} = handshake.buffer [1] seq {portAddrBuf} : {addrTy}"
+      .writeLn s!"{port.dataVar} = handshake.buffer [1] seq {portValBuf} : {valTy}"
+      .writeLn s!"{portDoneBuf} = handshake.buffer [1] seq {port.doneVar} : {Handshake.PrimType.none}"
+      pure (portAddrBuf, portValBuf, port.doneVar)
+    else
+      pure (port.addrVar, port.dataVar, port.doneVar)
     -- Wait for all inputs to arrive, interact with the memory port
     -- and then forward the done signal.
     let addrCopy1 ← .freshVar
@@ -453,77 +547,56 @@ instance [Repr α] [ToString α]
         {arithOp} {", ".intercalate inputVars} : {inputTy}"
     else throw s!"operator {repr op} not yet implemented"
 
-  /- Each external memory gets an extra parameter. -/
+  /- External memories have extra parameters. Note that here,
+  the inputs to the top-level circuit is the output of a
+  `handshake.memory` operation. -/
   additionalInputs := do
     let s ← .get
-    s.arrays.filterMapM λ arr => do
+    let outputs ← s.proc.arrays.mapM λ arr => do
       if arr.external then
-        let ty ← EmitType.emit arr.elem
-        let ty := Handshake.PrimType.memref arr.size ty
-        return some {
-          name := EmitState.externalMemRef arr.loc,
-          extName := s!"extmem.{arr.loc}"
-          ty,
-        }
+        let (_, outputs) ← EmitState.getMemIO arr
+        return outputs
       else
-        return none
+        return []
+    return outputs.flatten
+
+  /- External memories have additional outputs. -/
+  additionalOutputs := do
+    let s ← .get
+    let inputs ← s.proc.arrays.mapM λ arr => do
+      if arr.external then
+        let (inputs, _) ← EmitState.getMemIO arr
+        return inputs
+      else
+        return []
+    return inputs.flatten
 
   /- Generates concrete memory definitions (`handshake.memory` and `handshake.extmemory`). -/
-  finalize := do
+  init := do
     let s ← .get
     -- Generate one `handshake.memory` op for each declared array
-    for (locIdx, arr) in s.arrays.mapIdx Prod.mk do
-      let ports := s.ports.mapIdx Prod.mk |>.filter (·.snd.loc = arr.loc)
-      if let some (_, firstPort) := ports.head? then
-        let addrTy := .index
-        let valTy := firstPort.valTy
-        -- See <https://circt.llvm.org/docs/Dialects/Handshake/#handshakememory-circthandshakememoryop>
-        -- for the order of inputs and outputs.
-        let loads := ports.filter (·.snd.access = .load)
-        let stores := ports.filter (·.snd.access = .store)
-        let inputs :=
-          (stores.map λ (idx, _) =>
-            [
-              EmitState.storePortVal arr.loc idx,
-              EmitState.storePortAddr arr.loc idx,
-            ]).flatten ++
-          (loads.map λ (idx, _) =>
-            EmitState.loadPortAddr arr.loc idx)
-        let inputTys :=
-          (stores.map λ _ => [valTy, addrTy]).flatten ++
-          (loads.map λ _ => addrTy)
-        let inputTys := inputTys.map ToString.toString
-        let outputs :=
-          (loads.map λ (idx, _) =>
-            EmitState.loadPortVal arr.loc idx) ++
-          (stores.map λ (idx, _) =>
-            EmitState.storePortDone arr.loc idx) ++
-          -- Dummy outputs for unused load "done" signals
-          (← loads.mapM λ _ => .freshVar)
-        let outputTys :=
-          (loads.map λ _ => valTy) ++
-          (stores.map λ _ => Handshake.PrimType.none) ++
-          -- Dummy outputs for unused load "done" signals
-          (loads.map λ _ => Handshake.PrimType.none)
-        let outputTys := outputTys.map ToString.toString
+    for (locIdx, arr) in s.proc.arrays.mapIdx Prod.mk do
+      if ¬ arr.external then
+        -- External memories do not have an internal `handshake.memory` definition
+        let valTy ← EmitType.emit arr.elem
+        let numLoads := s.ports.countP λ p => p.loc = arr.loc ∧ p.access = .load
+        let numStores := s.ports.countP λ p => p.loc = arr.loc ∧ p.access = .store
+        let (inputs, outputs) ← EmitState.getMemIO arr
+        let inputVars := inputs.map (·.name)
+        let inputTys := inputs.map (ToString.toString ·.ty)
+        let outputVars := outputs.map (·.name)
+        let outputTys := outputs.map (ToString.toString ·.ty)
         let attr := "{id = " ++ s!"{locIdx}" ++ " : i32, lsq = false}"
+        let size ← if let .some s := arr.size then pure s else
+          throw s!"cannot emit internal memory of unknown size for array `{arr.loc}`"
+        -- Generates an internal memory definition
+        IndentWriterT.writeLn s!"{", ".intercalate outputVars} = \
+          handshake.memory [ld = {numLoads}, st = {numStores}] \
+          ({", ".intercalate inputVars}) {attr} : \
+          memref<{size}x{valTy}>, \
+          ({", ".intercalate inputTys}) -> ({", ".intercalate outputTys})"
 
-        if arr.external then
-          -- Generates an external memory interface
-          let ty ← EmitType.emit arr.elem
-          let ty := Handshake.PrimType.memref arr.size ty
-          IndentWriterT.writeLn s!"{", ".intercalate outputs} = \
-            handshake.extmemory [ld = {loads.length}, st = {stores.length}] \
-            ({EmitState.externalMemRef arr.loc}: {ty}) \
-            ({", ".intercalate inputs}) {attr} : \
-            ({", ".intercalate inputTys}) -> ({", ".intercalate outputTys})"
-        else
-          -- Generates an internal memory definition
-          IndentWriterT.writeLn s!"{", ".intercalate outputs} = \
-            handshake.memory [ld = {loads.length}, st = {stores.length}] \
-            ({", ".intercalate inputs}) {attr} : \
-            memref<{arr.size}x{valTy}>, \
-            ({", ".intercalate inputTys}) -> ({", ".intercalate outputTys})"
+  finalize := pure ()
 
 /-- Compiles the given RipTide process to CIRCT/Handshake. -/
 def emitProc
