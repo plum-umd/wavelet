@@ -37,7 +37,7 @@ $(WAVELET): $(REPO_DIR)/wavelet $(REPO_DIR)/wavelet-core $(REPO_DIR)/wavelet-ela
 %.sv: %.handshake.mlir build/bin/hlstool
 	build/bin/hlstool $< \
 		--dynamic-hw \
-		--buffering-strategy=cycles \
+		--buffering-strategy=all \
 		--verilog \
 		--lowering-options=disallowLocalVariables \
 		--verify-each \
@@ -63,12 +63,12 @@ tests/%/cocotb.makefile:
 .PHONY: test-%
 test-%: .venv/bin/activate tests/%/cocotb.makefile
 	@echo "================== testing $* =================="
+	@echo "NOTE: use ctrl + \ to interrupt."
 	@$(MAKE) tests/$*/$*.sv
 	rm -f tests/$*/results.xml
-	-source .venv/bin/activate && make -f tests/$*/cocotb.makefile tests/$*/results.xml
+	-source .venv/bin/activate && make -f tests/$*/cocotb.makefile sim
 	@echo "================== completed $* =================="
 
-# Loop through $(ALL_RESULTS), call make on each, and count the number of passes and fails
 .PHONY: tests
 tests:
 	@PASS=0; FAIL=0; \
@@ -88,4 +88,8 @@ tests:
 
 .PHONY: clean-tests
 clean-tests:
-	rm -f tests/*/*.sv tests/*/*.handshake.mlir tests/*/cocotb.makefile tests/*/results.xml
+	rm -rf tests/*/*.sv \
+		tests/*/*.handshake.mlir \
+		tests/*/cocotb.makefile \
+		tests/*/results.xml \
+		tests/*/sim_build

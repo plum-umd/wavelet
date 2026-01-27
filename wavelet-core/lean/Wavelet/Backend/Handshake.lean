@@ -409,7 +409,10 @@ def EmitState.getMemIO (arr : RipTide.ArrayDecl) : EmitM EmitState (List Externa
     })
   return (inputs, outputs)
 
-def EmitState.externalMemRef (loc : RipTide.Loc) : String := s!"%mem.{loc}"
+/-- Checks if the given memory is external. -/
+def EmitState.isExternal (loc : RipTide.Loc) : EmitM EmitState  Bool := do
+  let s ← .get
+  return s.proc.arrays.any (λ arr => arr.loc = loc ∧ arr.external)
 
 /-- Finds and removes the next available port for loading/storing to `loc`. -/
 def EmitState.useNextPort (loc : RipTide.Loc) (access : MemAccess) : EmitM EmitState MemPort := do
@@ -463,8 +466,18 @@ instance [Repr α] [ToString α]
     let valTy ← EmitType.emit val
     let port ← EmitState.useNextPort loc .load
     let ctrl ← .freshVar
-    let portAddr := port.addrVar
-    let portVal := port.dataVar
+    -- For external memory, we need to conservatively insert
+    -- additional buffers to avoid deadlocks.
+    -- TODO: Figure out a better solution.
+    let (portAddr, portVal) ← if ← EmitState.isExternal loc then
+      let portAddrBuf ← .freshVar
+      let portValBuf ← .freshVar
+      .writeLn s!"{port.addrVar} = handshake.buffer [1] seq {portAddrBuf} : {addrTy}"
+      .writeLn s!"{portValBuf} = handshake.buffer [1] seq {port.dataVar} : {valTy}"
+      -- port.doneVar should be automatically sunk for load
+      pure (portAddrBuf, portValBuf)
+    else
+      pure (port.addrVar, port.dataVar)
     -- Wait for the address input to arrive, interact with the memory port
     -- and then forward the loaded value.
     let addrCopy1 ← .freshVar
@@ -489,9 +502,19 @@ instance [Repr α] [ToString α]
     let valTy ← EmitType.emit val
     let port ← EmitState.useNextPort loc .store
     let ctrl ← .freshVar
-    let portAddr := port.addrVar
-    let portVal := port.dataVar
-    let portDone := port.doneVar
+    -- For external memory, we need to conservatively insert
+    -- additional buffers to avoid deadlocks.
+    -- TODO: Figure out a better solution.
+    let (portAddr, portVal, portDone) ← if ← EmitState.isExternal loc then
+      let portAddrBuf ← .freshVar
+      let portValBuf ← .freshVar
+      let portDoneBuf ← .freshVar
+      .writeLn s!"{port.addrVar} = handshake.buffer [1] seq {portAddrBuf} : {addrTy}"
+      .writeLn s!"{port.dataVar} = handshake.buffer [1] seq {portValBuf} : {valTy}"
+      .writeLn s!"{portDoneBuf} = handshake.buffer [1] seq {port.doneVar} : {Handshake.PrimType.none}"
+      pure (portAddrBuf, portValBuf, port.doneVar)
+    else
+      pure (port.addrVar, port.dataVar, port.doneVar)
     -- Wait for all inputs to arrive, interact with the memory port
     -- and then forward the done signal.
     let addrCopy1 ← .freshVar

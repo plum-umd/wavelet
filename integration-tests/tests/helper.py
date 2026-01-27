@@ -34,13 +34,14 @@ class HandshakeInputPort:
 
     async def wait_handshake(self):
         """
-        Wait until the handshake is finished, then reset valid flag.
+        Wait until the handshake is finished
         """
         await ReadOnly()
-        await RisingEdge(self.clock)
+        direct_send = self.is_ready()
         while not self.is_ready():
             await RisingEdge(self.clock)
-        self.valid.value = 0
+        if direct_send:
+            await RisingEdge(self.clock)
 
     async def send(self, data=None):
         assert (data is None) == (self.data is None), "unmatched data availability"
@@ -48,6 +49,7 @@ class HandshakeInputPort:
             self.data.value = data
         self.valid.value = 1
         await self.wait_handshake()
+        self.valid.value = 0
 
 @dataclass
 class HandshakeOutputPort:
@@ -57,7 +59,7 @@ class HandshakeOutputPort:
     clock: Any
 
     def init(self):
-        self.ready.value = 1
+        self.ready.value = 0
 
     def is_valid(self) -> bool:
         return self.valid.value.is_resolvable and self.valid.value == 1
@@ -67,9 +69,12 @@ class HandshakeOutputPort:
         Wait until data is valid, then read it and set ready low for one cycle.
         """
         self.ready.value = 1
-        while not self.is_valid():
+        while True:
             await RisingEdge(self.clock)
+            if self.is_valid():
+                break
         data = None if self.data is None else self.data.value
+        self.ready.value = 0
         await RisingEdge(self.clock)
         return data
 
@@ -79,15 +84,18 @@ class MemoryLoadPort:
     data: HandshakeInputPort
     done: HandshakeInputPort
 
+    def init(self):
+        self.addr.init()
+        self.data.init()
+        self.done.init()
+
     async def simulate(self, memory: dict[int, int]):
         while True:
             addr = await self.addr.read()
             data = memory.get(addr.to_unsigned(), 0)
-            print(f"memory load at {addr}: {data}")
-            res_data = cocotb.start_soon(self.data.send(data))
-            res_done = cocotb.start_soon(self.done.send())
-            await res_data
-            await res_done
+            # print(f"memory load at {addr}: {data}")
+            await self.done.send()
+            await self.data.send(data)
 
 @dataclass
 class MemoryStorePort:
@@ -95,11 +103,16 @@ class MemoryStorePort:
     data: HandshakeOutputPort
     done: HandshakeInputPort
 
+    def init(self):
+        self.addr.init()
+        self.data.init()
+        self.done.init()
+
     async def simulate(self, memory: dict[int, int]):
         while True:
             addr = await self.addr.read()
             data = await self.data.read()
-            print(f"memory store at {addr}: {data}")
+            # print(f"memory store at {addr}: {data}")
             memory[addr.to_unsigned()] = data.to_unsigned()
             await self.done.send()
 
@@ -107,15 +120,21 @@ class MemoryStorePort:
 class Memory:
     loads: list[MemoryLoadPort]
     stores: list[MemoryStorePort]
-    init_state: dict[int, int] = field(default_factory=dict)
+    state: dict[int, int] = field(default_factory=dict)
+
+    def init(self):
+        for load in self.loads:
+            load.init()
+        for store in self.stores:
+            store.init()
 
     def simulate(self):
         """Start simulating the memory behavior (in the background)."""
         for load in self.loads:
-            cocotb.start_soon(load.simulate(self.init_state))
+            cocotb.start_soon(load.simulate(self.state))
 
         for store in self.stores:
-            cocotb.start_soon(store.simulate(self.init_state))
+            cocotb.start_soon(store.simulate(self.state))
 
 class HandshakeDut:
     """
@@ -142,6 +161,9 @@ class HandshakeDut:
         
         for output in self.outputs:
             output.init()
+
+        for mem in self.memories.values():
+            mem.init()
 
         # Start memory simulations
         for mem in self.memories.values():
@@ -237,12 +259,21 @@ class HandshakeDut:
             for loc, (loads, stores) in mem.items()
         }
 
-    async def assert_pure_io(self, inputs: list[Any], expected_outputs: list[Any]):
+        mem_summary = ", ".join(list(f"{loc} (ld = {len(mem.loads)}, st = {len(mem.stores)})" for loc, mem in self.memories.items()))
+        print(f"found {len(self.inputs)} input(s), {len(self.outputs)} output(s), and memories: {mem_summary}")
+
+    def reset_memory(self):
+        for mem in self.memories.values():
+            mem.state.clear()
+
+    async def assert_io(self, inputs: list[Any], expected_outputs: list[Any], expected_memory: dict[str, list[int]] = {}):
         """
         Sends the given inputs and then waits and checks the outputs.
         """
         assert len(inputs) == len(self.inputs), "mismatched number of inputs"
         assert len(expected_outputs) == len(self.outputs), "mismatched number of outputs"
+
+        self.reset_memory()
 
         # Push inputs concurrently to avoid blocking on handshakes
         input_steps = [
@@ -254,3 +285,15 @@ class HandshakeDut:
         output_vals = [await port.read() for port in self.outputs]
         for i, (got, expected) in enumerate(zip(output_vals, expected_outputs)):
             assert got == expected, f"output {i} mismatch: got {got}, expected {expected}"
+
+        for loc, expected in expected_memory.items():
+            self.assert_memory(loc, expected)
+
+    def assert_memory(self, loc: str, expected: list[int]):
+        for i, val in enumerate(expected):
+            assert i in self.memories[loc].state, f"expecting {loc}[{i}] = {val}, but it is unset"
+            mem_val = self.memories[loc].state[i]
+            assert mem_val == val, f"expecting {loc}[{i}] = {val}, but got {mem_val}"
+
+        for i, val in self.memories[loc].state.items():
+            assert i < len(expected), f"expecting {loc}[{i}] to be unset, but got {val}"

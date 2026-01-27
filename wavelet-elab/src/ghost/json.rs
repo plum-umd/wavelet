@@ -108,13 +108,6 @@ impl<V> FnDef<V> {
             match &param.ty {
                 Ty::RefShrd { elem, len } | Ty::RefUniq { elem, len } => {
                     if self.alloc_arrays.contains(&param.name) {
-                        arrays.push(RawArrayDecl {
-                            loc: param.name.clone(),
-                            elem: elem.as_ref().clone(),
-                            size: None,
-                            external: true,
-                        });
-                    } else {
                         let eval_len = len
                             .eval(&bindings)
                             .map_err(|e| ExportError::ArrayLenEvalError(len.clone(), e))?;
@@ -128,6 +121,13 @@ impl<V> FnDef<V> {
                             elem: elem.as_ref().clone(),
                             size: Some(eval_len as usize),
                             external: false,
+                        });
+                    } else {
+                        arrays.push(RawArrayDecl {
+                            loc: param.name.clone(),
+                            elem: elem.as_ref().clone(),
+                            size: None,
+                            external: true,
                         });
                     }
                 }
