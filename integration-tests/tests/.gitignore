@@ -1,6 +1,7 @@
 *.sv
 *.handshake.mlir
 *.makefile
+*.log
 
 # cocotb artifacts
 results.xml

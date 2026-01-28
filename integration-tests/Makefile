@@ -2,7 +2,7 @@ MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 REPO_DIR := $(abspath $(MAKEFILE_DIR)/..)
 WAVELET := $(REPO_DIR)/target/debug/wavelet
 
-TEST_NAMES := $(basename $(notdir $(wildcard tests/*/*.rs)))
+TEST_NAMES := $(basename $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/test.rs)))))
 
 .PHONY: default
 default: tests
@@ -49,9 +49,9 @@ $(WAVELET): $(REPO_DIR)/wavelet $(REPO_DIR)/wavelet-core $(REPO_DIR)/wavelet-ela
 tests/%/cocotb.makefile:
 	echo "SIM ?= icarus" > $@
 	echo "TOPLEVEL_LANG ?= verilog" >> $@
-	echo "VERILOG_SOURCES += tests/$*/$*.sv" >> $@
+	echo "VERILOG_SOURCES += tests/$*/test.sv" >> $@
 	echo "COCOTB_TOPLEVEL = top" >> $@
-	echo "COCOTB_TEST_MODULES = tests.$*.$*" >> $@
+	echo "COCOTB_TEST_MODULES = tests.$*.test" >> $@
 	echo "COCOTB_RESULTS_FILE = tests/$*/results.xml" >> $@
 	echo "SIM_BUILD = tests/$*/sim_build" >> $@
 	echo "include \$$(shell cocotb-config --makefiles)/Makefile.sim" >> $@
@@ -62,26 +62,29 @@ tests/%/cocotb.makefile:
 
 .PHONY: test-%
 test-%: .venv/bin/activate tests/%/cocotb.makefile
-	@echo "================== testing $* =================="
 	@echo "NOTE: use ctrl + \ to interrupt."
-	@$(MAKE) tests/$*/$*.sv
-	rm -f tests/$*/results.xml
-	-source .venv/bin/activate && make -f tests/$*/cocotb.makefile sim
-	@echo "================== completed $* =================="
+	@$(MAKE) tests/$*/test.sv
+	@rm -f tests/$*/results.xml
+	@source .venv/bin/activate && make -f tests/$*/cocotb.makefile sim
 
 .PHONY: tests
 tests:
+	@echo "NOTE: use ctrl + \ to interrupt."; echo
 	@PASS=0; FAIL=0; \
 	for name in $(TEST_NAMES); do \
-		if $(MAKE) test-$$name; then \
+		printf "$$name ..."; \
+		if $(MAKE) test-$$name > tests/$$name/test.log 2>&1; then \
+			echo " PASS"; \
 			PASS=$$((PASS + 1)); \
 		else \
+			echo " FAIL"; \
+			echo "============== log =============="; \
+			cat tests/$$name/test.log; \
+			echo "================================="; \
 			FAIL=$$((FAIL + 1)); \
 		fi; \
 	done; \
-	echo "================== summary =================="; \
-	echo "passed: $$PASS"; \
-	echo "failed: $$FAIL"; \
+	echo; echo "passed: $$PASS, failed: $$FAIL"; \
 	if [ $$FAIL -ne 0 ]; then \
 		exit 1; \
 	fi
