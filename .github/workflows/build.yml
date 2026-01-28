@@ -2,6 +2,7 @@ name: Build Wavelet
 on: [push]
 env:
   Z3_VERSION: 4.15.4
+  CACHE_VERSION: v1
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -19,7 +20,30 @@ jobs:
           z3 --version
       - run: cargo build
       - run: cargo fmt -- --check
-      - run: cargo test --all
+      - run: cargo test --all\
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: wavelet-core/lean
+          auto-config: false
+      # Cache CIRCT build
+      - uses: actions/cache@v4
+        with:
+          path: integration-tests/build
+          key: circt-build-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('.gitmodules', 'integration-tests/circt') }}
+          restore-keys: |
+            circt-build-${{ env.CACHE_VERSION }}-${{ runner.os }}-
+      - run: cargo build
+      - run: make build/bin/hlstool
+        working-directory: integration-tests
+      - run: make tests
+        working-directory: integration-tests
   check-proofs:
     runs-on: ubuntu-latest
     steps:
