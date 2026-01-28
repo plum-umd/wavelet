@@ -2,13 +2,19 @@ name: Build Wavelet
 on: [push]
 env:
   Z3_VERSION: 4.15.4
-  CACHE_VERSION: v1
+  CACHE_VERSION: v2
 jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/cache@v4
+        with:
+          path: wavelet-core/lean/.lake
+          key: lean-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('wavelet-core/lean/lake-manifest.json', 'wavelet-core/lean/lakefile.lean') }}
+          restore-keys: |
+            lean-${{ env.CACHE_VERSION }}-${{ runner.os }}-
       - uses: leanprover/lean-action@v1
         with:
           lake-package-directory: wavelet-core/lean
@@ -20,26 +26,30 @@ jobs:
           z3 --version
       - run: cargo build
       - run: cargo fmt -- --check
-      - run: cargo test --all\
+      - run: cargo test --all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wavelet-debug-binary
+          path: target/debug/wavelet
+          retention-days: 1
   integration-tests:
     runs-on: ubuntu-latest
+    needs: build-test
     steps:
       - uses: actions/checkout@v5
         with:
           submodules: recursive
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: leanprover/lean-action@v1
-        with:
-          lake-package-directory: wavelet-core/lean
-          auto-config: false
-      # Cache CIRCT build
       - uses: actions/cache@v4
         with:
           path: integration-tests/build
-          key: circt-build-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('.gitmodules', 'integration-tests/circt') }}
+          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('.gitmodules', 'integration-tests/circt') }}
           restore-keys: |
-            circt-build-${{ env.CACHE_VERSION }}-${{ runner.os }}-
-      - run: cargo build
+            circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-
+      - uses: actions/download-artifact@v4
+        with:
+          name: wavelet-debug-binary
+          path: target/debug
+      - run: chmod +x target/debug/wavelet
       - run: |
           sudo apt-get update
           sudo apt-get install -y clang lld
