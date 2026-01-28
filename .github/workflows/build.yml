@@ -9,12 +9,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: actions/cache@v4
-        with:
-          path: wavelet-core/lean/.lake
-          key: lean-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('wavelet-core/lean/lake-manifest.json', 'wavelet-core/lean/lakefile.lean') }}
-          restore-keys: |
-            lean-${{ env.CACHE_VERSION }}-${{ runner.os }}-
       - uses: leanprover/lean-action@v1
         with:
           lake-package-directory: wavelet-core/lean
