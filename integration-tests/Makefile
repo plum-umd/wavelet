@@ -23,7 +23,7 @@ build/Makefile: circt
 
 # Build CIRCT/hlstool
 build/bin/hlstool: build/Makefile
-	cmake --build build --target hlstool
+	cmake --build build --target hlstool --parallel
 
 # Build Wavelet
 $(WAVELET): $(REPO_DIR)/wavelet $(REPO_DIR)/wavelet-core $(REPO_DIR)/wavelet-elab

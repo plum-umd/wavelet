@@ -43,7 +43,17 @@ jobs:
       - run: |
           sudo apt-get update
           sudo apt-get install -y clang lld
-      - run: make build/bin/hlstool
+      # Build CIRCT/hlstool
+      - run: |
+          cmake circt/llvm/llvm -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_ENABLE_ASSERTIONS=OFF \
+            -DLLVM_TARGETS_TO_BUILD=host \
+            -DLLVM_ENABLE_PROJECTS=mlir \
+            -DLLVM_EXTERNAL_PROJECTS=circt \
+            -DLLVM_EXTERNAL_CIRCT_SOURCE_DIR=circt \
+            -DLLVM_ENABLE_LLD=ON
+          cmake --build build --target hlstool --parallel 1
         working-directory: integration-tests
       - run: make tests
         working-directory: integration-tests
