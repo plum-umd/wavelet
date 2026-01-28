@@ -40,6 +40,9 @@ jobs:
           restore-keys: |
             circt-build-${{ env.CACHE_VERSION }}-${{ runner.os }}-
       - run: cargo build
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld
       - run: make build/bin/hlstool
         working-directory: integration-tests
       - run: make tests
