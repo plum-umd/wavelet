@@ -29,12 +29,15 @@ build/bin/hlstool: build/Makefile
 $(WAVELET): $(REPO_DIR)/wavelet $(REPO_DIR)/wavelet-core $(REPO_DIR)/wavelet-elab
 	cd $(REPO_DIR) && cargo build
 
+.PHONY: build
+build: $(WAVELET) build/bin/hlstool
+
 # Compile tests from Wavelet/Rust to CIRCT/Handshake
-%.handshake.mlir: %.rs $(WAVELET)
+%.handshake.mlir: %.rs
 	$(WAVELET) compile $< --target handshake -o $@
 
 # Compile CIRCT/Handshake to SystemVerilog
-%.sv: %.handshake.mlir build/bin/hlstool
+%.sv: %.handshake.mlir
 	build/bin/hlstool $< \
 		--dynamic-hw \
 		--buffering-strategy=all \
