@@ -63,14 +63,16 @@ jobs:
           sudo apt-get install -y clang lld iverilog
       # Build CIRCT/hlstool
       - run: |
-          cmake circt/llvm/llvm -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DLLVM_ENABLE_ASSERTIONS=OFF \
-            -DLLVM_TARGETS_TO_BUILD=host \
-            -DLLVM_ENABLE_PROJECTS=mlir \
-            -DLLVM_EXTERNAL_PROJECTS=circt \
-            -DLLVM_EXTERNAL_CIRCT_SOURCE_DIR=circt \
-            -DLLVM_ENABLE_LLD=ON
+          if [ ! -f integration-tests/build/Makefile ]; then
+            cmake circt/llvm/llvm -B build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DLLVM_ENABLE_ASSERTIONS=OFF \
+              -DLLVM_TARGETS_TO_BUILD=host \
+              -DLLVM_ENABLE_PROJECTS=mlir \
+              -DLLVM_EXTERNAL_PROJECTS=circt \
+              -DLLVM_EXTERNAL_CIRCT_SOURCE_DIR=circt \
+              -DLLVM_ENABLE_LLD=ON
+          fi
           cmake --build build --target hlstool --parallel 1
         working-directory: integration-tests
       - uses: actions/cache/save@v4
