@@ -58,14 +58,14 @@ tests/%/cocotb.makefile:
 
 .venv/bin/activate: requirements.txt
 	python3 -m venv .venv
-	source .venv/bin/activate && pip install -r requirements.txt
+	. .venv/bin/activate && pip install -r requirements.txt
 
 .PHONY: test-%
 test-%: .venv/bin/activate tests/%/cocotb.makefile
 	@echo "NOTE: use ctrl + \ to interrupt."
 	@$(MAKE) tests/$*/test.sv
 	@rm -f tests/$*/results.xml
-	@source .venv/bin/activate && make -f tests/$*/cocotb.makefile sim
+	@. .venv/bin/activate && make -f tests/$*/cocotb.makefile sim
 
 .PHONY: tests
 tests:
