@@ -113,11 +113,18 @@ class MemoryStorePort:
             addr = await self.addr.read()
             data = await self.data.read()
             # print(f"memory store at {addr}: {data}")
-            memory[addr.to_unsigned()] = data.to_unsigned()
+            memory[addr.to_unsigned()] = data.to_signed()
             await self.done.send()
 
 @dataclass
 class Memory:
+    """
+    Simulated memory with load and store ports.
+
+    We model memory simply as an unbounded map from unsigned integer
+    addresses to signed integer values.
+    """
+
     loads: list[MemoryLoadPort]
     stores: list[MemoryStorePort]
     state: dict[int, int] = field(default_factory=dict)
@@ -262,18 +269,29 @@ class HandshakeDut:
         mem_summary = ", ".join(list(f"{loc} (ld = {len(mem.loads)}, st = {len(mem.stores)})" for loc, mem in self.memories.items()))
         print(f"found {len(self.inputs)} input(s), {len(self.outputs)} output(s), and memories: {mem_summary}")
 
-    def reset_memory(self):
+    def clear_memory(self):
         for mem in self.memories.values():
             mem.state.clear()
 
-    async def assert_io(self, inputs: list[Any], expected_outputs: list[Any], expected_memory: dict[str, list[int]] = {}):
+    async def assert_io(self,
+        inputs: list[Any],
+        expected_outputs: list[Any],
+        *,
+        init_memory: dict[str, list[int]] = {},
+        expected_memory: dict[str, list[int]] = {},
+    ):
         """
         Sends the given inputs and then waits and checks the outputs.
         """
         assert len(inputs) == len(self.inputs), "mismatched number of inputs"
         assert len(expected_outputs) == len(self.outputs), "mismatched number of outputs"
 
-        self.reset_memory()
+        self.clear_memory()
+
+        for loc, mem in init_memory.items():
+            assert loc in self.memories, f"unknown memory location {loc}"
+            for i, val in enumerate(mem):
+                self.memories[loc].state[i] = val
 
         # Push inputs concurrently to avoid blocking on handshakes
         input_steps = [
