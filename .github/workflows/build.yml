@@ -38,7 +38,8 @@ jobs:
       - uses: actions/checkout@v5
         with:
           submodules: recursive
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: circt-cache
         with:
           path: integration-tests/build
           key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('.gitmodules', 'integration-tests/circt') }}
@@ -72,6 +73,11 @@ jobs:
             -DLLVM_ENABLE_LLD=ON
           cmake --build build --target hlstool --parallel 1
         working-directory: integration-tests
+      - uses: actions/cache/save@v4
+        if: steps.circt-cache.outputs.cache-hit != 'true'
+        with:
+          path: integration-tests/build
+          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('.gitmodules', 'integration-tests/circt') }}
       - run: make tests
         working-directory: integration-tests
   check-proofs:
