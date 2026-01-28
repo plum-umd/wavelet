@@ -29,12 +29,15 @@ build/bin/hlstool: build/Makefile
 $(WAVELET): $(REPO_DIR)/wavelet $(REPO_DIR)/wavelet-core $(REPO_DIR)/wavelet-elab
 	cd $(REPO_DIR) && cargo build
 
+.PHONY: build
+build: $(WAVELET) build/bin/hlstool
+
 # Compile tests from Wavelet/Rust to CIRCT/Handshake
-%.handshake.mlir: %.rs $(WAVELET)
+%.handshake.mlir: %.rs
 	$(WAVELET) compile $< --target handshake -o $@
 
 # Compile CIRCT/Handshake to SystemVerilog
-%.sv: %.handshake.mlir build/bin/hlstool
+%.sv: %.handshake.mlir
 	build/bin/hlstool $< \
 		--dynamic-hw \
 		--buffering-strategy=all \
@@ -58,14 +61,14 @@ tests/%/cocotb.makefile:
 
 .venv/bin/activate: requirements.txt
 	python3 -m venv .venv
-	source .venv/bin/activate && pip install -r requirements.txt
+	. .venv/bin/activate && pip install -r requirements.txt
 
 .PHONY: test-%
 test-%: .venv/bin/activate tests/%/cocotb.makefile
 	@echo "NOTE: use ctrl + \ to interrupt."
 	@$(MAKE) tests/$*/test.sv
 	@rm -f tests/$*/results.xml
-	@source .venv/bin/activate && make -f tests/$*/cocotb.makefile sim
+	@. .venv/bin/activate && make -f tests/$*/cocotb.makefile sim
 
 .PHONY: tests
 tests:

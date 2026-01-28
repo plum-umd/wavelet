@@ -2,8 +2,9 @@ name: Build Wavelet
 on: [push]
 env:
   Z3_VERSION: 4.15.4
+  CACHE_VERSION: v2
 jobs:
-  build-test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -20,6 +21,67 @@ jobs:
       - run: cargo build
       - run: cargo fmt -- --check
       - run: cargo test --all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wavelet-debug-binary
+          path: target/debug/wavelet
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: z3-binary
+          path: /usr/local/bin/z3
+          retention-days: 1
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: actions/cache/restore@v4
+        id: circt-cache
+        with:
+          path: integration-tests/build
+          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('.gitmodules', 'integration-tests/circt') }}
+          restore-keys: |
+            circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-
+      # Restore artifacts from build
+      - uses: actions/download-artifact@v4
+        with:
+          name: wavelet-debug-binary
+          path: target/debug
+      - uses: actions/download-artifact@v4
+        with:
+          name: z3-binary
+      - run: |
+          chmod +x target/debug/wavelet
+          sudo mv z3 /usr/local/bin/
+          sudo chmod +x /usr/local/bin/z3
+          z3 --version
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld iverilog
+      # Build CIRCT/hlstool
+      - run: |
+          if [ ! -f build/bin/hlstool ]; then
+            cmake circt/llvm/llvm -B build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DLLVM_ENABLE_ASSERTIONS=OFF \
+              -DLLVM_TARGETS_TO_BUILD=host \
+              -DLLVM_ENABLE_PROJECTS=mlir \
+              -DLLVM_EXTERNAL_PROJECTS=circt \
+              -DLLVM_EXTERNAL_CIRCT_SOURCE_DIR=circt \
+              -DLLVM_ENABLE_LLD=ON
+            cmake --build build --target hlstool --parallel 1
+          fi
+        working-directory: integration-tests
+      - uses: actions/cache/save@v4
+        if: steps.circt-cache.outputs.cache-hit != 'true'
+        with:
+          path: integration-tests/build
+          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('.gitmodules', 'integration-tests/circt') }}
+      - run: make tests
+        working-directory: integration-tests
   check-proofs:
     runs-on: ubuntu-latest
     steps:
