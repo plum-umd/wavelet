@@ -565,9 +565,11 @@ def deadCodeElim
       let act := inputs'[0]'(by omega)
       let output' := outputs'[0]'(by omega)
       if output' = input then
+        -- NOTE: Here the output of the new steer needs to rename
+        -- from `act` to avoid typing issues.
         .apply "const-steer" [
-          .steer flavor decider #v[act] #v[output'],
-          .const v output' #v[output],
+          .steer flavor decider #v[act] #v[.rename 0 act],
+          .const v (.rename 0 act) #v[output],
         ]
       else failure
     | _ => failure
