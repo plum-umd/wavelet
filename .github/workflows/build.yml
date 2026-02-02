@@ -2,7 +2,7 @@ name: Build Wavelet
 on: [push]
 env:
   Z3_VERSION: 4.15.4
-  CACHE_VERSION: v2
+  CACHE_VERSION: v3
 jobs:
   build:
     runs-on: ubuntu-latest
