@@ -43,8 +43,6 @@ jobs:
         with:
           path: integration-tests/build
           key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('.gitmodules', 'integration-tests/circt') }}
-          restore-keys: |
-            circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-
       # Restore artifacts from build
       - uses: actions/download-artifact@v4
         with:
