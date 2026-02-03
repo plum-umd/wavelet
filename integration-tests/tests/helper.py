@@ -308,7 +308,6 @@ class HandshakeDut:
             self.assert_memory(loc, expected)
 
     def assert_memory(self, loc: str, expected: list[int]):
-        print(f"{loc}: {self.memories[loc].state}")
         for i, val in enumerate(expected):
             assert i in self.memories[loc].state, f"expecting {loc}[{i}] = {val}, but it is unset"
             mem_val = self.memories[loc].state[i]
