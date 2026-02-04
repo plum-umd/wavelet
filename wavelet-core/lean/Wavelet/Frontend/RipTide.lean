@@ -102,10 +102,10 @@ instance : InterpConsts Value where
 
 end Syntax
 
+/-! Executable semantics. -/
 section Semantics
 
 structure State where
-  -- memory : Loc → Value → Option Value
   memory : Std.HashMap Loc (Std.HashMap Value Value)
 
 def State.init : State
@@ -237,69 +237,6 @@ instance : Lean.ToJson State where
       })
 
 end Json
-
-section Testbench
-
-/-- Test inputs. -/
-structure Testbench where
-  inputs : List Value
-  state : State
-  deriving Lean.FromJson, Lean.ToJson
-
-/-- Run the test vector on the given process until termination. -/
-partial def Testbench.run
-  [DecidableEq χ] [Repr χ] [Lean.ToJson χ]
-  (tv : Testbench)
-  (proc : Dataflow.Proc SyncOp χ Value m n) :
-    Except String (
-      List (Nat × Label SyncOp Value m n) × -- Execution trace
-      List Value × -- Output values
-      State -- Final state
-    ) := do
-  let c := Dataflow.Config.init proc
-  let st := tv.state
-  let inputs ← (tv.inputs.toVectorDyn m : Option _).toExcept
-    s!"test vector has incorrect number of inputs: expected {m}, got {tv.inputs.length}"
-  let c := c.pushInputs inputs
-  let inst₁ : OpInterpM SyncOp Value (StateT State Option) := instOpInterpM
-  let inst₂ : Monad (StateT State Option) := by infer_instance
-  let rec loop (tr : List (Nat × Label SyncOp Value m n)) c st : Except String
-    (
-      List (Nat × Label SyncOp Value m n) ×
-      Dataflow.Config SyncOp χ Value m n ×
-      State
-    ) := do
-    let nextSteps := @Dataflow.Config.step _ χ _ _ _ _ inst₁ inst₂ _ _ _ c
-    match nextSteps with
-    | [] => pure (tr, c, st)
-    | (idx, m) :: _ =>
-      let atom ← (c.proc.atoms[idx]?).toExcept s!"invalid operator index {idx}"
-      let rawAtom : RawAtomicProc SyncOp χ Value := ↑atom
-      let ((lbl, c'), st') ← (m.run st).toExcept
-        s!"execution encountered a runtime error at operator index {idx} : {Lean.ToJson.toJson rawAtom}"
-      -- dbg_trace s!"### step {tr.length + 1} ###\n  operator index {idx}\n  atom: {Lean.ToJson.toJson rawAtom}\n  label: {repr lbl}"
-      let tr' := tr ++ [(idx, lbl)]
-      loop tr' c' st'
-  let (tr, c, st) ← loop [] c st
-  -- dbg_trace s!"trace: {repr tr}"
-  let (outputs, c) ← c.popOutputs.toExcept
-    s!"output channels not ready at termination"
-
-  -- Checks if all channels are empty
-  for atom in c.proc.atoms do
-    let rawAtom : RawAtomicProc SyncOp χ Value := ↑atom
-    for name in atom.inputs do
-      let buf := c.chans name
-      if ¬ buf.isEmpty then
-        dbg_trace s!"channel {repr name} (input of {Lean.ToJson.toJson rawAtom}) not empty at termination: {repr buf}"
-    for name in atom.outputs do
-      let buf := c.chans name
-      if ¬ buf.isEmpty then
-        dbg_trace s!"channel {repr name} (output of {Lean.ToJson.toJson rawAtom}) not empty at termination: {repr buf}"
-
-  return (tr, outputs.toList, st)
-
-end Testbench
 
 section Examples
 
@@ -782,5 +719,73 @@ def operatorSel [DecidableEq χ] [Hashable χ] : Rewrite SyncOp χ Value :=
   | _ => failure
 
 end Passes
+
+/-! Testing utilities. -/
+section Testbench
+
+/-- A simply-typed wrapper around a semantic label. -/
+structure Label where
+  numIns : Nat
+  numOuts : Nat
+  idx : Nat
+  inner : Semantics.Label SyncOp Value numIns numOuts
+
+/-- A simply-typed wrapper around dataflow config and the memory state. -/
+structure Config where
+  proc : RipTide.Proc
+  config :
+    Dataflow.Config SyncOp (VarName Nat) Value
+      proc.inner.numIns proc.inner.numOuts
+  state : State
+
+/-- Initial configuration of a RipTide process (including memory state). -/
+def Config.init (proc : RipTide.Proc) : Config :=
+  {
+    proc := proc,
+    config := Dataflow.Config.init proc.inner.proc,
+    state := State.init,
+  }
+
+def Config.storeMem (loc : Loc) (addr : Value) (val : Value)
+  (c : Config) : Config :=
+  { c with state := c.state.store loc addr val }
+
+def Config.loadMem (loc : Loc) (addr : Value)
+  (c : Config) : Option Value :=
+  c.state.load loc addr
+
+/-- Pushes values to the input channels. -/
+def Config.pushInputs
+  (inputs : List Value)
+  (c : Config) : Except String Config := do
+  let inputs ← (inputs.toVectorDyn c.proc.inner.numIns : Option _).toExcept <|
+    s!"incorrect number of inputs: expected {c.proc.inner.numIns}, got {inputs.length}"
+  return { c with config := c.config.pushInputs inputs }
+
+/-- Steps until stuck or hit the optional step bound,
+and returns the trace of fired operators along with
+the final state. -/
+partial def Config.steps
+  (bound : Option Nat := none)
+  (c : Config) :
+    Except String (List Label × Config) := do
+  if let some 0 := bound then
+    return ([], c)
+  let nextSteps := c.config.step (M := StateT State Option)
+  match nextSteps with
+  | [] => return ([], c)
+  | (idx, m) :: _ =>
+    -- Simply pick the first available step and apply
+    -- the suitable changes to the state.
+    -- (looking up the atom for a better error message).
+    let atom ← (c.config.proc.atoms[idx]?).toExcept s!"invalid operator index {idx}"
+    let rawAtom : RawAtomicProc SyncOp (VarName Nat) Value := ↑atom
+    let ((label, config'), state') ← (m.run c.state).toExcept
+      s!"execution encountered a runtime error at operator index {idx} : {Lean.ToJson.toJson rawAtom}"
+    let c := { c with config := config', state := state' }
+    let (tail, final) ← c.steps (Nat.pred <$> bound)
+    return (.mk _ _ idx label :: tail, final)
+
+end Testbench
 
 end Wavelet.Frontend.RipTide
