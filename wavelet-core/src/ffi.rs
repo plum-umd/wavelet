@@ -6,10 +6,7 @@ use std::{
 };
 
 use lean_sys::{
-    lean_array_push, lean_box, lean_ctor_get, lean_dec, lean_dec_ref, lean_inc,
-    lean_initialize_runtime_module_locked, lean_io_result_is_ok, lean_io_result_show_error,
-    lean_is_ctor, lean_is_string, lean_mk_empty_array_with_capacity, lean_mk_string_from_bytes,
-    lean_obj_res, lean_object, lean_ptr_tag, lean_string_cstr,
+    lean_alloc_ctor, lean_array_push, lean_box, lean_ctor_get, lean_ctor_set, lean_dec, lean_dec_ref, lean_inc, lean_initialize_runtime_module_locked, lean_io_result_is_ok, lean_io_result_show_error, lean_is_ctor, lean_is_string, lean_mk_empty_array_with_capacity, lean_mk_string_from_bytes, lean_obj_res, lean_object, lean_ptr_tag, lean_string_cstr
 };
 use thiserror::Error;
 
@@ -24,8 +21,8 @@ pub enum LeanObjectError {
     ExpectedString,
     #[error("expected constructor")]
     ExpectedConstructor,
-    #[error("expected Except value")]
-    ExpectedExcept,
+    #[error("unknown constructor tag")]
+    UnknownConstructorTag,
     #[error("UTF-8 error: {0}")]
     Utf8Error(#[from] std::str::Utf8Error),
 }
@@ -85,7 +82,7 @@ impl LeanObject {
         unsafe { lean_is_ctor(self.raw) }
     }
 
-    /// Checks if the lean object is an Lean `Except` value,
+    /// Checks if the lean object is an `Except` value,
     /// and if so, returns it as a Rust `Result`.
     ///
     /// TODO: This assumes that the fields are all lean objects (e.g., not `USize`, `Bool`, etc.).
@@ -106,7 +103,74 @@ impl LeanObject {
                 unsafe { lean_inc(raw) };
                 Ok(Ok(field))
             }
-            _ => Err(LeanObjectError::ExpectedExcept),
+            _ => Err(LeanObjectError::UnknownConstructorTag),
+        }
+    }
+
+    /// Checks if the lean object is an `Option` value,
+    /// and if so, returns it as a Rust `Option`.
+    #[allow(unused)]
+    pub fn as_option<'a>(&'a self) -> Result<Option<LeanObject>, LeanObjectError> {
+        if !self.is_ctor() {
+            return Err(LeanObjectError::ExpectedConstructor);
+        }
+        match self.tag() {
+            0 => Ok(None),
+            1 => {
+                let raw = unsafe { lean_ctor_get(self.raw, 0) };
+                let field = LeanObject { raw };
+                unsafe { lean_inc(raw) };
+                Ok(Some(field))
+            }
+            _ => Err(LeanObjectError::UnknownConstructorTag),
+        }
+    }
+
+    /// Converts a Rust `Option<LeanObject>` to a Lean `Option` object.
+    #[allow(unused)]
+    pub fn from_option(opt: Option<LeanObject>) -> Self {
+        match opt {
+            None => unsafe {
+                LeanObject { raw: lean_alloc_ctor(0, 0, 0) }
+            },
+            Some(obj) => unsafe {
+                let raw = lean_alloc_ctor(1, 1, 0);
+                lean_ctor_set(raw, 0, obj.to_lean_obj_arg());
+                LeanObject { raw }
+            }
+        }
+    }
+
+    /// Checks if the lean object is a pair,
+    /// and if so, returns the two elements.
+    #[allow(unused)]
+    pub fn as_pair(&self) -> Result<(LeanObject, LeanObject), LeanObjectError> {
+        if !self.is_ctor() {
+            return Err(LeanObjectError::ExpectedConstructor);
+        }
+        if self.tag() != 0 {
+            return Err(LeanObjectError::ExpectedConstructor);
+        }
+        let first_raw = unsafe { lean_ctor_get(self.raw, 0) };
+        let second_raw = unsafe { lean_ctor_get(self.raw, 1) };
+        unsafe {
+            lean_inc(first_raw);
+            lean_inc(second_raw);
+        }
+        Ok((
+            LeanObject { raw: first_raw },
+            LeanObject { raw: second_raw },
+        ))
+    }
+
+    /// Creates a Lean pair.
+    #[allow(unused)]
+    pub fn from_pair(first: LeanObject, second: LeanObject) -> Self {
+        unsafe {
+            let raw = lean_alloc_ctor(0, 2, 0);
+            lean_ctor_set(raw, 0, first.to_lean_obj_arg());
+            lean_ctor_set(raw, 1, second.to_lean_obj_arg());
+            LeanObject { raw }
         }
     }
 
