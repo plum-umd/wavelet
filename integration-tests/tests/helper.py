@@ -4,7 +4,7 @@ Partially adapted from CIRCT's integration tests.
 <https://github.com/llvm/circt/blob/75d4a854cb145f6f8a3246f0a44a9e80a95e701c/integration_test/Dialect/Handshake/helper.py>
 """
 
-from typing import Optional, Any
+from typing import Optional, Any, Callable
 from dataclasses import dataclass, field
 
 import re
@@ -315,3 +315,64 @@ class HandshakeDut:
 
         for i, val in self.memories[loc].state.items():
             assert i < len(expected), f"expecting {loc}[{i}] to be unset, but got {val}"
+
+def check_equiv(
+    *,
+    consts: list[str] = [],
+    args: list[str] = [],
+    # Each memory initializer is a function from (**consts, **args) -> list[int]
+    init_mem: dict[str, Callable] = {},
+    # Assigns values to each constant and argument
+    tests: list[dict[str, Any]],
+):
+    """
+    Decorator wrapper on `cocotb.test` to test the functional equivalence
+    between the DUT and the decorated Python function over the given list
+    of inputs.
+
+    The Python function should have the same set of arguments as the
+    Rust source code of the DUT.
+    """
+    assert set(consts).isdisjoint(args), "consts and args must be disjoint"
+    assert set(init_mem.keys()).isdisjoint(consts + args), "memory names must be disjoint from consts and args"
+    for test in tests:
+        assert set(test.keys()) == set(consts + args), "each test must provide values for all consts and args"
+
+    def decorator(f):
+        async def inner(dut, **kwargs):
+            hs_dut = HandshakeDut(dut)
+            await hs_dut.init()
+            assert set(hs_dut.memories.keys()) == set(init_mem.keys()), "DUT memories do not match declared memories"
+
+            # Prepare inputs and initial memory states
+            const_vals = [kwargs[c] for c in consts]
+            arg_vals = [kwargs[a] for a in args]
+            mems = { loc: init(**kwargs) for loc, init in init_mem.items() }
+
+            # Run the Python counterpart to obtain expected results
+            final_mems = { loc: mem.copy() for loc, mem in mems.items() }
+            res = f(**kwargs, **final_mems)
+
+            await hs_dut.assert_io(
+                # Constant arguments occur after regular arguments in the compiled dataflow
+                arg_vals + const_vals,
+                [res],
+                init_memory=mems,
+                expected_memory=final_mems,
+            )
+
+        inner.__module__ = "tests"
+        inner = cocotb.parametrize(
+            (
+                consts + args,
+                [
+                    [test[k] for k in consts + args]
+                    for test in tests
+                ]
+            ),
+        )(inner)
+        inner = cocotb.test(name=f.__name__)(inner)
+
+        return inner
+
+    return decorator

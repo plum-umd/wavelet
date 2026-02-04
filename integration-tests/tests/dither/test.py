@@ -1,46 +1,35 @@
-import cocotb
+import random
 from .. import helper
-from .. import matrix
 
-def dither(src, R, C):
-    """Same function in Python."""
-    dst = [0] * (R * C)
+@helper.check_equiv(
+    consts=["R", "C"],
+    init_mem={
+        "src": lambda R, C: [random.randint(0, 300) for _ in range(R * C)],
+        "dst": lambda R, C: [0] * (R * C),
+    },
+    tests=[
+        { "R": 2, "C": 3 },
+        { "R": 3, "C": 2 },
+        { "R": 4, "C": 4 },
+        { "R": 1, "C": 5 },
+        { "R": 5, "C": 1 },
+    ],
+)
+def dither(R, C, src, dst):
     threshold = 256
     max_pixel = 0x1FF
+
     for i in range(R):
         err = 0
         row_base = i * C
+
         for j in range(C):
             idx = row_base + j
             out = src[idx] + err
+            
             if out > threshold:
                 dst[idx] = max_pixel
                 err = out - max_pixel
             else:
                 dst[idx] = 0
                 err = out
-    return dst
-
-@cocotb.test()
-async def test(dut):
-    hs_dut = helper.HandshakeDut(dut)
-    await hs_dut.init()
-
-    for r, c in [
-        (2, 3),
-        (3, 2),
-        (4, 4),
-        (1, 5),
-        (5, 1),
-    ]:
-        print(f"testing dithering (r = {c}, c = {c})")
-        src = matrix.random_matrix(r, c, lower=0, upper=300)
-        await hs_dut.assert_io(
-            [r, c], [None],
-            init_memory={
-                "src": sum(src, []),
-            },
-            expected_memory={
-                "dst": dither(sum(src, []), r, c),
-            },
-        )

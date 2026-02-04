@@ -1,31 +1,26 @@
-import cocotb
+import random
 from .. import helper
-from .. import matrix
 
-@cocotb.test()
-async def test(dut):
-    hs_dut = helper.HandshakeDut(dut)
-    await hs_dut.init()
-    
-    for m, n in [
-        (0, 0),
-        (0, 1),
-        (2, 3),
-        (3, 2),
-        (4, 4),
-        (1, 5),
-        (5, 1),
-    ]:
-        print(f"testing random matrix-vector mul (m = {m}, n = {n})")
-        a = matrix.random_matrix(m, n)
-        b = matrix.random_matrix(n, 1)
-        await hs_dut.assert_io(
-            [m, n], [None],
-            init_memory={
-                "a": sum(a, []),
-                "x": sum(b, []),
-            },
-            expected_memory={
-                "y": sum(matrix.matrix_mul(a, b), []),
-            },
-        )
+@helper.check_equiv(
+    consts=["M", "N"],
+    init_mem={
+        "a": lambda M, N: [random.randint(0, 100) for _ in range(M * N)],
+        "x": lambda M, N: [random.randint(0, 100) for _ in range(N)],
+        "y": lambda M, N: [0 for _ in range(M)],
+    },
+    tests=[
+        { "M": 0, "N": 0 },
+        { "M": 0, "N": 1 },
+        { "M": 2, "N": 3 },
+        { "M": 3, "N": 2 },
+        { "M": 4, "N": 4 },
+        { "M": 1, "N": 5 },
+        { "M": 5, "N": 1 },
+    ],
+)
+def dmv(M, N, a, x, y):
+    for i in range(M):
+        acc = 0
+        for j in range(N):
+            acc += a[i * N + j] * x[j]
+        y[i] = acc

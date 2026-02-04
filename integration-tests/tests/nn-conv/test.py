@@ -1,14 +1,29 @@
-import cocotb
+import random
 from .. import helper
-from .. import matrix
 
+@helper.check_equiv(
+    consts=["SRC", "W", "OUT"],
+    args=[
+        "weight_rows",
+        "weight_cols",
+        "wc_bump",
+        "wc_wr_bump",
+        "shift",
+    ],
+    init_mem={
+        "weight": lambda W, **_: [random.randint(-10, 10) for _ in range(W)],
+        "src": lambda SRC, **_: [random.randint(0, 300) for _ in range(SRC)],
+        "dest": lambda OUT, **_: [0] * OUT,
+    },
+    tests=[
+        { "SRC": 16, "W": 4, "OUT": 13, "weight_rows": 2, "weight_cols": 2, "wc_bump": 2, "wc_wr_bump": 1, "shift": 0 },
+    ],
+)
 def nn_conv(SRC, W, OUT,
-            weight, src,
+            weight, src, dest,
             weight_rows, weight_cols,
             wc_bump, wc_wr_bump,
             shift):
-    dest = [0] * OUT
-
     def clamp_i16(w):
         if w < -32768:
             return -32768
@@ -69,33 +84,3 @@ def nn_conv(SRC, W, OUT,
             nn_conv_aux(i + 1)
 
     nn_conv_aux(0)
-    return dest
-
-@cocotb.test()
-async def test(dut):
-    hs_dut = helper.HandshakeDut(dut)
-    await hs_dut.init()
-
-    for SRC, W, OUT, weight_rows, weight_cols, wc_bump, wc_wr_bump, shift in [
-        (16, 4, 13, 2, 2, 2, 1, 0),
-    ]:
-        print(f"testing nn_conv (src = {SRC}, w = {W}, out = {OUT}, weight_rows = {weight_rows}, weight_cols = {weight_cols}, wc_bump = {wc_bump}, wc_wr_bump = {wc_wr_bump}, shift = {shift})")
-        src = matrix.random_matrix(1, SRC, lower=0, upper=300)
-        weight = matrix.random_matrix(1, W, lower=-10, upper=10)
-        await hs_dut.assert_io(
-            [weight_rows, weight_cols, wc_bump, wc_wr_bump, shift, SRC, W, OUT],
-            [None],
-            init_memory={
-                "src": sum(src, []),
-                "weight": sum(weight, []),
-            },
-            expected_memory={
-                "dest": nn_conv(
-                    SRC, W, OUT,
-                    sum(weight, []), sum(src, []),
-                    weight_rows, weight_cols,
-                    wc_bump, wc_wr_bump,
-                    shift
-                ),
-            },
-        )

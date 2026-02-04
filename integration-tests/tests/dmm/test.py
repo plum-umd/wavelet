@@ -1,30 +1,26 @@
-import cocotb
+import random
 from .. import helper
-from .. import matrix
 
-@cocotb.test()
-async def test(dut):
-    hs_dut = helper.HandshakeDut(dut)
-    await hs_dut.init()
-    
-    for m, n, p in [
-        (0, 0, 0),
-        (2, 3, 2),
-        (3, 2, 4),
-        (4, 4, 4),
-        (1, 5, 3),
-        (5, 1, 2),
-    ]:
-        print(f"testing random matrix mul (m = {m}, n = {n}, p = {p})")
-        a = matrix.random_matrix(m, n)
-        b = matrix.random_matrix(n, p)
-        await hs_dut.assert_io(
-            [m, n, p], [None],
-            init_memory={
-                "a": sum(a, []),
-                "b": sum(b, []),
-            },
-            expected_memory={
-                "z": sum(matrix.matrix_mul(a, b), []),
-            },
-        )
+@helper.check_equiv(
+    consts=["M", "N", "P"],
+    init_mem={
+        "a": lambda M, N, P: [random.randint(0, 100) for _ in range(M * N)],
+        "b": lambda M, N, P: [random.randint(0, 100) for _ in range(N * P)],
+        "z": lambda M, N, P: [0 for _ in range(M * P)],
+    },
+    tests=[
+        { "M": 0, "N": 0, "P": 0 },
+        { "M": 2, "N": 3, "P": 2 },
+        { "M": 3, "N": 2, "P": 4 },
+        { "M": 4, "N": 4, "P": 4 },
+        { "M": 1, "N": 5, "P": 3 },
+        { "M": 5, "N": 1, "P": 2 },
+    ],
+)
+def dmm(M, N, P, a, b, z):
+    for i in range(M):
+        for j in range(P):
+            acc = 0
+            for k in range(N):
+                acc += a[i * N + k] * b[k * P + j]
+            z[i * P + j] = acc

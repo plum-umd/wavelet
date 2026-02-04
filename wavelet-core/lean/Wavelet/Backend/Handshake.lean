@@ -121,7 +121,7 @@ def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
     if outputTy₂ ≠ inputTy then
       throw s!"output type should match input type {inputTy}, but got {outputTy₂}"
     .writeLn s!"{← EmitVar.emit output₁}, {← EmitVar.emit output₂} = \
-      handshake.cond_br {← EmitVar.emit decider}, {← EmitVar.emit input} : {inputTy}"
+      cond_br {← EmitVar.emit decider}, {← EmitVar.emit input} : {inputTy}"
   -- `steer` maps to `handshake.cond_br` with one output
   | .async (.steer flavor 1) [decider, input] [output] => do
     let deciderTy ← EmitType.emit decider
@@ -134,10 +134,10 @@ def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
     let dummy ← .freshVar
     if flavor then
       .writeLn s!"{← EmitVar.emit output}, {dummy} = \
-        handshake.cond_br {← EmitVar.emit decider}, {← EmitVar.emit input} : {inputTy}"
+        cond_br {← EmitVar.emit decider}, {← EmitVar.emit input} : {inputTy}"
     else
       .writeLn s!"{dummy}, {← EmitVar.emit output} = \
-        handshake.cond_br {← EmitVar.emit decider}, {← EmitVar.emit input} : {inputTy}"
+        cond_br {← EmitVar.emit decider}, {← EmitVar.emit input} : {inputTy}"
   -- `merge` maps to `handshake.mux`
   | .async (.merge state 1) [decider, input₁, input₂] [output] => do
     let deciderTy ← EmitType.emit decider
@@ -154,22 +154,22 @@ def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
     -- Normal mux
     | .decider =>
       .writeLn s!"{← EmitVar.emit output} = \
-        handshake.mux {← EmitVar.emit decider} [{← EmitVar.emit input₁}, {← EmitVar.emit input₂}] \
+        mux {← EmitVar.emit decider} [{← EmitVar.emit input₁}, {← EmitVar.emit input₂}] \
           : {PrimType.int 1}, {outputTy}"
     -- Carry requires an initial false/true decider token
     | .popLeft | .popRight =>
       let buf ← .freshVar
       let attr := if state = .popLeft then "{initValues = [0]}" else "{initValues = [1]}"
-      .writeLn s!"{buf} = handshake.buffer [1] seq {← EmitVar.emit decider} {attr} : {PrimType.int 1}"
+      .writeLn s!"{buf} = buffer [1] seq {← EmitVar.emit decider} {attr} : {PrimType.int 1}"
       .writeLn s!"{← EmitVar.emit output} = \
-        handshake.mux {buf} [{← EmitVar.emit input₁}, {← EmitVar.emit input₂}] : {PrimType.int 1}, {outputTy}"
+        mux {buf} [{← EmitVar.emit input₁}, {← EmitVar.emit input₂}] : {PrimType.int 1}, {outputTy}"
   -- `forward` maps to `handshake.br`
   | .async (.forward 1) [input] [output] => do
     let inputTy ← EmitType.emit input
     let outputTy ← EmitType.emit output
     if inputTy ≠ outputTy then
       throw s!"input type should match output type {outputTy}, but got {inputTy}"
-    .writeLn s!"{← EmitVar.emit output} = handshake.br {← EmitVar.emit input} : {inputTy}"
+    .writeLn s!"{← EmitVar.emit output} = br {← EmitVar.emit input} : {inputTy}"
   -- `fork` maps to `handshake.fork`
   | .async (.fork n) [input] outputs => do
     let inputTy ← EmitType.emit input
@@ -178,7 +178,7 @@ def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
       if inputTy ≠ outputTy then
         throw s!"input type should match output type {outputTy}, but got {inputTy}"
     let forkOuts ← outputs.mapM λ o => EmitVar.emit o
-    .writeLn s!"{", ".intercalate forkOuts} = handshake.fork [{n}] {← EmitVar.emit input} : {inputTy}"
+    .writeLn s!"{", ".intercalate forkOuts} = fork [{n}] {← EmitVar.emit input} : {inputTy}"
   -- `order` maps to `handshake.sync` with rest of the outputs ignored
   | .async (AsyncOp.order _) (first :: rest) [output] => do
     let outputTy ← EmitType.emit output
@@ -191,11 +191,11 @@ def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
     if outputTy = .none then
       -- If the output is `none`, we directly use `handshake.join`
       -- to avoid a `handshake.sync` issue when all inputs/outputs are `none`.
-      .writeLn s!"{← EmitVar.emit output} = handshake.join {ins} : {inTys}"
+      .writeLn s!"{← EmitVar.emit output} = join {ins} : {inTys}"
     else
       let dummyOuts ← rest.mapM λ _ => .freshVar
       let outs := ", ".intercalate <| (← EmitVar.emit output) :: dummyOuts
-      .writeLn s!"{outs} = handshake.sync {ins} : {inTys}"
+      .writeLn s!"{outs} = sync {ins} : {inTys}"
   -- `const` maps to `handshake.constant` (but we need to convert the activation
   -- signal to `none` if it is not already one)
   | .async (AsyncOp.const const 1) [act] [output] => do
@@ -207,7 +207,7 @@ def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
     -- TODO: Check if this is actually the case.
     if outputTy = .none then
       if actTy = .none then
-        .writeLn s!"{← EmitVar.emit output} = handshake.br {← EmitVar.emit act} : {outputTy}"
+        .writeLn s!"{← EmitVar.emit output} = br {← EmitVar.emit act} : {outputTy}"
       else
         .writeLn s!"{← EmitVar.emit output} = join {← EmitVar.emit act} : {actTy}"
     else
@@ -222,19 +222,19 @@ def emitAtomicProc : AtomicProc Op χ V → EmitM σ Unit
         pure <| "{value = " ++ s!"{← EmitConst.emit const} : {outputTy}" ++ "}"
       if actTy = .none then
         .writeLn s!"{← EmitVar.emit output} = \
-          handshake.constant {← EmitVar.emit act} {attr} : {outputTy}"
+          constant {← EmitVar.emit act} {attr} : {outputTy}"
       else
         -- Convert `act` to `none` first, then call `constant`
         let act' ← .freshVar
         .writeLn s!"{act'} = join {← EmitVar.emit act} : {actTy}"
         .writeLn s!"{← EmitVar.emit output} = \
-          handshake.constant {act'} {attr} : {outputTy}"
+          constant {act'} {attr} : {outputTy}"
   -- `sink` maps to `handshake.sink`
   | .async (AsyncOp.sink 1) [input] [] => do
-    .writeLn s!"handshake.sink {← EmitVar.emit input} : {← EmitType.emit input}"
+    .writeLn s!"sink {← EmitVar.emit input} : {← EmitType.emit input}"
   -- `inact` maps to `handshake.never`
   | .async (AsyncOp.inact 1) [] [output] => do
-    .writeLn s!"{← EmitVar.emit output} = handshake.never : {← EmitType.emit output}"
+    .writeLn s!"{← EmitVar.emit output} = never : {← EmitType.emit output}"
   | ap =>
     throw s!"unsupported atomic process: {repr ap}"
 
@@ -445,7 +445,6 @@ private def emitArithOp : RipTide.SyncOp → Option String
   | .bitand => some "arith.andi"
   | _ => none
 
-/-- TODO: Check types. -/
 instance [Repr α] [ToString α]
   : EmitOp EmitState RipTide.SyncOp (RipTide.VarName α) where
   emit
@@ -472,8 +471,8 @@ instance [Repr α] [ToString α]
     let (portAddr, portVal) ← if ← EmitState.isExternal loc then
       let portAddrBuf ← .freshVar
       let portValBuf ← .freshVar
-      .writeLn s!"{port.addrVar} = handshake.buffer [1] seq {portAddrBuf} : {addrTy}"
-      .writeLn s!"{portValBuf} = handshake.buffer [1] seq {port.dataVar} : {valTy}"
+      .writeLn s!"{port.addrVar} = buffer [1] seq {portAddrBuf} : {addrTy}"
+      .writeLn s!"{portValBuf} = buffer [1] seq {port.dataVar} : {valTy}"
       -- port.doneVar should be automatically sunk for load
       pure (portAddrBuf, portValBuf)
     else
@@ -482,9 +481,9 @@ instance [Repr α] [ToString α]
     -- and then forward the loaded value.
     let addrCopy1 ← .freshVar
     let addrCopy2 ← .freshVar
-    .writeLn s!"{addrCopy1}, {addrCopy2} = handshake.fork [2] {addr} : {addrTy}"
-    .writeLn s!"{ctrl} = handshake.join {addrCopy1} : {addrTy}"
-    .writeLn s!"{← EmitVar.emit val}, {portAddr} = handshake.load [{addrCopy2}] {portVal}, {ctrl} : {addrTy}, {valTy}"
+    .writeLn s!"{addrCopy1}, {addrCopy2} = fork [2] {addr} : {addrTy}"
+    .writeLn s!"{ctrl} = join {addrCopy1} : {addrTy}"
+    .writeLn s!"{← EmitVar.emit val}, {portAddr} = load [{addrCopy2}] {portVal}, {ctrl} : {addrTy}, {valTy}"
   -- The `done` signal of a store operator has the `unit`/`none` type.
   | .store loc, inputs, outputs => do
     let addr := inputs[0]'(by simp [Arity.ι])
@@ -509,9 +508,9 @@ instance [Repr α] [ToString α]
       let portAddrBuf ← .freshVar
       let portValBuf ← .freshVar
       let portDoneBuf ← .freshVar
-      .writeLn s!"{port.addrVar} = handshake.buffer [1] seq {portAddrBuf} : {addrTy}"
-      .writeLn s!"{port.dataVar} = handshake.buffer [1] seq {portValBuf} : {valTy}"
-      .writeLn s!"{portDoneBuf} = handshake.buffer [1] seq {port.doneVar} : {Handshake.PrimType.none}"
+      .writeLn s!"{port.addrVar} = buffer [1] seq {portAddrBuf} : {addrTy}"
+      .writeLn s!"{port.dataVar} = buffer [1] seq {portValBuf} : {valTy}"
+      .writeLn s!"{portDoneBuf} = buffer [1] seq {port.doneVar} : {Handshake.PrimType.none}"
       pure (portAddrBuf, portValBuf, port.doneVar)
     else
       pure (port.addrVar, port.dataVar, port.doneVar)
@@ -521,12 +520,12 @@ instance [Repr α] [ToString α]
     let addrCopy2 ← .freshVar
     let valCopy1 ← .freshVar
     let valCopy2 ← .freshVar
-    .writeLn s!"{addrCopy1}, {addrCopy2} = handshake.fork [2] {addr} : {addrTy}"
-    .writeLn s!"{valCopy1}, {valCopy2} = handshake.fork [2] {← EmitVar.emit val} : {valTy}"
-    .writeLn s!"{ctrl} = handshake.join {addrCopy1}, {valCopy1} : {addrTy}, {valTy}"
-    .writeLn s!"{portVal}, {portAddr} = handshake.store [{addrCopy2}] {valCopy2}, {ctrl} : \
+    .writeLn s!"{addrCopy1}, {addrCopy2} = fork [2] {addr} : {addrTy}"
+    .writeLn s!"{valCopy1}, {valCopy2} = fork [2] {← EmitVar.emit val} : {valTy}"
+    .writeLn s!"{ctrl} = join {addrCopy1}, {valCopy1} : {addrTy}, {valTy}"
+    .writeLn s!"{portVal}, {portAddr} = store [{addrCopy2}] {valCopy2}, {ctrl} : \
       {addrTy}, {valTy}"
-    .writeLn <| s!"{← EmitVar.emit done} = handshake.br {portDone} : {Handshake.PrimType.none}"
+    .writeLn <| s!"{← EmitVar.emit done} = br {portDone} : {Handshake.PrimType.none}"
   -- | .const v, inputs, outputs
   -- | .copy n, inputs, outputs
   | .sel, inputs, outputs => do
@@ -591,7 +590,7 @@ instance [Repr α] [ToString α]
           throw s!"cannot emit internal memory of unknown size for array `{arr.loc}`"
         -- Generates an internal memory definition
         IndentWriterT.writeLn s!"{", ".intercalate outputVars} = \
-          handshake.memory [ld = {numLoads}, st = {numStores}] \
+          memory [ld = {numLoads}, st = {numStores}] \
           ({", ".intercalate inputVars}) {attr} : \
           memref<{size}x{valTy}>, \
           ({", ".intercalate inputTys}) -> ({", ".intercalate outputTys})"

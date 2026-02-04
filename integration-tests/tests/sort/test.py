@@ -1,7 +1,21 @@
-import cocotb
+import random
 from .. import helper
-from .. import matrix
 
+@helper.check_equiv(
+    consts=["N"],
+    args=["even_count"],
+    init_mem={
+        "a": lambda N, **_: [random.randint(-20, 20) for _ in range(N)],
+        "z": lambda N, **_: [0] * N,
+    },
+    tests=[
+        # Even count may not be correct, but the behavior
+        # should still match the reference
+        { "N": 0, "even_count": 0 },
+        { "N": 3, "even_count": 2 },
+        { "N": 6, "even_count": 3 },
+    ],
+)
 def sort(a, z, N, even_count):
     def cond_read(j, odd):
         return z[j] if odd else a[j]
@@ -82,29 +96,3 @@ def sort(a, z, N, even_count):
             return
 
     sort_bits_aux(0, even_count)
-
-@cocotb.test()
-async def test(dut):
-    hs_dut = helper.HandshakeDut(dut)
-    await hs_dut.init()
-
-    for N in [0, 3, 6]:
-        print(f"testing sort (N = {N})")
-        a = matrix.random_matrix(1, N, lower=0, upper=1000)
-        z = [0] * N
-        even_count = sum(1 for x in a[0] if (x & 1) == 0)
-        sorted_a = sum(a, [])
-        sorted_z = z.copy()
-        sort(sorted_a, sorted_z, N, even_count)
-        await hs_dut.assert_io(
-            [even_count, N],
-            [None],
-            init_memory={
-                "a": sum(a, []),
-                "z": z,
-            },
-            expected_memory={
-                "a": sorted_a,
-                "z": sorted_z,
-            },
-        )

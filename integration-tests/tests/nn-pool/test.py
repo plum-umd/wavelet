@@ -1,14 +1,30 @@
-import cocotb
+import random
 from .. import helper
-from .. import matrix
 
-def nn_pool(src, SRC, OUT,
+@helper.check_equiv(
+    consts=["SRC", "OUT"],
+    args=[
+        "input_rows_bump",
+        "input_cols",
+        "output_cols",
+        "pool_size",
+    ],
+    init_mem={
+        "src": lambda SRC, **_: [
+            random.randint(-100, 100) for _ in range(SRC)
+        ],
+        "dest": lambda OUT, **_: [0] * OUT,
+    },
+    tests=[
+        { "SRC": 16, "OUT": 4, "input_rows_bump": 2, "input_cols": 4, "output_cols": 2, "pool_size": 2 },
+        { "SRC": 36, "OUT": 9, "input_rows_bump": 4, "input_cols": 6, "output_cols": 3, "pool_size": 2 },
+    ],
+)
+def nn_pool(src, dest, SRC, OUT,
             input_rows_bump,
             input_cols,
             output_cols,
             pool_size):
-    dest = [0] * OUT
-
     def sel(cond, a, b):
         return a if cond else b
 
@@ -68,33 +84,3 @@ def nn_pool(src, SRC, OUT,
     start_off = 0
     start_col = 0
     nn_pool_aux(start_i, start_off, start_col)
-
-    return dest
-
-@cocotb.test()
-async def test(dut):
-    hs_dut = helper.HandshakeDut(dut)
-    await hs_dut.init()
-
-    for SRC, OUT, input_rows_bump, input_cols, output_cols, pool_size in [
-        (16, 4, 2, 4, 2, 2),
-        (36, 9, 4, 6, 3, 2),
-    ]:
-        print(f"testing nn_pool (SRC = {SRC}, OUT = {OUT}, input_rows_bump = {input_rows_bump}, input_cols = {input_cols}, output_cols = {output_cols}, pool_size = {pool_size})")
-        src = matrix.random_matrix(1, SRC, lower=-100, upper=100)
-        await hs_dut.assert_io(
-            [input_rows_bump, input_cols, output_cols, pool_size, SRC, OUT],
-            [None],
-            init_memory={
-                "src": sum(src, []),
-            },
-            expected_memory={
-                "dest": nn_pool(
-                    sum(src, []), SRC, OUT,
-                    input_rows_bump,
-                    input_cols,
-                    output_cols,
-                    pool_size
-                ),
-            },
-        )

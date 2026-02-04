@@ -92,8 +92,8 @@ tests:
 		exit 1; \
 	fi
 
-.PHONY: clean-tests
-clean-tests:
+.PHONY: clean
+clean:
 	rm -rf tests/*/*.sv \
 		tests/*/*.handshake.mlir \
 		tests/*/cocotb.makefile \
