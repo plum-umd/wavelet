@@ -42,7 +42,7 @@ inductive AsyncOp V where
   | sink (n : Nat) [NeZero n] : AsyncOp V
   | inv (flavor : Bool) (c : Option V) : AsyncOp V
   | inact (n : Nat) : AsyncOp V
-  deriving Repr
+  deriving Repr, DecidableEq
 
 /-- Input arity of an async operator. -/
 def AsyncOp.ι : AsyncOp V → Nat

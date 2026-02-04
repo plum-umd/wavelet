@@ -18,7 +18,7 @@ open Semantics
 inductive AtomicProc (Op : Type u) χ V [Arity Op] where
   | op (op : Op) (inputs : Vector χ (Arity.ι op)) (outputs : Vector χ (Arity.ω op))
   | async (aop : AsyncOp V) (inputs : List χ) (outputs : List χ)
-  deriving Repr
+  deriving Repr, DecidableEq
 
 def AtomicProc.inputs [Arity Op] : AtomicProc Op χ V → List χ
   | .op _ inputs _ => inputs.toList
@@ -103,6 +103,7 @@ structure Proc Op χ V [Arity Op] (m : Nat) (n : Nat) where
   inputs : Vector χ m
   outputs : Vector χ n
   atoms : AtomicProcs Op χ V
+  deriving Repr, DecidableEq
 
 structure Config (Op : Type u) (χ : Type v) (V : Type w) [Arity Op] m n : Type (max u v w) where
   proc : Proc Op χ V m n

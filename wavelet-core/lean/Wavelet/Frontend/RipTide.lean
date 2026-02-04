@@ -57,7 +57,7 @@ inductive SyncOp where
   | load (_ : Loc) | store (_ : Loc) | sel
   | const (_ : Value)
   | copy (_ : Nat)
-  deriving Repr, Lean.ToJson, Lean.FromJson
+  deriving Repr, DecidableEq, Lean.ToJson, Lean.FromJson
 
 instance : Arity SyncOp where
   ι | .add => 2 | .sub => 2 | .mul => 2
@@ -746,6 +746,19 @@ def Config.init (proc : RipTide.Proc) : Config :=
     state := State.init,
   }
 
+/-- Checks if the given configuration is in its initial state (except for the memory). -/
+def Config.checkInit (c : Config) : Except String Unit := do
+  if c.config.proc ≠ c.proc.inner.proc then
+    throw "atom local state not in initial state"
+  -- For each channel, check if the input/output buffers are empty
+  for ap in c.proc.inner.proc.atoms do
+    for chan in ap.inputs do
+      if c.config.chans.getBuf chan ≠ [] then
+        throw s!"input buffer for channel {repr chan} not empty"
+    for chan in ap.outputs do
+      if c.config.chans.getBuf chan ≠ [] then
+        throw s!"output buffer for channel {repr chan} not empty"
+
 def Config.storeMem (loc : Loc) (addr : Value) (val : Value)
   (c : Config) : Config :=
   { c with state := c.state.store loc addr val }
@@ -754,13 +767,20 @@ def Config.loadMem (loc : Loc) (addr : Value)
   (c : Config) : Option Value :=
   c.state.load loc addr
 
-/-- Pushes values to the input channels. -/
+/-- Pushes one value to each input channel. -/
 def Config.pushInputs
   (inputs : List Value)
   (c : Config) : Except String Config := do
   let inputs ← (inputs.toVectorDyn c.proc.inner.numIns : Option _).toExcept <|
     s!"incorrect number of inputs: expected {c.proc.inner.numIns}, got {inputs.length}"
   return { c with config := c.config.pushInputs inputs }
+
+/-- Pops one value from each output channel. -/
+def Config.popOutputs
+  (c : Config) : Except String (List Value × Config) := do
+  let (outputs, config') ← c.config.popOutputs.toExcept
+    s!"some output channels are empty"
+  return (outputs.toList, { c with config := config' })
 
 /-- Steps until stuck or hit the optional step bound,
 and returns the trace of fired operators along with
