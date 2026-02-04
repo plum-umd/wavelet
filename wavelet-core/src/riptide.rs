@@ -5,7 +5,7 @@ use lean_sys::{lean_obj_arg, lean_obj_res};
 use libc::size_t;
 use thiserror::Error;
 
-use crate::ffi::{ensure_init_lean, LeanArray, LeanObject, LeanObjectError};
+use crate::ffi::{ensure_init_lean, LeanObject, LeanObjectError};
 
 // Raw FFI bindings to exported functions declared in `lean/Wavelet/FFI.lean`.
 #[link(name = "Wavelet", kind = "static")]
@@ -209,7 +209,7 @@ impl Proc {
         S: AsRef<str>,
     {
         ensure_init_lean();
-        let arr = LeanArray::from_vec(
+        let arr = LeanObject::from_vec(
             disabled_rules
                 .as_ref()
                 .iter()
@@ -217,10 +217,7 @@ impl Proc {
                 .collect(),
         );
         let res = LeanObject::from_lean_obj_res(unsafe {
-            wavelet_riptide_proc_optimize(
-                self.0.clone().to_lean_obj_arg(),
-                arr.to_obj().to_lean_obj_arg(),
-            )
+            wavelet_riptide_proc_optimize(self.0.clone().to_lean_obj_arg(), arr.to_lean_obj_arg())
         });
         Proc(res)
     }

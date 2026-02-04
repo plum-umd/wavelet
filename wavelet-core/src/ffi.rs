@@ -6,7 +6,10 @@ use std::{
 };
 
 use lean_sys::{
-    lean_alloc_ctor, lean_array_push, lean_box, lean_ctor_get, lean_ctor_set, lean_dec, lean_dec_ref, lean_inc, lean_initialize_runtime_module_locked, lean_io_result_is_ok, lean_io_result_show_error, lean_is_ctor, lean_is_string, lean_mk_empty_array_with_capacity, lean_mk_string_from_bytes, lean_obj_res, lean_object, lean_ptr_tag, lean_string_cstr
+    lean_alloc_ctor, lean_array_push, lean_box, lean_ctor_get, lean_ctor_set, lean_dec,
+    lean_dec_ref, lean_inc, lean_initialize_runtime_module_locked, lean_io_result_is_ok,
+    lean_io_result_show_error, lean_is_ctor, lean_is_string, lean_mk_empty_array_with_capacity,
+    lean_mk_string_from_bytes, lean_obj_res, lean_object, lean_ptr_tag, lean_string_cstr,
 };
 use thiserror::Error;
 
@@ -131,13 +134,15 @@ impl LeanObject {
     pub fn from_option(opt: Option<LeanObject>) -> Self {
         match opt {
             None => unsafe {
-                LeanObject { raw: lean_alloc_ctor(0, 0, 0) }
+                LeanObject {
+                    raw: lean_alloc_ctor(0, 0, 0),
+                }
             },
             Some(obj) => unsafe {
                 let raw = lean_alloc_ctor(1, 1, 0);
                 lean_ctor_set(raw, 0, obj.to_lean_obj_arg());
                 LeanObject { raw }
-            }
+            },
         }
     }
 
@@ -174,6 +179,20 @@ impl LeanObject {
         }
     }
 
+    /// Creates an owned Lean `Array` object.
+    pub fn from_vec(objs: Vec<LeanObject>) -> Self {
+        let arr = unsafe {
+            let capacity = lean_box(objs.len());
+            let mut arr = lean_mk_empty_array_with_capacity(capacity);
+            lean_dec(capacity);
+            for obj in objs.into_iter() {
+                arr = lean_array_push(arr, obj.to_lean_obj_arg());
+            }
+            arr
+        };
+        LeanObject::from_lean_obj_res(arr)
+    }
+
     /// `lean_obj_arg` requires an owned `*mut lean_object`.
     pub fn to_lean_obj_arg(self) -> lean_sys::lean_obj_arg {
         let raw = self.raw;
@@ -186,34 +205,6 @@ impl LeanObject {
     /// `lean_obj_res` contains an owned `*mut lean_object`.
     pub fn from_lean_obj_res(raw: lean_sys::lean_obj_res) -> Self {
         LeanObject { raw }
-    }
-}
-
-/// A wrapper around Lean arrays (`Array`).
-pub struct LeanArray {
-    obj: LeanObject,
-}
-
-impl LeanArray {
-    /// Creates an (owned) Lean array from a vector of Lean objects.
-    pub fn from_vec(objs: Vec<LeanObject>) -> Self {
-        let arr = unsafe {
-            let capacity = lean_box(objs.len());
-            let mut arr = lean_mk_empty_array_with_capacity(capacity);
-            lean_dec(capacity);
-            for obj in objs.into_iter() {
-                arr = lean_array_push(arr, obj.to_lean_obj_arg());
-            }
-            arr
-        };
-        LeanArray {
-            obj: LeanObject::from_lean_obj_res(arr),
-        }
-    }
-
-    /// Returns the underlying Lean object.
-    pub fn to_obj(self) -> LeanObject {
-        self.obj
     }
 }
 
