@@ -524,6 +524,20 @@ impl Label {
     }
 }
 
+impl std::fmt::Display for Label {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        extern "C" {
+            fn wavelet_riptide_label_to_string(arg: lean_obj_arg) -> lean_obj_res;
+        }
+        ensure_init_lean();
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_label_to_string(self.0.clone().to_lean_obj_arg())
+        });
+        let s: &str = (&res).try_into().map_err(|_| std::fmt::Error {})?;
+        write!(f, "{}", s)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -196,6 +196,9 @@ def FFI.configSteps
 @[export wavelet_riptide_label_index]
 def FFI.labelIndex (label : Label) : USize := label.idx.toUSize
 
+@[export wavelet_riptide_label_to_string]
+def FFI.labelToString (label : Label) : String := s!"{repr label.inner}"
+
 end Testing
 
 end Wavelet.Frontend.RipTide
