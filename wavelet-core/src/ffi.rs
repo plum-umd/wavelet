@@ -60,137 +60,14 @@ impl LeanObject {
         unsafe { lean_ptr_tag(self.raw) }
     }
 
-    /// Creates an owned Lean `String` object.
-    pub fn from_str(s: &str) -> Self {
-        unsafe {
-            // TODO: Check if `lean_mk_string_from_bytes` copies the string.
-            LeanObject {
-                raw: lean_mk_string_from_bytes(s.as_ptr(), s.len()),
-            }
-        }
-    }
-
-    /// Checks if the lean object is a Lean `String`,
-    /// and if so, returns it as a Rust `&str`.
-    pub fn as_str<'a>(&'a self) -> Result<&'a str, LeanObjectError> {
-        if !unsafe { lean_is_string(self.raw) } {
-            return Err(LeanObjectError::ExpectedString);
-        }
-        let cstr = unsafe { CStr::from_ptr(lean_string_cstr(self.raw) as *const c_char) };
-        Ok(cstr.to_str()?)
-    }
-
     /// Checks if the given lean object is a constructor.
     pub fn is_ctor<'a>(&'a self) -> bool {
         unsafe { lean_is_ctor(self.raw) }
     }
 
-    /// Checks if the lean object is an `Except` value,
-    /// and if so, returns it as a Rust `Result`.
-    ///
-    /// TODO: This assumes that the fields are all lean objects (e.g., not `USize`, `Bool`, etc.).
-    pub fn as_except<'a>(&'a self) -> Result<Result<LeanObject, LeanObject>, LeanObjectError> {
-        if !self.is_ctor() {
-            return Err(LeanObjectError::ExpectedConstructor);
-        }
-        match self.tag() {
-            0 => {
-                let raw = unsafe { lean_ctor_get(self.raw, 0) };
-                let field = LeanObject { raw };
-                unsafe { lean_inc(raw) };
-                Ok(Err(field))
-            }
-            1 => {
-                let raw = unsafe { lean_ctor_get(self.raw, 0) };
-                let field = LeanObject { raw };
-                unsafe { lean_inc(raw) };
-                Ok(Ok(field))
-            }
-            _ => Err(LeanObjectError::UnknownConstructorTag),
-        }
-    }
-
-    /// Checks if the lean object is an `Option` value,
-    /// and if so, returns it as a Rust `Option`.
-    #[allow(unused)]
-    pub fn as_option<'a>(&'a self) -> Result<Option<LeanObject>, LeanObjectError> {
-        if !self.is_ctor() {
-            return Err(LeanObjectError::ExpectedConstructor);
-        }
-        match self.tag() {
-            0 => Ok(None),
-            1 => {
-                let raw = unsafe { lean_ctor_get(self.raw, 0) };
-                let field = LeanObject { raw };
-                unsafe { lean_inc(raw) };
-                Ok(Some(field))
-            }
-            _ => Err(LeanObjectError::UnknownConstructorTag),
-        }
-    }
-
-    /// Converts a Rust `Option<LeanObject>` to a Lean `Option` object.
-    #[allow(unused)]
-    pub fn from_option(opt: Option<LeanObject>) -> Self {
-        match opt {
-            None => unsafe {
-                LeanObject {
-                    raw: lean_alloc_ctor(0, 0, 0),
-                }
-            },
-            Some(obj) => unsafe {
-                let raw = lean_alloc_ctor(1, 1, 0);
-                lean_ctor_set(raw, 0, obj.to_lean_obj_arg());
-                LeanObject { raw }
-            },
-        }
-    }
-
-    /// Checks if the lean object is a pair,
-    /// and if so, returns the two elements.
-    #[allow(unused)]
-    pub fn as_pair(&self) -> Result<(LeanObject, LeanObject), LeanObjectError> {
-        if !self.is_ctor() {
-            return Err(LeanObjectError::ExpectedConstructor);
-        }
-        if self.tag() != 0 {
-            return Err(LeanObjectError::ExpectedConstructor);
-        }
-        let first_raw = unsafe { lean_ctor_get(self.raw, 0) };
-        let second_raw = unsafe { lean_ctor_get(self.raw, 1) };
-        unsafe {
-            lean_inc(first_raw);
-            lean_inc(second_raw);
-        }
-        Ok((
-            LeanObject { raw: first_raw },
-            LeanObject { raw: second_raw },
-        ))
-    }
-
-    /// Creates a Lean pair.
-    #[allow(unused)]
-    pub fn from_pair(first: LeanObject, second: LeanObject) -> Self {
-        unsafe {
-            let raw = lean_alloc_ctor(0, 2, 0);
-            lean_ctor_set(raw, 0, first.to_lean_obj_arg());
-            lean_ctor_set(raw, 1, second.to_lean_obj_arg());
-            LeanObject { raw }
-        }
-    }
-
-    /// Creates an owned Lean `Array` object.
-    pub fn from_vec(objs: Vec<LeanObject>) -> Self {
-        let arr = unsafe {
-            let capacity = lean_box(objs.len());
-            let mut arr = lean_mk_empty_array_with_capacity(capacity);
-            lean_dec(capacity);
-            for obj in objs.into_iter() {
-                arr = lean_array_push(arr, obj.to_lean_obj_arg());
-            }
-            arr
-        };
-        LeanObject::from_lean_obj_res(arr)
+    pub fn to_str(&self) -> Result<&str, LeanObjectError> {
+        let s: &str = self.try_into()?;
+        Ok(s)
     }
 
     /// `lean_obj_arg` requires an owned `*mut lean_object`.
@@ -205,6 +82,146 @@ impl LeanObject {
     /// `lean_obj_res` contains an owned `*mut lean_object`.
     pub fn from_lean_obj_res(raw: lean_sys::lean_obj_res) -> Self {
         LeanObject { raw }
+    }
+}
+
+impl From<&str> for LeanObject {
+    fn from(s: &str) -> Self {
+        unsafe {
+            LeanObject {
+                raw: lean_mk_string_from_bytes(s.as_ptr(), s.len()),
+            }
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a LeanObject> for &'a str {
+    type Error = LeanObjectError;
+
+    fn try_from(obj: &'a LeanObject) -> Result<Self, Self::Error> {
+        if !unsafe { lean_is_string(obj.raw) } {
+            return Err(LeanObjectError::ExpectedString);
+        }
+        let cstr = unsafe { CStr::from_ptr(lean_string_cstr(obj.raw) as *const c_char) };
+        Ok(cstr.to_str()?)
+    }
+}
+
+impl<'a> TryFrom<&'a LeanObject> for Result<LeanObject, LeanObject> {
+    type Error = LeanObjectError;
+
+    /// NOTE: Due to polymorphism, the field of the constructors of Lean `Except`
+    /// should always be boxed, even if it's a scalar.
+    /// <https://gist.github.com/ydewit/7ab62be1bd0fea5bd53b48d23914dd6b#boxed-values>
+    ///
+    /// Also note that this function does NOT actually check if the value
+    /// is of the `Except` type, but it simply reads, e.g., the first field
+    /// of the first constructor as the error value.
+    fn try_from(obj: &'a LeanObject) -> Result<Self, Self::Error> {
+        if !obj.is_ctor() {
+            return Err(LeanObjectError::ExpectedConstructor);
+        }
+        match obj.tag() {
+            0 => {
+                let raw = unsafe { lean_ctor_get(obj.raw, 0) };
+                let field = LeanObject { raw };
+                unsafe { lean_inc(raw) };
+                Ok(Err(field))
+            }
+            1 => {
+                let raw = unsafe { lean_ctor_get(obj.raw, 0) };
+                let field = LeanObject { raw };
+                unsafe { lean_inc(raw) };
+                Ok(Ok(field))
+            }
+            _ => Err(LeanObjectError::UnknownConstructorTag),
+        }
+    }
+}
+
+impl From<Option<LeanObject>> for LeanObject {
+    fn from(opt: Option<LeanObject>) -> Self {
+        match opt {
+            None => unsafe {
+                LeanObject {
+                    raw: lean_alloc_ctor(0, 0, 0),
+                }
+            },
+            Some(obj) => unsafe {
+                let raw = lean_alloc_ctor(1, 1, 0);
+                lean_ctor_set(raw, 0, obj.to_lean_obj_arg());
+                LeanObject { raw }
+            },
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a LeanObject> for Option<LeanObject> {
+    type Error = LeanObjectError;
+
+    fn try_from(obj: &'a LeanObject) -> Result<Self, Self::Error> {
+        if !obj.is_ctor() {
+            return Err(LeanObjectError::ExpectedConstructor);
+        }
+        match obj.tag() {
+            0 => Ok(None),
+            1 => {
+                let raw = unsafe { lean_ctor_get(obj.raw, 0) };
+                let field = LeanObject { raw };
+                unsafe { lean_inc(raw) };
+                Ok(Some(field))
+            }
+            _ => Err(LeanObjectError::UnknownConstructorTag),
+        }
+    }
+}
+
+impl From<(LeanObject, LeanObject)> for LeanObject {
+    fn from(pair: (LeanObject, LeanObject)) -> Self {
+        unsafe {
+            let raw = lean_alloc_ctor(0, 2, 0);
+            lean_ctor_set(raw, 0, pair.0.to_lean_obj_arg());
+            lean_ctor_set(raw, 1, pair.1.to_lean_obj_arg());
+            LeanObject { raw }
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a LeanObject> for (LeanObject, LeanObject) {
+    type Error = LeanObjectError;
+
+    fn try_from(obj: &'a LeanObject) -> Result<Self, Self::Error> {
+        if !obj.is_ctor() {
+            return Err(LeanObjectError::ExpectedConstructor);
+        }
+        if obj.tag() != 0 {
+            return Err(LeanObjectError::UnknownConstructorTag);
+        }
+        let first_raw = unsafe { lean_ctor_get(obj.raw, 0) };
+        let second_raw = unsafe { lean_ctor_get(obj.raw, 1) };
+        unsafe {
+            lean_inc(first_raw);
+            lean_inc(second_raw);
+        }
+        Ok((
+            LeanObject { raw: first_raw },
+            LeanObject { raw: second_raw },
+        ))
+    }
+}
+
+impl From<Vec<LeanObject>> for LeanObject {
+    fn from(objs: Vec<LeanObject>) -> Self {
+        let arr = unsafe {
+            let capacity = lean_box(objs.len());
+            let mut arr = lean_mk_empty_array_with_capacity(capacity);
+            lean_dec(capacity);
+            for obj in objs.into_iter() {
+                arr = lean_array_push(arr, obj.to_lean_obj_arg());
+            }
+            arr
+        };
+        LeanObject::from_lean_obj_res(arr)
     }
 }
 

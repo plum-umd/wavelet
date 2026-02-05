@@ -72,13 +72,13 @@ impl Prog {
     /// Parses a `Prog` from its JSON representation.
     pub fn from_json(json: &str) -> Result<Self, RipTideError> {
         ensure_init_lean();
-        let json = LeanObject::from_str(json);
+        let json = LeanObject::from(json);
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_prog_from_json(json.to_lean_obj_arg())
         });
-        match res.as_except()? {
+        match Result::<_, _>::try_from(&res)? {
             Ok(prog) => Ok(Prog(prog)),
-            Err(err) => Err(RipTideError::ProgParseError(err.as_str()?.to_string())),
+            Err(err) => Err(RipTideError::ProgParseError(err.to_str()?.to_string())),
         }
     }
 
@@ -88,9 +88,9 @@ impl Prog {
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_prog_validate(self.0.clone().to_lean_obj_arg())
         });
-        match res.as_except()? {
+        match Result::<_, _>::try_from(&res)? {
             Ok(_) => Ok(()),
-            Err(err) => Err(RipTideError::ProgValidationError(err.as_str()?.to_string())),
+            Err(err) => Err(RipTideError::ProgValidationError(err.to_str()?.to_string())),
         }
     }
 
@@ -100,10 +100,10 @@ impl Prog {
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_prog_lower_control_flow(self.0.clone().to_lean_obj_arg())
         });
-        match res.as_except()? {
+        match Result::<_, _>::try_from(&res)? {
             Ok(proc) => Ok(Proc(proc)),
             Err(err) => Err(RipTideError::ControlFlowLoweringError(
-                err.as_str()?.to_string(),
+                err.to_str()?.to_string(),
             )),
         }
     }
@@ -139,23 +139,24 @@ impl Proc {
     /// Parses a `Proc` from its JSON representation.
     pub fn from_json(json: &str) -> Result<Self, RipTideError> {
         ensure_init_lean();
-        let json = LeanObject::from_str(json);
+        let json = LeanObject::from(json);
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_proc_from_json(json.to_lean_obj_arg())
         });
-        match res.as_except()? {
+        match Result::<_, _>::try_from(&res)? {
             Ok(proc) => Ok(Proc(proc)),
-            Err(err) => Err(RipTideError::ProcParseError(err.as_str()?.to_string())),
+            Err(err) => Err(RipTideError::ProcParseError(err.to_str()?.to_string())),
         }
     }
 
     /// Serializes the `Proc` to its JSON representation.
-    pub fn to_json(&self) -> String {
+    pub fn to_json(&self) -> Result<String, RipTideError> {
         ensure_init_lean();
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_proc_to_json(self.0.clone().to_lean_obj_arg())
         });
-        res.as_str().unwrap().to_string()
+        let s: &str = (&res).try_into()?;
+        Ok(s.to_string())
     }
 
     /// Serializes the `Proc` to Graphviz DOT format.
@@ -164,9 +165,9 @@ impl Proc {
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_proc_to_dot(self.0.clone().to_lean_obj_arg())
         });
-        match res.as_except()? {
-            Ok(dot) => Ok(dot.as_str()?.to_string()),
-            Err(err) => Err(RipTideError::DotFormatError(err.as_str()?.to_string())),
+        match Result::<_, _>::try_from(&res)? {
+            Ok(dot) => Ok(dot.to_str()?.to_string()),
+            Err(err) => Err(RipTideError::DotFormatError(err.to_str()?.to_string())),
         }
     }
 
@@ -176,9 +177,9 @@ impl Proc {
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_proc_to_handshake(self.0.clone().to_lean_obj_arg())
         });
-        match res.as_except()? {
-            Ok(hs) => Ok(hs.as_str()?.to_string()),
-            Err(err) => Err(RipTideError::HandshakeError(err.as_str()?.to_string())),
+        match Result::<_, _>::try_from(&res)? {
+            Ok(hs) => Ok(hs.to_str()?.to_string()),
+            Err(err) => Err(RipTideError::HandshakeError(err.to_str()?.to_string())),
         }
     }
 
@@ -188,9 +189,9 @@ impl Proc {
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_proc_validate(self.0.clone().to_lean_obj_arg())
         });
-        match res.as_except()? {
+        match Result::<_, _>::try_from(&res)? {
             Ok(_) => Ok(()),
-            Err(err) => Err(RipTideError::ProcValidationError(err.as_str()?.to_string())),
+            Err(err) => Err(RipTideError::ProcValidationError(err.to_str()?.to_string())),
         }
     }
 
@@ -209,12 +210,12 @@ impl Proc {
         S: AsRef<str>,
     {
         ensure_init_lean();
-        let arr = LeanObject::from_vec(
+        let arr = LeanObject::from(
             disabled_rules
                 .as_ref()
                 .iter()
-                .map(|s| LeanObject::from_str(s.as_ref()))
-                .collect(),
+                .map(|s| LeanObject::from(s.as_ref()))
+                .collect::<Vec<_>>(),
         );
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_proc_optimize(self.0.clone().to_lean_obj_arg(), arr.to_lean_obj_arg())

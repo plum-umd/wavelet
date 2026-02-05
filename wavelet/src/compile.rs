@@ -70,6 +70,8 @@ pub enum CompileError {
     ElabValidationError(String),
     #[error("elaboration export error: {0}")]
     ElabExportError(#[from] elab::ghost::json::ExportError),
+    #[error("Lean FFI error: {0}")]
+    RipTideError(#[from] riptide::RipTideError),
 }
 
 impl CompileArgs {
@@ -185,7 +187,7 @@ impl CompileArgs {
             .context("when validating dataflow after control-flow lowering")?;
 
         if self.target == Target::Unopt {
-            return self.output(core_proc.to_json());
+            return self.output(core_proc.to_json()?);
         }
 
         // Remove unnecessary output(s).
@@ -234,6 +236,6 @@ impl CompileArgs {
             );
         }
 
-        return self.output(core_proc.to_json());
+        return self.output(core_proc.to_json()?);
     }
 }
