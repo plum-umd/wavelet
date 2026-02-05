@@ -1,46 +1,11 @@
 //! FFI bindings for the core compiler in Lean,
 //! specialized to RipTide.
 
-use lean_sys::{lean_obj_arg, lean_obj_res};
+use lean_sys::{lean_inc, lean_obj_arg, lean_obj_res};
 use libc::size_t;
 use thiserror::Error;
 
 use crate::ffi::{ensure_init_lean, LeanObject, LeanObjectError};
-
-// Raw FFI bindings to exported functions declared in `lean/Wavelet/FFI.lean`.
-#[link(name = "Wavelet", kind = "static")]
-unsafe extern "C" {
-    fn wavelet_riptide_prog_from_json(arg: lean_obj_arg) -> lean_obj_res;
-
-    fn wavelet_riptide_prog_validate(arg: lean_obj_arg) -> lean_obj_res;
-
-    fn wavelet_riptide_proc_from_json(arg: lean_obj_arg) -> lean_obj_res;
-
-    fn wavelet_riptide_proc_to_json(arg: lean_obj_arg) -> lean_obj_res;
-
-    fn wavelet_riptide_proc_to_dot(arg: lean_obj_arg) -> lean_obj_res;
-
-    fn wavelet_riptide_proc_to_handshake(arg: lean_obj_arg) -> lean_obj_res;
-
-    fn wavelet_riptide_proc_validate(arg: lean_obj_arg) -> lean_obj_res;
-
-    fn wavelet_riptide_prog_lower_control_flow(arg: lean_obj_arg) -> lean_obj_res;
-
-    fn wavelet_riptide_proc_trim_unit_io(arg: lean_obj_arg) -> lean_obj_res;
-
-    fn wavelet_riptide_proc_optimize(
-        arg: lean_obj_arg,
-        disabled_rules: lean_obj_arg,
-    ) -> lean_obj_res;
-
-    fn wavelet_riptide_proc_num_atoms(arg: lean_obj_arg) -> size_t;
-
-    fn wavelet_riptide_proc_num_non_trivial_atoms(arg: lean_obj_arg) -> size_t;
-
-    fn wavelet_riptide_proc_num_inputs(arg: lean_obj_arg) -> size_t;
-
-    fn wavelet_riptide_proc_num_outputs(arg: lean_obj_arg) -> size_t;
-}
 
 #[derive(Debug, Error)]
 pub enum RipTideError {
@@ -60,17 +25,37 @@ pub enum RipTideError {
     HandshakeError(String),
     #[error("control-flow lowering failed: {0}")]
     ControlFlowLoweringError(String),
+    #[error("value conversion error: {0}")]
+    ValueConversionError(String),
+    #[error("config not in initial state: {0}")]
+    ConfigNotInitial(String),
 }
 
-/// An opaque wrapper for `Wavelet.RipTide.EncapProg`.
+/// A wrapper for `Wavelet.Frontend.RipTide.Prog`.
+#[derive(Clone)]
 pub struct Prog(LeanObject);
 
-/// An opaque wrapper for `Wavelet.RipTide.EncapProc`.
+/// A wrapper for `Wavelet.Frontend.RipTide.Proc`.
+#[derive(Clone)]
 pub struct Proc(LeanObject);
+
+/// A wrapper for `Wavelet.Frontend.RipTide.Value`.
+#[derive(Clone)]
+pub struct Value(LeanObject);
+
+/// A wrapper for `Wavelet.Frontend.RipTide.Config`.
+#[derive(Clone)]
+pub struct Config(LeanObject);
+
+// /// A wrapper for `Wavelet.Frontend.RipTide.Label`.
+// pub struct Label(LeanObject);
 
 impl Prog {
     /// Parses a `Prog` from its JSON representation.
     pub fn from_json(json: &str) -> Result<Self, RipTideError> {
+        extern "C" {
+            fn wavelet_riptide_prog_from_json(arg: lean_obj_arg) -> lean_obj_res;
+        }
         ensure_init_lean();
         let json = LeanObject::from(json);
         let res = LeanObject::from_lean_obj_res(unsafe {
@@ -84,6 +69,9 @@ impl Prog {
 
     /// Validates some static properties.
     pub fn validate(&self) -> Result<(), RipTideError> {
+        extern "C" {
+            fn wavelet_riptide_prog_validate(arg: lean_obj_arg) -> lean_obj_res;
+        }
         ensure_init_lean();
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_prog_validate(self.0.clone().to_lean_obj_arg())
@@ -96,6 +84,9 @@ impl Prog {
 
     /// Compiles to a `Proc` by lowering control-flow.
     pub fn lower_control_flow(&self) -> Result<Proc, RipTideError> {
+        extern "C" {
+            fn wavelet_riptide_prog_lower_control_flow(arg: lean_obj_arg) -> lean_obj_res;
+        }
         ensure_init_lean();
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_prog_lower_control_flow(self.0.clone().to_lean_obj_arg())
@@ -112,12 +103,18 @@ impl Prog {
 impl Proc {
     /// Gets the number of atoms
     pub fn num_atoms(&self) -> usize {
+        extern "C" {
+            fn wavelet_riptide_proc_num_atoms(arg: lean_obj_arg) -> size_t;
+        }
         ensure_init_lean();
         unsafe { wavelet_riptide_proc_num_atoms(self.0.clone().to_lean_obj_arg()) as usize }
     }
 
     /// Gets the number of non-trivial atoms
     pub fn num_non_trivial_atoms(&self) -> usize {
+        extern "C" {
+            fn wavelet_riptide_proc_num_non_trivial_atoms(arg: lean_obj_arg) -> size_t;
+        }
         ensure_init_lean();
         unsafe {
             wavelet_riptide_proc_num_non_trivial_atoms(self.0.clone().to_lean_obj_arg()) as usize
@@ -126,18 +123,27 @@ impl Proc {
 
     /// Gets the number of inputs
     pub fn num_inputs(&self) -> usize {
+        extern "C" {
+            fn wavelet_riptide_proc_num_inputs(arg: lean_obj_arg) -> size_t;
+        }
         ensure_init_lean();
         unsafe { wavelet_riptide_proc_num_inputs(self.0.clone().to_lean_obj_arg()) as usize }
     }
 
     /// Gets the number of outputs
     pub fn num_outputs(&self) -> usize {
+        extern "C" {
+            fn wavelet_riptide_proc_num_outputs(arg: lean_obj_arg) -> size_t;
+        }
         ensure_init_lean();
         unsafe { wavelet_riptide_proc_num_outputs(self.0.clone().to_lean_obj_arg()) as usize }
     }
 
     /// Parses a `Proc` from its JSON representation.
     pub fn from_json(json: &str) -> Result<Self, RipTideError> {
+        extern "C" {
+            fn wavelet_riptide_proc_from_json(arg: lean_obj_arg) -> lean_obj_res;
+        }
         ensure_init_lean();
         let json = LeanObject::from(json);
         let res = LeanObject::from_lean_obj_res(unsafe {
@@ -151,6 +157,9 @@ impl Proc {
 
     /// Serializes the `Proc` to its JSON representation.
     pub fn to_json(&self) -> Result<String, RipTideError> {
+        extern "C" {
+            fn wavelet_riptide_proc_to_json(arg: lean_obj_arg) -> lean_obj_res;
+        }
         ensure_init_lean();
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_proc_to_json(self.0.clone().to_lean_obj_arg())
@@ -161,6 +170,9 @@ impl Proc {
 
     /// Serializes the `Proc` to Graphviz DOT format.
     pub fn to_dot(&self) -> Result<String, RipTideError> {
+        extern "C" {
+            fn wavelet_riptide_proc_to_dot(arg: lean_obj_arg) -> lean_obj_res;
+        }
         ensure_init_lean();
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_proc_to_dot(self.0.clone().to_lean_obj_arg())
@@ -173,6 +185,9 @@ impl Proc {
 
     /// Compiles the `Proc` to CIRCT Handshake dialect.
     pub fn to_handshake(&self) -> Result<String, RipTideError> {
+        extern "C" {
+            fn wavelet_riptide_proc_to_handshake(arg: lean_obj_arg) -> lean_obj_res;
+        }
         ensure_init_lean();
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_proc_to_handshake(self.0.clone().to_lean_obj_arg())
@@ -185,6 +200,9 @@ impl Proc {
 
     /// Validates some static properties.
     pub fn validate(&self) -> Result<(), RipTideError> {
+        extern "C" {
+            fn wavelet_riptide_proc_validate(arg: lean_obj_arg) -> lean_obj_res;
+        }
         ensure_init_lean();
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_proc_validate(self.0.clone().to_lean_obj_arg())
@@ -197,6 +215,9 @@ impl Proc {
 
     /// Removes any redundant unit inputs/outputs.
     pub fn trim_unit_io(&self) -> Proc {
+        extern "C" {
+            fn wavelet_riptide_proc_trim_unit_io(arg: lean_obj_arg) -> lean_obj_res;
+        }
         ensure_init_lean();
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_proc_trim_unit_io(self.0.clone().to_lean_obj_arg())
@@ -209,6 +230,12 @@ impl Proc {
     where
         S: AsRef<str>,
     {
+        extern "C" {
+            fn wavelet_riptide_proc_optimize(
+                arg: lean_obj_arg,
+                disabled_rules: lean_obj_arg,
+            ) -> lean_obj_res;
+        }
         ensure_init_lean();
         let arr = LeanObject::from(
             disabled_rules
@@ -221,5 +248,262 @@ impl Proc {
             wavelet_riptide_proc_optimize(self.0.clone().to_lean_obj_arg(), arr.to_lean_obj_arg())
         });
         Proc(res)
+    }
+}
+
+impl From<i32> for Value {
+    fn from(i: i32) -> Self {
+        extern "C" {
+            fn wavelet_riptide_value_from_int32(arg: i32) -> lean_obj_res;
+        }
+        ensure_init_lean();
+        Value(LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_value_from_int32(i)
+        }))
+    }
+}
+
+impl TryFrom<Value> for i32 {
+    type Error = RipTideError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        extern "C" {
+            fn wavelet_riptide_value_to_int32(arg: lean_obj_arg) -> lean_obj_res;
+        }
+        ensure_init_lean();
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_value_to_int32(value.0.clone().to_lean_obj_arg())
+        });
+        match Result::<_, _>::try_from(&res)? {
+            Ok(i) => Ok(i.try_into()?),
+            Err(err) => Err(RipTideError::ValueConversionError(
+                err.to_str()?.to_string(),
+            )),
+        }
+    }
+}
+
+impl From<bool> for Value {
+    fn from(b: bool) -> Self {
+        extern "C" {
+            fn wavelet_riptide_value_from_bool(arg: u8) -> lean_obj_res;
+        }
+        ensure_init_lean();
+        Value(LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_value_from_bool(b as u8)
+        }))
+    }
+}
+
+impl TryFrom<Value> for bool {
+    type Error = RipTideError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        extern "C" {
+            fn wavelet_riptide_value_to_bool(arg: lean_obj_arg) -> lean_obj_res;
+        }
+        ensure_init_lean();
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_value_to_bool(value.0.clone().to_lean_obj_arg())
+        });
+        match Result::<_, _>::try_from(&res)? {
+            Ok(b) => Ok(b.try_into()?),
+            Err(err) => Err(RipTideError::ValueConversionError(
+                err.to_str()?.to_string(),
+            )),
+        }
+    }
+}
+
+impl Value {
+    /// Constructs a unit `Value`.
+    pub fn unit() -> Self {
+        extern "C" {
+            static wavelet_riptide_value_unit: lean_obj_res;
+        }
+        ensure_init_lean();
+        Value(LeanObject::from_lean_obj_res(unsafe {
+            // TODO: Check if this is the right way to use a Lean constant.
+            lean_inc(wavelet_riptide_value_unit);
+            wavelet_riptide_value_unit
+        }))
+    }
+
+    /// Checks if a `Value` is unit.
+    pub fn is_unit(&self) -> bool {
+        extern "C" {
+            fn wavelet_riptide_value_is_unit(arg: lean_obj_arg) -> u8;
+        }
+        ensure_init_lean();
+        unsafe { wavelet_riptide_value_is_unit(self.0.clone().to_lean_obj_arg()) != 0 }
+    }
+}
+
+impl Config {
+    /// Creates the initial configuration for executing the given `Proc`.
+    pub fn new(proc: &Proc) -> Self {
+        extern "C" {
+            fn wavelet_riptide_config_init(arg: lean_obj_arg) -> lean_obj_res;
+        }
+        ensure_init_lean();
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_config_init(proc.0.clone().to_lean_obj_arg())
+        });
+        Config(res)
+    }
+
+    /// Checks if the configuration is in its initial state except for the memory.
+    pub fn check_init(&self) -> Result<(), RipTideError> {
+        extern "C" {
+            fn wavelet_riptide_config_check_init(arg: lean_obj_arg) -> lean_obj_arg;
+        }
+        ensure_init_lean();
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_config_check_init(self.0.clone().to_lean_obj_arg())
+        });
+        match Result::<_, _>::try_from(&res)? {
+            Ok(_) => Ok(()),
+            Err(err) => Err(RipTideError::ConfigNotInitial(err.to_str()?.to_string())),
+        }
+    }
+
+    /// Stores a value into the configuration's memory at the given address.
+    pub fn store_mem(&mut self, loc: impl AsRef<str>, addr: &Value, value: &Value) {
+        extern "C" {
+            fn wavelet_riptide_config_store_mem(
+                config: lean_obj_arg,
+                loc: lean_obj_arg,
+                addr: lean_obj_arg,
+                value: lean_obj_arg,
+            ) -> lean_obj_res;
+        }
+        ensure_init_lean();
+        self.0 = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_config_store_mem(
+                self.0.clone().to_lean_obj_arg(),
+                LeanObject::from(loc.as_ref()).to_lean_obj_arg(),
+                addr.0.clone().to_lean_obj_arg(),
+                value.0.clone().to_lean_obj_arg(),
+            )
+        });
+    }
+
+    /// Loads a value from the configuration's memory at the given address.
+    pub fn load_mem(
+        &self,
+        loc: impl AsRef<str>,
+        addr: &Value,
+    ) -> Result<Option<Value>, RipTideError> {
+        extern "C" {
+            fn wavelet_riptide_config_load_mem(
+                config: lean_obj_arg,
+                loc: lean_obj_arg,
+                addr: lean_obj_arg,
+            ) -> lean_obj_res;
+        }
+        ensure_init_lean();
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_config_load_mem(
+                self.0.clone().to_lean_obj_arg(),
+                LeanObject::from(loc.as_ref()).to_lean_obj_arg(),
+                addr.0.clone().to_lean_obj_arg(),
+            )
+        });
+        match Option::<_>::try_from(&res)? {
+            Some(v) => Ok(Some(Value(v))),
+            None => Ok(None),
+        }
+    }
+
+    /// Returns a vector of set memory addresses.
+    pub fn mem_addrs(&self, loc: impl AsRef<str>) -> Result<Vec<Value>, RipTideError> {
+        extern "C" {
+            fn wavelet_riptide_config_mem_addrs(
+                config: lean_obj_arg,
+                loc: lean_obj_arg,
+            ) -> lean_obj_res;
+        }
+        ensure_init_lean();
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_config_mem_addrs(
+                self.0.clone().to_lean_obj_arg(),
+                LeanObject::from(loc.as_ref()).to_lean_obj_arg(),
+            )
+        });
+        let arr: Vec<LeanObject> = (&res).try_into()?;
+        Ok(arr.into_iter().map(Value).collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_value_unit() {
+        let v_unit = Value::unit();
+        let v_true = Value::from(true);
+        let v_false = Value::from(false);
+        let v_int = Value::from(42i32);
+
+        assert!(v_unit.is_unit());
+        assert!(!v_true.is_unit());
+        assert!(!v_false.is_unit());
+        assert!(!v_int.is_unit());
+    }
+
+    #[test]
+    fn test_value_bool() {
+        assert!(bool::try_from(Value::from(true)).unwrap());
+        assert!(!bool::try_from(Value::from(false)).unwrap());
+        assert!(bool::try_from(Value::from(0i32)).is_err());
+        assert!(bool::try_from(Value::unit()).is_err());
+    }
+
+    #[test]
+    fn test_value_int32() {
+        assert_eq!(i32::try_from(Value::from(123i32)).unwrap(), 123i32);
+        assert_eq!(i32::try_from(Value::from(-456i32)).unwrap(), -456i32);
+        assert_eq!(i32::try_from(Value::from(i32::MIN)).unwrap(), i32::MIN);
+        assert_eq!(i32::try_from(Value::from(i32::MAX)).unwrap(), i32::MAX);
+        assert!(i32::try_from(Value::from(true)).is_err());
+        assert!(i32::try_from(Value::unit()).is_err());
+    }
+
+    #[test]
+    fn test_config_init() {
+        let proc_json = r#"{"outputs": [], "inputs": [], "atoms": [], "arrays": []}"#;
+        let proc = Proc::from_json(proc_json).unwrap();
+        let config = Config::new(&proc);
+        assert!(config.check_init().is_ok());
+    }
+
+    #[test]
+    fn test_config_mem() {
+        let proc_json = r#"{"outputs": [], "inputs": [], "atoms": [], "arrays": []}"#;
+        let proc = Proc::from_json(proc_json).unwrap();
+        let mut config = Config::new(&proc);
+
+        for i in 0..10 {
+            let addr = Value::from(i);
+            let value = Value::from(i * 10);
+            config.store_mem("A", &addr, &value);
+        }
+
+        for i in 0..10 {
+            let addr = Value::from(i);
+            let loaded = config.load_mem("A", &addr).unwrap().unwrap();
+            let expected = Value::from(i * 10);
+            assert_eq!(
+                i32::try_from(loaded).unwrap(),
+                i32::try_from(expected).unwrap()
+            );
+        }
+
+        let addrs = config.mem_addrs("A").unwrap();
+        assert!(addrs.len() == 10);
+        for i in 0..10 {
+            assert!(addrs.iter().any(|a| i32::try_from(a.clone()).unwrap() == i));
+        }
     }
 }

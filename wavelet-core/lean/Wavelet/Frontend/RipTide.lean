@@ -33,6 +33,9 @@ inductive Value where
 /-- A special value for control signals. -/
 def Value.unit : Value := .int 0 0
 
+def Value.bool (b : Bool) : Value :=
+  if b then .int 1 1 else .int 1 0
+
 instance : Lean.ToJson Value where
   toJson
     | .int w val => json% { "int": { "width": $(w), "value": $(val.toNat) } }
@@ -766,6 +769,12 @@ def Config.storeMem (loc : Loc) (addr : Value) (val : Value)
 def Config.loadMem (loc : Loc) (addr : Value)
   (c : Config) : Option Value :=
   c.state.load loc addr
+
+def Config.memAddrs (loc : Loc)
+  (c : Config) : List Value :=
+  match c.state.memory.get? loc with
+  | some mem => mem.keys
+  | none => []
 
 /-- Pushes one value to each input channel. -/
 def Config.pushInputs

@@ -112,6 +112,40 @@ end Passes
 
 section Testing
 
+/-- Converts an `Int32` to a `Value`. -/
+@[export wavelet_riptide_value_from_int32]
+def FFI.valueFromInt32 (n : Int32) : Value := .int 32 n.toBitVec
+
+/-- Converts a `Bool` to a `Value`. -/
+@[export wavelet_riptide_value_from_bool]
+def FFI.valueFromBool (b : Bool) : Value := .bool b
+
+/-- Constructs a unit `Value`. -/
+@[export wavelet_riptide_value_unit]
+def FFI.valueUnit : Value := .unit
+
+/-- Converts a `Value` to an `Int32`. -/
+@[export wavelet_riptide_value_to_int32]
+def FFI.valueToInt32 (v : Value) : Except String Int32 := do
+  match v with
+  | .int 32 bv => return bv.toInt.toInt32
+  | _ => throw "value is not a 32-bit integer"
+
+/-- Converts a `Value` to a `Bool`. -/
+@[export wavelet_riptide_value_to_bool]
+def FFI.valueToBool (v : Value) : Except String Bool := do
+  match v with
+  | .int 1 bv =>
+    match bv.toNat with
+    | 0 => return false
+    | 1 => return true
+    | _ => throw "boolean value overflow"
+  | _ => throw "value is not a boolean"
+
+/-- Checks if a `Value` is a unit. -/
+@[export wavelet_riptide_value_is_unit]
+def FFI.valueIsUnit (v : Value) : Bool := v = .unit
+
 /-- Initializes a dataflow configuration from the given process. -/
 @[export wavelet_riptide_config_init]
 def FFI.initConfig (proc : RipTide.Proc) : Config := .init proc
@@ -126,22 +160,17 @@ def FFI.configStoreMem
   (c : Config) (loc : Loc) (addr : Value) (val : Value) : Config :=
   c.storeMem loc addr val
 
-/-- Converts an `Int32` to a `Value`. -/
-@[export wavelet_riptide_value_from_int32]
-def FFI.valueFromInt32 (n : Int32) : Value := .int 32 n.toBitVec
-
-/-- Converts a `Value` to an `Int32`. -/
-@[export wavelet_riptide_value_to_int32]
-def FFI.valueToInt32 (v : Value) : Except String Int32 := do
-  match v with
-  | .int 32 bv => return bv.toInt.toInt32
-  | _ => throw "value is not a 32-bit integer"
-
 /-- Loads a value from a memory location. -/
 @[export wavelet_riptide_config_load_mem]
 def FFI.configLoadMem
   (c : Config) (loc : Loc) (addr : Value) : Option Value :=
   c.loadMem loc addr
+
+/-- Returns an array of set memory address. -/
+@[export wavelet_riptide_config_mem_addrs]
+def FFI.configMemAddrs
+  (c : Config) (loc : Loc) : Array Value :=
+  (c.memAddrs loc).toArray
 
 /-- Pushes the given array of inputs to the input channels. -/
 @[export wavelet_riptide_config_push_inputs]
