@@ -193,6 +193,9 @@ def FFI.configSteps
   let (trace, c') ← c.steps (bound.map USize.toNat)
   return (trace.toArray, c')
 
+@[export wavelet_riptide_label_index]
+def FFI.labelIndex (label : Label) : USize := label.idx.toUSize
+
 end Testing
 
 end Wavelet.Frontend.RipTide

@@ -29,6 +29,12 @@ pub enum RipTideError {
     ValueConversionError(String),
     #[error("config not in initial state: {0}")]
     ConfigNotInitial(String),
+    #[error("failed to push inputs: {0}")]
+    PushInputsError(String),
+    #[error("failed to pop outputs: {0}")]
+    PopOutputsError(String),
+    #[error("config execution error: {0}")]
+    ConfigExecError(String),
 }
 
 /// A wrapper for `Wavelet.Frontend.RipTide.Prog`.
@@ -47,8 +53,8 @@ pub struct Value(LeanObject);
 #[derive(Clone)]
 pub struct Config(LeanObject);
 
-// /// A wrapper for `Wavelet.Frontend.RipTide.Label`.
-// pub struct Label(LeanObject);
+/// A wrapper for `Wavelet.Frontend.RipTide.Label`.
+pub struct Label(LeanObject);
 
 impl Prog {
     /// Parses a `Prog` from its JSON representation.
@@ -432,6 +438,89 @@ impl Config {
         });
         let arr: Vec<LeanObject> = (&res).try_into()?;
         Ok(arr.into_iter().map(Value).collect())
+    }
+
+    /// Pushes one value to each input channel.
+    pub fn push_inputs(&mut self, inputs: Vec<Value>) -> Result<(), RipTideError> {
+        extern "C" {
+            fn wavelet_riptide_config_push_inputs(
+                config: lean_obj_arg,
+                inputs: lean_obj_arg,
+            ) -> lean_obj_res;
+        }
+        ensure_init_lean();
+        let inputs = LeanObject::from(inputs.into_iter().map(|v| v.0).collect::<Vec<LeanObject>>());
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_config_push_inputs(
+                self.0.clone().to_lean_obj_arg(),
+                inputs.to_lean_obj_arg(),
+            )
+        });
+        match Result::<_, _>::try_from(&res)? {
+            Ok(config) => {
+                self.0 = config;
+                Ok(())
+            }
+            Err(err) => Err(RipTideError::PushInputsError(err.to_str()?.to_string())),
+        }
+    }
+
+    /// Tries to pop one value from each output channel.
+    pub fn pop_outputs(&mut self) -> Result<Vec<Value>, RipTideError> {
+        extern "C" {
+            fn wavelet_riptide_config_pop_outputs(arg: lean_obj_arg) -> lean_obj_res;
+        }
+        ensure_init_lean();
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_config_pop_outputs(self.0.clone().to_lean_obj_arg())
+        });
+        match Result::<_, _>::try_from(&res)? {
+            Ok(res) => {
+                let res: (LeanObject, LeanObject) = (&res).try_into()?;
+                let outputs: Vec<LeanObject> = (&res.0).try_into()?;
+                let new_config = res.1;
+                self.0 = new_config;
+                Ok(outputs.into_iter().map(Value).collect())
+            }
+            Err(err) => Err(RipTideError::PopOutputsError(err.to_str()?.to_string())),
+        }
+    }
+
+    /// Steps the configuration until stuck or hit the optional step bound.
+    pub fn steps(&mut self, bound: Option<usize>) -> Result<Vec<Label>, RipTideError> {
+        extern "C" {
+            fn wavelet_riptide_config_steps(
+                config: lean_obj_arg,
+                bound: lean_obj_arg,
+            ) -> lean_obj_res;
+        }
+        ensure_init_lean();
+        let bound = bound.map(|b| LeanObject::from(b));
+        let bound = LeanObject::from(bound);
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_config_steps(self.0.clone().to_lean_obj_arg(), bound.to_lean_obj_arg())
+        });
+        match Result::<_, _>::try_from(&res)? {
+            Ok(res) => {
+                let res: (LeanObject, LeanObject) = (&res).try_into()?;
+                let trace: Vec<LeanObject> = (&res.0).try_into()?;
+                let new_config = res.1;
+                self.0 = new_config;
+                Ok(trace.into_iter().map(Label).collect())
+            }
+            Err(err) => Err(RipTideError::ConfigExecError(err.to_str()?.to_string())),
+        }
+    }
+}
+
+impl Label {
+    /// Gets the index of the atom being executed.
+    pub fn atom_index(&self) -> usize {
+        extern "C" {
+            fn wavelet_riptide_label_index(arg: lean_obj_arg) -> size_t;
+        }
+        ensure_init_lean();
+        unsafe { wavelet_riptide_label_index(self.0.clone().to_lean_obj_arg()) as usize }
     }
 }
 

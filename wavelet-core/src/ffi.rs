@@ -112,6 +112,12 @@ impl TryFrom<LeanObject> for i32 {
     }
 }
 
+impl From<usize> for LeanObject {
+    fn from(n: usize) -> Self {
+        LeanObject { raw: lean_box(n) }
+    }
+}
+
 impl From<&str> for LeanObject {
     fn from(s: &str) -> Self {
         unsafe {
