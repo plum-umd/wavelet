@@ -546,7 +546,10 @@ impl Config {
             return Ok(vec![]);
         }
         extern "C" {
-            fn wavelet_riptide_config_eager_steps(config: lean_obj_arg, bound: size_t) -> lean_obj_res;
+            fn wavelet_riptide_config_eager_steps(
+                config: lean_obj_arg,
+                bound: size_t,
+            ) -> lean_obj_res;
         }
         ensure_init_lean();
         let res = LeanObject::from_lean_obj_res(unsafe {

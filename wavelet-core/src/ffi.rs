@@ -6,7 +6,11 @@ use std::{
 };
 
 use lean_sys::{
-    lean_array_get_core, lean_array_push, lean_array_size, lean_box, lean_ctor_get, lean_dec, lean_dec_ref, lean_inc, lean_initialize_runtime_module_locked, lean_io_result_is_ok, lean_io_result_show_error, lean_is_array, lean_is_ctor, lean_is_scalar, lean_is_string, lean_mk_empty_array_with_capacity, lean_mk_string_from_bytes, lean_obj_res, lean_object, lean_ptr_tag, lean_scalar_to_int, lean_string_cstr, lean_unbox
+    lean_array_get_core, lean_array_push, lean_array_size, lean_box, lean_ctor_get, lean_dec,
+    lean_dec_ref, lean_inc, lean_initialize_runtime_module_locked, lean_io_result_is_ok,
+    lean_io_result_show_error, lean_is_array, lean_is_ctor, lean_is_scalar, lean_is_string,
+    lean_mk_empty_array_with_capacity, lean_mk_string_from_bytes, lean_obj_res, lean_object,
+    lean_ptr_tag, lean_scalar_to_int, lean_string_cstr, lean_unbox,
 };
 use thiserror::Error;
 
