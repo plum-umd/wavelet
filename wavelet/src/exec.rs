@@ -87,14 +87,16 @@ impl ExecArgs {
         }
 
         let mut progress = utils::TaskSpinner::new("executing")?;
-        let mut total_steps = 0;
+        let mut cycles = 0;
+        let mut steps = 0;
         loop {
-            let trace = config.steps(Some(10))?;
+            let trace = config.eager_steps(Some(10))?;
             if trace.is_empty() {
                 break;
             }
-            total_steps += trace.len();
-            progress.set_message(format!("{} steps", total_steps));
+            cycles += trace.len();
+            steps += trace.iter().map(|labels| labels.len()).sum::<usize>();
+            progress.set_message(format!("{} firings in {} cycles", steps, cycles));
         }
         progress.finish();
 
@@ -110,8 +112,30 @@ impl ExecArgs {
 
         println!("memory state:");
         for mem in config.mem_names()? {
-            println!("  {}:", mem);
-            for addr in config.mem_addrs(&mem)? {
+            // Tries to print the first chunk of contiguous memory values as an array for better readability.
+            let mut cont_mem = Vec::new();
+            let mut cont_addr = 0;
+            while let Some(value) = config.load_mem(&mem, &cont_addr.into())? {
+                cont_mem.push(format!("{}", value));
+                cont_addr += 1;
+            }
+
+            if !cont_mem.is_empty() {
+                println!("  {}: [{}]", mem, cont_mem.join(", "));
+            } else {
+                println!("  {}:", mem);
+            }
+
+            // Look up other addresses
+            let mut addrs = config.mem_addrs(&mem)?;
+            addrs.sort_by_key(|v| i32::try_from(v.clone()).unwrap_or(i32::MIN));
+
+            for addr in addrs {
+                if let Ok(addr) = i32::try_from(addr.clone()) {
+                    if addr < cont_addr {
+                        continue;
+                    }
+                }
                 if let Some(value) = config.load_mem(&mem, &addr)? {
                     println!("    {}: {}", addr, value);
                 }

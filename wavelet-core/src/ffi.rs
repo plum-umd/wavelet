@@ -6,11 +6,7 @@ use std::{
 };
 
 use lean_sys::{
-    lean_array_get_core, lean_array_push, lean_array_size, lean_box, lean_ctor_get, lean_dec,
-    lean_dec_ref, lean_inc, lean_initialize_runtime_module_locked, lean_io_result_is_ok,
-    lean_io_result_show_error, lean_is_array, lean_is_ctor, lean_is_string,
-    lean_mk_empty_array_with_capacity, lean_mk_string_from_bytes, lean_obj_res, lean_object,
-    lean_ptr_tag, lean_string_cstr, lean_unbox,
+    lean_array_get_core, lean_array_push, lean_array_size, lean_box, lean_ctor_get, lean_dec, lean_dec_ref, lean_inc, lean_initialize_runtime_module_locked, lean_io_result_is_ok, lean_io_result_show_error, lean_is_array, lean_is_ctor, lean_is_scalar, lean_is_string, lean_mk_empty_array_with_capacity, lean_mk_string_from_bytes, lean_obj_res, lean_object, lean_ptr_tag, lean_scalar_to_int, lean_string_cstr, lean_unbox
 };
 use thiserror::Error;
 
@@ -30,6 +26,7 @@ pub enum LeanObjectError {
 
 /// A safe wrapper around owned `lean_object`,
 /// adapted from [Cedar](https://github.com/cedar-policy/cedar-spec/blob/3eceb3c38836ffa13cef2e480af3bd092cc79e11/cedar-lean-ffi/src/lean_object.rs)
+#[derive(Debug)]
 pub struct LeanObject {
     raw: *mut lean_object,
 }
@@ -150,9 +147,6 @@ impl<'a> TryFrom<&'a LeanObject> for Result<LeanObject, LeanObject> {
     /// is of the `Except` type, but it simply reads, e.g., the first field
     /// of the first constructor as the error value.
     fn try_from(obj: &'a LeanObject) -> Result<Self, Self::Error> {
-        if !obj.is_ctor() {
-            return Err(LeanObjectError::ExpectedConstructor);
-        }
         match obj.tag() {
             0 => {
                 let raw = unsafe { lean_ctor_get(obj.raw, 0) };
@@ -193,9 +187,12 @@ impl<'a> TryFrom<&'a LeanObject> for Option<LeanObject> {
     type Error = LeanObjectError;
 
     fn try_from(obj: &'a LeanObject) -> Result<Self, Self::Error> {
-        if !obj.is_ctor() {
-            return Err(LeanObjectError::ExpectedConstructor);
+        // For some reason (maybe due to the `attribute [unbox] Option` instruction),
+        // the `None` variant of `Option` is represented as a scalar 0.
+        if lean_is_scalar(obj.raw) && unsafe { lean_scalar_to_int(obj.raw) } == 0 {
+            return Ok(None);
         }
+
         match obj.tag() {
             0 => Ok(None),
             1 => {
@@ -225,9 +222,6 @@ impl<'a> TryFrom<&'a LeanObject> for (LeanObject, LeanObject) {
     type Error = LeanObjectError;
 
     fn try_from(obj: &'a LeanObject) -> Result<Self, Self::Error> {
-        if !obj.is_ctor() {
-            return Err(LeanObjectError::ExpectedConstructor);
-        }
         if obj.tag() != 0 {
             return Err(LeanObjectError::UnknownConstructorTag);
         }

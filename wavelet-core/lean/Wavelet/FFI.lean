@@ -197,6 +197,13 @@ def FFI.configSteps
   let (trace, c') ← c.steps (if bound = 0 then none else some bound.toNat)
   return (trace.toArray, c')
 
+/-- Eagerly fire all fireable operators in one step. -/
+@[export wavelet_riptide_config_eager_steps]
+def FFI.configEagerSteps
+  (c : Config) (bound : USize) : Except String (Array (Array Label) × Config) := do
+  let (trace, c') ← c.eagerSteps (if bound = 0 then none else some bound.toNat)
+  return ((trace.map List.toArray).toArray, c')
+
 @[export wavelet_riptide_label_index]
 def FFI.labelIndex (label : Label) : USize := label.idx.toUSize
 

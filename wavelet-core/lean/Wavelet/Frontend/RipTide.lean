@@ -825,6 +825,24 @@ partial def Config.steps
     let (tail, final) ← c.steps (Nat.pred <$> bound)
     return (.mk _ _ idx label :: tail, final)
 
+/-- Similar to `Config.steps`, but eagerly fires all fireable operators at each step. -/
+partial def Config.eagerSteps
+  (bound : Option Nat := none)
+  (c : Config) :
+    Except String (List (List Label) × Config) := do
+  if let some 0 := bound then
+    return ([], c)
+  let m := c.config.eagerStep (M := StateT State Option)
+  -- TODO: Better error message
+  let ((trace, config'), state') ← (m.run c.state).toExcept
+      s!"eager execution encountered a runtime error"
+  if trace.isEmpty then
+    return ([], c)
+  let trace := trace.map (λ (idx, label) => .mk _ _ idx label)
+  let c := { c with config := config', state := state' }
+  let (tail, final) ← c.eagerSteps (Nat.pred <$> bound)
+  return (trace :: tail, final)
+
 end Testbench
 
 end Wavelet.Frontend.RipTide
