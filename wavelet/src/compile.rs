@@ -1,38 +1,22 @@
-//! Implementation of the `compile` subcommand.
-
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::{collections::HashMap, io::Write};
 
 use anyhow::Context;
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use thiserror::Error;
 
 use wavelet_core::riptide;
 use wavelet_elab as elab;
 
-/// Target IR to output.
-#[derive(Debug, Parser, ValueEnum, Clone, PartialEq, Eq)]
-enum Target {
-    /// Elaborated imperative IR
-    Elab,
-    /// Elaborated imperative IR in JSON
-    ElabJson,
-    /// Unoptimized dataflow process
-    Unopt,
-    /// Optimized dataflow process
-    Opt,
-    /// CIRCT Handshake dialect
-    Handshake,
-    /// DOT format
-    Dot,
-}
+use crate::utils;
 
+/// A compiler from Wavelet's Rust dialect to the core dataflow IR.
 #[derive(Debug, Parser)]
 pub struct CompileArgs {
-    /// Path to the source file (in Wavelet's Rust dialect).
-    input: PathBuf,
+    /// Path to the source file written in Wavelet's Rust dialect (default to stdin).
+    input: Option<PathBuf>,
 
-    /// Output file (stdout if not provided).
+    /// Output dataflow graph in JSON (default to stdout).
     #[arg(short, long)]
     output: Option<PathBuf>,
 
@@ -44,12 +28,24 @@ pub struct CompileArgs {
     #[arg(long)]
     ghost_check: bool,
 
-    /// Target IR to output.
-    #[arg(long, default_value = "opt")]
-    target: Target,
+    /// Emit the elaborated sequential IR to the given file.
+    #[arg(long, value_name = "FILE")]
+    emit_elab: Option<PathBuf>,
 
-    /// Instantiate constants to concrete values ("K1=V1,K2=V2,...").
-    /// Primarily used for lowering to CIRCT/Handshake.
+    /// Emit the elaborated sequential IR in JSON to the given file.
+    #[arg(long, value_name = "FILE")]
+    emit_elab_json: Option<PathBuf>,
+
+    /// Emit the unoptimized process IR in JSON to the given file.
+    #[arg(long, value_name = "FILE")]
+    emit_unopt: Option<PathBuf>,
+
+    /// Exclude array declarations.
+    #[arg(long)]
+    exclude_arrays: bool,
+
+    /// Instantiate constants to concrete values ("K1=V1,K2=V2,..."),
+    /// so that internal memories (`#[alloc]`) have a concrete size.
     #[arg(short, long, num_args = 0..)]
     consts: Vec<String>,
 }
@@ -75,22 +71,6 @@ pub enum CompileError {
 }
 
 impl CompileArgs {
-    /// Writes the given content to the configured output.
-    fn output<C>(&self, content: C) -> Result<(), CompileError>
-    where
-        C: AsRef<[u8]>,
-    {
-        if let Some(output_path) = &self.output {
-            std::fs::write(output_path, content).context("when writing to the output file")?;
-        } else {
-            std::io::stdout()
-                .lock()
-                .write_all(content.as_ref())
-                .context("when writing to stdout")?;
-        }
-        Ok(())
-    }
-
     /// Parses user provided constant bindings.
     fn parse_consts(&self) -> Result<HashMap<String, i64>, CompileError> {
         let mut bindings = HashMap::new();
@@ -116,7 +96,7 @@ impl CompileArgs {
 
     pub fn run(&self) -> Result<(), CompileError> {
         // Load source program
-        let src = std::fs::read_to_string(&self.input).context("when reading input file")?;
+        let src = utils::read_file_or_stdin(self.input.as_ref())?;
         let mut prog = elab::parse_program(&src)?;
 
         // Parse constant bindings
@@ -126,29 +106,37 @@ impl CompileArgs {
             return Err(CompileError::EmptyProgram);
         }
 
-        eprintln!("preprocessing...");
-        prog.desugar_tail_calls();
+        utils::TaskSpinner::run::<_, CompileError>("preprocessing", |_| {
+            prog.desugar_tail_calls();
+            Ok(())
+        })?;
 
-        // Type check
-        eprintln!("type checking...");
-        let smt = elab::SemanticLogic::new();
-        let typed_prog = elab::check::check_program_with_options(&prog, &smt, Default::default())?;
+        let typed_prog = utils::TaskSpinner::run::<_, CompileError>("type checking", |_| {
+            let smt = elab::SemanticLogic::new();
+            Ok(elab::check::check_program_with_options(
+                &prog,
+                &smt,
+                Default::default(),
+            )?)
+        })?;
 
         // Elaboration and validation
         let elab_prog = elab::synthesize_ghost_program(&typed_prog);
         if self.ghost_check {
-            eprintln!("validating token placement...");
-            elab::ghost::check_ghost_program_with_verbose(&elab_prog, false)
-                .map_err(CompileError::ElabValidationError)?;
+            utils::TaskSpinner::run("validating token placement", |_| {
+                elab::ghost::check_ghost_program_with_verbose(&elab_prog, false)
+                    .map_err(CompileError::ElabValidationError)
+            })?;
         }
 
-        if self.target == Target::Elab {
-            return self.output(format!("{}", elab_prog));
+        if let Some(path) = &self.emit_elab {
+            std::fs::write(path, format!("{}", elab_prog))
+                .context("when writing elaborated program to file")?;
         }
 
         // Collect all global array declarations and compute their concrete sizes.
         let mut arrays = Vec::new();
-        if self.target == Target::Handshake {
+        if !self.exclude_arrays {
             if let Some(main_fn) = typed_prog.defs.last() {
                 // TODO: this is assuming that all functions use the same set
                 // of global arrays without renaming.
@@ -158,84 +146,67 @@ impl CompileArgs {
 
         // Transfer to the Lean side through FFI
         let json = elab::ghost::json::export_program_json(arrays, &elab_prog)?;
-        if self.target == Target::ElabJson {
-            return self.output(json);
+        if let Some(path) = &self.emit_elab_json {
+            std::fs::write(path, &json)
+                .context("when writing elaborated program in JSON to file")?;
         }
 
         let core_prog = riptide::Prog::from_json(&json)
             .context("when converting elaborated program to lean")?;
 
-        // Validation
-        eprintln!("validating core program...");
         core_prog
             .validate()
             .context("when validating core program")?;
-
-        // Lower control-flow to pure dataflow
-        eprintln!("lowering control-flow...");
-        let core_proc = core_prog
-            .lower_control_flow()
-            .context("when lowering control-flow")?;
-        eprintln!(
-            "unoptimized: {} ({}) ops",
-            core_proc.num_atoms(),
-            core_proc.num_non_trivial_atoms()
-        );
-
+        let core_proc =
+            utils::TaskSpinner::run::<_, CompileError>("lowering control-flow", |progress| {
+                let core_proc = core_prog
+                    .lower_control_flow()
+                    .context("when lowering control-flow")?;
+                progress.set_message(format!(
+                    "{} ({} non-trivial) ops",
+                    core_proc.num_atoms(),
+                    core_proc.num_non_trivial_atoms()
+                ));
+                Ok(core_proc)
+            })?;
         core_proc
             .validate()
             .context("when validating dataflow after control-flow lowering")?;
 
-        if self.target == Target::Unopt {
-            return self.output(core_proc.to_json()?);
+        if let Some(path) = &self.emit_unopt {
+            std::fs::write(path, core_proc.to_json()?)
+                .context("when writing unoptimized process to file")?;
         }
 
         // Remove unnecessary output(s).
         let core_proc = if self.no_trim_io {
             core_proc
         } else {
-            eprintln!("trimming ghost and unit outputs...");
             core_proc.trim_unit_io()
         };
 
-        // Optimize
-        eprintln!("optimizing...");
-        let disabled_rules = if self.target == Target::Handshake {
-            // Handshake backend does not support `inv` operator yet.
-            vec![
+        // Some graph rewriting for legalization and optimization
+        // TODO: Disabling some rules for now since the handshake
+        // backend does not support `inv` operator yet.
+        let core_proc = utils::TaskSpinner::run::<_, CompileError>("optimization", |progress| {
+            let core_proc = core_proc.optimize(vec![
                 "carry-fork-steer-to-inv-left",
                 "carry-fork-steer-to-inv-right",
-            ]
-        } else {
-            vec![]
-        };
-        let core_proc = core_proc.optimize(disabled_rules);
-        eprintln!(
-            "final: {} ({}) ops",
-            core_proc.num_atoms(),
-            core_proc.num_non_trivial_atoms()
-        );
+            ]);
+            progress.set_message(format!(
+                "{} ({} non-trivial) ops",
+                core_proc.num_atoms(),
+                core_proc.num_non_trivial_atoms()
+            ));
+            Ok(core_proc)
+        })?;
 
         core_proc
             .validate()
             .context("when validating final dataflow")?;
 
-        if self.target == Target::Handshake {
-            return self.output(
-                core_proc
-                    .to_handshake()
-                    .context("when compiling to handshake dialect")?,
-            );
-        }
+        utils::write_file_or_stdout(self.output.as_ref(), core_proc.to_json()?)?;
 
-        if self.target == Target::Dot {
-            return self.output(
-                core_proc
-                    .to_dot()
-                    .context("when generating the graph in DOT format")?,
-            );
-        }
-
-        return self.output(core_proc.to_json()?);
+        Ok(())
     }
 }

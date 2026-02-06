@@ -11,3 +11,5 @@ clap.workspace = true
 wavelet-elab = { path = "../wavelet-elab" }
 wavelet-core = { path = "../wavelet-core" }
 anyhow = "1.0.100"
+console = "0.16.2"
+indicatif = "0.18.3"

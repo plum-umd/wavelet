@@ -34,7 +34,7 @@ build: $(WAVELET) build/bin/hlstool
 
 # Compile tests from Wavelet/Rust to CIRCT/Handshake
 %.handshake.mlir: %.rs
-	$(WAVELET) compile $< --target handshake -o $@
+	$(WAVELET) compile $< | $(WAVELET) handshake -o $@
 
 # Compile CIRCT/Handshake to SystemVerilog
 %.sv: %.handshake.mlir
