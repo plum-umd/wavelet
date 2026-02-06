@@ -1,6 +1,7 @@
 //! Main CLI of Wavelet.
 
 mod compile;
+mod exec;
 mod handshake;
 mod plot;
 mod utils;
@@ -22,6 +23,7 @@ enum Action {
     Compile(compile::CompileArgs),
     Handshake(handshake::HandshakeArgs),
     Plot(plot::PlotArgs),
+    Exec(exec::ExecArgs),
 }
 
 #[derive(Debug, Error)]
@@ -32,6 +34,8 @@ enum Error {
     HandshakeError(#[from] handshake::HandshakeError),
     #[error("plot error: {0}")]
     PlotError(#[from] plot::PlotError),
+    #[error("execution error: {0}")]
+    ExecError(#[from] exec::ExecError),
 }
 
 impl Args {
@@ -40,6 +44,7 @@ impl Args {
             Action::Compile(args) => Ok(args.run()?),
             Action::Handshake(args) => Ok(args.run()?),
             Action::Plot(args) => Ok(args.run()?),
+            Action::Exec(args) => Ok(args.run()?),
         }
     }
 }

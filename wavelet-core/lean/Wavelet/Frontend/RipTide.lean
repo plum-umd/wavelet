@@ -48,7 +48,13 @@ instance : Lean.FromJson Value where
     let w ← obj.getObjValAs? Nat "width"
     let v ← obj.getObjValAs? Nat "value"
     return .int w (BitVec.ofNat w v)) <|>
-  .error "failed to parse Value"
+  if let .ok s := json.getStr? then
+    if s = "junk" then
+      return .junk
+    else
+      .error "failed to parse Value"
+  else
+    .error "failed to parse Value"
 
 /-- Synchronous operators in RipTide, parametrized by a type of location/array symbols. -/
 inductive SyncOp where
@@ -152,6 +158,8 @@ instance instOpInterpM : OpInterpM SyncOp Value (StateT State Option) where
     | .neq, (inputs : Vector Value 2) => applyBitVecBinPred (· != ·) inputs[0] inputs[1]
     | .slt, (inputs : Vector Value 2) => applyBitVecBinPred BitVec.slt inputs[0] inputs[1]
     | .sle, (inputs : Vector Value 2) => applyBitVecBinPred BitVec.sle inputs[0] inputs[1]
+    | .ult, (inputs : Vector Value 2) => applyBitVecBinPred BitVec.ult inputs[0] inputs[1]
+    | .ule, (inputs : Vector Value 2) => applyBitVecBinPred BitVec.ule inputs[0] inputs[1]
     | .and, (inputs : Vector Value 2) => applyBitVecBinOp BitVec.and inputs[0] inputs[1]
     | .ashr, (inputs : Vector Value 2) =>
       match inputs[0], inputs[1] with
@@ -775,6 +783,8 @@ def Config.memAddrs (loc : Loc)
   match c.state.memory.get? loc with
   | some mem => mem.keys
   | none => []
+
+def Config.memNames (c : Config) : List Loc := c.state.memory.keys
 
 /-- Pushes one value to each input channel. -/
 def Config.pushInputs

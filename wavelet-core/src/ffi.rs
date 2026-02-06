@@ -6,12 +6,11 @@ use std::{
 };
 
 use lean_sys::{
-    lean_alloc_ctor, lean_array_get_core, lean_array_push, lean_array_size, lean_box,
-    lean_ctor_get, lean_ctor_set, lean_dec, lean_dec_ref, lean_inc,
-    lean_initialize_runtime_module_locked, lean_io_result_is_ok, lean_io_result_show_error,
-    lean_is_array, lean_is_ctor, lean_is_string, lean_mk_empty_array_with_capacity,
-    lean_mk_string_from_bytes, lean_obj_res, lean_object, lean_ptr_tag, lean_string_cstr,
-    lean_unbox,
+    lean_array_get_core, lean_array_push, lean_array_size, lean_box, lean_ctor_get, lean_dec,
+    lean_dec_ref, lean_inc, lean_initialize_runtime_module_locked, lean_io_result_is_ok,
+    lean_io_result_show_error, lean_is_array, lean_is_ctor, lean_is_string,
+    lean_mk_empty_array_with_capacity, lean_mk_string_from_bytes, lean_obj_res, lean_object,
+    lean_ptr_tag, lean_string_cstr, lean_unbox,
 };
 use thiserror::Error;
 
@@ -172,22 +171,23 @@ impl<'a> TryFrom<&'a LeanObject> for Result<LeanObject, LeanObject> {
     }
 }
 
-impl From<Option<LeanObject>> for LeanObject {
-    fn from(opt: Option<LeanObject>) -> Self {
-        match opt {
-            None => unsafe {
-                LeanObject {
-                    raw: lean_alloc_ctor(0, 0, 0),
-                }
-            },
-            Some(obj) => unsafe {
-                let raw = lean_alloc_ctor(1, 1, 0);
-                lean_ctor_set(raw, 0, obj.to_lean_obj_arg());
-                LeanObject { raw }
-            },
-        }
-    }
-}
+// /// TODO: Might be buggy
+// impl From<Option<LeanObject>> for LeanObject {
+//     fn from(opt: Option<LeanObject>) -> Self {
+//         match opt {
+//             None => unsafe {
+//                 LeanObject {
+//                     raw: lean_alloc_ctor(0, 0, 0),
+//                 }
+//             },
+//             Some(obj) => unsafe {
+//                 let raw = lean_alloc_ctor(1, 1, 0);
+//                 lean_ctor_set(raw, 0, obj.to_lean_obj_arg());
+//                 LeanObject { raw }
+//             },
+//         }
+//     }
+// }
 
 impl<'a> TryFrom<&'a LeanObject> for Option<LeanObject> {
     type Error = LeanObjectError;
@@ -209,16 +209,17 @@ impl<'a> TryFrom<&'a LeanObject> for Option<LeanObject> {
     }
 }
 
-impl From<(LeanObject, LeanObject)> for LeanObject {
-    fn from(pair: (LeanObject, LeanObject)) -> Self {
-        unsafe {
-            let raw = lean_alloc_ctor(0, 2, 0);
-            lean_ctor_set(raw, 0, pair.0.to_lean_obj_arg());
-            lean_ctor_set(raw, 1, pair.1.to_lean_obj_arg());
-            LeanObject { raw }
-        }
-    }
-}
+// /// TODO: Might be buggy
+// impl From<(LeanObject, LeanObject)> for LeanObject {
+//     fn from(pair: (LeanObject, LeanObject)) -> Self {
+//         unsafe {
+//             let raw = lean_alloc_ctor(0, 2, 0);
+//             lean_ctor_set(raw, 0, pair.0.to_lean_obj_arg());
+//             lean_ctor_set(raw, 1, pair.1.to_lean_obj_arg());
+//             LeanObject { raw }
+//         }
+//     }
+// }
 
 impl<'a> TryFrom<&'a LeanObject> for (LeanObject, LeanObject) {
     type Error = LeanObjectError;

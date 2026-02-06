@@ -321,6 +321,20 @@ impl TryFrom<Value> for bool {
     }
 }
 
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Ok(i) = i32::try_from(self.clone()) {
+            write!(f, "{}", i)
+        } else if let Ok(b) = bool::try_from(self.clone()) {
+            write!(f, "{}", b)
+        } else if self.is_unit() {
+            write!(f, "()")
+        } else {
+            write!(f, "<unknown>")
+        }
+    }
+}
+
 impl Value {
     /// Constructs a unit `Value`.
     pub fn unit() -> Self {
@@ -440,6 +454,22 @@ impl Config {
         Ok(arr.into_iter().map(Value).collect())
     }
 
+    /// Returns a vector of used memory names.
+    pub fn mem_names(&self) -> Result<Vec<String>, RipTideError> {
+        extern "C" {
+            fn wavelet_riptide_config_mem_names(arg: lean_obj_arg) -> lean_obj_res;
+        }
+        ensure_init_lean();
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_config_mem_names(self.0.clone().to_lean_obj_arg())
+        });
+        let arr: Vec<LeanObject> = (&res).try_into()?;
+        Ok(arr
+            .into_iter()
+            .map(|s| s.to_str().map(|s| s.to_string()))
+            .collect::<Result<_, _>>()?)
+    }
+
     /// Pushes one value to each input channel.
     pub fn push_inputs(&mut self, inputs: Vec<Value>) -> Result<(), RipTideError> {
         extern "C" {
@@ -488,17 +518,15 @@ impl Config {
 
     /// Steps the configuration until stuck or hit the optional step bound.
     pub fn steps(&mut self, bound: Option<usize>) -> Result<Vec<Label>, RipTideError> {
+        if bound == Some(0) {
+            return Ok(vec![]);
+        }
         extern "C" {
-            fn wavelet_riptide_config_steps(
-                config: lean_obj_arg,
-                bound: lean_obj_arg,
-            ) -> lean_obj_res;
+            fn wavelet_riptide_config_steps(config: lean_obj_arg, bound: size_t) -> lean_obj_res;
         }
         ensure_init_lean();
-        let bound = bound.map(|b| LeanObject::from(b));
-        let bound = LeanObject::from(bound);
         let res = LeanObject::from_lean_obj_res(unsafe {
-            wavelet_riptide_config_steps(self.0.clone().to_lean_obj_arg(), bound.to_lean_obj_arg())
+            wavelet_riptide_config_steps(self.0.clone().to_lean_obj_arg(), bound.unwrap_or(0))
         });
         match Result::<_, _>::try_from(&res)? {
             Ok(res) => {

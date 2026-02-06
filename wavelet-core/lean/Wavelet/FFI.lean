@@ -172,6 +172,10 @@ def FFI.configMemAddrs
   (c : Config) (loc : Loc) : Array Value :=
   (c.memAddrs loc).toArray
 
+/-- Returns an array of used memory names. -/
+@[export wavelet_riptide_config_mem_names]
+def FFI.configMemNames (c : Config) : Array String := c.memNames.toArray
+
 /-- Pushes the given array of inputs to the input channels. -/
 @[export wavelet_riptide_config_push_inputs]
 def FFI.configPushInputs
@@ -186,11 +190,11 @@ def FFI.configPopOutputs
   return (vals.toArray, c')
 
 /-- Steps the configuration until the optional bound
-or until no more operator is fireable. -/
+or until no more operator is fireable (if bound = 0). -/
 @[export wavelet_riptide_config_steps]
 def FFI.configSteps
-  (c : Config) (bound : Option USize) : Except String (Array Label × Config) := do
-  let (trace, c') ← c.steps (bound.map USize.toNat)
+  (c : Config) (bound : USize) : Except String (Array Label × Config) := do
+  let (trace, c') ← c.steps (if bound = 0 then none else some bound.toNat)
   return (trace.toArray, c')
 
 @[export wavelet_riptide_label_index]

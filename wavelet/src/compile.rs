@@ -66,7 +66,7 @@ pub enum CompileError {
     ElabValidationError(String),
     #[error("elaboration export error: {0}")]
     ElabExportError(#[from] elab::ghost::json::ExportError),
-    #[error("Lean FFI error: {0}")]
+    #[error("Lean FFI error")]
     RipTideError(#[from] riptide::RipTideError),
 }
 
@@ -106,19 +106,16 @@ impl CompileArgs {
             return Err(CompileError::EmptyProgram);
         }
 
-        utils::TaskSpinner::run::<_, CompileError>("preprocessing", |_| {
-            prog.desugar_tail_calls();
-            Ok(())
-        })?;
-
-        let typed_prog = utils::TaskSpinner::run::<_, CompileError>("type checking", |_| {
-            let smt = elab::SemanticLogic::new();
-            Ok(elab::check::check_program_with_options(
-                &prog,
-                &smt,
-                Default::default(),
-            )?)
-        })?;
+        let typed_prog =
+            utils::TaskSpinner::run::<_, CompileError>("type checking + elaboration", |_| {
+                prog.desugar_tail_calls();
+                let smt = elab::SemanticLogic::new();
+                Ok(elab::check::check_program_with_options(
+                    &prog,
+                    &smt,
+                    Default::default(),
+                )?)
+            })?;
 
         // Elaboration and validation
         let elab_prog = elab::synthesize_ghost_program(&typed_prog);

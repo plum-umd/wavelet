@@ -5,7 +5,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::style::ProgressTracker;
+use indicatif::{HumanDuration, ProgressBar, ProgressState, ProgressStyle};
 
 /// Reads the optional file or stdin into a string.
 pub fn read_file_or_stdin(path: Option<&PathBuf>) -> anyhow::Result<String> {
@@ -48,18 +49,41 @@ impl Drop for TaskSpinner {
     }
 }
 
+/// Similar to the built-in `elapsed` template key, but
+/// shows milliseconds if the elapsed time is less than 1s.
+struct ElapsedMillisecondTracker;
+
+impl ProgressTracker for ElapsedMillisecondTracker {
+    fn clone_box(&self) -> Box<dyn ProgressTracker> {
+        Box::new(ElapsedMillisecondTracker)
+    }
+
+    fn tick(&mut self, _state: &ProgressState, _now: Instant) {}
+
+    fn reset(&mut self, _state: &ProgressState, _now: Instant) {}
+
+    fn write(&self, state: &ProgressState, w: &mut dyn std::fmt::Write) {
+        let elapsed = state.elapsed();
+        if elapsed < Duration::from_secs(1) {
+            write!(w, "{}ms", elapsed.as_millis()).unwrap();
+        } else {
+            write!(w, "{:#}", HumanDuration(elapsed)).unwrap();
+        }
+    }
+}
+
 impl TaskSpinner {
     /// Creates a new spinner with the given task name.
     pub fn new(task_name: impl Into<String>) -> anyhow::Result<Self> {
         let task_name = task_name.into();
         let bar = ProgressBar::new_spinner();
-        bar.set_style(
-            ProgressStyle::with_template("{spinner} {msg:.bold} ({elapsed})")
-                .context("failed to parse template")?
-                .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✔"),
-        );
+        let style = ProgressStyle::with_template("{spinner} {msg:.bold} ({elapsed_ms})")
+            .context("failed to parse template")?
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✔")
+            .with_key("elapsed_ms", ElapsedMillisecondTracker);
+        bar.set_style(style);
         bar.set_message(task_name.clone());
-        bar.enable_steady_tick(Duration::from_millis(100));
+        bar.enable_steady_tick(Duration::from_millis(50));
 
         if !std::io::stderr().is_terminal() {
             eprintln!("[{}] started", task_name);

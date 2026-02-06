@@ -21,7 +21,7 @@ pub struct HandshakeArgs {
 pub enum HandshakeError {
     #[error(transparent)]
     AnyhowError(#[from] anyhow::Error),
-    #[error("Lean FFI error: {0}")]
+    #[error("Lean FFI error")]
     RipTideError(#[from] riptide::RipTideError),
 }
 
