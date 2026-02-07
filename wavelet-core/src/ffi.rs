@@ -6,11 +6,12 @@ use std::{
 };
 
 use lean_sys::{
-    lean_array_get_core, lean_array_push, lean_array_size, lean_box, lean_ctor_get, lean_dec,
-    lean_dec_ref, lean_inc, lean_initialize_runtime_module_locked, lean_io_result_is_ok,
-    lean_io_result_show_error, lean_is_array, lean_is_ctor, lean_is_scalar, lean_is_string,
-    lean_mk_empty_array_with_capacity, lean_mk_string_from_bytes, lean_obj_res, lean_object,
-    lean_ptr_tag, lean_scalar_to_int, lean_string_cstr, lean_unbox,
+    lean_alloc_ctor, lean_array_get_core, lean_array_push, lean_array_size, lean_box,
+    lean_box_usize, lean_ctor_get, lean_ctor_set, lean_dec, lean_dec_ref, lean_inc,
+    lean_initialize_runtime_module_locked, lean_io_result_is_ok, lean_io_result_show_error,
+    lean_is_array, lean_is_scalar, lean_is_string, lean_mk_empty_array_with_capacity,
+    lean_mk_string_from_bytes, lean_obj_res, lean_object, lean_ptr_tag, lean_string_cstr,
+    lean_unbox,
 };
 use thiserror::Error;
 
@@ -57,11 +58,6 @@ impl LeanObject {
     /// (e.g., 0 for the first constructor in an inductive type).
     pub fn tag(&self) -> u8 {
         unsafe { lean_ptr_tag(self.raw) }
-    }
-
-    /// Checks if the given lean object is a constructor.
-    pub fn is_ctor<'a>(&'a self) -> bool {
-        unsafe { lean_is_ctor(self.raw) }
     }
 
     pub fn is_array(&self) -> bool {
@@ -114,7 +110,9 @@ impl TryFrom<LeanObject> for i32 {
 
 impl From<usize> for LeanObject {
     fn from(n: usize) -> Self {
-        LeanObject { raw: lean_box(n) }
+        LeanObject {
+            raw: unsafe { lean_box_usize(n) },
+        }
     }
 }
 
@@ -169,23 +167,23 @@ impl<'a> TryFrom<&'a LeanObject> for Result<LeanObject, LeanObject> {
     }
 }
 
-// /// TODO: Might be buggy
-// impl From<Option<LeanObject>> for LeanObject {
-//     fn from(opt: Option<LeanObject>) -> Self {
-//         match opt {
-//             None => unsafe {
-//                 LeanObject {
-//                     raw: lean_alloc_ctor(0, 0, 0),
-//                 }
-//             },
-//             Some(obj) => unsafe {
-//                 let raw = lean_alloc_ctor(1, 1, 0);
-//                 lean_ctor_set(raw, 0, obj.to_lean_obj_arg());
-//                 LeanObject { raw }
-//             },
-//         }
-//     }
-// }
+impl From<Option<LeanObject>> for LeanObject {
+    fn from(opt: Option<LeanObject>) -> Self {
+        match opt {
+            None => unsafe {
+                LeanObject {
+                    raw: lean_alloc_ctor(0, 0, 0),
+                }
+            },
+            Some(obj) => unsafe {
+                let raw = lean_alloc_ctor(1, 1, 0);
+                lean_ctor_set(raw, 0, obj.to_lean_obj_arg());
+                lean_inc(raw);
+                LeanObject { raw }
+            },
+        }
+    }
+}
 
 impl<'a> TryFrom<&'a LeanObject> for Option<LeanObject> {
     type Error = LeanObjectError;
@@ -193,7 +191,7 @@ impl<'a> TryFrom<&'a LeanObject> for Option<LeanObject> {
     fn try_from(obj: &'a LeanObject) -> Result<Self, Self::Error> {
         // For some reason (maybe due to the `attribute [unbox] Option` instruction),
         // the `None` variant of `Option` is represented as a scalar 0.
-        if lean_is_scalar(obj.raw) && unsafe { lean_scalar_to_int(obj.raw) } == 0 {
+        if lean_is_scalar(obj.raw) && lean_unbox(obj.raw) == 0 {
             return Ok(None);
         }
 
@@ -209,18 +207,6 @@ impl<'a> TryFrom<&'a LeanObject> for Option<LeanObject> {
         }
     }
 }
-
-// /// TODO: Might be buggy
-// impl From<(LeanObject, LeanObject)> for LeanObject {
-//     fn from(pair: (LeanObject, LeanObject)) -> Self {
-//         unsafe {
-//             let raw = lean_alloc_ctor(0, 2, 0);
-//             lean_ctor_set(raw, 0, pair.0.to_lean_obj_arg());
-//             lean_ctor_set(raw, 1, pair.1.to_lean_obj_arg());
-//             LeanObject { raw }
-//         }
-//     }
-// }
 
 impl<'a> TryFrom<&'a LeanObject> for (LeanObject, LeanObject) {
     type Error = LeanObjectError;

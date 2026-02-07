@@ -518,15 +518,17 @@ impl Config {
 
     /// Steps the configuration until stuck or hit the optional step bound.
     pub fn steps(&mut self, bound: Option<usize>) -> Result<Vec<Label>, RipTideError> {
-        if bound == Some(0) {
-            return Ok(vec![]);
-        }
         extern "C" {
-            fn wavelet_riptide_config_steps(config: lean_obj_arg, bound: size_t) -> lean_obj_res;
+            fn wavelet_riptide_config_steps(
+                config: lean_obj_arg,
+                bound: lean_obj_arg,
+            ) -> lean_obj_res;
         }
         ensure_init_lean();
+        let bound = bound.map(LeanObject::from);
+        let bound = LeanObject::from(bound);
         let res = LeanObject::from_lean_obj_res(unsafe {
-            wavelet_riptide_config_steps(self.0.clone().to_lean_obj_arg(), bound.unwrap_or(0))
+            wavelet_riptide_config_steps(self.0.clone().to_lean_obj_arg(), bound.to_lean_obj_arg())
         });
         match Result::<_, _>::try_from(&res)? {
             Ok(res) => {
@@ -542,18 +544,20 @@ impl Config {
 
     /// Eagerly steps the configuration by firing all fireable operators once, until stuck or hit the optional step bound.
     pub fn eager_steps(&mut self, bound: Option<usize>) -> Result<Vec<Vec<Label>>, RipTideError> {
-        if bound == Some(0) {
-            return Ok(vec![]);
-        }
         extern "C" {
             fn wavelet_riptide_config_eager_steps(
                 config: lean_obj_arg,
-                bound: size_t,
+                bound: lean_obj_arg,
             ) -> lean_obj_res;
         }
+        let bound = bound.map(LeanObject::from);
+        let bound = LeanObject::from(bound);
         ensure_init_lean();
         let res = LeanObject::from_lean_obj_res(unsafe {
-            wavelet_riptide_config_eager_steps(self.0.clone().to_lean_obj_arg(), bound.unwrap_or(0))
+            wavelet_riptide_config_eager_steps(
+                self.0.clone().to_lean_obj_arg(),
+                bound.to_lean_obj_arg(),
+            )
         });
         match Result::<_, _>::try_from(&res)? {
             Ok(res) => {
@@ -670,5 +674,7 @@ mod tests {
         for i in 0..10 {
             assert!(addrs.iter().any(|a| i32::try_from(a.clone()).unwrap() == i));
         }
+        assert!(config.mem_addrs("B").unwrap().is_empty());
+        assert!(config.load_mem("A", &Value::from(100)).unwrap().is_none());
     }
 }
