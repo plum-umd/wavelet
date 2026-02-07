@@ -189,15 +189,8 @@ def FFI.configPopOutputs
   let (vals, c') ← c.popOutputs
   return (vals.toArray, c')
 
-/-- Steps the configuration until the optional bound
-or until no more operator is fireable (if bound = 0). -/
-@[export wavelet_riptide_config_steps]
-def FFI.configSteps
-  (c : Config) (bound : Option USize) : Except String (Array Label × Config) := do
-  let (trace, c') ← c.steps (bound.map USize.toNat)
-  return (trace.toArray, c')
-
-/-- Eagerly fire all fireable operators in one step. -/
+/-- Eagerly fires all fireable operators for `bound` steps (if specified),
+or until termination. -/
 @[export wavelet_riptide_config_eager_steps]
 def FFI.configEagerSteps
   (c : Config) (bound : Option USize) : Except String (Array (Array Label) × Config) := do

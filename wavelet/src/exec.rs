@@ -6,7 +6,7 @@ use wavelet_core::riptide;
 
 use crate::utils;
 
-/// Compiles from the dataflow IR to the CIRCT Handshake dialect.
+/// Dataflow IR interpreter.
 #[derive(Debug, Parser)]
 pub struct ExecArgs {
     /// Path to the source dataflow IR in JSON (default to stdin).
@@ -88,15 +88,15 @@ impl ExecArgs {
 
         let mut progress = utils::TaskSpinner::new("executing")?;
         let mut cycles = 0;
-        let mut steps = 0;
+        let mut fired = 0;
         loop {
             let trace = config.eager_steps(Some(10))?;
             if trace.is_empty() {
                 break;
             }
             cycles += trace.len();
-            steps += trace.iter().map(|labels| labels.len()).sum::<usize>();
-            progress.set_message(format!("{} firings in {} cycles", steps, cycles));
+            fired += trace.iter().map(|labels| labels.len()).sum::<usize>();
+            progress.set_message(format!("{} ops fired in {} cycles", fired, cycles));
         }
         progress.finish();
 
@@ -110,7 +110,6 @@ impl ExecArgs {
                 .join(", ")
         );
 
-        println!("memory state:");
         for mem in config.mem_names()? {
             // Tries to print the first chunk of contiguous memory values as an array for better readability.
             let mut cont_mem = Vec::new();
@@ -121,9 +120,9 @@ impl ExecArgs {
             }
 
             if !cont_mem.is_empty() {
-                println!("  {}: [{}]", mem, cont_mem.join(", "));
+                println!("{}: [{}]", mem, cont_mem.join(", "));
             } else {
-                println!("  {}:", mem);
+                println!("{}:", mem);
             }
 
             // Look up other addresses
@@ -137,7 +136,7 @@ impl ExecArgs {
                     }
                 }
                 if let Some(value) = config.load_mem(&mem, addr.clone())? {
-                    println!("    {}: {}", addr, value);
+                    println!("  {}: {}", addr, value);
                 }
             }
         }

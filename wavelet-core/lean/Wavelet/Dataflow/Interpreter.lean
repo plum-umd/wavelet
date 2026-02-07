@@ -167,14 +167,8 @@ def Config.stepAtom (idx : Nat) (c : Config Op χ V m n)
       })
   | _ => failure
 
-/-- An executable stepping relation that returns the current list of
-fireable operators and their monadic interpretations. -/
-def Config.step (c : Config Op χ V m n)
-  : List (Nat × M (Label Op V m n × Config Op χ V m n)) := do
-  let idx ← List.range c.proc.atoms.length
-  (c.stepAtom idx).toList.map (idx, ·)
-
-/-- An eager stepping relation that fires all fireable operator once. -/
+/-- Fires all fireable operator at once, and returns the
+list of fired operators and the resulting config. -/
 def Config.eagerStep (c : Config Op χ V m n)
   : M (List (Nat × Label Op V m n) × Config Op χ V m n) :=
   (List.range c.proc.atoms.length)
@@ -187,5 +181,20 @@ def Config.eagerStep (c : Config Op χ V m n)
           let (label, c') ← m
           return (trace ++ [(idx, label)], c')
         | none => pure (trace, c)
+
+/-- Performs at most `bound` eager steps or until termination,
+and returns the trace as a list of (non-empty) sets of operators
+fired at each step. -/
+partial def Config.eagerSteps
+  (bound : Option Nat := none)
+  (c : Config Op χ V m n) :
+    M (List (List (Nat × Label Op V m n)) × Config Op χ V m n) := do
+  if let some 0 := bound then
+    return ([], c)
+  let (tr, c') ← c.eagerStep
+  if tr.isEmpty then
+    return ([], c)
+  let (tail, c'') ← c'.eagerSteps (Nat.pred <$> bound)
+  return (tr :: tail, c'')
 
 end Wavelet.Dataflow

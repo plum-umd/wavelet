@@ -128,59 +128,67 @@ def State.store (s : State) (loc : Loc) (addr : Value) (val : Value) : State :=
     memory := s.memory.insert loc
       ((s.memory.getD loc .emptyWithCapacity).insert addr val) }
 
+abbrev SemM := StateT State (Except String)
+
 private def applyBitVecBinOp
+  (name : String)
   (f : ∀ {w : Nat}, BitVec w → BitVec w → BitVec w) :
-    Value → Value → StateT State Option (Vector Value 1)
+    Value → Value → SemM (Vector Value 1)
   | .int w₁ v₁, .int w₂ v₂ =>
     if h : w₁ = w₂ then
       let v := f v₁ (v₂.cast h.symm)
       return #v[.int w₁ v]
     else
-      failure
-  | _, _ => failure
+      throw s!"bitvector width mismatch for {name}"
+  | _, _ => throw s!"type mismatch for operator {name}"
 
 private def applyBitVecBinPred
+  (name : String)
   (f : ∀ {w : Nat}, BitVec w → BitVec w → Bool) :
-    Value → Value → StateT State Option (Vector Value 1)
+    Value → Value → SemM (Vector Value 1)
   | .int w₁ v₁, .int w₂ v₂ =>
     if h : w₁ = w₂ then
       let b := f v₁ (v₂.cast h.symm)
       return #v[InterpConsts.fromBool b]
     else
-      failure
-  | _, _ => failure
+      throw s!"bitvector width mismatch for {name}"
+  | _, _ => throw s!"type mismatch for operator {name}"
 
-instance instOpInterpM : OpInterpM SyncOp Value (StateT State Option) where
+instance instOpInterpM : OpInterpM SyncOp Value SemM where
   interp
-    | .add, (inputs : Vector Value 2) => applyBitVecBinOp BitVec.add inputs[0] inputs[1]
-    | .mul, (inputs : Vector Value 2) => applyBitVecBinOp BitVec.mul inputs[0] inputs[1]
-    | .eq, (inputs : Vector Value 2) => applyBitVecBinPred (· == ·) inputs[0] inputs[1]
-    | .neq, (inputs : Vector Value 2) => applyBitVecBinPred (· != ·) inputs[0] inputs[1]
-    | .slt, (inputs : Vector Value 2) => applyBitVecBinPred BitVec.slt inputs[0] inputs[1]
-    | .sle, (inputs : Vector Value 2) => applyBitVecBinPred BitVec.sle inputs[0] inputs[1]
-    | .ult, (inputs : Vector Value 2) => applyBitVecBinPred BitVec.ult inputs[0] inputs[1]
-    | .ule, (inputs : Vector Value 2) => applyBitVecBinPred BitVec.ule inputs[0] inputs[1]
-    | .and, (inputs : Vector Value 2) => applyBitVecBinOp BitVec.and inputs[0] inputs[1]
+    | .add, (inputs : Vector Value 2) => applyBitVecBinOp "add" BitVec.add inputs[0] inputs[1]
+    | .mul, (inputs : Vector Value 2) => applyBitVecBinOp "mul" BitVec.mul inputs[0] inputs[1]
+    | .eq, (inputs : Vector Value 2) => applyBitVecBinPred "eq" (· == ·) inputs[0] inputs[1]
+    | .neq, (inputs : Vector Value 2) => applyBitVecBinPred "neq" (· != ·) inputs[0] inputs[1]
+    | .slt, (inputs : Vector Value 2) => applyBitVecBinPred "slt" BitVec.slt inputs[0] inputs[1]
+    | .sle, (inputs : Vector Value 2) => applyBitVecBinPred "sle" BitVec.sle inputs[0] inputs[1]
+    | .ult, (inputs : Vector Value 2) => applyBitVecBinPred "ult" BitVec.ult inputs[0] inputs[1]
+    | .ule, (inputs : Vector Value 2) => applyBitVecBinPred "ule" BitVec.ule inputs[0] inputs[1]
+    | .and, (inputs : Vector Value 2) => applyBitVecBinOp "and" BitVec.and inputs[0] inputs[1]
     | .ashr, (inputs : Vector Value 2) =>
       match inputs[0], inputs[1] with
       | .int w v, .int _ shift => return #v[.int w (BitVec.sshiftRight v shift.toNat)]
-      | _, _ => failure
-    | .load loc, (inputs : Vector Value 1) => return #v[← (← get).load loc inputs[0]]
+      | _, _ => throw s!"type mismatch for operator ashr"
+    | .load loc, (inputs : Vector Value 1) => do
+      match (← get).load loc inputs[0] with
+      | some val => return #v[val]
+      | none => throw s!"loading uninitialized memory address {loc}[{repr inputs[0]}]"
     | .store loc, (inputs : Vector Value 2) => do
       modify (λ s => s.store loc inputs[0] inputs[1])
       return #v[.unit]
     | .sel, (inputs : Vector Value 3) => do
-      let cond ← InterpConsts.toBool inputs[0]
+      let cond ← InterpConsts.toBool inputs[0] |>.toExcept
+        "select condition is not a boolean"
       let v₁ := inputs[1]
       let v₂ := inputs[2]
       return #v[if cond then v₁ else v₂]
     -- TODO: other pure operators
-    | _, _ => failure
+    | op, _ => throw s!"unsupported operator or wrong number of arguments: {repr op}"
 
 /-- Converts the monadic interpretation to a relation. -/
 inductive SyncOp.Step : Lts State (RespLabel SyncOp Value) where
   | step :
-    (instOpInterpM.interp op inputVals).run s = some (outputVals, s') →
+    (instOpInterpM.interp op inputVals).run s = .ok (outputVals, s') →
     Step s (.respond op inputVals outputVals) s'
 
 def opInterp : OpInterp SyncOp Value := {
@@ -801,47 +809,15 @@ def Config.popOutputs
     s!"some output channels are empty"
   return (outputs.toList, { c with config := config' })
 
-/-- Steps until stuck or hit the optional step bound,
-and returns the trace of fired operators along with
-the final state. -/
-partial def Config.steps
-  (bound : Option Nat := none)
-  (c : Config) :
-    Except String (List Label × Config) := do
-  if let some 0 := bound then
-    return ([], c)
-  let nextSteps := c.config.step (M := StateT State Option)
-  match nextSteps with
-  | [] => return ([], c)
-  | (idx, m) :: _ =>
-    -- Simply pick the first available step and apply
-    -- the suitable changes to the state.
-    -- (looking up the atom for a better error message).
-    let atom ← (c.config.proc.atoms[idx]?).toExcept s!"invalid operator index {idx}"
-    let rawAtom : RawAtomicProc SyncOp (VarName Nat) Value := ↑atom
-    let ((label, config'), state') ← (m.run c.state).toExcept
-      s!"execution encountered a runtime error at operator index {idx} : {Lean.ToJson.toJson rawAtom}"
-    let c := { c with config := config', state := state' }
-    let (tail, final) ← c.steps (Nat.pred <$> bound)
-    return (.mk _ _ idx label :: tail, final)
-
-/-- Similar to `Config.steps`, but eagerly fires all fireable operators at each step. -/
+/-- Eagerly fires all fireable operators for `bound` steps (if specified),
+or until termination. -/
 partial def Config.eagerSteps
   (bound : Option Nat := none)
   (c : Config) :
     Except String (List (List Label) × Config) := do
-  if let some 0 := bound then
-    return ([], c)
-  let m := c.config.eagerStep (M := StateT State Option)
-  -- TODO: Better error message
-  let ((trace, config'), state') ← (m.run c.state).toExcept
-      s!"eager execution encountered a runtime error"
-  if trace.isEmpty then
-    return ([], c)
-  let trace := trace.map (λ (idx, label) => .mk _ _ idx label)
-  let c := { c with config := config', state := state' }
-  let (tail, final) ← c.eagerSteps (Nat.pred <$> bound)
-  return (trace :: tail, final)
+  let ((tr, config'), state') ← (c.config.eagerSteps (M := SemM) bound).run c.state
+  let tr := tr.map (λ labels => labels.map λ (idx, label) => .mk _ _ idx label)
+  return (tr, { c with config := config', state := state' })
 
 end Testbench
 
