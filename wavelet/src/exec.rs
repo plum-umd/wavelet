@@ -80,7 +80,7 @@ impl ExecArgs {
                         continue;
                     }
                     let value = Self::parse_value(value)?;
-                    config.store_mem(name, &addr.into(), &value);
+                    config.store_mem(name, addr.into(), value);
                     addr += 1;
                 }
             }
@@ -115,7 +115,7 @@ impl ExecArgs {
             // Tries to print the first chunk of contiguous memory values as an array for better readability.
             let mut cont_mem = Vec::new();
             let mut cont_addr = 0;
-            while let Some(value) = config.load_mem(&mem, &cont_addr.into())? {
+            while let Some(value) = config.load_mem(&mem, cont_addr.into())? {
                 cont_mem.push(format!("{}", value));
                 cont_addr += 1;
             }
@@ -136,7 +136,7 @@ impl ExecArgs {
                         continue;
                     }
                 }
-                if let Some(value) = config.load_mem(&mem, &addr)? {
+                if let Some(value) = config.load_mem(&mem, addr.clone())? {
                     println!("    {}: {}", addr, value);
                 }
             }

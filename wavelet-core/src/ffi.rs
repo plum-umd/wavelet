@@ -65,8 +65,11 @@ impl LeanObject {
     }
 
     pub fn to_str(&self) -> Result<&str, LeanObjectError> {
-        let s: &str = self.try_into()?;
-        Ok(s)
+        if !unsafe { lean_is_string(self.raw) } {
+            return Err(LeanObjectError::ExpectedString);
+        }
+        let cstr = unsafe { CStr::from_ptr(lean_string_cstr(self.raw) as *const c_char) };
+        Ok(cstr.to_str()?)
     }
 
     /// `lean_obj_arg` requires an owned `*mut lean_object`.
@@ -123,18 +126,6 @@ impl From<&str> for LeanObject {
                 raw: lean_mk_string_from_bytes(s.as_ptr(), s.len()),
             }
         }
-    }
-}
-
-impl<'a> TryFrom<&'a LeanObject> for &'a str {
-    type Error = LeanObjectError;
-
-    fn try_from(obj: &'a LeanObject) -> Result<Self, Self::Error> {
-        if !unsafe { lean_is_string(obj.raw) } {
-            return Err(LeanObjectError::ExpectedString);
-        }
-        let cstr = unsafe { CStr::from_ptr(lean_string_cstr(obj.raw) as *const c_char) };
-        Ok(cstr.to_str()?)
     }
 }
 

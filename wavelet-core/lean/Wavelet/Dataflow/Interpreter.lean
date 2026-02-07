@@ -177,13 +177,15 @@ def Config.step (c : Config Op χ V m n)
 /-- An eager stepping relation that fires all fireable operator once. -/
 def Config.eagerStep (c : Config Op χ V m n)
   : M (List (Nat × Label Op V m n) × Config Op χ V m n) :=
-  (List.range c.proc.atoms.length).foldlM
-    (init := ([], c))
-    λ (trace, c) idx => do
-      match c.stepAtom idx with
-      | some m =>
-        let (label, c') ← m
-        return (trace ++ [(idx, label)], c')
-      | none => pure (trace, c)
+  (List.range c.proc.atoms.length)
+    |>.filter (λ idx => (c.stepAtom (M := M) idx).isSome)
+    |>.foldlM
+      (init := ([], c))
+      λ (trace, c) idx => do
+        match c.stepAtom idx with
+        | some m =>
+          let (label, c') ← m
+          return (trace ++ [(idx, label)], c')
+        | none => pure (trace, c)
 
 end Wavelet.Dataflow

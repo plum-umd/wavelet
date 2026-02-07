@@ -170,8 +170,7 @@ impl Proc {
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_proc_to_json(self.0.clone().to_lean_obj_arg())
         });
-        let s: &str = (&res).try_into()?;
-        Ok(s.to_string())
+        Ok(res.to_str()?.to_string())
     }
 
     /// Serializes the `Proc` to Graphviz DOT format.
@@ -388,7 +387,7 @@ impl Config {
     }
 
     /// Stores a value into the configuration's memory at the given address.
-    pub fn store_mem(&mut self, loc: impl AsRef<str>, addr: &Value, value: &Value) {
+    pub fn store_mem(&mut self, loc: impl AsRef<str>, addr: Value, value: Value) {
         extern "C" {
             fn wavelet_riptide_config_store_mem(
                 config: lean_obj_arg,
@@ -402,8 +401,8 @@ impl Config {
             wavelet_riptide_config_store_mem(
                 self.0.clone().to_lean_obj_arg(),
                 LeanObject::from(loc.as_ref()).to_lean_obj_arg(),
-                addr.0.clone().to_lean_obj_arg(),
-                value.0.clone().to_lean_obj_arg(),
+                addr.0.to_lean_obj_arg(),
+                value.0.to_lean_obj_arg(),
             )
         });
     }
@@ -412,7 +411,7 @@ impl Config {
     pub fn load_mem(
         &self,
         loc: impl AsRef<str>,
-        addr: &Value,
+        addr: Value,
     ) -> Result<Option<Value>, RipTideError> {
         extern "C" {
             fn wavelet_riptide_config_load_mem(
@@ -426,7 +425,7 @@ impl Config {
             wavelet_riptide_config_load_mem(
                 self.0.clone().to_lean_obj_arg(),
                 LeanObject::from(loc.as_ref()).to_lean_obj_arg(),
-                addr.0.clone().to_lean_obj_arg(),
+                addr.0.to_lean_obj_arg(),
             )
         });
         match Option::<_>::try_from(&res)? {
@@ -599,8 +598,7 @@ impl std::fmt::Display for Label {
         let res = LeanObject::from_lean_obj_res(unsafe {
             wavelet_riptide_label_to_string(self.0.clone().to_lean_obj_arg())
         });
-        let s: &str = (&res).try_into().map_err(|_| std::fmt::Error {})?;
-        write!(f, "{}", s)
+        write!(f, "{}", res.to_str().map_err(|_| std::fmt::Error {})?)
     }
 }
 
@@ -654,14 +652,12 @@ mod tests {
         let mut config = Config::new(&proc);
 
         for i in 0..10 {
-            let addr = Value::from(i);
-            let value = Value::from(i * 10);
-            config.store_mem("A", &addr, &value);
+            config.store_mem("A", i.into(), (i * 10).into());
         }
 
         for i in 0..10 {
             let addr = Value::from(i);
-            let loaded = config.load_mem("A", &addr).unwrap().unwrap();
+            let loaded = config.load_mem("A", addr).unwrap().unwrap();
             let expected = Value::from(i * 10);
             assert_eq!(
                 i32::try_from(loaded).unwrap(),
@@ -675,6 +671,6 @@ mod tests {
             assert!(addrs.iter().any(|a| i32::try_from(a.clone()).unwrap() == i));
         }
         assert!(config.mem_addrs("B").unwrap().is_empty());
-        assert!(config.load_mem("A", &Value::from(100)).unwrap().is_none());
+        assert!(config.load_mem("A", Value::from(100)).unwrap().is_none());
     }
 }
