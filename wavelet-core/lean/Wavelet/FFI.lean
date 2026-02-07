@@ -205,4 +205,68 @@ def FFI.labelToString (label : Label) : String := s!"{repr label.inner}"
 
 end Testing
 
+/-! Functions in this section is sorely for the purpose of testing the
+Rust-Lean FFI conversions (see `wavelet-core/src/ffi.rs`). -/
+section FFITests
+
+@[export wavelet_test_array_string_join]
+def FFI.testArrayStringJoin (arr : Array String) (sep : String) : String :=
+  sep.intercalate arr.toList
+
+@[export wavelet_test_option_some_string]
+def FFI.testOptionSomeString (s : String) : Option String := .some s
+
+@[export wavelet_test_option_none_string]
+def FFI.testOptionNoneString : Option String := .none
+
+@[export wavelet_test_option_string_show]
+def FFI.testOptionStringShow (o : Option String) : String :=
+  match o with
+  | .some s => "some:" ++ s
+  | .none => "none"
+
+@[export wavelet_test_except_ok_string]
+def FFI.testExceptOkString (s : String) : Except String String := .ok s
+
+@[export wavelet_test_except_error_string]
+def FFI.testExceptErrorString (s : String) : Except String String := .error s
+
+@[export wavelet_test_except_string_show]
+def FFI.testExceptStringShow (e : Except String String) : String :=
+  match e with
+  | .ok s => "ok:" ++ s
+  | .error s => "err:" ++ s
+
+@[export wavelet_test_pair_strings]
+def FFI.testPairStrings (a b : String) : String × String := (a, b)
+
+@[export wavelet_test_pair_string_array]
+def FFI.testPairStringArray (s : String) (arr : Array String) : String × Array String := (s, arr)
+
+@[export wavelet_test_pair_string_show]
+def FFI.testPairStringShow (p : String × String) : String :=
+  "(" ++ p.1 ++ "," ++ p.2 ++ ")"
+
+@[export wavelet_test_option_usize_show]
+def FFI.testOptionUSizeShow (o : Option USize) : String :=
+  match o with
+  | .some n => s!"some:{n}"
+  | .none => "none"
+
+@[export wavelet_test_except_usize_show]
+def FFI.testExceptUSizeShow (e : Except USize USize) : String :=
+  match e with
+  | .ok n => s!"ok:{n}"
+  | .error n => s!"err:{n}"
+
+@[export wavelet_test_array_usize_sum]
+def FFI.testArrayUSizeSum (arr : Array USize) : USize :=
+  arr.foldl (· + ·) 0
+
+@[export wavelet_test_pair_usize_sum]
+def FFI.testPairUSizeSum (p : USize × USize) : USize :=
+  p.1 + p.2
+
+end FFITests
+
 end Wavelet.Frontend.RipTide
