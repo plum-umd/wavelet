@@ -1,4 +1,8 @@
 //! Utilities for dealing with Lean FFI.
+//!
+//! More references:
+//! - `lean_object` layout: <https://github.com/leanprover/lean4/blob/v4.24.0/src/include/lean/lean.h#L112>
+//! - Implementations of `lean_dec`/`lean_inc`: <https://github.com/leanprover/lean4/blob/v4.24.0/src/runtime/object.cpp>
 
 use std::{
     ffi::{c_char, CStr},
@@ -142,15 +146,11 @@ impl<'a> TryFrom<&'a LeanObject> for Result<LeanObject, LeanObject> {
     fn try_from(obj: &'a LeanObject) -> Result<Self, Self::Error> {
         match obj.tag() {
             0 => {
-                let raw = unsafe { lean_ctor_get(obj.raw, 0) };
-                let field = LeanObject { raw };
-                unsafe { lean_inc(raw) };
+                let field = LeanObject::from_b_lean_obj_res(unsafe { lean_ctor_get(obj.raw, 0) });
                 Ok(Err(field))
             }
             1 => {
-                let raw = unsafe { lean_ctor_get(obj.raw, 0) };
-                let field = LeanObject { raw };
-                unsafe { lean_inc(raw) };
+                let field = LeanObject::from_b_lean_obj_res(unsafe { lean_ctor_get(obj.raw, 0) });
                 Ok(Ok(field))
             }
             _ => Err(LeanObjectError::UnknownConstructorTag),
@@ -167,7 +167,6 @@ impl From<Result<LeanObject, LeanObject>> for LeanObject {
         unsafe {
             let raw = lean_alloc_ctor(tag, 1, 0);
             lean_ctor_set(raw, 0, inner.to_lean_obj_arg());
-            lean_inc(raw);
             LeanObject { raw }
         }
     }
@@ -183,7 +182,6 @@ impl From<Option<LeanObject>> for LeanObject {
             Some(obj) => unsafe {
                 let raw = lean_alloc_ctor(1, 1, 0);
                 lean_ctor_set(raw, 0, obj.to_lean_obj_arg());
-                lean_inc(raw);
                 LeanObject { raw }
             },
         }
@@ -203,9 +201,7 @@ impl<'a> TryFrom<&'a LeanObject> for Option<LeanObject> {
         match obj.tag() {
             0 => Ok(None),
             1 => {
-                let raw = unsafe { lean_ctor_get(obj.raw, 0) };
-                let field = LeanObject { raw };
-                unsafe { lean_inc(raw) };
+                let field = LeanObject::from_b_lean_obj_res(unsafe { lean_ctor_get(obj.raw, 0) });
                 Ok(Some(field))
             }
             _ => Err(LeanObjectError::UnknownConstructorTag),
@@ -220,7 +216,6 @@ impl From<(LeanObject, LeanObject)> for LeanObject {
             let raw = lean_alloc_ctor(0, 2, 0);
             lean_ctor_set(raw, 0, a.to_lean_obj_arg());
             lean_ctor_set(raw, 1, b.to_lean_obj_arg());
-            lean_inc(raw);
             LeanObject { raw }
         }
     }
@@ -233,16 +228,9 @@ impl<'a> TryFrom<&'a LeanObject> for (LeanObject, LeanObject) {
         if obj.tag() != 0 {
             return Err(LeanObjectError::UnknownConstructorTag);
         }
-        let first_raw = unsafe { lean_ctor_get(obj.raw, 0) };
-        let second_raw = unsafe { lean_ctor_get(obj.raw, 1) };
-        unsafe {
-            lean_inc(first_raw);
-            lean_inc(second_raw);
-        }
-        Ok((
-            LeanObject { raw: first_raw },
-            LeanObject { raw: second_raw },
-        ))
+        let first = LeanObject::from_b_lean_obj_res(unsafe { lean_ctor_get(obj.raw, 0) });
+        let second = LeanObject::from_b_lean_obj_res(unsafe { lean_ctor_get(obj.raw, 1) });
+        Ok((first, second))
     }
 }
 
