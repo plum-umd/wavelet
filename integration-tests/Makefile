@@ -32,9 +32,12 @@ $(WAVELET): $(REPO_DIR)/wavelet $(REPO_DIR)/wavelet-core $(REPO_DIR)/wavelet-ela
 .PHONY: build
 build: $(WAVELET) build/bin/hlstool
 
+%.dfg.json: %.rs
+	$(WAVELET) compile $< -o $@
+
 # Compile tests from Wavelet/Rust to CIRCT/Handshake
-%.handshake.mlir: %.rs
-	$(WAVELET) compile $< | $(WAVELET) handshake -o $@
+%.handshake.mlir: %.dfg.json
+	$(WAVELET) handshake $< -o $@
 
 # Compile CIRCT/Handshake to SystemVerilog
 %.sv: %.handshake.mlir
@@ -96,6 +99,7 @@ tests:
 clean:
 	rm -rf tests/*/*.sv \
 		tests/*/*.handshake.mlir \
+		tests/*/*.dfg.json \
 		tests/*/cocotb.makefile \
 		tests/*/results.xml \
 		tests/*/sim_build

@@ -2,3 +2,13 @@ build/
 .venv/
 __pycache__/
 *.py[codz]
+
+*.sv
+*.handshake.mlir
+*.makefile
+*.log
+*.dfg.json
+
+# cocotb artifacts
+results.xml
+sim_build/
