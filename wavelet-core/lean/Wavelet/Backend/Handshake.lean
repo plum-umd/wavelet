@@ -465,25 +465,13 @@ instance [Repr α] [ToString α]
     let valTy ← EmitType.emit val
     let port ← EmitState.useNextPort loc .load
     let ctrl ← .freshVar
-    -- For external memory, we need to conservatively insert
-    -- additional buffers to avoid deadlocks.
-    -- TODO: Figure out a better solution.
-    let (portAddr, portVal) ← if ← EmitState.isExternal loc then
-      let portAddrBuf ← .freshVar
-      let portValBuf ← .freshVar
-      .writeLn s!"{port.addrVar} = buffer [1] seq {portAddrBuf} : {addrTy}"
-      .writeLn s!"{portValBuf} = buffer [1] seq {port.dataVar} : {valTy}"
-      -- port.doneVar should be automatically sunk for load
-      pure (portAddrBuf, portValBuf)
-    else
-      pure (port.addrVar, port.dataVar)
     -- Wait for the address input to arrive, interact with the memory port
     -- and then forward the loaded value.
     let addrCopy1 ← .freshVar
     let addrCopy2 ← .freshVar
     .writeLn s!"{addrCopy1}, {addrCopy2} = fork [2] {addr} : {addrTy}"
     .writeLn s!"{ctrl} = join {addrCopy1} : {addrTy}"
-    .writeLn s!"{← EmitVar.emit val}, {portAddr} = load [{addrCopy2}] {portVal}, {ctrl} : {addrTy}, {valTy}"
+    .writeLn s!"{← EmitVar.emit val}, {port.addrVar} = load [{addrCopy2}] {port.dataVar}, {ctrl} : {addrTy}, {valTy}"
   -- The `done` signal of a store operator has the `unit`/`none` type.
   | .store loc, inputs, outputs => do
     let addr := inputs[0]'(by simp [Arity.ι])

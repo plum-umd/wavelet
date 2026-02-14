@@ -10,9 +10,9 @@ default: tests
 # Do not delete intermediate files
 .SECONDARY:
 
-# Configure CIRCT/LLVM
-build/Makefile: circt
-	cmake circt/llvm/llvm -B build \
+build/circt/Makefile: circt
+	mkdir -p build/circt
+	cmake circt/llvm/llvm -B build/circt \
 		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
 		-DLLVM_ENABLE_ASSERTIONS=ON \
 		-DLLVM_TARGETS_TO_BUILD=host \
@@ -21,16 +21,35 @@ build/Makefile: circt
 		-DLLVM_EXTERNAL_CIRCT_SOURCE_DIR=circt \
 		-DLLVM_ENABLE_LLD=ON
 
+# Polygeist uses an older version of LLVM, so unfortunately
+# we have to build LLVM and MLIR twice.
+build/polygeist/Makefile: polygeist
+	mkdir -p build/polygeist
+	cmake polygeist/llvm-project/llvm -B build/polygeist \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DLLVM_ENABLE_ASSERTIONS=ON \
+		-DLLVM_TARGETS_TO_BUILD=host \
+		-DLLVM_ENABLE_PROJECTS="mlir;clang" \
+		-DLLVM_EXTERNAL_PROJECTS=polygeist \
+		-DLLVM_EXTERNAL_POLYGEIST_SOURCE_DIR=polygeist \
+		-DLLVM_ENABLE_LLD=OFF \
+		-DLLVM_USE_LINKER=lld \
+		-DPOLYGEIST_USE_LINKER=lld
+
 # Build CIRCT/hlstool
-build/bin/hlstool: build/Makefile
-	cmake --build build --target hlstool --parallel
+build/circt/bin/hlstool: build/Makefile
+	cmake --build build/circt --target hlstool --parallel
+
+# Build Polygeist
+build/polygeist/bin/cgeist: build/polygeist/Makefile
+	cmake --build build/polygeist --target cgeist --parallel
 
 # Build Wavelet
 $(WAVELET): $(REPO_DIR)/wavelet $(REPO_DIR)/wavelet-core $(REPO_DIR)/wavelet-elab
 	cd $(REPO_DIR) && cargo build
 
 .PHONY: build
-build: $(WAVELET) build/bin/hlstool
+build: $(WAVELET) build/circt/bin/hlstool
 
 %.dfg.json: %.rs
 	$(WAVELET) compile $< -o $@
@@ -41,7 +60,7 @@ build: $(WAVELET) build/bin/hlstool
 
 # Compile CIRCT/Handshake to SystemVerilog
 %.sv: %.handshake.mlir
-	build/bin/hlstool $< \
+	build/circt/bin/hlstool $< \
 		--dynamic-hw \
 		--buffering-strategy=all \
 		--verilog \

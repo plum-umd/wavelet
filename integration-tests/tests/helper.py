@@ -4,6 +4,7 @@ Partially adapted from CIRCT's integration tests.
 <https://github.com/llvm/circt/blob/75d4a854cb145f6f8a3246f0a44a9e80a95e701c/integration_test/Dialect/Handshake/helper.py>
 """
 
+from __future__ import annotations
 from typing import Optional, Any, Callable
 from dataclasses import dataclass, field
 
@@ -68,14 +69,23 @@ class HandshakeOutputPort:
         """
         Wait until data is valid, then read it and set ready low for one cycle.
         """
-        self.ready.value = 1
+        return (await HandshakeOutputPort.read_all([self]))[0]
+    
+    @staticmethod
+    async def read_all(ports: list[HandshakeOutputPort]) -> list[Any]:
+        """
+        Wait until all ports are valid, then read them together and set ready low for one cycle.
+        """
+        for port in ports:
+            port.ready.value = 1
         while True:
-            await RisingEdge(self.clock)
-            if self.is_valid():
+            await RisingEdge(ports[0].clock)
+            if all(port.is_valid() for port in ports):
                 break
-        data = None if self.data is None else self.data.value
-        self.ready.value = 0
-        await RisingEdge(self.clock)
+        data = [None if port.data is None else port.data.value for port in ports]
+        for port in ports:
+            port.ready.value = 0
+        await RisingEdge(ports[0].clock)
         return data
 
 @dataclass
@@ -110,8 +120,9 @@ class MemoryStorePort:
 
     async def simulate(self, memory: dict[int, int]):
         while True:
-            addr = await self.addr.read()
-            data = await self.data.read()
+            addr, data = await HandshakeOutputPort.read_all([self.addr, self.data])
+            # addr = await self.addr.read()
+            # data = await self.data.read()
             # print(f"memory store at {addr}: {data}")
             memory[addr.to_unsigned()] = data.to_signed()
             await self.done.send()
