@@ -86,7 +86,7 @@ test-wavelet-%: .venv/bin/activate tests/%/test.wavelet.sv
 		tests/$*/test.wavelet.sv \
 		--test tests/$*/test.py \
 		--interface wavelet \
-		--top top 2>&1 | tee tests/$*/test.wavelet.log
+		--top top
 
 # Test Polygeist-CIRCT-generated design
 .PHONY: test-circt-%
@@ -96,21 +96,30 @@ test-circt-%: .venv/bin/activate tests/%/test.circt.sv
 		tests/$*/test.circt.sv \
 		--test tests/$*/test.py \
 		--interface circt \
-		--top $* 2>&1 | tee tests/$*/test.circt.log
+		--top $*
 
 .PHONY: tests
-tests:
+tests: wavelet-tests
+
+# Run equivalence tests using the selected pipline (wavelet/circt)
+.PHONY: %-tests
+%-tests:
+	@if [ "$*" != "wavelet" ] && [ "$*" != "circt" ]; then \
+		echo "unknown pipeline: $*"; \
+		exit 1; \
+	fi
+	@echo "using pipeline: $*"
 	@echo "NOTE: use ctrl + \ to interrupt."; echo
 	@PASS=0; FAIL=0; \
 	for name in $(TEST_NAMES); do \
 		printf "$$name ..."; \
-		if $(MAKE) test-wavelet-$$name > /dev/null 2>&1; then \
+		if $(MAKE) test-$*-$$name > tests/$$name/test.$*.log 2>&1; then \
 			echo " PASS"; \
 			PASS=$$((PASS + 1)); \
 		else \
 			echo " FAIL"; \
 			echo "============== log =============="; \
-			cat tests/$$name/test.wavelet.log; \
+			cat tests/$$name/test.$*.log; \
 			echo "================================="; \
 			FAIL=$$((FAIL + 1)); \
 		fi; \

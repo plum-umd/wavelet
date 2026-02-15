@@ -2,7 +2,13 @@ import random
 from sim import reference
 
 @reference(
-    (16, 4, 13, [random.randint(-10, 10) for _ in range(4)], [random.randint(0, 300) for _ in range(16)], [0] * 13, 2, 2, 2, 1, 0),
+    (
+        16, 4, 13,
+        [random.randint(-10, 10) for _ in range(4)],
+        [random.randint(0, 300) for _ in range(16)],
+        [0] * 13,
+        2, 2, 2, 1, 0,
+    ),
 )
 def nn_conv(SRC, W, OUT,
             weight, src, dest,

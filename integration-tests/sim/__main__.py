@@ -45,6 +45,7 @@ def main():
             os.environ["CXXFLAGS"] = "-std=c++17 -Wno-unknown-warning-option"
 
         runner = get_runner(args.sim)
+        args.top = args.top.replace("-", "_")
         runner.build(sources=[args.design], hdl_toplevel=args.top, timescale=("1ns", "1ps"))
         runner.test(
             hdl_toplevel=args.top,
