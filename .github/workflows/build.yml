@@ -41,8 +41,8 @@ jobs:
       - uses: actions/cache/restore@v4
         id: circt-cache
         with:
-          path: integration-tests/build
-          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('.gitmodules', 'integration-tests/circt') }}
+          path: integration-tests/build/circt
+          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('integration-tests/circt') }}
       # Restore artifacts from build
       - uses: actions/download-artifact@v4
         with:
@@ -61,23 +61,16 @@ jobs:
           sudo apt-get install -y clang lld iverilog
       # Build CIRCT/hlstool
       - run: |
-          if [ ! -f build/bin/hlstool ]; then
-            cmake circt/llvm/llvm -B build \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DLLVM_ENABLE_ASSERTIONS=OFF \
-              -DLLVM_TARGETS_TO_BUILD=host \
-              -DLLVM_ENABLE_PROJECTS=mlir \
-              -DLLVM_EXTERNAL_PROJECTS=circt \
-              -DLLVM_EXTERNAL_CIRCT_SOURCE_DIR=circt \
-              -DLLVM_ENABLE_LLD=ON
-            cmake --build build --target hlstool --parallel 1
+          if [ ! -f build/circt/bin/hlstool ]; then
+            make build/circt/Makefile
+            cmake --build build/circt --target hlstool --parallel 1
           fi
         working-directory: integration-tests
       - uses: actions/cache/save@v4
         if: steps.circt-cache.outputs.cache-hit != 'true'
         with:
-          path: integration-tests/build
-          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('.gitmodules', 'integration-tests/circt') }}
+          path: integration-tests/build/circt
+          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('integration-tests/circt') }}
       - run: make tests
         working-directory: integration-tests
   check-proofs:

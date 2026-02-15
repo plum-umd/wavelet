@@ -37,7 +37,7 @@ build/polygeist/Makefile: polygeist
 		-DPOLYGEIST_USE_LINKER=lld
 
 # Build CIRCT/hlstool
-build/circt/bin/hlstool: build/Makefile
+build/circt/bin/hlstool: build/circt/Makefile
 	cmake --build build/circt --target hlstool --parallel
 
 # Build Polygeist
