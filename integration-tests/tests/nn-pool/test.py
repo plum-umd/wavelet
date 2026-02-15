@@ -1,24 +1,9 @@
 import random
-from .. import helper
+from sim import reference
 
-@helper.check_equiv(
-    consts=["SRC", "OUT"],
-    args=[
-        "input_rows_bump",
-        "input_cols",
-        "output_cols",
-        "pool_size",
-    ],
-    init_mem={
-        "src": lambda SRC, **_: [
-            random.randint(-100, 100) for _ in range(SRC)
-        ],
-        "dest": lambda OUT, **_: [0] * OUT,
-    },
-    tests=[
-        { "SRC": 16, "OUT": 4, "input_rows_bump": 2, "input_cols": 4, "output_cols": 2, "pool_size": 2 },
-        { "SRC": 36, "OUT": 9, "input_rows_bump": 4, "input_cols": 6, "output_cols": 3, "pool_size": 2 },
-    ],
+@reference(
+    ([random.randint(-100, 100) for _ in range(16)], [0] * 4, 16, 4, 2, 4, 2, 2),
+    ([random.randint(-100, 100) for _ in range(36)], [0] * 9, 36, 9, 4, 6, 3, 2),
 )
 def nn_pool(src, dest, SRC, OUT,
             input_rows_bump,

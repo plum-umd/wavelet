@@ -59,7 +59,7 @@ build: $(WAVELET) build/circt/bin/hlstool
 	$(WAVELET) handshake $< -o $@
 
 # Compile CIRCT/Handshake to SystemVerilog
-%.sv: %.handshake.mlir
+%.wavelet.sv: %.handshake.mlir
 	build/circt/bin/hlstool $< \
 		--dynamic-hw \
 		--buffering-strategy=all \
@@ -70,27 +70,33 @@ build: $(WAVELET) build/circt/bin/hlstool
 		> $@.tmp || (rm -f $@.tmp && exit 1)
 	mv $@.tmp $@
 
-# Generates a cocotb Makefile for each test
-tests/%/cocotb.makefile:
-	echo "SIM ?= icarus" > $@
-	echo "TOPLEVEL_LANG ?= verilog" >> $@
-	echo "VERILOG_SOURCES += tests/$*/test.sv" >> $@
-	echo "COCOTB_TOPLEVEL = top" >> $@
-	echo "COCOTB_TEST_MODULES = tests.$*.test" >> $@
-	echo "COCOTB_RESULTS_FILE = tests/$*/results.xml" >> $@
-	echo "SIM_BUILD = tests/$*/sim_build" >> $@
-	echo "include \$$(shell cocotb-config --makefiles)/Makefile.sim" >> $@
+%.circt.sv: %.c
+	scripts/cgeist-hls.sh $< > $@.tmp || (rm -f $@.tmp && exit 1)
+	mv $@.tmp $@
 
 .venv/bin/activate: requirements.txt
 	python3 -m venv .venv
 	. .venv/bin/activate && pip install -r requirements.txt
 
-.PHONY: test-%
-test-%: .venv/bin/activate tests/%/cocotb.makefile
+# Test Wavelet-generated design
+.PHONY: test-wavelet-%
+test-wavelet-%: .venv/bin/activate tests/%/test.wavelet.sv
 	@echo "NOTE: use ctrl + \ to interrupt."
-	@$(MAKE) tests/$*/test.sv
-	@rm -f tests/$*/results.xml
-	@. .venv/bin/activate && make -f tests/$*/cocotb.makefile sim
+	@. .venv/bin/activate && python3 -m sim \
+		tests/$*/test.wavelet.sv \
+		--test tests/$*/test.py \
+		--interface wavelet \
+		--top top 2>&1 | tee tests/$*/test.wavelet.log
+
+# Test Polygeist-CIRCT-generated design
+.PHONY: test-circt-%
+test-circt-%: .venv/bin/activate tests/%/test.circt.sv
+	@echo "NOTE: use ctrl + \ to interrupt."
+	@. .venv/bin/activate && python3 -m sim \
+		tests/$*/test.circt.sv \
+		--test tests/$*/test.py \
+		--interface circt \
+		--top $* 2>&1 | tee tests/$*/test.circt.log
 
 .PHONY: tests
 tests:
@@ -98,13 +104,13 @@ tests:
 	@PASS=0; FAIL=0; \
 	for name in $(TEST_NAMES); do \
 		printf "$$name ..."; \
-		if $(MAKE) test-$$name > tests/$$name/test.log 2>&1; then \
+		if $(MAKE) test-wavelet-$$name > /dev/null 2>&1; then \
 			echo " PASS"; \
 			PASS=$$((PASS + 1)); \
 		else \
 			echo " FAIL"; \
 			echo "============== log =============="; \
-			cat tests/$$name/test.log; \
+			cat tests/$$name/test.wavelet.log; \
 			echo "================================="; \
 			FAIL=$$((FAIL + 1)); \
 		fi; \
@@ -121,4 +127,5 @@ clean:
 		tests/*/*.dfg.json \
 		tests/*/cocotb.makefile \
 		tests/*/results.xml \
-		tests/*/sim_build
+		tests/*/sim_build \
+		tests/*/*.log

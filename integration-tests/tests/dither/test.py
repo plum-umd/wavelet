@@ -1,19 +1,12 @@
 import random
-from .. import helper
+from sim import reference
 
-@helper.check_equiv(
-    consts=["R", "C"],
-    init_mem={
-        "src": lambda R, C: [random.randint(0, 300) for _ in range(R * C)],
-        "dst": lambda R, C: [0] * (R * C),
-    },
-    tests=[
-        { "R": 2, "C": 3 },
-        { "R": 3, "C": 2 },
-        { "R": 4, "C": 4 },
-        { "R": 1, "C": 5 },
-        { "R": 5, "C": 1 },
-    ],
+@reference(
+    (2, 3, [random.randint(0, 300) for _ in range(6)], [0] * 6),
+    (3, 2, [random.randint(0, 300) for _ in range(6)], [0] * 6),
+    (4, 4, [random.randint(0, 300) for _ in range(16)], [0] * 16),
+    (1, 5, [random.randint(0, 300) for _ in range(5)], [0] * 5),
+    (5, 1, [random.randint(0, 300) for _ in range(5)], [0] * 5),
 )
 def dither(R, C, src, dst):
     threshold = 256
@@ -26,7 +19,7 @@ def dither(R, C, src, dst):
         for j in range(C):
             idx = row_base + j
             out = src[idx] + err
-            
+
             if out > threshold:
                 dst[idx] = max_pixel
                 err = out - max_pixel

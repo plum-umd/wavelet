@@ -84,13 +84,19 @@ async def run_circt_dut(dut, args: list[InputArg]) -> tuple[None | int, list[Out
 
     dut_res, dut_res_mems = await dut.run(dut_args)
 
-    assert len(dut_res) == 1, f"expect exactly one output from the DUT"
-    
+    if len(dut_res) == 1:
+        dut_res = dut_res[0]
+    elif len(dut_res) == 2:
+        assert dut_res[1] is None, f"unexpected second output from the DUT: {dut_res}"
+        dut_res = dut_res[0]
+    else:
+        raise RuntimeError(f"expect at most 2 outputs from the DUT, got {len(dut_res)}")
+
     array_params = [ arg.param for arg in args if arg.is_array() ]
     assert len(dut_res_mems) == len(array_params), \
         f"mismatched number of memory outputs: got {len(dut_res_mems)}, expected {len(array_params)}"
 
-    return dut_res[0], [
+    return dut_res, [
         OutputMemoryState(param, mem)
         for param, mem in zip(array_params, dut_res_mems)
     ]
@@ -156,9 +162,10 @@ def reference(*tests: tuple[None | int | list[int], ...]):
             assert len(dut_mems) == len(py_mems), f"mismatched number of arrays: got {len(dut_mems)}, expected {len(py_mems)}"
             for dut_mem, py_mem in zip(dut_mems, py_mems):
                 assert dut_mem.param == py_mem.param
-                py_mem = py_mem.value.to_list()
-                dut_mem = dut_mem.value.to_list()
-                assert dut_mem == py_mem, f"memory mismatch for array output {dut_mem.param}: got {dut_mem}, expected {py_mem}"
+                py_mem_list = py_mem.value.to_list()
+                dut_mem_list = dut_mem.value.to_list()
+                assert dut_mem_list == py_mem_list, \
+                    f"memory mismatch for array output {dut_mem.param}: got {dut_mem_list}, expected {py_mem_list}"
 
         inner.__module__ = "tests"
         inner = cocotb.parametrize(

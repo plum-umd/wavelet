@@ -1,19 +1,10 @@
 import random
-from .. import helper
+from sim import reference
 
-@helper.check_equiv(
-    consts=["R", "C"],
-    args=["shift"],
-    init_mem={
-        "weight": lambda R, C, **_: [random.randint(-10, 10) for _ in range(R * C)],
-        "src": lambda R, C, **_: [random.randint(-100, 100) for _ in range(C)],
-        "dest": lambda R, C, **_: [0] * R,
-    },
-    tests=[
-        { "R": 4, "C": 8, "shift": 0 },
-        { "R": 4, "C": 8, "shift": 4 },
-        { "R": 8, "C": 16, "shift": 2 },
-    ],
+@reference(
+    ([random.randint(-10, 10) for _ in range(32)], [random.randint(-100, 100) for _ in range(8)], [0] * 4, 4, 8, 0),
+    ([random.randint(-10, 10) for _ in range(32)], [random.randint(-100, 100) for _ in range(8)], [0] * 4, 4, 8, 4),
+    ([random.randint(-10, 10) for _ in range(128)], [random.randint(-100, 100) for _ in range(16)], [0] * 8, 8, 16, 2),
 )
 def nn_fc(weight, src, dest, R, C, shift):
     def row_dot(i, j, acc):

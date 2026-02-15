@@ -1,17 +1,9 @@
 import random
-from .. import helper
+from sim import reference
 
-@helper.check_equiv(
-    consts=["N"],
-    args=["max_val", "shift"],
-    init_mem={
-        "src": lambda N, **_: [random.randint(0, 255) for _ in range(N)],
-        "dest": lambda N, **_: [0] * N,
-    },
-    tests=[
-        { "N": 16, "max_val": 255, "shift": 8 },
-        { "N": 25, "max_val": 1023, "shift": 10 },
-    ],
+@reference(
+    ([random.randint(0, 255) for _ in range(16)], [0] * 16, 16, 255, 8),
+    ([random.randint(0, 255) for _ in range(25)], [0] * 25, 25, 1023, 10),
 )
 def nn_norm(src, dest, N, max_val, shift):
     def nn_norm_aux(i):
