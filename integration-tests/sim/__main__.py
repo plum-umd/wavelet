@@ -4,6 +4,7 @@ primarily used for testing functional equivalence between a Python reference
 and the input design.
 """
 
+import os
 import sys
 import shutil
 import argparse
@@ -20,7 +21,7 @@ def main():
     parser.add_argument("design", help="Path to the compiled SystemVerilog design.")
     parser.add_argument("--test", action="append", required=True, help="Path to the Python source file containing cocotb tests.")
     parser.add_argument("--top", default="top", help="Name of the top-level module in the design.")
-    parser.add_argument("--sim", default="icarus", help="Simulator to use for cocotb.")
+    parser.add_argument("--sim", default="verilator", help="Simulator to use for cocotb.")
     parser.add_argument("--interface", default="wavelet", help="Which compiler produced the DUT (wavelet or circt).")
     args = parser.parse_args()
 
@@ -40,6 +41,9 @@ def main():
         # cocotb runner propagates `sys.path` to the test subprocess
         sys.path.insert(0, tmp_dir)
 
+        if args.sim == "verilator":
+            os.environ["CXXFLAGS"] = "-std=c++17 -Wno-unknown-warning-option"
+
         runner = get_runner(args.sim)
         runner.build(sources=[args.design], hdl_toplevel=args.top, timescale=("1ns", "1ps"))
         runner.test(
@@ -47,6 +51,7 @@ def main():
             test_module=[ f"{TEST_MODULE_NAME}.{name}" for name in test_names ],
             extra_env={
                 "DUT_INTERFACE": args.interface,
+                "DUT_DESIGN": str(Path(args.design).resolve()),
             },
         )
 

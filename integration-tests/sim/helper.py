@@ -10,6 +10,7 @@ import os
 import cocotb
 import cocotb.clock
 from .wavelet import WaveletDut
+from .circt import CirctDut
 from .common import MemoryState
 
 @dataclass
@@ -64,6 +65,36 @@ async def run_wavelet_dut(dut, args: list[InputArg]) -> tuple[None | int, list[O
     
     return dut_res[0], [ OutputMemoryState(loc, dut_res_mems[loc]) for loc in array_params ]
 
+async def run_circt_dut(dut, args: list[InputArg]) -> tuple[None | int, list[OutputMemoryState]]:
+    """
+    Runs the DUT on the input arguments (including initial memory states)
+    assuming that it is compiled from Polygeist + CIRCT.
+    """
+    design_path = os.environ.get("DUT_DESIGN")
+    dut = CirctDut(dut, design_path=design_path)
+    await dut.init()
+
+    # Build a flat args list matching the DUT input port order:
+    # scalars get int values, arrays get MemoryState.
+    # The CIRCT pipeline adds one additional zero-width control input at the end.
+    dut_args = [
+        MemoryState.from_list(arg.value) if arg.is_array() else arg.value
+        for arg in args
+    ] + [None]
+
+    dut_res, dut_res_mems = await dut.run(dut_args)
+
+    assert len(dut_res) == 1, f"expect exactly one output from the DUT"
+    
+    array_params = [ arg.param for arg in args if arg.is_array() ]
+    assert len(dut_res_mems) == len(array_params), \
+        f"mismatched number of memory outputs: got {len(dut_res_mems)}, expected {len(array_params)}"
+
+    return dut_res[0], [
+        OutputMemoryState(param, mem)
+        for param, mem in zip(array_params, dut_res_mems)
+    ]
+
 def parse_input_args(f, tests: list[tuple[None | int | list[int], ...]]) -> list[list[InputArg]]:
     """
     Pairs each test input with the corresponding parameter name.
@@ -115,6 +146,8 @@ def reference(*tests: tuple[None | int | list[int], ...]):
             dut_interface = os.environ.get("DUT_INTERFACE", "wavelet")
             if dut_interface == "wavelet":
                 dut_res, dut_mems = await run_wavelet_dut(dut, input_args)
+            elif dut_interface == "circt":
+                dut_res, dut_mems = await run_circt_dut(dut, input_args)
             else:
                 raise RuntimeError(f"unsupported DUT interface: {dut_interface}")
 
