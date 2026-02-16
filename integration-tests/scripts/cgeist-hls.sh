@@ -23,7 +23,7 @@ if ! [ -e "$hlstool" ]; then
     exit 1
 fi
 
-"$cgeist" --memref-fullrank -S "$@" | \
+"$cgeist" -O3 --memref-fullrank -S "$@" | \
     sed -E 's/[[:space:]]*attributes[[:space:]]*\{[^}]*\}//g' | \
     build/circt/bin/hlstool \
         --verilog \

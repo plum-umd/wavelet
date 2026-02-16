@@ -2,14 +2,15 @@ import random
 from sim import reference
 
 @reference(
-    ([random.randint(-100, 100) for _ in range(16)], [0] * 4, 16, 4, 2, 4, 2, 2),
-    ([random.randint(-100, 100) for _ in range(36)], [0] * 9, 36, 9, 4, 6, 3, 2),
+    ([random.randint(-100, 100) for _ in range(16)], [0] * 4, 2, 4, 2, 2, 16, 4),
+    ([random.randint(-100, 100) for _ in range(36)], [0] * 9, 4, 6, 3, 2, 36, 9),
 )
-def nn_pool(src, dest, SRC, OUT,
+def nn_pool(src, dest,
             input_rows_bump,
             input_cols,
             output_cols,
-            pool_size):
+            pool_size,
+            SRC, OUT):
     def sel(cond, a, b):
         return a if cond else b
 

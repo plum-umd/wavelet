@@ -3,18 +3,16 @@ from sim import reference
 
 @reference(
     (
-        16, 4, 13,
         [random.randint(-10, 10) for _ in range(4)],
         [random.randint(0, 300) for _ in range(16)],
         [0] * 13,
-        2, 2, 2, 1, 0,
+        2, 2, 2, 1, 0, 16, 4, 13,
     ),
 )
-def nn_conv(SRC, W, OUT,
-            weight, src, dest,
+def nn_conv(weight, src, dest,
             weight_rows, weight_cols,
             wc_bump, wc_wr_bump,
-            shift):
+            shift, SRC, W, OUT):
     def clamp_i16(w):
         if w < -32768:
             return -32768

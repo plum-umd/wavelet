@@ -2,11 +2,11 @@ import random
 from sim import reference
 
 @reference(
-    ([random.randint(-10, 10) for _ in range(32)], [random.randint(-100, 100) for _ in range(8)], [0] * 4, 4, 8, 0),
-    ([random.randint(-10, 10) for _ in range(32)], [random.randint(-100, 100) for _ in range(8)], [0] * 4, 4, 8, 4),
-    ([random.randint(-10, 10) for _ in range(128)], [random.randint(-100, 100) for _ in range(16)], [0] * 8, 8, 16, 2),
+    ([random.randint(-10, 10) for _ in range(32)], [random.randint(-100, 100) for _ in range(8)], [0] * 4, 0, 4, 8),
+    ([random.randint(-10, 10) for _ in range(32)], [random.randint(-100, 100) for _ in range(8)], [0] * 4, 4, 4, 8),
+    ([random.randint(-10, 10) for _ in range(128)], [random.randint(-100, 100) for _ in range(16)], [0] * 8, 2, 8, 16),
 )
-def nn_fc(weight, src, dest, R, C, shift):
+def nn_fc(weight, src, dest, shift, R, C):
     def row_dot(i, j, acc):
         cond = j < C
         if cond:

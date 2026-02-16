@@ -3,9 +3,9 @@
 
 void nn_pool(
 	int src[1024], int dest[1024],
-	int src_size, int output_size,
 	int input_rows_bump, int input_cols,
-	int output_cols, int pool_size
+	int output_cols, int pool_size,
+	int src_size, int output_size
 ) {
 	int src_offset = 0;
 	int col = 0;

@@ -47,7 +47,7 @@ def main():
         runner = get_runner(args.sim)
         args.top = args.top.replace("-", "_")
         runner.build(sources=[args.design], hdl_toplevel=args.top, timescale=("1ns", "1ps"))
-        runner.test(
+        result_path = runner.test(
             hdl_toplevel=args.top,
             test_module=[ f"{TEST_MODULE_NAME}.{name}" for name in test_names ],
             extra_env={
@@ -55,6 +55,11 @@ def main():
                 "DUT_DESIGN": str(Path(args.design).resolve()),
             },
         )
+
+        # TODO: This is a bit hacky.
+        with open(result_path) as f:
+            if "<failure" in f.read():
+                sys.exit(1)
 
 if __name__ == "__main__":
     main()
