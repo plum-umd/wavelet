@@ -5,3 +5,6 @@
 [submodule "integration-tests/polygeist"]
 	path = integration-tests/polygeist
 	url = https://github.com/llvm/Polygeist.git
+[submodule "integration-tests/dynamatic"]
+	path = integration-tests/dynamatic
+	url = https://github.com/EPFL-LAP/dynamatic.git
