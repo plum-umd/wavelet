@@ -9,6 +9,8 @@
 #    although the array sizes are not actually used in the output Handshake IR or Verilog.
 # 4. No pointer arithmetic is allowed.
 
+set -eu
+
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cgeist="$script_dir/../build/polygeist/bin/cgeist"
 hlstool="$script_dir/../build/circt/bin/hlstool"
