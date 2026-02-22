@@ -24,7 +24,7 @@ runs:
           *) echo "Unsupported OS: ${{ runner.os }}" >&2; exit 1 ;;
         esac
         echo "pattern=z3-${{ inputs.version }}-${arch}-${os}-*.zip" >> "$GITHUB_OUTPUT"
-    - uses: actions/cache@v4
+    - uses: actions/cache/restore@v4
       id: z3-cache
       with:
         path: /usr/local/bin/z3
@@ -42,5 +42,10 @@ runs:
         unzip /tmp/z3/z3-*.zip -d /tmp/z3
         sudo cp /tmp/z3/z3-*/bin/z3 /usr/local/bin/
         rm -rf /tmp/z3
+    - uses: actions/cache/save@v4
+      if: steps.z3-cache.outputs.cache-hit != 'true'
+      with:
+        path: /usr/local/bin/z3
+        key: z3-${{ inputs.version }}-${{ runner.os }}-${{ runner.arch }}
     - shell: bash
       run: z3 --version

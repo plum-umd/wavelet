@@ -1,0 +1,47 @@
+name: Build CIRCT
+description: Build CIRCT/hlstool with caching
+inputs:
+  source-dir:
+    description: Path to the CIRCT source directory
+    required: true
+  build-dir:
+    description: Path to the CIRCT build directory
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: circt-hash
+      shell: bash
+      run: echo "sha=$(git rev-parse HEAD:${{ inputs.source-dir }})" >> $GITHUB_OUTPUT
+    - uses: actions/cache/restore@v4
+      id: circt-cache
+      with:
+        path: ${{ inputs.build-dir }}
+        key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.circt-hash.outputs.sha }}
+    - if: steps.circt-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y clang lld
+    - if: steps.circt-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        mkdir -p ${{ inputs.build-dir }}
+        cmake ${{ inputs.source-dir }}/llvm/llvm -B ${{ inputs.build-dir }} -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DLLVM_ENABLE_ASSERTIONS=ON \
+          -DLLVM_TARGETS_TO_BUILD=host \
+          -DLLVM_ENABLE_PROJECTS=mlir \
+          -DLLVM_EXTERNAL_PROJECTS=circt \
+          -DLLVM_EXTERNAL_CIRCT_SOURCE_DIR=${{ inputs.source-dir }} \
+          -DLLVM_ENABLE_LLD=ON \
+          -DLLVM_PARALLEL_LINK_JOBS=1 \
+          -DLLVM_INCLUDE_TESTS=OFF \
+          -DLLVM_INCLUDE_EXAMPLES=OFF \
+          -DLLVM_INCLUDE_BENCHMARKS=OFF \
+          -DLLVM_ENABLE_BINDINGS=OFF \
+          -DMLIR_INCLUDE_TESTS=OFF
+        cmake --build ${{ inputs.build-dir }} --target hlstool
+    - uses: actions/cache/save@v4
+      if: steps.circt-cache.outputs.cache-hit != 'true'
+      with:
+        path: ${{ inputs.build-dir }}
+        key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.circt-hash.outputs.sha }}

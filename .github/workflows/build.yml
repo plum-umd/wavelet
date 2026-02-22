@@ -1,7 +1,6 @@
 name: Build Wavelet
-on: [push]
+on: [push, workflow_dispatch]
 env:
-  Z3_VERSION: 4.15.4
   CACHE_VERSION: v3
 jobs:
   unit-tests:
@@ -16,14 +15,8 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: leanprover/lean-action@v1
+      - uses: ./.github/actions/setup-toolchains
         with:
-          lake-package-directory: wavelet-core/lean
-          auto-config: false
-      - uses: ./.github/actions/setup-z3
-        with:
-          version: ${{ env.Z3_VERSION }}
           token: ${{ secrets.GITHUB_TOKEN }}
       - run: cargo fmt -- --check
       - run: cargo test --all
@@ -33,41 +26,17 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
-      - run: git submodule update --init --recursive integration-tests/circt
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: leanprover/lean-action@v1
+      - run: git submodule update --depth 1 --init --recursive integration-tests/circt
+      - uses: ./.github/actions/build-circt
         with:
-          lake-package-directory: wavelet-core/lean
-          auto-config: false
-      - uses: ./.github/actions/setup-z3
+          source-dir: integration-tests/circt
+          build-dir: integration-tests/build/circt
+      - uses: ./.github/actions/setup-toolchains
         with:
-          version: ${{ env.Z3_VERSION }}
           token: ${{ secrets.GITHUB_TOKEN }}
-      - run: |
-          sudo apt-get update
-          sudo apt-get install -y clang lld git autoconf help2man perl flex bison libfl2 libfl-dev zlib1g zlib1g-dev
       - uses: ./.github/actions/setup-verilator
         with:
           version: v5.044
-      # Build CIRCT/hlstool
-      - id: circt-hash
-        run: echo "sha=$(git rev-parse HEAD:integration-tests/circt)" >> $GITHUB_OUTPUT
-      - uses: actions/cache/restore@v4
-        id: circt-cache
-        with:
-          path: integration-tests/build/circt
-          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.circt-hash.outputs.sha }}
-      - run: |
-          if [ ! -f build/circt/bin/hlstool ]; then
-            make build/circt/Makefile
-            cmake --build build/circt --target hlstool --parallel $(nproc)
-          fi
-        working-directory: integration-tests
-      - uses: actions/cache/save@v4
-        if: steps.circt-cache.outputs.cache-hit != 'true'
-        with:
-          path: integration-tests/build/circt
-          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.circt-hash.outputs.sha }}
       - run: cargo build
       - run: make tests
         working-directory: integration-tests
