@@ -8,6 +8,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: leanprover/lean-action@v1
         with:
@@ -37,6 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          fetch-depth: 1
           submodules: recursive
       - uses: actions/cache/restore@v4
         id: circt-cache
@@ -66,7 +69,7 @@ jobs:
       - run: |
           if [ ! -f build/circt/bin/hlstool ]; then
             make build/circt/Makefile
-            cmake --build build/circt --target hlstool --parallel 1
+            cmake --build build/circt --target hlstool --parallel $(nproc)
           fi
         working-directory: integration-tests
       - uses: actions/cache/save@v4
@@ -80,6 +83,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
       - uses: leanprover/lean-action@v1
         with:
           lake-package-directory: wavelet-core/lean
