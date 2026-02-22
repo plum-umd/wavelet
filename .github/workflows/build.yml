@@ -1,7 +1,6 @@
 name: Build Wavelet
 on: [push]
 env:
-  Z3_VERSION: 4.15.4
   CACHE_VERSION: v3
 jobs:
   unit-tests:
@@ -13,39 +12,21 @@ jobs:
           - runs-on: macos-latest
     runs-on: ${{ matrix.runs-on }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-toolchains
         with:
-          fetch-depth: 1
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: leanprover/lean-action@v1
-        with:
-          lake-package-directory: wavelet-core/lean
-          auto-config: false
-      - uses: ./.github/actions/setup-z3
-        with:
-          version: ${{ env.Z3_VERSION }}
           token: ${{ secrets.GITHUB_TOKEN }}
       - run: cargo fmt -- --check
       - run: cargo test --all
   integration-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-toolchains
         with:
-          fetch-depth: 1
-      - run: git submodule update --init --recursive integration-tests/circt
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: leanprover/lean-action@v1
-        with:
-          lake-package-directory: wavelet-core/lean
-          auto-config: false
-      - uses: ./.github/actions/setup-z3
-        with:
-          version: ${{ env.Z3_VERSION }}
           token: ${{ secrets.GITHUB_TOKEN }}
+      - run: git submodule update --init --recursive integration-tests/circt
       - run: |
           sudo apt-get update
-          sudo apt-get install -y clang lld git autoconf help2man perl flex bison libfl2 libfl-dev zlib1g zlib1g-dev
+          sudo apt-get install -y clang git autoconf help2man perl flex bison libfl2 libfl-dev zlib1g zlib1g-dev
       - uses: ./.github/actions/setup-verilator
         with:
           version: v5.044

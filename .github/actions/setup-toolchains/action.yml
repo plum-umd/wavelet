@@ -1,0 +1,32 @@
+name: Setup Toolchains
+description: Install various build dependencies
+inputs:
+  token:
+    description: GitHub token for downloading releases
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v5
+      with:
+        fetch-depth: 1
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
+    - uses: leanprover/lean-action@v1
+      with:
+        lake-package-directory: wavelet-core/lean
+        auto-config: false
+    - uses: ./.github/actions/setup-z3
+      with:
+        version: 4.15.4
+        token: ${{ inputs.token }}
+    - shell: bash
+      run: |
+        case "${{ runner.os }}" in
+          Linux)
+            sudo apt-get update
+            sudo apt-get install -y lld
+            ;;
+          macOS)
+            brew install lld
+            ;;
+        esac
