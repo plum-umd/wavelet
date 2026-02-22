@@ -19,7 +19,8 @@ build/circt/Makefile: circt
 		-DLLVM_ENABLE_PROJECTS=mlir \
 		-DLLVM_EXTERNAL_PROJECTS=circt \
 		-DLLVM_EXTERNAL_CIRCT_SOURCE_DIR=circt \
-		-DLLVM_ENABLE_LLD=ON
+		-DLLVM_ENABLE_LLD=ON \
+		-DLLVM_PARALLEL_LINK_JOBS=1
 
 # Build CIRCT/hlstool
 build/circt/bin/hlstool: build/circt/Makefile
@@ -38,7 +39,8 @@ build/polygeist/Makefile: polygeist
 		-DLLVM_EXTERNAL_POLYGEIST_SOURCE_DIR=polygeist \
 		-DLLVM_ENABLE_LLD=OFF \
 		-DLLVM_USE_LINKER=lld \
-		-DPOLYGEIST_USE_LINKER=lld
+		-DPOLYGEIST_USE_LINKER=lld \
+		-DLLVM_PARALLEL_LINK_JOBS=1
 
 # Build Polygeist
 build/polygeist/bin/cgeist: build/polygeist/Makefile

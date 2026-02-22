@@ -8,7 +8,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/cache@v4
+    - uses: actions/cache/restore@v4
       id: verilator-cache
       with:
         path: /opt/verilator
@@ -28,5 +28,10 @@ runs:
         make -j$(nproc)
         make install
         rm -rf /tmp/verilator-src
+    - uses: actions/cache/save@v4
+      if: steps.verilator-cache.outputs.cache-hit != 'true'
+      with:
+        path: /opt/verilator
+        key: verilator-${{ inputs.version }}-${{ runner.os }}
     - shell: bash
       run: echo "/opt/verilator/bin" >> "$GITHUB_PATH"
