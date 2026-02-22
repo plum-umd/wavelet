@@ -1,5 +1,5 @@
 name: Build Wavelet
-on: [push]
+on: [push, workflow_dispatch]
 env:
   CACHE_VERSION: v3
 jobs:
