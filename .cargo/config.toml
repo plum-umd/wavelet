@@ -1,2 +1,5 @@
+[build]
+rustflags = ["-D", "warnings"]
+
 [target.aarch64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+rustflags = ["-D", "warnings", "-C", "link-arg=-fuse-ld=lld"]

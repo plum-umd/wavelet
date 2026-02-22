@@ -8,6 +8,8 @@ runs:
   using: composite
   steps:
     - uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        rustflags: ""
     - uses: leanprover/lean-action@v1
       with:
         lake-package-directory: wavelet-core/lean
