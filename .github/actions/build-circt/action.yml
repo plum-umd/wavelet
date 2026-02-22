@@ -20,7 +20,7 @@ runs:
         key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.circt-hash.outputs.sha }}
     - if: steps.circt-cache.outputs.cache-hit != 'true'
       shell: bash
-      run: sudo apt-get update && sudo apt-get install -y clang
+      run: sudo apt-get update && sudo apt-get install -y clang lld
     - if: steps.circt-cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
