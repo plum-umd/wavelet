@@ -10,11 +10,25 @@ inputs:
 runs:
   using: composite
   steps:
+    - id: z3-platform
+      shell: bash
+      run: |
+        case "${{ runner.arch }}" in
+          X64)   arch="x64" ;;
+          ARM64) arch="arm64" ;;
+          *) echo "Unsupported architecture: ${{ runner.arch }}" >&2; exit 1 ;;
+        esac
+        case "${{ runner.os }}" in
+          Linux) os="glibc" ;;
+          macOS) os="osx" ;;
+          *) echo "Unsupported OS: ${{ runner.os }}" >&2; exit 1 ;;
+        esac
+        echo "pattern=z3-${{ inputs.version }}-${arch}-${os}-*.zip" >> "$GITHUB_OUTPUT"
     - uses: actions/cache@v4
       id: z3-cache
       with:
         path: /usr/local/bin/z3
-        key: z3-${{ inputs.version }}-${{ runner.os }}
+        key: z3-${{ inputs.version }}-${{ runner.os }}-${{ runner.arch }}
     - if: steps.z3-cache.outputs.cache-hit != 'true'
       shell: bash
       env:
@@ -23,7 +37,7 @@ runs:
         mkdir -p /tmp/z3
         gh release download z3-${{ inputs.version }} \
           --repo Z3Prover/z3 \
-          --pattern "z3-${{ inputs.version }}-x64-glibc-*.zip" \
+          --pattern '${{ steps.z3-platform.outputs.pattern }}' \
           --dir /tmp/z3
         unzip /tmp/z3/z3-*.zip -d /tmp/z3
         sudo cp /tmp/z3/z3-*/bin/z3 /usr/local/bin/

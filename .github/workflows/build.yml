@@ -56,7 +56,7 @@ jobs:
         id: circt-cache
         with:
           path: integration-tests/build/circt
-          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ steps.circt-hash.outputs.sha }}
+          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.circt-hash.outputs.sha }}
       - run: |
           if [ ! -f build/circt/bin/hlstool ]; then
             make build/circt/Makefile
@@ -67,7 +67,7 @@ jobs:
         if: steps.circt-cache.outputs.cache-hit != 'true'
         with:
           path: integration-tests/build/circt
-          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ steps.circt-hash.outputs.sha }}
+          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.circt-hash.outputs.sha }}
       - run: cargo build
       - run: make tests
         working-directory: integration-tests
