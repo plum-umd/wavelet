@@ -7,5 +7,4 @@
 	url = https://github.com/llvm/Polygeist.git
 [submodule "integration-tests/dynamatic"]
 	path = integration-tests/dynamatic
-	url = https://github.com/zhengyao-lin/dynamatic.git
-	branch = wavelet
+	url = https://github.com/EPFL-LAP/dynamatic.git
