@@ -12,6 +12,9 @@ jobs:
           - runs-on: macos-latest
     runs-on: ${{ matrix.runs-on }}
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
       - uses: ./.github/actions/setup-toolchains
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -20,6 +23,9 @@ jobs:
   integration-tests:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
       - uses: ./.github/actions/setup-toolchains
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
