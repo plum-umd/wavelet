@@ -26,14 +26,14 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
-      - uses: ./.github/actions/setup-toolchains
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
       - run: git submodule update --init --recursive integration-tests/circt
       - uses: ./.github/actions/build-circt
         with:
           source-dir: integration-tests/circt
           build-dir: integration-tests/build/circt
+      - uses: ./.github/actions/setup-toolchains
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-verilator
         with:
           version: v5.044
