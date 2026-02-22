@@ -1,0 +1,32 @@
+name: Setup Z3
+description: Install Z3 from GitHub Releases
+inputs:
+  version:
+    description: Z3 release version (e.g. 4.15.4)
+    required: true
+  token:
+    description: GitHub token for downloading releases
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@v4
+      id: z3-cache
+      with:
+        path: /usr/local/bin/z3
+        key: z3-${{ inputs.version }}-${{ runner.os }}
+    - if: steps.z3-cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        mkdir -p /tmp/z3
+        gh release download z3-${{ inputs.version }} \
+          --repo Z3Prover/z3 \
+          --pattern "z3-${{ inputs.version }}-x64-glibc-*.zip" \
+          --dir /tmp/z3
+        unzip /tmp/z3/z3-*.zip -d /tmp/z3
+        sudo cp /tmp/z3/z3-*/bin/z3 /usr/local/bin/
+        rm -rf /tmp/z3
+    - shell: bash
+      run: z3 --version

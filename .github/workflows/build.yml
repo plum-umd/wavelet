@@ -4,7 +4,7 @@ env:
   Z3_VERSION: 4.15.4
   CACHE_VERSION: v3
 jobs:
-  build:
+  unit-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -15,57 +15,42 @@ jobs:
         with:
           lake-package-directory: wavelet-core/lean
           auto-config: false
-      - run: |
-          wget https://github.com/Z3Prover/z3/releases/download/z3-${Z3_VERSION}/z3-${Z3_VERSION}-x64-glibc-2.39.zip
-          unzip z3-${Z3_VERSION}-*.zip
-          sudo cp z3-${Z3_VERSION}-*/bin/z3 /usr/local/bin/
-          z3 --version
-      - run: cargo build
+      - uses: ./.github/actions/setup-z3
+        with:
+          version: ${{ env.Z3_VERSION }}
+          token: ${{ secrets.GITHUB_TOKEN }}
       - run: cargo fmt -- --check
       - run: cargo test --all
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wavelet-debug-binary
-          path: target/debug/wavelet
-          retention-days: 1
-      - uses: actions/upload-artifact@v4
-        with:
-          name: z3-binary
-          path: /usr/local/bin/z3
-          retention-days: 1
   integration-tests:
     runs-on: ubuntu-latest
-    needs: build
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
           submodules: recursive
-      - uses: actions/cache/restore@v4
-        id: circt-cache
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: leanprover/lean-action@v1
         with:
-          path: integration-tests/build/circt
-          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('integration-tests/circt') }}
-      # Restore artifacts from build
-      - uses: actions/download-artifact@v4
+          lake-package-directory: wavelet-core/lean
+          auto-config: false
+      - uses: ./.github/actions/setup-z3
         with:
-          name: wavelet-debug-binary
-          path: target/debug
-      - uses: actions/download-artifact@v4
-        with:
-          name: z3-binary
-      - run: |
-          chmod +x target/debug/wavelet
-          sudo mv z3 /usr/local/bin/
-          sudo chmod +x /usr/local/bin/z3
-          z3 --version
+          version: ${{ env.Z3_VERSION }}
+          token: ${{ secrets.GITHUB_TOKEN }}
       - run: |
           sudo apt-get update
-          sudo apt-get install -y clang lld
+          sudo apt-get install -y clang lld git autoconf help2man perl flex bison libfl2 libfl-dev zlib1g zlib1g-dev
       - uses: ./.github/actions/setup-verilator
         with:
           version: v5.044
       # Build CIRCT/hlstool
+      - id: circt-hash
+        run: echo "sha=$(git rev-parse HEAD:integration-tests/circt)" >> $GITHUB_OUTPUT
+      - uses: actions/cache/restore@v4
+        id: circt-cache
+        with:
+          path: integration-tests/build/circt
+          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ steps.circt-hash.outputs.sha }}
       - run: |
           if [ ! -f build/circt/bin/hlstool ]; then
             make build/circt/Makefile
@@ -76,7 +61,8 @@ jobs:
         if: steps.circt-cache.outputs.cache-hit != 'true'
         with:
           path: integration-tests/build/circt
-          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('integration-tests/circt') }}
+          key: circt-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ steps.circt-hash.outputs.sha }}
+      - run: cargo build
       - run: make tests
         working-directory: integration-tests
   check-proofs:
