@@ -1,22 +1,14 @@
 import random
-from .. import helper
+from sim import reference
 
-@helper.check_equiv(
-    consts=["N"],
-    args=["even_count"],
-    init_mem={
-        "a": lambda N, **_: [random.randint(-20, 20) for _ in range(N)],
-        "z": lambda N, **_: [0] * N,
-    },
-    tests=[
-        # Even count may not be correct, but the behavior
-        # should still match the reference
-        { "N": 0, "even_count": 0 },
-        { "N": 3, "even_count": 2 },
-        { "N": 6, "even_count": 3 },
-    ],
+@reference(
+    # Even count may not be correct, but the behavior
+    # should still match the reference
+    ([], [], 0, 0),
+    ([random.randint(-20, 20) for _ in range(3)], [0] * 3, 2, 3),
+    ([random.randint(-20, 20) for _ in range(6)], [0] * 6, 3, 6),
 )
-def sort(a, z, N, even_count):
+def sort(a, z, even_count, N):
     def cond_read(j, odd):
         return z[j] if odd else a[j]
 

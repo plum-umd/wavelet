@@ -1,0 +1,42 @@
+#define SHRT_MIN -32767
+#define SHRT_MAX 32767
+
+void nn_conv(
+	int weight[1024], int src[1024], int dest[1024],
+	int weight_rows, int weight_cols,
+	int wc_bump, int wc_wr_bump,
+	int shift, int src_size, int weight_size, int output_cols
+) {
+	for(int i = 0; i < output_cols; i++) {
+		int w = 0;
+		int row = 0;
+		int col = 0;
+		int src_idx = 0;
+
+		for(int j = 0; j < weight_size; j++) {
+			if (i + src_idx >= src_size) {
+				break;
+			}
+			w += weight[j] * src[i + src_idx];
+
+			col++;
+			src_idx++;
+			if(col == weight_cols) {
+				col = 0;
+				row++;
+				src_idx += wc_bump;
+				if(row == weight_rows) {
+					row = 0;
+					src_idx += wc_wr_bump;
+				}
+			}
+		}
+
+		w >>= shift;
+		if(w < SHRT_MIN) w = SHRT_MIN;
+		if(w > SHRT_MAX) w = SHRT_MAX;
+
+		dest[i] = w;
+	}
+
+}

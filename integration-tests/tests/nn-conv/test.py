@@ -1,29 +1,18 @@
 import random
-from .. import helper
+from sim import reference
 
-@helper.check_equiv(
-    consts=["SRC", "W", "OUT"],
-    args=[
-        "weight_rows",
-        "weight_cols",
-        "wc_bump",
-        "wc_wr_bump",
-        "shift",
-    ],
-    init_mem={
-        "weight": lambda W, **_: [random.randint(-10, 10) for _ in range(W)],
-        "src": lambda SRC, **_: [random.randint(0, 300) for _ in range(SRC)],
-        "dest": lambda OUT, **_: [0] * OUT,
-    },
-    tests=[
-        { "SRC": 16, "W": 4, "OUT": 13, "weight_rows": 2, "weight_cols": 2, "wc_bump": 2, "wc_wr_bump": 1, "shift": 0 },
-    ],
+@reference(
+    (
+        [random.randint(-10, 10) for _ in range(4)],
+        [random.randint(0, 300) for _ in range(16)],
+        [0] * 13,
+        2, 2, 2, 1, 0, 16, 4, 13,
+    ),
 )
-def nn_conv(SRC, W, OUT,
-            weight, src, dest,
+def nn_conv(weight, src, dest,
             weight_rows, weight_cols,
             wc_bump, wc_wr_bump,
-            shift):
+            shift, SRC, W, OUT):
     def clamp_i16(w):
         if w < -32768:
             return -32768

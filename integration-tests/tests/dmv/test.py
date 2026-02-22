@@ -1,22 +1,14 @@
 import random
-from .. import helper
+from sim import reference
 
-@helper.check_equiv(
-    consts=["M", "N"],
-    init_mem={
-        "a": lambda M, N: [random.randint(0, 100) for _ in range(M * N)],
-        "x": lambda M, N: [random.randint(0, 100) for _ in range(N)],
-        "y": lambda M, N: [0 for _ in range(M)],
-    },
-    tests=[
-        { "M": 0, "N": 0 },
-        { "M": 0, "N": 1 },
-        { "M": 2, "N": 3 },
-        { "M": 3, "N": 2 },
-        { "M": 4, "N": 4 },
-        { "M": 1, "N": 5 },
-        { "M": 5, "N": 1 },
-    ],
+@reference(
+    (0, 0, [], [], []),
+    (0, 1, [], [random.randint(0, 100) for _ in range(1)], []),
+    (2, 3, [random.randint(0, 100) for _ in range(6)], [random.randint(0, 100) for _ in range(3)], [0 for _ in range(2)]),
+    (3, 2, [random.randint(0, 100) for _ in range(6)], [random.randint(0, 100) for _ in range(2)], [0 for _ in range(3)]),
+    (4, 4, [random.randint(0, 100) for _ in range(16)], [random.randint(0, 100) for _ in range(4)], [0 for _ in range(4)]),
+    (1, 5, [random.randint(0, 100) for _ in range(5)], [random.randint(0, 100) for _ in range(5)], [0 for _ in range(1)]),
+    (5, 1, [random.randint(0, 100) for _ in range(5)], [random.randint(0, 100) for _ in range(1)], [0 for _ in range(5)]),
 )
 def dmv(M, N, a, x, y):
     for i in range(M):
