@@ -1,0 +1,32 @@
+name: Setup Verilator
+description: Build and install Verilator from source
+inputs:
+  version:
+    description: Verilator git tag to build (e.g. v5.044)
+    required: false
+    default: master
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@v4
+      id: verilator-cache
+      with:
+        path: /opt/verilator
+        key: verilator-${{ inputs.version }}-${{ runner.os }}
+    - if: steps.verilator-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y git autoconf help2man perl flex bison libfl2 libfl-dev zlib1g zlib1g-dev
+    - if: steps.verilator-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        git clone --depth 1 --branch ${{ inputs.version }} https://github.com/verilator/verilator.git /tmp/verilator-src
+        cd /tmp/verilator-src
+        autoconf
+        ./configure --prefix=/opt/verilator
+        make -j$(nproc)
+        make install
+        rm -rf /tmp/verilator-src
+    - shell: bash
+      run: echo "/opt/verilator/bin" >> "$GITHUB_PATH"

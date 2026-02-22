@@ -58,7 +58,10 @@ jobs:
           z3 --version
       - run: |
           sudo apt-get update
-          sudo apt-get install -y clang lld verilator
+          sudo apt-get install -y clang lld
+      - uses: ./.github/actions/setup-verilator
+        with:
+          version: v5.044
       # Build CIRCT/hlstool
       - run: |
           if [ ! -f build/circt/bin/hlstool ]; then
