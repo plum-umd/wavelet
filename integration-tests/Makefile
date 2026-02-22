@@ -21,6 +21,10 @@ build/circt/Makefile: circt
 		-DLLVM_EXTERNAL_CIRCT_SOURCE_DIR=circt \
 		-DLLVM_ENABLE_LLD=ON
 
+# Build CIRCT/hlstool
+build/circt/bin/hlstool: build/circt/Makefile
+	cmake --build build/circt --target hlstool --parallel
+
 # Polygeist uses an older version of LLVM, so unfortunately
 # we have to build LLVM and MLIR twice.
 build/polygeist/Makefile: polygeist
@@ -36,13 +40,14 @@ build/polygeist/Makefile: polygeist
 		-DLLVM_USE_LINKER=lld \
 		-DPOLYGEIST_USE_LINKER=lld
 
-# Build CIRCT/hlstool
-build/circt/bin/hlstool: build/circt/Makefile
-	cmake --build build/circt --target hlstool --parallel
-
 # Build Polygeist
 build/polygeist/bin/cgeist: build/polygeist/Makefile
 	cmake --build build/polygeist --target cgeist --parallel
+
+# Build Dynamatic (using its Docker image)
+dynamatic/bin/dynamatic:
+	docker build -t dynamatic-build dynamatic
+	docker run -it -v $(realpath dynamatic):/dynamatic -w /dynamatic dynamatic-build ./build.sh
 
 # Build Wavelet
 $(WAVELET): $(REPO_DIR)/wavelet $(REPO_DIR)/wavelet-core $(REPO_DIR)/wavelet-elab
