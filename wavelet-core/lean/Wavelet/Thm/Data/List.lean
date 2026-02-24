@@ -322,4 +322,23 @@ theorem forall₂_true
   apply List.forall₂_iff_get.mpr
   simp [hlen]
 
+theorem removeAll_nodup
+  [DecidableEq α]
+  {xs : List α} {ys : List α}
+  (h : xs.Nodup) :
+    (xs.removeAll ys).Nodup
+  := by
+  apply List.Nodup.filter
+  exact h
+
+theorem removeAll_disjoint
+  [DecidableEq α]
+  {xs : List α} {ys : List α} {zs : List α}
+  (h : Disjoint xs zs) :
+    (xs.removeAll ys).Disjoint zs
+  := by
+  intros x h₁ h₂
+  have h₁' := List.mem_of_mem_filter h₁
+  exact h h₁' h₂
+
 end List
