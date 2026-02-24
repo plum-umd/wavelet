@@ -33,8 +33,6 @@ theorem proc_indexed_strong_confl_at_mod
   intros s₁' s₂' l₁ l₂ hstep₁ hstep₂ hcompat
   rcases l₁ with ⟨i, l₁⟩
   rcases l₂ with ⟨j, l₂⟩
-  -- have ⟨hlabel₁, hlabel₂, hyield_det⟩ := hcompat
-  have ⟨_, _, ⟨haff_nodup, haff_disj⟩, _⟩ := haff
   by_cases hij : i = j
   · left
     subst hij
@@ -52,7 +50,8 @@ theorem proc_indexed_strong_confl_at_mod
         op₁ inputs₁ outputs₁ inputVals₁ outputVals₁ chans₁' hpop₁ hi hget_i
         op₂ inputs₂ outputs₂ inputVals₂ outputVals₂ chans₂' hpop₂ hj hget_j
       right
-      have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj ⟨i, hi⟩ ⟨j, hj⟩ (by simp [hij])
+      have hdisj_inputs := haff.atom_inputs_disjoint ⟨i, hi⟩ ⟨j, hj⟩ (by simp [hij])
+      have hdisj_outputs := haff.atom_outputs_disjoint ⟨i, hi⟩ ⟨j, hj⟩ (by simp [hij])
       simp [hget_i, hget_j, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
       have ⟨chans', hpop₁₂, hpop₂₁⟩ := pop_vals_pop_vals_disj_commute hdisj_inputs hpop₁ hpop₂
       have hstep₁' : Config.IndexedStep s₁'' _ _ :=
@@ -77,9 +76,8 @@ theorem proc_indexed_strong_confl_at_mod
         op₁ inputs₁ outputs₁ inputVals₁ outputVals₁ chans₁' hpop₁ hi hget_i
         _ _ aop₂ aop₂' allInputs₂ allOutputs₂
         inputs₂ inputVals₂ outputs₂ outputVals₂ chans₂' hinterp₂ hpop₂ hj hget_j
-      have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj
-        ⟨i, hi⟩ ⟨j, hj⟩
-        (by simp [hij])
+      have hdisj_inputs := haff.atom_inputs_disjoint ⟨i, hi⟩ ⟨j, hj⟩ (by simp [hij])
+      have hdisj_outputs := haff.atom_outputs_disjoint ⟨i, hi⟩ ⟨j, hj⟩ (by simp [hij])
       simp [hget_i, hget_j, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
       replace hdisj_inputs := List.disjoint_of_subset_right
         hinterp₂.input_sublist.subset hdisj_inputs
@@ -108,9 +106,8 @@ theorem proc_indexed_strong_confl_at_mod
         _ _ aop₂ aop₂' allInputs₂ allOutputs₂
         inputs₂ inputVals₂ outputs₂ outputVals₂ chans₂' hinterp₂ hpop₂ hi hget_i
         op₁ inputs₁ outputs₁ inputVals₁ outputVals₁ chans₁' hpop₁ hj hget_j
-      have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj
-        ⟨i, hi⟩ ⟨j, hj⟩
-        (by simp [hij])
+      have hdisj_inputs := haff.atom_inputs_disjoint ⟨i, hi⟩ ⟨j, hj⟩ (by simp [hij])
+      have hdisj_outputs := haff.atom_outputs_disjoint ⟨i, hi⟩ ⟨j, hj⟩ (by simp [hij])
       simp [hget_i, hget_j, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
       replace hdisj_inputs := List.disjoint_of_subset_right
         hinterp₂.input_sublist.subset hdisj_inputs.symm
@@ -141,9 +138,8 @@ theorem proc_indexed_strong_confl_at_mod
         _ _ aop₂ aop₂' allInputs₂ allOutputs₂
         inputs₂ inputVals₂ outputs₂ outputVals₂ chans₂' hinterp₂ hpop₂ hj hget_j
       -- Firing two different async ops
-      have ⟨hdisj_inputs, hdisj_outputs⟩ := haff_disj
-        ⟨i, hi⟩ ⟨j, hj⟩
-        (by simp [hij])
+      have hdisj_inputs := haff.atom_inputs_disjoint ⟨i, hi⟩ ⟨j, hj⟩ (by simp [hij])
+      have hdisj_outputs := haff.atom_outputs_disjoint ⟨i, hi⟩ ⟨j, hj⟩ (by simp [hij])
       simp [hget_i, hget_j, AtomicProc.inputs, AtomicProc.outputs] at hdisj_inputs hdisj_outputs
       replace hdisj_inputs := List.disjoint_of_subset_left
         hinterp₁.input_sublist.subset hdisj_inputs

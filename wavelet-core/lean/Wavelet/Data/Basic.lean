@@ -109,6 +109,14 @@ theorem forM_ok_iff_all_ok
       simp [bind, Except.bind]
       exact ih.mpr h₂
 
+theorem Disjoint.symm
+  {l₁ l₂ : List α}
+  (hdisj : Disjoint l₁ l₂) :
+    Disjoint l₂ l₁
+  := by
+  intros x h₁ h₂
+  exact hdisj h₂ h₁
+
 end List
 
 namespace Except
