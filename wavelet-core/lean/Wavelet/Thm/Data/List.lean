@@ -196,6 +196,15 @@ theorem mem_to_mem_removeAll
   simp [List.removeAll]
   grind
 
+theorem mem_removeAll_to_mem
+  [DecidableEq α]
+  {x : α} {l₁ l₂ : List α}
+  (h : x ∈ (l₁.removeAll l₂)) :
+  x ∈ l₁
+  := by
+  simp [List.removeAll] at h
+  grind
+
 theorem mem_flatten_mapIdx
   {xs : List α} {x : α} {x' : β}
   {f : Nat → α → List β}
