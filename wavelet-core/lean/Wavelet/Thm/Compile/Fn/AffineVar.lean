@@ -1241,7 +1241,7 @@ private theorem compileFn_affine_var_imp_atoms_affine_chan
 
 /-- A function with affine variable usage is compiled to a process
 with affine channel usage. -/
-theorem compileFn_affine_var_imp_affine_chan
+theorem compileFn_preserves_affineness
   (fn : Fn Op χ V m n)
   (haff : fn.AffineVar) :
     (compileFn fn).AffineChan
