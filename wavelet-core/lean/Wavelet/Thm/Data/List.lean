@@ -367,6 +367,38 @@ theorem same_suffix_cons
   (h : x :: xs <:+ y :: xs) :
     x = y
   := by
-  sorry
+  replace ⟨xs', h⟩ := h
+  have := congrArg List.length h
+  simp at this
+  simp [this] at h
+  exact h
+
+theorem both_suffix_with_cons
+  {xs ys : List α} {x y : α}
+  (h₁ : x :: xs <:+ ys)
+  (h₂ : y :: xs <:+ ys) :
+    x = y
+  := by
+  replace ⟨xs₁, h₁⟩ := h₁
+  replace ⟨xs₂, h₂⟩ := h₂
+  subst h₁
+  have h₃ := congrArg List.length h₂
+  simp at h₃
+  have h₄ := congrArg (List.drop xs₁.length) h₂
+  simp [h₃] at h₄
+  simp [h₄]
+
+theorem disjoint_diff_map
+  {f : α → γ} {g : β → γ} {xs : List α} {ys : List β}
+  (h : ∀ a b, ¬ f a = g b) :
+    Disjoint (List.map f xs) (List.map g ys)
+  := by
+  intros x h₁ h₂
+  simp only [List.mem_map] at h₁ h₂
+  have ⟨a, ha₁, ha₂⟩ := h₁
+  have ⟨b, hb₁, hb₂⟩ := h₂
+  subst ha₂
+  exfalso
+  exact h _ _ hb₂.symm
 
 end List

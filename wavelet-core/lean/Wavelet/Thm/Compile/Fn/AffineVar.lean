@@ -288,7 +288,7 @@ private def IsCompileExprInput
   | _ => False
 
 /-- Overapproximates the output channels `compileExpr ...`. -/
-private def IsCompiledExprOutput
+private def IsCompileExprOutput
   (definedVars usedVars : List χ)
   (pathConds : List (Bool × ChanName χ)) :
     ChanName χ → Prop
@@ -331,13 +331,13 @@ private theorem IsCompileExprInput.weaken
   | final_tail_arg _ => exact h.elim
 
 omit [DecidableEq χ] in
-private theorem IsCompiledExprOutput.weaken
+private theorem IsCompileExprOutput.weaken
   {definedVars usedVars : List χ}
   {pathConds pathConds' : List (Bool × ChanName χ)}
   {name : ChanName χ}
   (hsuff : pathConds'.IsSuffix pathConds)
-  (h : IsCompiledExprOutput definedVars usedVars pathConds name) :
-    IsCompiledExprOutput definedVars usedVars pathConds' name := by
+  (h : IsCompileExprOutput definedVars usedVars pathConds name) :
+    IsCompileExprOutput definedVars usedVars pathConds' name := by
   cases name with
   | var _ _ =>
     and_intros
@@ -348,10 +348,10 @@ private theorem IsCompiledExprOutput.weaken
       omega
     · exact hsuff.trans h.2.2
   | switch_cond inner =>
-    cases inner <;> simp [IsCompiledExprOutput] at h ⊢
+    cases inner <;> simp [IsCompileExprOutput] at h ⊢
     exact hsuff.trans h
   | merge_cond inner =>
-    cases inner <;> simp [IsCompiledExprOutput] at h ⊢
+    cases inner <;> simp [IsCompileExprOutput] at h ⊢
     exact hsuff.trans h
   | dest _ _ => exact hsuff.trans h
   | tail_arg _ _ => exact hsuff.trans h
@@ -438,7 +438,7 @@ private theorem compileExpr_outputs_overapprox
     {expr : Expr Op χ m n} →
     expr.AffineVar usedVars definedVars →
     ∀ ap ∈ compileExpr (V := V) definedVars pathConds expr,
-    ∀ name ∈ ap.outputs, IsCompiledExprOutput definedVars usedVars pathConds name
+    ∀ name ∈ ap.outputs, IsCompileExprOutput definedVars usedVars pathConds name
   | .ret _ | .tail _ => by
     intros haff ap hmem_ap name hmem_name
     simp [compileExpr] at hmem_ap
@@ -450,7 +450,7 @@ private theorem compileExpr_outputs_overapprox
         Vector.toList_range] at hmem_name
       rcases hmem_name with ⟨_, _, h⟩ | (⟨_, _, h⟩ | h)
       <;> subst h
-      <;> simp [IsCompiledExprOutput]
+      <;> simp [IsCompileExprOutput]
     · subst hmem_ap
       simp [AtomicProc.sink, AtomicProc.outputs] at hmem_name
       split_ifs at hmem_name <;> simp at hmem_name
@@ -463,7 +463,7 @@ private theorem compileExpr_outputs_overapprox
       simp [AtomicProc.outputs, Vector.toList_map] at hmem_name
       have ⟨_, hmem, hname⟩ := hmem_name
       subst hname
-      simp [IsCompiledExprOutput]
+      simp [IsCompileExprOutput]
       constructor
       · intros hused
         apply hdisj_used hused
@@ -474,7 +474,7 @@ private theorem compileExpr_outputs_overapprox
     · have := compileExpr_outputs_overapprox haff' _ hmem_ap _ hmem_name
       cases name with
       | var v pathConds =>
-        simp [IsCompiledExprOutput] at this ⊢
+        simp [IsCompileExprOutput] at this ⊢
         have ⟨h₁, h₂, h₃⟩ := this
         and_intros
         · exact h₁.1
@@ -486,14 +486,14 @@ private theorem compileExpr_outputs_overapprox
         · exact h₃
       | switch_cond | merge_cond =>
         rename_i name'
-        simp [IsCompiledExprOutput] at this ⊢
+        simp [IsCompileExprOutput] at this ⊢
         cases name' with
         | var =>
           simp at this ⊢
           exact this
         | _ => simp at this
       | _ =>
-        simp [IsCompiledExprOutput] at this ⊢
+        simp [IsCompileExprOutput] at this ⊢
         try exact this
   | .br _ _ _ => by
     intros haff ap hmem_ap name hmem_name
@@ -504,24 +504,24 @@ private theorem compileExpr_outputs_overapprox
       simp [AtomicProc.fork, AtomicProc.outputs] at hmem_name
       rcases hmem_name with h | h
       <;> subst h
-      <;> simp [IsCompiledExprOutput]
+      <;> simp [IsCompileExprOutput]
     cases hmem_ap <;> rename_i hmem_ap
     · subst hmem_ap
       simp [AtomicProc.switch, compileExpr.allVarsExcept, AtomicProc.outputs,
         List.toVector] at hmem_name
       rcases hmem_name with ⟨_, _, h⟩ | ⟨_, _, h⟩
       <;> subst h
-      <;> simp [IsCompiledExprOutput, List.suffix_cons]
+      <;> simp [IsCompileExprOutput, List.suffix_cons]
       · rename_i hmem
         intros hmem'
         sorry
       all_goals sorry
     cases hmem_ap <;> rename_i hmem_ap
-    · apply IsCompiledExprOutput.weaken (List.suffix_cons _ _)
+    · apply IsCompileExprOutput.weaken (List.suffix_cons _ _)
       all_goals sorry
       -- exact compileExpr_outputs_overapprox haff₁ _ hmem_ap _ hmem_name
     cases hmem_ap <;> rename_i hmem_ap
-    · apply IsCompiledExprOutput.weaken (List.suffix_cons _ _)
+    · apply IsCompileExprOutput.weaken (List.suffix_cons _ _)
       all_goals sorry
       -- exact compileExpr_outputs_overapprox haff₂ _ hmem_ap _ hmem_name
     · subst hmem_ap
@@ -530,7 +530,7 @@ private theorem compileExpr_outputs_overapprox
         Vector.toList_range] at hmem_name
       rcases hmem_name with ⟨_, _, h⟩ | (⟨_, _, h⟩ | h)
       <;> subst h
-      <;> simp [IsCompiledExprOutput]
+      <;> simp [IsCompileExprOutput]
 
 /-- Outputs of compileExpr never produce `.var v pathConds` when `v ∈ definedVars` or `v ∈ usedVars`. -/
 private theorem compileExpr_no_definedVar_var_output
@@ -584,10 +584,10 @@ private theorem compileExpr_no_definedVar_var_output
         List.toVector] at hvar
     cases hmem_ap <;> rename_i hmem_ap
     · have happrox := compileExpr_outputs_overapprox haff₁ _ hmem_ap _ hvar
-      simp [IsCompiledExprOutput] at happrox
+      simp [IsCompileExprOutput] at happrox
     cases hmem_ap <;> rename_i hmem_ap
     · have happrox := compileExpr_outputs_overapprox haff₂ _ hmem_ap _ hvar
-      simp [IsCompiledExprOutput] at happrox
+      simp [IsCompileExprOutput] at happrox
     · subst hmem_ap
       simp [AtomicProc.outputs, compileExpr.branchMerge, compileExpr.exprOutputs,
         AtomicProc.merge, Vector.toList_map, Vector.toList_append, Vector.toList_push,
@@ -660,6 +660,53 @@ private theorem compileExpr_no_used_var_input
         AtomicProc.merge, Vector.toList_map, Vector.toList_append, Vector.toList_push,
         Vector.toList_range] at hmem_input
 
+omit [DecidableEq χ] in
+private theorem compileExpr_input_same_suffix
+  {cond cond' : Bool × ChanName χ}
+  (h₁ : IsCompileExprInput (cond :: pathConds) name)
+  (h₂ : IsCompileExprInput (cond' :: pathConds) name) :
+    cond = cond'
+  := by
+  cases name with
+  | var _ pathConds' =>
+    simp [IsCompileExprInput] at h₁ h₂
+    exact List.both_suffix_with_cons h₁ h₂
+  | switch_cond name' | merge_cond name' =>
+    cases name' with
+    | var _ pathConds' =>
+      simp [IsCompileExprInput] at h₁ h₂
+      exact List.both_suffix_with_cons h₁ h₂
+    | _ => simp [IsCompileExprInput] at h₁ h₂
+  | dest | tail_arg | tail_cond =>
+    simp [IsCompileExprInput] at h₁ h₂
+    exact List.both_suffix_with_cons h₁.2 h₂.2
+  | _ =>
+    simp [IsCompileExprInput] at h₁ h₂
+    try exact List.both_suffix_with_cons h₁ h₂
+
+omit [DecidableEq χ] in
+private theorem compileExpr_output_same_suffix
+  {definedVars usedVars : List χ}
+  {cond cond' : Bool × ChanName χ}
+  (h₁ : IsCompileExprOutput definedVars usedVars (cond :: pathConds) name)
+  (h₂ : IsCompileExprOutput definedVars usedVars (cond' :: pathConds) name) :
+    cond = cond'
+  := by
+  cases name with
+  | var _ pathConds' =>
+    simp [IsCompileExprOutput] at h₁ h₂
+    exact List.both_suffix_with_cons h₁.2.2 h₂.2.2
+  | switch_cond name' | merge_cond name' =>
+    cases name' with
+    | var _ pathConds' =>
+      simp [IsCompileExprOutput] at h₁ h₂
+      exact List.both_suffix_with_cons h₁ h₂
+    | _ => simp [IsCompileExprOutput] at h₁ h₂
+  | _ =>
+    simp [IsCompileExprOutput] at h₁ h₂
+    try exact List.both_suffix_with_cons h₁ h₂
+
+/-- TODO: Clean up this proof. -/
 private theorem compileExpr_pairwise_disj_io
   {definedVars usedVars : List χ}
   {pathConds : List (Bool × ChanName χ)}
@@ -745,10 +792,10 @@ private theorem compileExpr_pairwise_disj_io
           simp [IsCompileExprInput] at this
         · intros hname
           have := happroxₒ _ hname
-          simp [IsCompiledExprOutput] at this
+          simp [IsCompileExprOutput] at this
         · intros hname
           have := happroxₒ _ hname
-          simp [IsCompiledExprOutput] at this
+          simp [IsCompileExprOutput] at this
       · simp [AtomicProc.fork]
         rw [AtomicProc.inputs, AtomicProc.outputs]
         simp
@@ -760,10 +807,10 @@ private theorem compileExpr_pairwise_disj_io
           simp [IsCompileExprInput] at this
         · intros hname
           have := happroxₒ _ hname
-          simp [IsCompiledExprOutput] at this
+          simp [IsCompileExprOutput] at this
         · intros hname
           have := happroxₒ _ hname
-          simp [IsCompiledExprOutput] at this
+          simp [IsCompileExprOutput] at this
       · subst h
         simp [AtomicProc.fork, AtomicProc.merge, AtomicProc.inputs,
           AtomicProc.outputs, compileExpr.branchMerge, compileExpr.exprOutputs]
@@ -803,19 +850,157 @@ private theorem compileExpr_pairwise_disj_io
                 have ⟨_, h₁, h₂⟩ := hmem₁
                 simp at h₂
                 subst h₂
-                sorry
+                simp [List.toVector] at h₁
+                simp [IsCompileExprOutput, h₁] at this
               · have ⟨_, _, hname⟩ := hmem₁
                 subst hname
                 have ⟨_, h₁, h₂⟩ := hmem₁
                 simp at h₂
                 subst h₂
-                simp [IsCompiledExprOutput] at this
+                simp [IsCompileExprOutput] at this
                 have := List.same_suffix_cons this.2.2
                 simp at this
-        · sorry
-        · sorry
+        · apply compileExpr_pairwise_disj_io _ haff₂
+          exact List.removeAll_nodup hdef_nodup
+        · intros ap₁ hmem_ap₁ ap₂ hmem_ap₂
+          simp at hmem_ap₁
+          rcases hmem_ap₁ with hmem_ap₁ | hmem_ap₁
+          · subst hmem_ap₁
+            simp [AtomicProc.switch, compileExpr.allVarsExcept, List.toVector]
+            rw [AtomicProc.inputs, AtomicProc.outputs]
+            have happroxᵢ := compileExpr_inputs_overapprox haff₂ _ hmem_ap₂
+            have happroxₒ := compileExpr_outputs_overapprox haff₂ _ hmem_ap₂
+            constructor
+            · intros name hmem₁ hmem₂
+              have := happroxᵢ _ hmem₂
+              simp at hmem₁
+              cases hmem₁ <;> rename_i hmem₁
+              · subst hmem₁
+                simp [IsCompileExprInput] at this
+              · replace ⟨_, hmem₁, hname⟩ := hmem₁
+                subst hname
+                simp [IsCompileExprInput] at this
+            · apply List.disjoint_append_left.mpr
+              constructor
+              · intros name hmem₁ hmem₂
+                have := happroxₒ _ hmem₂
+                simp at hmem₁
+                have ⟨_, hmem₁, hname⟩ := hmem₁
+                subst hname
+                simp [IsCompileExprOutput] at this
+                have := List.same_suffix_cons this.2.2
+                simp at this
+              · intros name hmem₁ hmem₂
+                have := happroxₒ _ hmem₂
+                simp at hmem₁
+                replace ⟨_, hmem₁, hname⟩ := hmem₁
+                subst hname
+                simp [IsCompileExprOutput, hmem₁] at this
+          -- Channels from both branches are disjoint
+          · have happroxᵢ₁ := compileExpr_inputs_overapprox haff₁ _ hmem_ap₁
+            have happroxᵢ₂ := compileExpr_inputs_overapprox haff₂ _ hmem_ap₂
+            have happroxₒ₁ := compileExpr_outputs_overapprox haff₁ _ hmem_ap₁
+            have happroxₒ₂ := compileExpr_outputs_overapprox haff₂ _ hmem_ap₂
+            constructor
+            · intros name hmem₁ hmem₂
+              specialize happroxᵢ₁ _ hmem₁
+              specialize happroxᵢ₂ _ hmem₂
+              have := compileExpr_input_same_suffix happroxᵢ₁ happroxᵢ₂
+              simp at this
+            · intros name hmem₁ hmem₂
+              specialize happroxₒ₁ _ hmem₁
+              specialize happroxₒ₂ _ hmem₂
+              have := compileExpr_output_same_suffix happroxₒ₁ happroxₒ₂
+              simp at this
       · simp
-      · sorry
+      · intros ap₁ hmem_ap₁ ap₂ hmem_ap₂
+        simp [compileExpr.branchMerge] at hmem_ap₂
+        simp at hmem_ap₁
+        rcases hmem_ap₁ with hmem_ap₁ | hmem_ap₁ | hmem_ap₁
+        · subst hmem_ap₁ hmem_ap₂
+          simp [AtomicProc.merge, AtomicProc.switch,
+            AtomicProc.inputs, AtomicProc.outputs,
+            compileExpr.exprOutputs, Vector.toList_cast, compileExpr.allVarsExcept,
+            Vector.toList_map, Vector.toList_append, Vector.toList_push,
+            List.toVector, Vector.toList_range]
+          and_intros <;> exact List.disjoint_diff_map (by simp)
+        -- TODO: This and the next case is almost the same, combine
+        · subst hmem_ap₂
+          have happroxᵢ := compileExpr_inputs_overapprox haff₁ _ hmem_ap₁
+          have happroxₒ := compileExpr_outputs_overapprox haff₁ _ hmem_ap₁
+          constructor
+          · intros name hmem₁ hmem₂
+            specialize happroxᵢ _ hmem₁
+            simp [AtomicProc.merge, AtomicProc.inputs, compileExpr.exprOutputs] at hmem₂
+            rcases hmem₂ with hmem₂ | hmem₂ | (hmem₂ | hmem₂) | hmem₂ | hmem₂ | hmem₂
+            · subst hmem₂
+              simp [IsCompileExprInput] at happroxᵢ
+            · have ⟨_, _, hname⟩ := hmem₂
+              subst hname
+              simp [IsCompileExprInput] at happroxᵢ
+            · have ⟨_, _, hname⟩ := hmem₂
+              subst hname
+              simp [IsCompileExprInput] at happroxᵢ
+            · subst hmem₂
+              simp [IsCompileExprInput] at happroxᵢ
+            · have ⟨_, _, hname⟩ := hmem₂
+              subst hname
+              simp [IsCompileExprInput] at happroxᵢ
+            · have ⟨_, _, hname⟩ := hmem₂
+              subst hname
+              simp [IsCompileExprInput] at happroxᵢ
+            · subst hmem₂
+              simp [IsCompileExprInput] at happroxᵢ
+          · intros name hmem₁ hmem₂
+            specialize happroxₒ _ hmem₁
+            simp [AtomicProc.merge, AtomicProc.outputs, compileExpr.exprOutputs] at hmem₂
+            rcases hmem₂ with hmem₂ | hmem₂ | hmem₂
+            · have ⟨_, _, hname⟩ := hmem₂
+              subst hname
+              simp [IsCompileExprOutput] at happroxₒ
+            · have ⟨_, _, hname⟩ := hmem₂
+              subst hname
+              simp [IsCompileExprOutput] at happroxₒ
+            · subst hmem₂
+              simp [IsCompileExprOutput] at happroxₒ
+        · subst hmem_ap₂
+          have happroxᵢ := compileExpr_inputs_overapprox haff₂ _ hmem_ap₁
+          have happroxₒ := compileExpr_outputs_overapprox haff₂ _ hmem_ap₁
+          constructor
+          · intros name hmem₁ hmem₂
+            specialize happroxᵢ _ hmem₁
+            simp [AtomicProc.merge, AtomicProc.inputs, compileExpr.exprOutputs] at hmem₂
+            rcases hmem₂ with hmem₂ | hmem₂ | (hmem₂ | hmem₂) | hmem₂ | hmem₂ | hmem₂
+            · subst hmem₂
+              simp [IsCompileExprInput] at happroxᵢ
+            · have ⟨_, _, hname⟩ := hmem₂
+              subst hname
+              simp [IsCompileExprInput] at happroxᵢ
+            · have ⟨_, _, hname⟩ := hmem₂
+              subst hname
+              simp [IsCompileExprInput] at happroxᵢ
+            · subst hmem₂
+              simp [IsCompileExprInput] at happroxᵢ
+            · have ⟨_, _, hname⟩ := hmem₂
+              subst hname
+              simp [IsCompileExprInput] at happroxᵢ
+            · have ⟨_, _, hname⟩ := hmem₂
+              subst hname
+              simp [IsCompileExprInput] at happroxᵢ
+            · subst hmem₂
+              simp [IsCompileExprInput] at happroxᵢ
+          · intros name hmem₁ hmem₂
+            specialize happroxₒ _ hmem₁
+            simp [AtomicProc.merge, AtomicProc.outputs, compileExpr.exprOutputs] at hmem₂
+            rcases hmem₂ with hmem₂ | hmem₂ | hmem₂
+            · have ⟨_, _, hname⟩ := hmem₂
+              subst hname
+              simp [IsCompileExprOutput] at happroxₒ
+            · have ⟨_, _, hname⟩ := hmem₂
+              subst hname
+              simp [IsCompileExprOutput] at happroxₒ
+            · subst hmem₂
+              simp [IsCompileExprOutput] at happroxₒ
 
 private theorem compileFn_inputs_disj_atom_outputs
   (fn : Fn Op χ V m n)
@@ -1006,7 +1191,7 @@ private theorem compileFn_affine_var_imp_atoms_pairwise_disj_io
         <;> simp [AtomicProc.fork, AtomicProc.steer, AtomicProc.outputs,
               Vector.toList_map, Vector.toList_range, Vector.toList_append] at hmem_x₂
         <;> (first | (rcases hmem_x₂ with h | h | h <;> subst h) | obtain ⟨_, _, rfl⟩ := hmem_x₂)
-        <;> simp [IsCompiledExprOutput] at hx
+        <;> simp [IsCompileExprOutput] at hx
 
 private theorem compileFn_affine_var_imp_atoms_affine_chan
   (fn : Fn Op χ V m n)
