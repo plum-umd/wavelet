@@ -199,8 +199,8 @@ theorem mem_to_mem_removeAll
 theorem mem_removeAll_to_mem
   [DecidableEq α]
   {x : α} {l₁ l₂ : List α}
-  (h : x ∈ (l₁.removeAll l₂)) :
-  x ∈ l₁
+  (h : x ∈ l₁.removeAll l₂) :
+    x ∈ l₁ ∧ x ∉ l₂
   := by
   simp [List.removeAll] at h
   grind
@@ -349,5 +349,24 @@ theorem removeAll_disjoint
   intros x h₁ h₂
   have h₁' := List.mem_of_mem_filter h₁
   exact h h₁' h₂
+
+@[simp]
+theorem cons_not_suffix
+  {xs : List α} {x : α} :
+    ¬ x :: xs <:+ xs
+  := by
+  intro h
+  cases h
+  rename_i xs' h
+  have : (xs' ++ x :: xs).length = xs.length := by simp [h]
+  simp at this
+  omega
+
+theorem same_suffix_cons
+  {xs : List α} {x y : α}
+  (h : x :: xs <:+ y :: xs) :
+    x = y
+  := by
+  sorry
 
 end List

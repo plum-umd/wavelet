@@ -287,6 +287,24 @@ private def IsCompileExprInput
     pathConds.length < pathConds'.length ∧ pathConds.IsSuffix pathConds'
   | _ => False
 
+/-- Overapproximates the output channels `compileExpr ...`. -/
+private def IsCompiledExprOutput
+  (definedVars usedVars : List χ)
+  (pathConds : List (Bool × ChanName χ)) :
+    ChanName χ → Prop
+  | .var v pathConds' =>
+    -- If already defined, only allow extending path conditions
+    v ∉ usedVars ∧
+    (v ∈ definedVars → pathConds.length < pathConds'.length) ∧
+    pathConds.IsSuffix pathConds'
+  | .switch_cond (.var _ pathConds')
+  | .merge_cond (.var _ pathConds')
+  | .dest _ pathConds'
+  | .tail_arg _ pathConds'
+  | .tail_cond pathConds' =>
+    pathConds.IsSuffix pathConds'
+  | _ => False
+
 omit [DecidableEq χ] in
 private theorem IsCompileExprInput.weaken
   {pathConds pathConds' : List (Bool × ChanName χ)}
@@ -312,28 +330,23 @@ private theorem IsCompileExprInput.weaken
   | final_dest _ => exact h.elim
   | final_tail_arg _ => exact h.elim
 
-/-- Overapproximates the output channels `compileExpr ...`. -/
-private def IsCompiledExprOutput
-  (pathConds : List (Bool × ChanName χ)) :
-    ChanName χ → Prop
-  | .var _ pathConds'
-  | .switch_cond (.var _ pathConds')
-  | .merge_cond (.var _ pathConds')
-  | .dest _ pathConds'
-  | .tail_arg _ pathConds'
-  | .tail_cond pathConds' =>
-    pathConds.IsSuffix pathConds'
-  | _ => False
-
 omit [DecidableEq χ] in
 private theorem IsCompiledExprOutput.weaken
+  {definedVars usedVars : List χ}
   {pathConds pathConds' : List (Bool × ChanName χ)}
   {name : ChanName χ}
   (hsuff : pathConds'.IsSuffix pathConds)
-  (h : IsCompiledExprOutput pathConds name) :
-    IsCompiledExprOutput pathConds' name := by
+  (h : IsCompiledExprOutput definedVars usedVars pathConds name) :
+    IsCompiledExprOutput definedVars usedVars pathConds' name := by
   cases name with
-  | var _ _ => exact hsuff.trans h
+  | var _ _ =>
+    and_intros
+    · exact h.1
+    · intros hdef
+      have h₁ := hsuff.length_le
+      have h₂ := h.2.1 hdef
+      omega
+    · exact hsuff.trans h.2.2
   | switch_cond inner =>
     cases inner <;> simp [IsCompiledExprOutput] at h ⊢
     exact hsuff.trans h
@@ -425,7 +438,7 @@ private theorem compileExpr_outputs_overapprox
     {expr : Expr Op χ m n} →
     expr.AffineVar usedVars definedVars →
     ∀ ap ∈ compileExpr (V := V) definedVars pathConds expr,
-    ∀ name ∈ ap.outputs, IsCompiledExprOutput pathConds name
+    ∀ name ∈ ap.outputs, IsCompiledExprOutput definedVars usedVars pathConds name
   | .ret _ | .tail _ => by
     intros haff ap hmem_ap name hmem_name
     simp [compileExpr] at hmem_ap
@@ -443,15 +456,45 @@ private theorem compileExpr_outputs_overapprox
       split_ifs at hmem_name <;> simp at hmem_name
   | .op _ _ _ _ => by
     intros haff ap hmem_ap name hmem_name
-    cases haff with | wf_op _ _ _ _ _ haff' =>
+    cases haff with | wf_op _ _ hdisj_used hdisj _ haff' =>
     simp [compileExpr] at hmem_ap
     cases hmem_ap <;> rename_i hmem_ap
     · subst hmem_ap
       simp [AtomicProc.outputs, Vector.toList_map] at hmem_name
-      have ⟨_, _, hname⟩ := hmem_name
+      have ⟨_, hmem, hname⟩ := hmem_name
       subst hname
       simp [IsCompiledExprOutput]
-    · exact compileExpr_outputs_overapprox haff' _ hmem_ap _ hmem_name
+      constructor
+      · intros hused
+        apply hdisj_used hused
+        simp [hmem]
+      · intros hdef
+        apply hdisj hdef
+        simp [hmem]
+    · have := compileExpr_outputs_overapprox haff' _ hmem_ap _ hmem_name
+      cases name with
+      | var v pathConds =>
+        simp [IsCompiledExprOutput] at this ⊢
+        have ⟨h₁, h₂, h₃⟩ := this
+        and_intros
+        · exact h₁.1
+        · intros h₄
+          apply h₂
+          left
+          apply List.mem_to_mem_removeAll h₄
+          simp [h₁.2]
+        · exact h₃
+      | switch_cond | merge_cond =>
+        rename_i name'
+        simp [IsCompiledExprOutput] at this ⊢
+        cases name' with
+        | var =>
+          simp at this ⊢
+          exact this
+        | _ => simp at this
+      | _ =>
+        simp [IsCompiledExprOutput] at this ⊢
+        try exact this
   | .br _ _ _ => by
     intros haff ap hmem_ap name hmem_name
     cases haff with | wf_br hmem_cond haff₁ haff₂ =>
@@ -469,12 +512,18 @@ private theorem compileExpr_outputs_overapprox
       rcases hmem_name with ⟨_, _, h⟩ | ⟨_, _, h⟩
       <;> subst h
       <;> simp [IsCompiledExprOutput, List.suffix_cons]
+      · rename_i hmem
+        intros hmem'
+        sorry
+      all_goals sorry
     cases hmem_ap <;> rename_i hmem_ap
     · apply IsCompiledExprOutput.weaken (List.suffix_cons _ _)
-      exact compileExpr_outputs_overapprox haff₁ _ hmem_ap _ hmem_name
+      all_goals sorry
+      -- exact compileExpr_outputs_overapprox haff₁ _ hmem_ap _ hmem_name
     cases hmem_ap <;> rename_i hmem_ap
     · apply IsCompiledExprOutput.weaken (List.suffix_cons _ _)
-      exact compileExpr_outputs_overapprox haff₂ _ hmem_ap _ hmem_name
+      all_goals sorry
+      -- exact compileExpr_outputs_overapprox haff₂ _ hmem_ap _ hmem_name
     · subst hmem_ap
       simp [AtomicProc.outputs, compileExpr.branchMerge, compileExpr.exprOutputs,
         AtomicProc.merge, Vector.toList_map, Vector.toList_append, Vector.toList_push,
@@ -536,11 +585,9 @@ private theorem compileExpr_no_definedVar_var_output
     cases hmem_ap <;> rename_i hmem_ap
     · have happrox := compileExpr_outputs_overapprox haff₁ _ hmem_ap _ hvar
       simp [IsCompiledExprOutput] at happrox
-      exact absurd happrox (by intro h; have := h.length_le; simp at this; omega)
     cases hmem_ap <;> rename_i hmem_ap
     · have happrox := compileExpr_outputs_overapprox haff₂ _ hmem_ap _ hvar
       simp [IsCompiledExprOutput] at happrox
-      exact absurd happrox (by intro h; have := h.length_le; simp at this; omega)
     · subst hmem_ap
       simp [AtomicProc.outputs, compileExpr.branchMerge, compileExpr.exprOutputs,
         AtomicProc.merge, Vector.toList_map, Vector.toList_append, Vector.toList_push,
@@ -572,7 +619,7 @@ private theorem compileExpr_no_used_var_input
           List.mem_map] at hmem_input
         replace hmem_input := Vector.mem_toList_iff.mpr hmem_input
         simp [List.toVector] at hmem_input
-        exact hv_not_def (List.mem_removeAll_to_mem hmem_input)
+        exact hv_not_def (List.mem_removeAll_to_mem hmem_input).1
       · simp [AtomicProc.inputs] at hmem_input
   | .op _ _ _ _ => by
     intros haff v hv_not_def hv_in_used ap hmem_ap hmem_input
@@ -584,8 +631,8 @@ private theorem compileExpr_no_used_var_input
       exact hv_not_def (hsub (Vector.mem_toList_iff.mpr hmem_input))
     · apply compileExpr_no_used_var_input haff' v _ _ ap hmem_ap hmem_input
       · simp only [List.mem_append, not_or]
-        exact ⟨fun h => hv_not_def (List.mem_removeAll_to_mem h),
-               fun h => hdisj_used hv_in_used h⟩
+        exact ⟨λ h => hv_not_def (List.mem_removeAll_to_mem h).1,
+               λ h => hdisj_used hv_in_used h⟩
       · exact List.mem_append_left _ hv_in_used
   | .br _ _ _ => by
     intros haff v hv_not_def _ ap hmem_ap hmem_input
@@ -601,15 +648,13 @@ private theorem compileExpr_no_used_var_input
         Vector.toList_map, Vector.toList_append] at hmem_input
       replace hmem_input := Vector.mem_toList_iff.mpr hmem_input
       simp [List.toVector] at hmem_input
-      exact hv_not_def (List.mem_removeAll_to_mem hmem_input)
+      exact hv_not_def (List.mem_removeAll_to_mem hmem_input).1
     cases hmem_ap <;> rename_i hmem_ap
     · have h := compileExpr_inputs_overapprox haff₁ ap hmem_ap _ hmem_input
       simp [IsCompileExprInput] at h
-      exact absurd h (by intro hsuff; have := hsuff.length_le; simp at this; omega)
     cases hmem_ap <;> rename_i hmem_ap
     · have h := compileExpr_inputs_overapprox haff₂ ap hmem_ap _ hmem_input
       simp [IsCompileExprInput] at h
-      exact absurd h (by intro hsuff; have := hsuff.length_le; simp at this; omega)
     · subst hmem_ap
       simp [AtomicProc.inputs, compileExpr.branchMerge, compileExpr.exprOutputs,
         AtomicProc.merge, Vector.toList_map, Vector.toList_append, Vector.toList_push,
@@ -674,7 +719,103 @@ private theorem compileExpr_pairwise_disj_io
         exact h.1 (List.mem_append_right _ (Vector.mem_toList_iff.mpr hr_mem))
     · exact compileExpr_pairwise_disj_io (List.Nodup.append (List.removeAll_nodup hdef_nodup) hrets_nodup (List.removeAll_disjoint hdisj_def)) haff'
   | .br _ _ _ => by
-    sorry
+    intros haff
+    cases haff with | wf_br hmem_cond haff₁ haff₂ =>
+    simp only [compileExpr]
+    -- Decompose the list and prove pairwise disjointness
+    apply List.Pairwise.cons
+    · intros ap hmem_ap
+      simp at hmem_ap
+      rcases hmem_ap with h | h | h | h
+      · subst h
+        simp [AtomicProc.fork, AtomicProc.switch,
+          AtomicProc.inputs, AtomicProc.outputs,
+          compileExpr.allVarsExcept, List.toVector]
+        intros h
+        have := List.mem_removeAll_to_mem h
+        simp at this
+      · simp [AtomicProc.fork]
+        rw [AtomicProc.inputs, AtomicProc.outputs]
+        simp
+        have happroxᵢ := compileExpr_inputs_overapprox haff₁ _ h
+        have happroxₒ := compileExpr_outputs_overapprox haff₁ _ h
+        and_intros
+        · intros hname
+          have := happroxᵢ _ hname
+          simp [IsCompileExprInput] at this
+        · intros hname
+          have := happroxₒ _ hname
+          simp [IsCompiledExprOutput] at this
+        · intros hname
+          have := happroxₒ _ hname
+          simp [IsCompiledExprOutput] at this
+      · simp [AtomicProc.fork]
+        rw [AtomicProc.inputs, AtomicProc.outputs]
+        simp
+        have happroxᵢ := compileExpr_inputs_overapprox haff₂ _ h
+        have happroxₒ := compileExpr_outputs_overapprox haff₂ _ h
+        and_intros
+        · intros hname
+          have := happroxᵢ _ hname
+          simp [IsCompileExprInput] at this
+        · intros hname
+          have := happroxₒ _ hname
+          simp [IsCompiledExprOutput] at this
+        · intros hname
+          have := happroxₒ _ hname
+          simp [IsCompiledExprOutput] at this
+      · subst h
+        simp [AtomicProc.fork, AtomicProc.merge, AtomicProc.inputs,
+          AtomicProc.outputs, compileExpr.branchMerge, compileExpr.exprOutputs]
+    · apply List.pairwise_append.mpr
+      and_intros
+      · apply List.pairwise_append.mpr
+        and_intros
+        · apply List.pairwise_append.mpr
+          and_intros
+          · simp
+          · apply compileExpr_pairwise_disj_io _ haff₁
+            exact List.removeAll_nodup hdef_nodup
+          · intros ap₁ hmem_ap₁ ap₂ hmem_ap₂
+            simp at hmem_ap₁
+            subst hmem_ap₁
+            have happroxᵢ := compileExpr_inputs_overapprox haff₁ _ hmem_ap₂
+            have happroxₒ := compileExpr_outputs_overapprox haff₁ _ hmem_ap₂
+            simp [AtomicProc.switch, compileExpr.allVarsExcept,
+              Vector.toList_map, Vector.toList_append]
+            rw [AtomicProc.inputs, AtomicProc.outputs]
+            constructor
+            · intros _ hmem₁ hmem₂
+              have := happroxᵢ _ hmem₂
+              simp at hmem₁
+              cases hmem₁ <;> rename_i hmem₁
+              · subst hmem₁
+                simp [IsCompileExprInput] at this
+              · have ⟨_, _, hname⟩ := hmem₁
+                subst hname
+                simp [IsCompileExprInput] at this
+            · intros _ hmem₁ hmem₂
+              have := happroxₒ _ hmem₂
+              simp at hmem₁
+              cases hmem₁ <;> rename_i hmem₁
+              · have ⟨_, _, hname⟩ := hmem₁
+                subst hname
+                have ⟨_, h₁, h₂⟩ := hmem₁
+                simp at h₂
+                subst h₂
+                sorry
+              · have ⟨_, _, hname⟩ := hmem₁
+                subst hname
+                have ⟨_, h₁, h₂⟩ := hmem₁
+                simp at h₂
+                subst h₂
+                simp [IsCompiledExprOutput] at this
+                have := List.same_suffix_cons this.2.2
+                simp at this
+        · sorry
+        · sorry
+      · simp
+      · sorry
 
 private theorem compileFn_inputs_disj_atom_outputs
   (fn : Fn Op χ V m n)
