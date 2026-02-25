@@ -43,7 +43,7 @@ theorem compile_forward_sim_guarded
   {opSpec : OpSpec Op V T}
   {progSpec : ProgSpec V T sigs}
   (prog : ProgWithSpec opSpec progSpec χ)
-  (haff₁ : ∀ i, (prog i).AffineVar)
+  (haff₁ : prog.AffineVar)
   (haff₂ : prog.AffineInrOp)
   (i : Fin k) :
     (prog.semantics i).guard (opSpec.Guard (progSpec i))
@@ -76,7 +76,7 @@ theorem compile_forward_sim
   {opSpec : OpSpec Op V T}
   {progSpec : ProgSpec V T sigs}
   (prog : ProgWithSpec opSpec progSpec χ)
-  (haff₁ : ∀ i, (prog i).AffineVar)
+  (haff₁ : prog.AffineVar)
   (haff₂ : prog.AffineInrOp)
   (i : Fin k) :
     (prog.semantics i).guard (opSpec.Guard (progSpec i))

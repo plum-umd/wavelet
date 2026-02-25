@@ -1022,7 +1022,7 @@ theorem sim_compile_prog_preserves_init
   {sigs : Sigs k} [NeZeroSigs sigs]
   (prog : Prog Op χ V sigs)
   (i : Fin k)
-  (hwf : ∀ i, (prog i).AffineVar)
+  (hwf : prog.AffineVar)
   (haff : prog.AffineInrOp) :
     prog.semantics i ≲ᵣ[PreservesInit] (compileProg prog i).semantics
   := by
@@ -1056,7 +1056,7 @@ theorem sim_compile_prog
   {sigs : Sigs k} [NeZeroSigs sigs]
   (prog : Prog Op χ V sigs)
   (i : Fin k)
-  (hwf : ∀ i, (prog i).AffineVar)
+  (hwf : prog.AffineVar)
   (haff : prog.AffineInrOp) :
     prog.semantics i ≲ᵣ (compileProg prog i).semantics
   := (sim_compile_prog_preserves_init prog i hwf haff).weaken

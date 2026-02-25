@@ -462,4 +462,15 @@ theorem link_procs_preserves_affineness
   · exact link_procs_outputs_disjoint k' hdisj₁
   · exact link_procs_inputs_disjoint k' hdisj₂
 
+theorem compile_prog_preserves_affineness
+  [Arity Op] [NeZeroArity Op] [DecidableEq χ] [InterpConsts V]
+  {sigs : Sigs k} [NeZeroSigs sigs]
+  {prog : Prog Op χ V sigs}
+  {i : Fin k}
+  (hwf : prog.AffineVar)
+  (haff : prog.AffineInrOp) :
+    (compileProg prog i).AffineChan
+  := by
+  sorry
+
 end Wavelet.Compile

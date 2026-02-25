@@ -1,5 +1,5 @@
 import Wavelet.Data.Basic
-import Wavelet.Seq.Fn
+import Wavelet.Seq.Prog
 
 namespace Wavelet.Seq
 
@@ -38,6 +38,11 @@ def Fn.AffineVar [Arity Op] [DecidableEq χ]
   (fn : Fn Op χ V m n) : Prop :=
   fn.params.toList.Nodup ∧
   fn.body.AffineVar [] fn.params.toList
+
+def Prog.AffineVar [Arity Op] [DecidableEq χ]
+  {sigs : Sigs k}
+  (prog : Prog Op χ V sigs) : Prop :=
+  ∀ i, (prog i).AffineVar
 
 def Expr.checkAffineVar
   [Arity Op] [DecidableEq χ] [Repr χ]
