@@ -23,21 +23,18 @@ theorem Proc.AffineChan.inv
       have ⟨h₁, h₂, ⟨h₃₁, h₃₂⟩, h₄, h₅⟩ := hinv
       simp [h₁, h₂]
       and_intros
-      · intros j
-        rcases j with ⟨j, hlt⟩
-        simp at hlt
-        by_cases h₁ : i = j
-        · subst h₁
-          have := h₃₁ ⟨i, by omega⟩
-          simp [AtomicProc.inputs, AtomicProc.outputs, hget] at this ⊢
+      · intros ap hmem_ap
+        have := List.mem_or_eq_of_mem_set hmem_ap
+        cases this <;> rename_i h
+        · exact h₃₁ ap h
+        · subst h
+          have := h₃₁ _ (List.mem_of_getElem hget)
+          simp [AtomicProc.inputs, AtomicProc.outputs] at this ⊢
           exact this
-        · simp [h₁]
-          apply h₃₁ ⟨j, hlt⟩
-      · intros j k hne
-        rcases j with ⟨j, hj⟩
-        rcases k with ⟨k, hk⟩
-        simp at hj hk hne
-        have := h₃₂ ⟨j, hj⟩ ⟨k, hk⟩ (by simp [hne])
+      · apply List.pairwise_iff_getElem.mpr
+        intros j k hj hk hlt
+        simp at hj hk hlt
+        have := (List.pairwise_iff_getElem.mp h₃₂) j k hj hk (by simp [hlt])
         simp at this
         grind [AtomicProc.inputs, AtomicProc.outputs]
       · intros ap hmem_ap

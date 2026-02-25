@@ -196,6 +196,15 @@ theorem mem_to_mem_removeAll
   simp [List.removeAll]
   grind
 
+theorem mem_removeAll_to_mem
+  [DecidableEq α]
+  {x : α} {l₁ l₂ : List α}
+  (h : x ∈ l₁.removeAll l₂) :
+    x ∈ l₁ ∧ x ∉ l₂
+  := by
+  simp [List.removeAll] at h
+  grind
+
 theorem mem_flatten_mapIdx
   {xs : List α} {x : α} {x' : β}
   {f : Nat → α → List β}
@@ -321,5 +330,75 @@ theorem forall₂_true
   := by
   apply List.forall₂_iff_get.mpr
   simp [hlen]
+
+theorem removeAll_nodup
+  [DecidableEq α]
+  {xs : List α} {ys : List α}
+  (h : xs.Nodup) :
+    (xs.removeAll ys).Nodup
+  := by
+  apply List.Nodup.filter
+  exact h
+
+theorem removeAll_disjoint
+  [DecidableEq α]
+  {xs : List α} {ys : List α} {zs : List α}
+  (h : Disjoint xs zs) :
+    (xs.removeAll ys).Disjoint zs
+  := by
+  intros x h₁ h₂
+  have h₁' := List.mem_of_mem_filter h₁
+  exact h h₁' h₂
+
+@[simp]
+theorem cons_not_suffix
+  {xs : List α} {x : α} :
+    ¬ x :: xs <:+ xs
+  := by
+  intro h
+  cases h
+  rename_i xs' h
+  have : (xs' ++ x :: xs).length = xs.length := by simp [h]
+  simp at this
+  omega
+
+theorem same_suffix_cons
+  {xs : List α} {x y : α}
+  (h : x :: xs <:+ y :: xs) :
+    x = y
+  := by
+  replace ⟨xs', h⟩ := h
+  have := congrArg List.length h
+  simp at this
+  simp [this] at h
+  exact h
+
+theorem both_suffix_with_cons
+  {xs ys : List α} {x y : α}
+  (h₁ : x :: xs <:+ ys)
+  (h₂ : y :: xs <:+ ys) :
+    x = y
+  := by
+  replace ⟨xs₁, h₁⟩ := h₁
+  replace ⟨xs₂, h₂⟩ := h₂
+  subst h₁
+  have h₃ := congrArg List.length h₂
+  simp at h₃
+  have h₄ := congrArg (List.drop xs₁.length) h₂
+  simp [h₃] at h₄
+  simp [h₄]
+
+theorem disjoint_diff_map
+  {f : α → γ} {g : β → γ} {xs : List α} {ys : List β}
+  (h : ∀ a b, ¬ f a = g b) :
+    Disjoint (List.map f xs) (List.map g ys)
+  := by
+  intros x h₁ h₂
+  simp only [List.mem_map] at h₁ h₂
+  have ⟨a, ha₁, ha₂⟩ := h₁
+  have ⟨b, hb₁, hb₂⟩ := h₂
+  subst ha₂
+  exfalso
+  exact h _ _ hb₂.symm
 
 end List
