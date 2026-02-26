@@ -10,6 +10,18 @@ namespace Wavelet.Dataflow
 
 open Semantics
 
+@[simp]
+theorem map_chans_comm_inputs [Arity Op]
+  (f : χ → χ') (ap : AtomicProc Op χ V) :
+    (ap.mapChans f).inputs = ap.inputs.map f := by
+  cases ap <;> simp [AtomicProc.mapChans, AtomicProc.inputs, Vector.toList_map]
+
+@[simp]
+theorem map_chans_comm_outputs [Arity Op]
+  (f : χ → χ') (ap : AtomicProc Op χ V) :
+    (ap.mapChans f).outputs = ap.outputs.map f := by
+  cases ap <;> simp [AtomicProc.mapChans, AtomicProc.outputs, Vector.toList_map]
+
 section Simulation
 
 private def SimRel
@@ -219,16 +231,6 @@ section Affineness
 variable {χ χ' : Type u} {Op : Type v} {V : Type w} {m n : Nat}
 variable {f : χ → χ'}
 
-private theorem atomicProc_mapChans_inputs [Arity Op]
-  (f : χ → χ') (ap : AtomicProc Op χ V) :
-    (ap.mapChans f).inputs = ap.inputs.map f := by
-  cases ap <;> simp [AtomicProc.mapChans, AtomicProc.inputs, Vector.toList_map]
-
-private theorem atomicProc_mapChans_outputs [Arity Op]
-  (f : χ → χ') (ap : AtomicProc Op χ V) :
-    (ap.mapChans f).outputs = ap.outputs.map f := by
-  cases ap <;> simp [AtomicProc.mapChans, AtomicProc.outputs, Vector.toList_map]
-
 theorem map_chans_preserves_aff_var
   [Arity Op]
   {proc : Proc Op χ V m n}
@@ -245,22 +247,22 @@ theorem map_chans_preserves_aff_var
     simp [AtomicProcs.mapChans] at hap
     obtain ⟨ap', hap', rfl⟩ := hap
     constructor
-    · rw [atomicProc_mapChans_inputs]; exact (h_atom_nodup ap' hap').1.map hf
-    · rw [atomicProc_mapChans_outputs]; exact (h_atom_nodup ap' hap').2.map hf
+    · simp; exact (h_atom_nodup ap' hap').1.map hf
+    · simp; exact (h_atom_nodup ap' hap').2.map hf
   · apply List.Pairwise.map _ _ h_atom_pw
     intro a b ⟨hdi, hdo⟩
     constructor
-    · rw [atomicProc_mapChans_inputs, atomicProc_mapChans_inputs]; exact hdi.map hf
-    · rw [atomicProc_mapChans_outputs, atomicProc_mapChans_outputs]; exact hdo.map hf
+    · simp; exact hdi.map hf
+    · simp; exact hdo.map hf
   · intro ap hap
     simp [AtomicProcs.mapChans] at hap
     obtain ⟨ap', hap', rfl⟩ := hap
-    rw [atomicProc_mapChans_outputs, Vector.toList_map]
+    rw [map_chans_comm_outputs, Vector.toList_map]
     exact (h_ao_di ap' hap').map hf
   · intro ap hap
     simp [AtomicProcs.mapChans] at hap
     obtain ⟨ap', hap', rfl⟩ := hap
-    rw [atomicProc_mapChans_inputs, Vector.toList_map]
+    simp [Vector.toList_map]
     exact (h_ai_do ap' hap').map hf
 
 end Affineness

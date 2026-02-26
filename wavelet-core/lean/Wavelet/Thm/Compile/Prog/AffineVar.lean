@@ -176,16 +176,6 @@ private theorem linkAtomicProc_inr_cross_diff_dep
       · nomatch heq
       · injection heq with hi _; exact absurd hi hne_fin
 
-private theorem atomicProc_mapChans_inputs [Arity Op]
-  (f : χ → χ') (ap : AtomicProc Op χ V) :
-  (ap.mapChans f).inputs = ap.inputs.map f := by
-  cases ap <;> simp [AtomicProc.mapChans, AtomicProc.inputs, Vector.toList_map]
-
-private theorem atomicProc_mapChans_outputs [Arity Op]
-  (f : χ → χ') (ap : AtomicProc Op χ V) :
-  (ap.mapChans f).outputs = ap.outputs.map f := by
-  cases ap <;> simp [AtomicProc.mapChans, AtomicProc.outputs, Vector.toList_map]
-
 /-- Pairwise disjointness of atoms produced by `linkProcs`. -/
 private theorem link_procs_atoms_pairwise
   [Arity Op] [NeZeroArity Op]
@@ -196,10 +186,10 @@ private theorem link_procs_atoms_pairwise
   (haff_procs : ∀ i, (procs i).AffineChan)
   (h_atom_nodup : ∀ (a : AtomicProc (Op ⊕ SigOps sigs k') (LinkName χ) V),
     a ∈ main.atoms → a.inputs.Nodup ∧ a.outputs.Nodup)
-  (h_atom_pw : main.atoms.Pairwise fun a b =>
+  (h_atom_pw : main.atoms.Pairwise λ a b =>
     a.inputs.Disjoint b.inputs ∧ a.outputs.Disjoint b.outputs)
   (haff_calls : main.AffineInrOp) :
-    (main.atoms.flatMap (linkAtomicProc k' procs)).Pairwise fun a b =>
+    (main.atoms.flatMap (linkAtomicProc k' procs)).Pairwise λ a b =>
       a.inputs.Disjoint b.inputs ∧ a.outputs.Disjoint b.outputs
   := by
   simp only [List.flatMap_def]
@@ -221,24 +211,24 @@ private theorem link_procs_atoms_pairwise
         constructor
         · refine ⟨?_, ?_, ?_⟩
           · simp
-          · exact List.Pairwise.map _ (fun a b ⟨hdi, hdo⟩ => ⟨
-              by rw [atomicProc_mapChans_inputs, atomicProc_mapChans_inputs]
-                 exact hdi.map (fun a b h => by injection h),
-              by rw [atomicProc_mapChans_outputs, atomicProc_mapChans_outputs]
-                 exact hdo.map (fun a b h => by injection h)⟩) hpa_pw
+          · exact List.Pairwise.map _ (λ a b ⟨hdi, hdo⟩ => ⟨
+              by simp; exact hdi.map (λ a b h => by injection h),
+              by
+                simp
+                exact hdo.map (λ a b h => by injection h)⟩) hpa_pw
           · intro ap hfwd₁ b hb_mid
             simp only [List.mem_cons, List.not_mem_nil, or_false] at hfwd₁
             subst hfwd₁
             obtain ⟨ap', hap'_mem, rfl⟩ := List.mem_map.mp hb_mid
             constructor
-            · rw [atomicProc_mapChans_inputs]
+            · simp
               dsimp only [AtomicProc.forward, AtomicProc.inputs]
               rw [Vector.toList_map]
-              exact List.disjoint_diff_map (fun _ _ => nofun)
-            · rw [atomicProc_mapChans_outputs]
+              exact List.disjoint_diff_map (λ _ _ => nofun)
+            · simp
               conv_lhs => dsimp only [AtomicProc.forward, AtomicProc.outputs]
               rw [Vector.toList_map]
-              exact (hpao_di ap' hap'_mem).symm.map (fun a b h => by injection h)
+              exact (hpao_di ap' hap'_mem).symm.map (λ a b h => by injection h)
         · constructor
           · simp
           · intro ap hap _ hfwd₂_mem
@@ -249,20 +239,20 @@ private theorem link_procs_atoms_pairwise
             · constructor
               · dsimp only [AtomicProc.forward, AtomicProc.inputs]
                 rw [Vector.toList_map, Vector.toList_map]
-                exact List.disjoint_diff_map (fun _ _ => nofun)
+                exact List.disjoint_diff_map (λ _ _ => nofun)
               · dsimp only [AtomicProc.forward, AtomicProc.outputs]
                 rw [Vector.toList_map, Vector.toList_map]
-                exact List.disjoint_diff_map (fun _ _ => nofun)
+                exact List.disjoint_diff_map (λ _ _ => nofun)
             · obtain ⟨ap', hap'_mem, rfl⟩ := List.mem_map.mp hap_mid
               constructor
-              · rw [atomicProc_mapChans_inputs]
+              · simp
                 dsimp only [AtomicProc.forward, AtomicProc.inputs]
                 rw [Vector.toList_map]
-                exact (hpai_do ap' hap'_mem).map (fun a b h => by injection h)
-              · rw [atomicProc_mapChans_outputs]
+                exact (hpai_do ap' hap'_mem).map (λ a b h => by injection h)
+              · simp
                 dsimp only [AtomicProc.forward, AtomicProc.outputs]
                 rw [Vector.toList_map]
-                exact List.disjoint_diff_map (fun _ _ => nofun)
+                exact List.disjoint_diff_map (λ _ _ => nofun)
     | async aop inputs outputs => simp [linkAtomicProc]
   · rw [List.pairwise_iff_getElem]
     intro i j hi hj hlt
@@ -277,7 +267,7 @@ private theorem link_procs_atoms_pairwise
       simp [linkAtomicProc, hb] at hy; subst hy
       simp [AtomicProc.inputs, AtomicProc.outputs, Vector.toList_map]
       simp [ha, hb, AtomicProc.inputs, AtomicProc.outputs] at h_pw_ij
-      exact ⟨h_pw_ij.1.map (fun a b h => by injection h), h_pw_ij.2.map (fun a b h => by injection h)⟩
+      exact ⟨h_pw_ij.1.map (λ a b h => by injection h), h_pw_ij.2.map (λ a b h => by injection h)⟩
     | .op (.inl _) inputsa outputsa, .op (.inr op₂b) inputsb outputsb =>
       simp [linkAtomicProc, ha] at hx; subst hx
       simp [ha, hb, AtomicProc.inputs, AtomicProc.outputs] at h_pw_ij
@@ -290,7 +280,7 @@ private theorem link_procs_atoms_pairwise
       simp [linkAtomicProc, hb] at hy; subst hy
       simp [AtomicProc.inputs, AtomicProc.outputs, Vector.toList_map]
       simp [ha, hb, AtomicProc.inputs, AtomicProc.outputs] at h_pw_ij
-      exact ⟨h_pw_ij.1.map (fun a b h => by injection h), h_pw_ij.2.map (fun a b h => by injection h)⟩
+      exact ⟨h_pw_ij.1.map (λ a b h => by injection h), h_pw_ij.2.map (λ a b h => by injection h)⟩
     | .op (.inr op₂a) inputsa outputsa, .op (.inl _) inputsb outputsb =>
       simp [linkAtomicProc, hb] at hy; subst hy
       simp [ha, hb, AtomicProc.inputs, AtomicProc.outputs] at h_pw_ij
@@ -317,7 +307,7 @@ private theorem link_procs_atoms_pairwise
       simp [linkAtomicProc, hb] at hy; subst hy
       simp [AtomicProc.inputs, AtomicProc.outputs, Vector.toList_map]
       simp [ha, hb, AtomicProc.inputs, AtomicProc.outputs] at h_pw_ij
-      exact ⟨h_pw_ij.1.map (fun a b h => by injection h), h_pw_ij.2.map (fun a b h => by injection h)⟩
+      exact ⟨h_pw_ij.1.map (λ a b h => by injection h), h_pw_ij.2.map (λ a b h => by injection h)⟩
     | .async _ inputsa outputsa, .op (.inr op₂b) inputsb outputsb =>
       simp [linkAtomicProc, ha] at hx; subst hx
       simp [ha, hb, AtomicProc.inputs, AtomicProc.outputs] at h_pw_ij
@@ -330,7 +320,7 @@ private theorem link_procs_atoms_pairwise
       simp [linkAtomicProc, hb] at hy; subst hy
       simp [AtomicProc.inputs, AtomicProc.outputs]
       simp [ha, hb, AtomicProc.inputs, AtomicProc.outputs] at h_pw_ij
-      exact ⟨h_pw_ij.1.map (fun a b h => by injection h), h_pw_ij.2.map (fun a b h => by injection h)⟩
+      exact ⟨h_pw_ij.1.map (λ a b h => by injection h), h_pw_ij.2.map (λ a b h => by injection h)⟩
 
 /-- Atom outputs are disjoint from proc inputs in `linkProcs`. -/
 private theorem link_procs_outputs_disjoint
@@ -357,19 +347,19 @@ private theorem link_procs_outputs_disjoint
     | inl op₁ =>
       simp [linkAtomicProc] at hap_mem; subst hap_mem
       simp [AtomicProc.outputs, Vector.toList_map]
-      exact (hdisj _ hatom_mem).map (fun a b h => by injection h)
+      exact (hdisj _ hatom_mem).map (λ a b h => by injection h)
     | inr op₂ =>
       rcases mem_linkAtomicProc_inr k' procs hap_mem with rfl | ⟨ap', _, rfl⟩ | rfl
       · simp [AtomicProc.forward, AtomicProc.outputs, Vector.toList_map]
-        exact List.disjoint_diff_map (fun _ _ => nofun)
-      · rw [atomicProc_mapChans_outputs]
-        exact List.disjoint_diff_map (fun _ _ => nofun)
+        exact List.disjoint_diff_map (λ _ _ => nofun)
+      · simp
+        exact List.disjoint_diff_map (λ _ _ => nofun)
       · simp [AtomicProc.forward, AtomicProc.outputs, Vector.toList_map]
-        exact (hdisj _ hatom_mem).map (fun a b h => by injection h)
+        exact (hdisj _ hatom_mem).map (λ a b h => by injection h)
   | async aop inputs outputs =>
     simp [linkAtomicProc] at hap_mem; subst hap_mem
     simp [AtomicProc.outputs]
-    exact (hdisj _ hatom_mem).map (fun a b h => by injection h)
+    exact (hdisj _ hatom_mem).map (λ a b h => by injection h)
 
 /-- Atom inputs are disjoint from proc outputs in `linkProcs`. -/
 private theorem link_procs_inputs_disjoint
@@ -396,19 +386,19 @@ private theorem link_procs_inputs_disjoint
     | inl op₁ =>
       simp [linkAtomicProc] at hap_mem; subst hap_mem
       simp [AtomicProc.inputs, Vector.toList_map]
-      exact (hdisj _ hatom_mem).map (fun a b h => by injection h)
+      exact (hdisj _ hatom_mem).map (λ a b h => by injection h)
     | inr op₂ =>
       rcases mem_linkAtomicProc_inr k' procs hap_mem with rfl | ⟨ap', _, rfl⟩ | rfl
       · simp [AtomicProc.forward, AtomicProc.inputs, Vector.toList_map]
-        exact (hdisj _ hatom_mem).map (fun a b h => by injection h)
-      · rw [atomicProc_mapChans_inputs]
-        exact List.disjoint_diff_map (fun _ _ => nofun)
+        exact (hdisj _ hatom_mem).map (λ a b h => by injection h)
+      · simp
+        exact List.disjoint_diff_map (λ _ _ => nofun)
       · simp [AtomicProc.forward, AtomicProc.inputs, Vector.toList_map]
-        exact List.disjoint_diff_map (fun _ _ => nofun)
+        exact List.disjoint_diff_map (λ _ _ => nofun)
   | async aop inputs outputs =>
     simp [linkAtomicProc] at hap_mem; subst hap_mem
     simp [AtomicProc.inputs]
-    exact (hdisj _ hatom_mem).map (fun a b h => by injection h)
+    exact (hdisj _ hatom_mem).map (λ a b h => by injection h)
 
 /-- `linkProcs` preserves the affineness of channel names. -/
 theorem link_procs_preserves_aff_var
@@ -425,8 +415,8 @@ theorem link_procs_preserves_aff_var
   obtain ⟨h_in, h_out, ⟨h_atom_nodup, h_atom_pw⟩, hdisj₁, hdisj₂⟩ := haff_main
   simp only [Proc.AffineChan, linkProcs]
   refine ⟨?_, ?_, ⟨?_, ?_⟩, ?_, ?_⟩
-  · rw [Vector.toList_map]; exact h_in.map (fun a b h => by injection h)
-  · rw [Vector.toList_map]; exact h_out.map (fun a b h => by injection h)
+  · rw [Vector.toList_map]; exact h_in.map (λ a b h => by injection h)
+  · rw [Vector.toList_map]; exact h_out.map (λ a b h => by injection h)
   · intro ap hap
     rw [List.mem_flatten] at hap
     obtain ⟨l, hl_mem, hap_mem⟩ := hap
@@ -439,26 +429,26 @@ theorem link_procs_preserves_aff_var
         simp [linkAtomicProc] at hap_mem; subst hap_mem
         have ⟨hni, hno⟩ := h_atom_nodup _ hatom_mem
         simp [AtomicProc.inputs, AtomicProc.outputs, Vector.toList_map]
-        exact ⟨hni.map (fun a b h => by injection h), hno.map (fun a b h => by injection h)⟩
+        exact ⟨hni.map (λ a b h => by injection h), hno.map (λ a b h => by injection h)⟩
       | inr op₂ =>
         have hproc := haff_procs op₂.toFin'
         obtain ⟨hpi, hpo, ⟨hpa_nodup, _⟩, _, _⟩ := hproc
         have ⟨hni, hno⟩ := h_atom_nodup _ hatom_mem
         rcases mem_linkAtomicProc_inr k' procs hap_mem with rfl | ⟨ap', hap'_mem, rfl⟩ | rfl
         · simp [AtomicProc.forward, AtomicProc.inputs, AtomicProc.outputs, Vector.toList_map]
-          exact ⟨hni.map (fun a b h => by injection h), hpi.map (fun a b h => by injection h)⟩
+          exact ⟨hni.map (λ a b h => by injection h), hpi.map (λ a b h => by injection h)⟩
         · constructor
-          · rw [atomicProc_mapChans_inputs]
-            exact (hpa_nodup ap' hap'_mem).1.map (fun a b h => by injection h)
-          · rw [atomicProc_mapChans_outputs]
-            exact (hpa_nodup ap' hap'_mem).2.map (fun a b h => by injection h)
+          · simp
+            exact (hpa_nodup ap' hap'_mem).1.map (λ a b h => by injection h)
+          · simp
+            exact (hpa_nodup ap' hap'_mem).2.map (λ a b h => by injection h)
         · simp [AtomicProc.forward, AtomicProc.inputs, AtomicProc.outputs, Vector.toList_map]
-          exact ⟨hpo.map (fun a b h => by injection h), hno.map (fun a b h => by injection h)⟩
+          exact ⟨hpo.map (λ a b h => by injection h), hno.map (λ a b h => by injection h)⟩
     | async aop inputs outputs =>
       simp [linkAtomicProc] at hap_mem; subst hap_mem
       have ⟨hni, hno⟩ := h_atom_nodup _ hatom_mem
       simp [AtomicProc.inputs, AtomicProc.outputs]
-      exact ⟨hni.map (fun a b h => by injection h), hno.map (fun a b h => by injection h)⟩
+      exact ⟨hni.map (λ a b h => by injection h), hno.map (λ a b h => by injection h)⟩
   · exact link_procs_atoms_pairwise k' haff_procs h_atom_nodup h_atom_pw haff_calls
   · exact link_procs_outputs_disjoint k' hdisj₁
   · exact link_procs_inputs_disjoint k' hdisj₂
