@@ -165,9 +165,7 @@ theorem compile_strong_norm
   (htrace : (prog.semanticsᵢ i).lts.TauStarN .τ k s s₁)
   (houtput : (prog.semanticsᵢ i).lts.Step s₁ (.output outputVals) s₂)
   -- Initial setup in the dataflow graph
-  (hinputs' : proc.semanticsᵢ.lts.Step proc.semanticsᵢ.init (.input args) s')
-  -- Some invariants at the initial state
-  (hntok : proc.semanticsᵢ.init.1.proc.HasNoTokenConst) :
+  (hinputs' : proc.semanticsᵢ.lts.Step proc.semanticsᵢ.init (.input args) s') :
     ∃ (bound : Nat), -- Uniform bound on any dataflow trace length
       -- For any trace in the compiled dataflow graph
       ∀ {s₁' : proc.semanticsᵢ.S},
@@ -207,6 +205,10 @@ theorem compile_strong_norm
     simp [Semantics.guard, Semantics.interpret, Proc.semantics,
       Dataflow.Config.init, hcomp]
     exact compile_prog_preserves_aff_var haff₁ haff₂
+  have hntok : proc.semanticsᵢ.init.1.proc.HasNoTokenConst := by
+    simp [Semantics.guard, Semantics.interpret, Proc.semantics,
+      Dataflow.Config.init, hcomp]
+    exact compile_prog_has_no_token_const
   subst hcomp
   have hsim₁ := compile_forward_sim_guarded prog haff₁ haff₂ i
   replace hsim₁ := sim_interp hsim₁

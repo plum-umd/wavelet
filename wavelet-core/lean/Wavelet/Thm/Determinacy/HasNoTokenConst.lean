@@ -146,4 +146,18 @@ theorem link_procs_has_no_token_const
     simp only [AtomicProc.HasNoTokenConst]
     exact hntok_main _ hatom_mem
 
+theorem compile_prog_has_no_token_const
+  [Arity Op] [NeZeroArity Op] [DecidableEq χ] [InterpConsts V]
+  {sigs : Sigs k} [instNZ : NeZeroSigs sigs]
+  {prog : Prog Op χ (V ⊕ T) sigs}
+  {i : Fin k} :
+    (compileProg prog i).HasNoTokenConst
+  := by
+  unfold compileProg
+  apply link_procs_has_no_token_const
+  · intros i
+    exact compile_prog_has_no_token_const
+  · apply map_chans_has_no_token_const
+    apply compile_fn_has_no_token_const
+
 end Wavelet.Determinacy
