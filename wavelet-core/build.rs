@@ -49,7 +49,7 @@ fn main() {
     // Build `libWavelet` and `libBatteries`
     let status = Command::new("lake")
         .current_dir("lean")
-        .args(["build", "Wavelet", "Batteries:static"])
+        .args(["build", "--wfail", "Wavelet", "Batteries:static"])
         .status()
         .expect("failed to run `lake build`");
     assert!(status.success(), "`lake build` failed");

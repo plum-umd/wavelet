@@ -49,4 +49,4 @@ jobs:
       - uses: leanprover/lean-action@v1
         with:
           lake-package-directory: wavelet-core/lean
-          build-args: Thm
+          build-args: --wfail Thm
