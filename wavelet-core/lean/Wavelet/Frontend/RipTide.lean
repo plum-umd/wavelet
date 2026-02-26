@@ -65,7 +65,7 @@ inductive SyncOp where
   | bitand
   | load (_ : Loc) | store (_ : Loc) | sel
   | const (_ : Value)
-  | copy (_ : Nat)
+  | copy (_ : NzNat)
   deriving Repr, DecidableEq, Lean.ToJson, Lean.FromJson
 
 instance : Arity SyncOp where
@@ -89,12 +89,18 @@ instance : Arity SyncOp where
     | .bitand => 1
     | .load _ => 1 | .store _ => 1 | .sel => 1
     | .const _ => 1
-    -- NOTE: `copy n` outputs `n + 1` values
-    | .copy n => n + 1
+    | .copy n => n
 
 instance : NeZeroArity SyncOp where
   neZeroᵢ op := by cases op <;> infer_instance
-  neZeroₒ op := by cases op <;> infer_instance
+  neZeroₒ op := by
+    cases op with
+    | copy n =>
+      have := n.property
+      constructor
+      dsimp [Arity.ω]
+      omega
+    | _ => infer_instance
 
 /-- Some constants used for compilation. -/
 instance : InterpConsts Value where
@@ -270,8 +276,8 @@ def prog₁ :
       rets := ["a", "b"],
       body :=
         .op (.op (.join 1 0 (λ _ => PCM.zero))) ["t₀"] ["t₁", "t₂"] <|
-        .op (.op (.op false (.copy 3))) ["i"] ["i₁", "i₂", "i₃", "i₄", "dummy₁"] <|
-        .op (.op (.op false (.copy 1))) ["n"] ["n₁", "n₂", "dummy₂"] <|
+        .op (.op (.op false (.copy ⟨3, by simp⟩))) ["i"] ["i₁", "i₂", "i₃", "i₄", "dummy₁"] <|
+        .op (.op (.op false (.copy ⟨1, by simp⟩))) ["n"] ["n₁", "n₂", "dummy₂"] <|
         .op (.op (.op false .slt)) ["i₁", "n₁"] ["c", "dummy₃"] <|
         .br "c"
           (.op (.op (.op true (.load "A"))) ["i₂", "t₁"] ["x", "t₁'"] <|

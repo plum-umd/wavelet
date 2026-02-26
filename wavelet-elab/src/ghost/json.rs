@@ -522,7 +522,7 @@ impl Serialize for SyncOp {
             }
             SyncOp::Copy { n } => {
                 let mut map = serializer.serialize_map(Some(1))?;
-                map.serialize_entry("copy", &(n - 1))?;
+                map.serialize_entry("copy", &n)?;
                 map.end()
             }
             SyncOp::Load { loc } => {

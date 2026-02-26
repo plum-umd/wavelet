@@ -188,6 +188,30 @@ def replicateChar (n : Nat) (c : Char) : String := .mk (List.replicate n c)
 
 end String
 
+/-- Similar to mathlib's `PNat`, but replicated here
+since we don't want to import mathlib in the executable
+portion of the code. -/
+def NzNat := { n : Nat // 0 < n }
+  deriving Repr, DecidableEq
+
+namespace NzNat
+
+instance : Lean.ToJson NzNat where
+  toJson n := Lean.ToJson.toJson n.val
+
+instance : Lean.FromJson NzNat where
+  fromJson? j := do
+    let n ← Lean.FromJson.fromJson? j
+    if h : 0 < n then
+      pure ⟨n, h⟩
+    else
+      throw "expected a positive natural number"
+
+instance : Coe NzNat Nat where
+  coe n := n.val
+
+end NzNat
+
 namespace Lean.Json
 
 def decode [Lean.FromJson α] (src : String) : Except String α :=
