@@ -149,7 +149,7 @@ theorem compile_strong_norm
   (hnb : opInterp.NonBlocking)
   -- Program with well-formedness and typing properties
   (prog : ProgWithSpec opSpec progSpec χ)
-  (haff₁ : ∀ (i : Fin k), (prog i).AffineVar)
+  (haff₁ : prog.AffineVar)
   (haff₂ : prog.AffineInrOp)
   (i : Fin k)
   -- Same inputs and outputs
@@ -166,8 +166,7 @@ theorem compile_strong_norm
   (houtput : (prog.semanticsᵢ i).lts.Step s₁ (.output outputVals) s₂)
   -- Initial setup in the dataflow graph
   (hinputs' : proc.semanticsᵢ.lts.Step proc.semanticsᵢ.init (.input args) s')
-  -- Some invariants at the initial state (TODO: show these from `compileProg`)
-  (haff : proc.semanticsᵢ.init.1.proc.AffineChan)
+  -- Some invariants at the initial state
   (hntok : proc.semanticsᵢ.init.1.proc.HasNoTokenConst) :
     ∃ (bound : Nat), -- Uniform bound on any dataflow trace length
       -- For any trace in the compiled dataflow graph
@@ -204,6 +203,10 @@ theorem compile_strong_norm
 
   After some more manipulations, we can show the result of this theorem.
   -/
+  have haff : proc.semanticsᵢ.init.1.proc.AffineChan := by
+    simp [Semantics.guard, Semantics.interpret, Proc.semantics,
+      Dataflow.Config.init, hcomp]
+    exact compile_prog_preserves_aff_var haff₁ haff₂
   subst hcomp
   have hsim₁ := compile_forward_sim_guarded prog haff₁ haff₂ i
   replace hsim₁ := sim_interp hsim₁

@@ -1022,8 +1022,8 @@ theorem sim_compile_prog_preserves_init
   {sigs : Sigs k} [NeZeroSigs sigs]
   (prog : Prog Op χ V sigs)
   (i : Fin k)
-  (hwf : prog.AffineVar)
-  (haff : prog.AffineInrOp) :
+  (haff_var : prog.AffineVar)
+  (haff_op : prog.AffineInrOp) :
     prog.semantics i ≲ᵣ[PreservesInit] (compileProg prog i).semantics
   := by
   rcases i with ⟨i, hlt⟩
@@ -1037,7 +1037,7 @@ theorem sim_compile_prog_preserves_init
         cases j
         simp
       · apply IORestrictedSimilaritySt.trans_preserves_init
-        · exact sim_compile_fn_preserves_init _ (by apply hwf)
+        · exact sim_compile_fn_preserves_init _ (by apply haff_var)
         · exact (sim_map_chans_inj_preserves_init
             (f := LinkName.base)
             (by simp [Function.Injective])).to_restricted_sim
@@ -1047,7 +1047,7 @@ theorem sim_compile_prog_preserves_init
         rfl
       · apply map_chans_preserves_aff_op
         apply compile_fn_preserves_aff_op
-        apply haff
+        apply haff_op
 
 theorem sim_compile_prog
   [Arity Op] [NeZeroArity Op]
@@ -1056,10 +1056,10 @@ theorem sim_compile_prog
   {sigs : Sigs k} [NeZeroSigs sigs]
   (prog : Prog Op χ V sigs)
   (i : Fin k)
-  (hwf : prog.AffineVar)
-  (haff : prog.AffineInrOp) :
+  (haff_var : prog.AffineVar)
+  (haff_op : prog.AffineInrOp) :
     prog.semantics i ≲ᵣ (compileProg prog i).semantics
-  := (sim_compile_prog_preserves_init prog i hwf haff).weaken
+  := (sim_compile_prog_preserves_init prog i haff_var haff_op).weaken
     (by simp)
 
 end Wavelet.Compile

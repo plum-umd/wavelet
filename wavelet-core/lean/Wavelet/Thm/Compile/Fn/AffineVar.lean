@@ -11,7 +11,7 @@ namespace Wavelet.Compile
 
 open Semantics Seq Dataflow
 
-variable {Op : Type} {χ : Type} {V : Type} {m n : Nat}
+variable {Op : Type u} {χ : Type v} {V : Type w} {m n : Nat}
 variable [Arity Op] [InterpConsts V] [DecidableEq χ] [NeZero m] [NeZero n]
 
 private theorem compileExpr_no_input_chan
@@ -1241,7 +1241,7 @@ private theorem compileFn_affine_var_imp_atoms_affine_chan
 
 /-- A function with affine variable usage is compiled to a process
 with affine channel usage. -/
-theorem compileFn_preserves_affineness
+theorem compile_fn_preserves_aff_var
   (fn : Fn Op χ V m n)
   (haff : fn.AffineVar) :
     (compileFn fn).AffineChan

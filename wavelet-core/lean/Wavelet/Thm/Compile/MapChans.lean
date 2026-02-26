@@ -229,7 +229,7 @@ private theorem atomicProc_mapChans_outputs [Arity Op]
     (ap.mapChans f).outputs = ap.outputs.map f := by
   cases ap <;> simp [AtomicProc.mapChans, AtomicProc.outputs, Vector.toList_map]
 
-theorem map_chans_preserves_affineness
+theorem map_chans_preserves_aff_var
   [Arity Op]
   {proc : Proc Op χ V m n}
   (hf : Function.Injective f)

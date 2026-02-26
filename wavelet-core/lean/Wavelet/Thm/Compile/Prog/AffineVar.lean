@@ -4,6 +4,7 @@ import Wavelet.Thm.Data
 import Wavelet.Thm.Seq.AffineVar
 import Wavelet.Thm.Dataflow.AffineChan
 import Wavelet.Thm.Compile.AffineOp
+import Wavelet.Thm.Compile.Fn.AffineVar
 
 import Mathlib.Data.List.Nodup
 
@@ -410,7 +411,7 @@ private theorem link_procs_inputs_disjoint
     exact (hdisj _ hatom_mem).map (fun a b h => by injection h)
 
 /-- `linkProcs` preserves the affineness of channel names. -/
-theorem link_procs_preserves_affineness
+theorem link_procs_preserves_aff_var
   [Arity Op] [NeZeroArity Op]
   {sigs : Sigs k} [NeZeroSigs sigs]
   (k' : Fin (k + 1))
@@ -462,15 +463,23 @@ theorem link_procs_preserves_affineness
   · exact link_procs_outputs_disjoint k' hdisj₁
   · exact link_procs_inputs_disjoint k' hdisj₂
 
-theorem compile_prog_preserves_affineness
+theorem compile_prog_preserves_aff_var
   [Arity Op] [NeZeroArity Op] [DecidableEq χ] [InterpConsts V]
-  {sigs : Sigs k} [NeZeroSigs sigs]
+  {sigs : Sigs k} [instNZ : NeZeroSigs sigs]
   {prog : Prog Op χ V sigs}
   {i : Fin k}
-  (hwf : prog.AffineVar)
-  (haff : prog.AffineInrOp) :
+  (haff_var : prog.AffineVar)
+  (haff_op : prog.AffineInrOp) :
     (compileProg prog i).AffineChan
   := by
-  sorry
+  unfold compileProg
+  apply link_procs_preserves_aff_var
+  · intros i
+    apply compile_prog_preserves_aff_var haff_var haff_op
+  · apply map_chans_preserves_aff_var (by simp [Function.Injective])
+    exact compile_fn_preserves_aff_var (prog i) (haff_var i)
+  · apply map_chans_preserves_aff_op
+    apply compile_fn_preserves_aff_op
+    exact haff_op i
 
 end Wavelet.Compile
