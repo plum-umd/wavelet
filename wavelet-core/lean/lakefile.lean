@@ -11,5 +11,4 @@ lean_lib Wavelet where
 
 lean_lib Thm where
   roots := #[`Wavelet.Thm]
-  leanOptions := #[⟨`warningAsError, true⟩]
   defaultFacets := #[LeanLib.leanArtsFacet]

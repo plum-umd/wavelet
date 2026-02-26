@@ -147,7 +147,7 @@ theorem compile_strong_norm
   (hvalid₂ : progSpec.Valid)
   (hdet : opInterp.Deterministic)
   (hnb : opInterp.NonBlocking)
-  -- Program with well-formedness and typing properties
+  -- Program with affine variable and function usage
   (prog : ProgWithSpec opSpec progSpec χ)
   (haff₁ : prog.AffineVar)
   (haff₂ : prog.AffineInrOp)
