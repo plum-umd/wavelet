@@ -1,9 +1,9 @@
-import Wavelet.Thm.Data
-import Wavelet.Thm.Seq.AffineVar
-
 import Wavelet.Compile.Fn
 import Wavelet.Seq.AffineVar
 import Wavelet.Dataflow.AffineChan
+
+import Wavelet.Thm.Data
+import Wavelet.Thm.Seq.AffineVar
 
 /-! Compiling a function with `AffineVar` produces a process with `AffineChan`. -/
 
