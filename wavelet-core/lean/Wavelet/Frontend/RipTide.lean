@@ -163,6 +163,7 @@ private def applyBitVecBinPred
 instance instOpInterpM : OpInterpM SyncOp Value SemM where
   interp
     | .add, (inputs : Vector Value 2) => applyBitVecBinOp "add" BitVec.add inputs[0] inputs[1]
+    | .sub, (inputs : Vector Value 2) => applyBitVecBinOp "sub" BitVec.sub inputs[0] inputs[1]
     | .mul, (inputs : Vector Value 2) => applyBitVecBinOp "mul" BitVec.mul inputs[0] inputs[1]
     | .eq, (inputs : Vector Value 2) => applyBitVecBinPred "eq" (· == ·) inputs[0] inputs[1]
     | .neq, (inputs : Vector Value 2) => applyBitVecBinPred "neq" (· != ·) inputs[0] inputs[1]
@@ -171,10 +172,19 @@ instance instOpInterpM : OpInterpM SyncOp Value SemM where
     | .ult, (inputs : Vector Value 2) => applyBitVecBinPred "ult" BitVec.ult inputs[0] inputs[1]
     | .ule, (inputs : Vector Value 2) => applyBitVecBinPred "ule" BitVec.ule inputs[0] inputs[1]
     | .and, (inputs : Vector Value 2) => applyBitVecBinOp "and" BitVec.and inputs[0] inputs[1]
+    | .bitand, (inputs : Vector Value 2) => applyBitVecBinOp "bitand" BitVec.and inputs[0] inputs[1]
+    | .shl, (inputs : Vector Value 2) =>
+      match inputs[0], inputs[1] with
+      | .int w v, .int _ shift => return #v[.int w (BitVec.shiftLeft v shift.toNat)]
+      | _, _ => throw s!"type mismatch for operator shl"
     | .ashr, (inputs : Vector Value 2) =>
       match inputs[0], inputs[1] with
       | .int w v, .int _ shift => return #v[.int w (BitVec.sshiftRight v shift.toNat)]
       | _, _ => throw s!"type mismatch for operator ashr"
+    | .lshr, (inputs : Vector Value 2) =>
+      match inputs[0], inputs[1] with
+      | .int w v, .int _ shift => return #v[.int w (BitVec.ushiftRight v shift.toNat)]
+      | _, _ => throw s!"type mismatch for operator lshr"
     | .load loc, (inputs : Vector Value 1) => do
       match (← get).load loc inputs[0] with
       | some val => return #v[val]

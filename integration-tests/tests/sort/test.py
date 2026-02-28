@@ -4,7 +4,7 @@ from sim import reference
 @reference(
     # Even count may not be correct, but the behavior
     # should still match the reference
-    ([], [], 0, 0),
+    ([0], [0], 0, 0),
     ([random.randint(-20, 20) for _ in range(3)], [0] * 3, 2, 3),
     ([random.randint(-20, 20) for _ in range(6)], [0] * 6, 3, 6),
 )

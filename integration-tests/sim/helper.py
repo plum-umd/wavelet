@@ -4,11 +4,16 @@ Helper functions for the cocotb tests.
 
 from __future__ import annotations
 from dataclasses import dataclass
-import inspect
 
 import os
+import re
+import sys
+import inspect
+import subprocess
 import cocotb
 import cocotb.clock
+
+from pathlib import Path
 from .wavelet import WaveletDut
 from .circt import CirctDut
 from .common import MemoryState
@@ -26,13 +31,21 @@ class InputArg:
             return InputArg(self.param, self.value.copy())
         else:
             return self
+    
+    def encode_for_wavelet_sim(self) -> str:
+        if self.is_array():
+            return f"{self.param}={','.join(map(str, self.value))}"
+        elif self.value is None:
+            return "()"
+        else:
+            return str(self.value)
 
 @dataclass    
 class OutputMemoryState:
     param: str
     value: MemoryState
     
-async def run_python_ref(f, args: list[InputArg]) -> tuple[None | int, list[OutputMemoryState]]:
+def run_python_ref(f, args: list[InputArg]) -> tuple[None | int, list[OutputMemoryState]]:
     """
     Runs the Python reference function on the input arguments (including initial memory states)
     and returns the output and modified memory states.
@@ -122,6 +135,84 @@ def parse_input_args(f, tests: list[tuple[None | int | list[int], ...]]) -> list
         for test in tests
     ]
 
+def sim_wavelet(f, tests: list[list[InputArg]]):
+    # Compute the path to the Wavelet CLI
+    wavelet_cli_path = Path(__file__).parent.parent.parent / "target" / "release" / "wavelet"
+    wavelet_cli_path = wavelet_cli_path.resolve()
+    assert wavelet_cli_path.exists(), \
+        f"Wavelet CLI not found at {wavelet_cli_path}, please build Wavelet first"
+    
+    design_path = os.environ.get("DUT_DESIGN")
+    assert design_path is not None, "DUT_DESIGN environment variable is not set"
+    design_path = Path(design_path).resolve()
+    assert design_path.exists(), f"DUT design not found at {design_path}"
+
+    total_cycles = 0
+
+    for test in tests:
+        scalar_inputs = [ arg.encode_for_wavelet_sim() for arg in test if not arg.is_array() ]
+        mem_flags = [
+            ["--mem", arg.encode_for_wavelet_sim()]
+            for arg in test if arg.is_array()
+        ]
+        args = [
+            "exec", str(design_path),
+            "--args", ",".join(scalar_inputs),
+        ] + sum(mem_flags, [])
+
+        # Use subprocess
+        print(f"test vector ({', '.join(scalar_inputs)}) ... ", file=sys.stderr, flush=True, end="")
+        result = subprocess.run(
+            [wavelet_cli_path, *args],
+            capture_output=True,
+            text=True,
+        )
+        entire_output = result.stdout + "\n" + result.stderr
+        
+        # Get number of cycles
+        matches = list(re.finditer(r"\[executing\] \d+ ops fired in (\d+) cycles", result.stderr))
+        assert len(matches) > 0, f"failed to parse simulation result: {entire_output}"
+        cycles = int(matches[-1].group(1))
+        total_cycles += cycles
+        print(f"finished in {cycles} cycles", file=sys.stderr, flush=True)
+
+        # Parse scalar outputs
+        dut_res = []
+        match = re.search(r"outputs: (.+)", result.stdout)
+        assert match is not None, f"failed to parse simulation output: {entire_output}"
+        for output in match.group(1).split(","):
+            output = output.strip()
+            if output == "()":
+                dut_res.append(None)
+            else:
+                dut_res.append(int(output))
+
+        rest_output = result.stdout[match.end():]
+
+        # Parse final memory states
+        dut_mems = {}
+        for match in re.finditer(r"(.+): \[(.+)\]", rest_output):
+            mem_name = match.group(1).strip()
+            mem_values = [ int(x.strip()) for x in match.group(2).split(",") ]
+            assert mem_name not in dut_mems, f"duplicate memory output from the simulator for {mem_name}"
+            dut_mems[mem_name] = mem_values
+
+        # Finally, compare with reference
+        py_res, py_mems = run_python_ref(f, test)
+
+        assert len(dut_res) == 1, "incorrect number of outputs"
+        assert dut_res[0] == py_res, f"output mismatch: got {dut_res[0]}, expected {py_res}"
+
+        array_params = [ arg.param for arg in test if arg.is_array() ]
+        assert len(py_mems) == len(array_params)
+        for py_mem, name in zip(py_mems, array_params):
+            dut_mem = dut_mems.get(name, [])
+            py_mem_list = py_mem.value.to_list()
+            assert dut_mem == py_mem_list, \
+                f"memory mismatch for array output {name}: got {dut_mem}, expected {py_mem_list}"
+
+    print(f"total cycles: {total_cycles}", file=sys.stderr, flush=True)
+
 def reference(*tests: tuple[None | int | list[int], ...]):
     """
     A decorator wrapper around `cocotb.test` to test the functional equivalence between
@@ -139,6 +230,11 @@ def reference(*tests: tuple[None | int | list[int], ...]):
     def decorator(f):
         nonlocal tests
         tests = parse_input_args(f, tests)
+
+        if os.environ.get("DUT_INTERFACE") == "wavelet-sim":
+            # Use high-level Wavelet dataflow simulation instead of using cocotb
+            sim_wavelet(f, tests)
+            return f
 
         async def inner(dut, test_idx: int, **_):
             # Start the clock

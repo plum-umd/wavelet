@@ -1,16 +1,20 @@
 MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 REPO_DIR := $(abspath $(MAKEFILE_DIR)/..)
-WAVELET := $(REPO_DIR)/target/debug/wavelet
+WAVELET := $(REPO_DIR)/target/release/wavelet
 CGEIST := $(REPO_DIR)/integration-tests/build/polygeist/bin/cgeist
 HLSTOOL := $(REPO_DIR)/integration-tests/build/circt/bin/hlstool
 
 TEST_NAMES := $(basename $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/test.rs)))))
 
 .PHONY: default
-default: tests
+default: wavelet-tests
 
 # Do not delete intermediate files
 .SECONDARY:
+
+#################################
+# Rules to build required tools #
+#################################
 
 build/circt/Makefile: circt
 	mkdir -p build/circt
@@ -55,13 +59,17 @@ dynamatic/bin/dynamatic:
 
 # Build Wavelet
 $(WAVELET): $(REPO_DIR)/wavelet $(REPO_DIR)/wavelet-core $(REPO_DIR)/wavelet-elab
-	cd $(REPO_DIR) && cargo build
+	cd $(REPO_DIR) && cargo build --release
 
 .PHONY: build
 build: $(WAVELET) $(HLSTOOL)
 
+#################################
+# Various compilation pipelines #
+#################################
+
 %.wavelet.json: %.rs
-	$(WAVELET) compile $< -o $@
+	$(WAVELET) compile $< -o $@ 2>&1 | tee $@.log
 
 # Compile tests from Wavelet/Rust to CIRCT/Handshake
 %.wavelet.handshake.mlir: %.wavelet.json
@@ -79,12 +87,14 @@ build: $(WAVELET) $(HLSTOOL)
 		> $@.tmp || (rm -f $@.tmp && exit 1)
 	mv $@.tmp $@
 
+# Compile C to MLIR/scf through Polygeist
 %.circt.scf.mlir: %.c
 	build/polygeist/bin/cgeist -O3 --memref-fullrank -S $< | \
 		sed -E 's/[[:space:]]*attributes[[:space:]]*\{[^}]*\}//g' > $@.tmp \
 		|| (rm -f $@.tmp && exit 1)
 	mv $@.tmp $@
 
+# Compile MLIR/scf to CIRCT/Handshake
 %.circt.handshake.mlir: %.circt.scf.mlir
 	$(HLSTOOL) $< \
 		--ir --output-level=core \
@@ -96,6 +106,7 @@ build: $(WAVELET) $(HLSTOOL)
 		> $@.tmp || (rm -f $@.tmp && exit 1)
 	mv $@.tmp $@
 
+# Compile MLIR/scf to SystemVerilog
 %.circt.sv: %.circt.scf.mlir
 	$(HLSTOOL) $< \
 		--verilog \
@@ -106,6 +117,10 @@ build: $(WAVELET) $(HLSTOOL)
 		--verbose-pass-executions \
 		> $@.tmp || (rm -f $@.tmp && exit 1)
 	mv $@.tmp $@
+
+######################
+# End-to-end testing #
+######################
 
 .venv/bin/activate: requirements.txt
 	python3 -m venv .venv
@@ -119,7 +134,15 @@ test-wavelet-%: .venv/bin/activate tests/%/test.wavelet.sv
 		tests/$*/test.wavelet.sv \
 		tests/$*/test.py \
 		--interface wavelet \
-		--top top
+		--top top 2>&1 | tee tests/$*/test.wavelet.log
+
+# Test Wavelet-generated design, but using high-level dataflow simulation
+.PHONY: test-wavelet-sim-%
+test-wavelet-sim-%: .venv/bin/activate tests/%/test.wavelet.json
+	@. .venv/bin/activate && python3 -m sim \
+		tests/$*/test.wavelet.json \
+		tests/$*/test.py \
+		--interface wavelet-sim 2>&1 | tee tests/$*/test.wavelet-sim.log
 
 # Test Polygeist-CIRCT-generated design
 .PHONY: test-circt-%
@@ -129,12 +152,9 @@ test-circt-%: .venv/bin/activate tests/%/test.circt.sv
 		tests/$*/test.circt.sv \
 		tests/$*/test.py \
 		--interface circt \
-		--top $*
+		--top $* 2>&1 | tee tests/$*/test.circt.log
 
-.PHONY: tests
-tests: wavelet-tests
-
-# Run equivalence tests using the selected pipline (wavelet/circt)
+# Run all available tests for a given pipeline
 .PHONY: %-tests
 %-tests:
 	@if [ "$*" != "wavelet" ] && [ "$*" != "circt" ]; then \
@@ -146,7 +166,7 @@ tests: wavelet-tests
 	@PASS=0; FAIL=0; \
 	for name in $(TEST_NAMES); do \
 		printf "$$name ..."; \
-		if $(MAKE) test-$*-$$name > tests/$$name/test.$*.log 2>&1; then \
+		if $(MAKE) test-$*-$$name > /dev/null 2>&1; then \
 			echo " PASS"; \
 			PASS=$$((PASS + 1)); \
 		else \
@@ -164,10 +184,9 @@ tests: wavelet-tests
 
 .PHONY: clean
 clean:
-	rm -rf tests/*/*.sv \
-		tests/*/*.wavelet.handshake.mlir \
+	rm -rf \
+		sim_build \
+		tests/*/*.sv \
+		tests/*/*.mlir \
 		tests/*/*.wavelet.json \
-		tests/*/cocotb.makefile \
-		tests/*/results.xml \
-		tests/*/sim_build \
 		tests/*/*.log
