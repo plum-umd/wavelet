@@ -1,6 +1,8 @@
 MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 REPO_DIR := $(abspath $(MAKEFILE_DIR)/..)
 WAVELET := $(REPO_DIR)/target/debug/wavelet
+CGEIST := $(REPO_DIR)/integration-tests/build/polygeist/bin/cgeist
+HLSTOOL := $(REPO_DIR)/integration-tests/build/circt/bin/hlstool
 
 TEST_NAMES := $(basename $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/test.rs)))))
 
@@ -23,7 +25,7 @@ build/circt/Makefile: circt
 		-DLLVM_PARALLEL_LINK_JOBS=1
 
 # Build CIRCT/hlstool
-build/circt/bin/hlstool: build/circt/Makefile
+$(HLSTOOL): build/circt/Makefile
 	cmake --build build/circt --target hlstool --parallel
 
 # Polygeist uses an older version of LLVM, so unfortunately
@@ -56,29 +58,53 @@ $(WAVELET): $(REPO_DIR)/wavelet $(REPO_DIR)/wavelet-core $(REPO_DIR)/wavelet-ela
 	cd $(REPO_DIR) && cargo build
 
 .PHONY: build
-build: $(WAVELET) build/circt/bin/hlstool
+build: $(WAVELET) $(HLSTOOL)
 
-%.dfg.json: %.rs
+%.wavelet.json: %.rs
 	$(WAVELET) compile $< -o $@
 
 # Compile tests from Wavelet/Rust to CIRCT/Handshake
-%.handshake.mlir: %.dfg.json
+%.wavelet.handshake.mlir: %.wavelet.json
 	$(WAVELET) handshake $< -o $@
 
 # Compile CIRCT/Handshake to SystemVerilog
-%.wavelet.sv: %.handshake.mlir
-	build/circt/bin/hlstool $< \
+%.wavelet.sv: %.wavelet.handshake.mlir
+	$(HLSTOOL) $< \
+		--verilog \
 		--dynamic-hw \
 		--buffering-strategy=all \
-		--verilog \
 		--lowering-options=disallowLocalVariables \
 		--verify-each \
 		--verbose-pass-executions \
 		> $@.tmp || (rm -f $@.tmp && exit 1)
 	mv $@.tmp $@
 
-%.circt.sv: %.c
-	scripts/cgeist-hls.sh $< > $@.tmp || (rm -f $@.tmp && exit 1)
+%.circt.scf.mlir: %.c
+	build/polygeist/bin/cgeist -O3 --memref-fullrank -S $< | \
+		sed -E 's/[[:space:]]*attributes[[:space:]]*\{[^}]*\}//g' > $@.tmp \
+		|| (rm -f $@.tmp && exit 1)
+	mv $@.tmp $@
+
+%.circt.handshake.mlir: %.circt.scf.mlir
+	$(HLSTOOL) $< \
+		--ir --output-level=core \
+		--dynamic-hw \
+		--buffering-strategy=all \
+		--lowering-options=disallowLocalVariables \
+		--verify-each \
+		--verbose-pass-executions \
+		> $@.tmp || (rm -f $@.tmp && exit 1)
+	mv $@.tmp $@
+
+%.circt.sv: %.circt.scf.mlir
+	$(HLSTOOL) $< \
+		--verilog \
+		--dynamic-hw \
+		--buffering-strategy=all \
+		--lowering-options=disallowLocalVariables \
+		--verify-each \
+		--verbose-pass-executions \
+		> $@.tmp || (rm -f $@.tmp && exit 1)
 	mv $@.tmp $@
 
 .venv/bin/activate: requirements.txt
@@ -91,7 +117,7 @@ test-wavelet-%: .venv/bin/activate tests/%/test.wavelet.sv
 	@echo "NOTE: use ctrl + \ to interrupt."
 	@. .venv/bin/activate && python3 -m sim \
 		tests/$*/test.wavelet.sv \
-		--test tests/$*/test.py \
+		tests/$*/test.py \
 		--interface wavelet \
 		--top top
 
@@ -101,7 +127,7 @@ test-circt-%: .venv/bin/activate tests/%/test.circt.sv
 	@echo "NOTE: use ctrl + \ to interrupt."
 	@. .venv/bin/activate && python3 -m sim \
 		tests/$*/test.circt.sv \
-		--test tests/$*/test.py \
+		tests/$*/test.py \
 		--interface circt \
 		--top $*
 
@@ -139,8 +165,8 @@ tests: wavelet-tests
 .PHONY: clean
 clean:
 	rm -rf tests/*/*.sv \
-		tests/*/*.handshake.mlir \
-		tests/*/*.dfg.json \
+		tests/*/*.wavelet.handshake.mlir \
+		tests/*/*.wavelet.json \
 		tests/*/cocotb.makefile \
 		tests/*/results.xml \
 		tests/*/sim_build \

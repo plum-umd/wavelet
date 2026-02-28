@@ -4,10 +4,10 @@ __pycache__/
 *.py[codz]
 
 *.sv
-*.handshake.mlir
+*.mlir
 *.makefile
 *.log
-*.dfg.json
+*.wavelet.json
 
 # cocotb artifacts
 results.xml
