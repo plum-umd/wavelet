@@ -27,7 +27,7 @@ fi
 
 "$cgeist" -O3 --memref-fullrank -S "$@" | \
     sed -E 's/[[:space:]]*attributes[[:space:]]*\{[^}]*\}//g' | \
-    build/circt/bin/hlstool \
+    "$hlstool" \
         --verilog \
         --dynamic-hw \
         --buffering-strategy=all \
