@@ -658,7 +658,7 @@ def Proc.rewriteProc
   (proc : RipTide.Proc)
   (disabledRules : List String := []) :
   Nat × RewriteStats × RipTide.Proc :=
-  let (numRws, stats, rewritten) := Rewrite.applyUntilFailNat
+  let (numRws, stats, rewritten) := Rewrite.applyUntilFail
     renameRewriteName rules proc.inner.proc disabledRules
   (numRws, stats, { proc with inner := .fromProc rewritten })
 
