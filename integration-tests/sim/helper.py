@@ -156,7 +156,9 @@ def sim_wavelet(f, tests: list[list[InputArg]]):
             for arg in test if arg.is_array()
         ]
         args = [
-            "exec", str(design_path),
+            "exec",
+            "--no-bound",
+            str(design_path),
             "--args", ",".join(scalar_inputs),
         ] + sum(mem_flags, [])
 

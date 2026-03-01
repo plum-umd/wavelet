@@ -157,7 +157,9 @@ test-circt-%: .venv/bin/activate tests/%/test.circt.sv
 # Run all available tests for a given pipeline
 .PHONY: %-tests
 %-tests:
-	@if [ "$*" != "wavelet" ] && [ "$*" != "circt" ]; then \
+	@if [ "$*" != "wavelet" ] && \
+		[ "$*" != "wavelet-sim" ] && \
+		[ "$*" != "circt" ]; then \
 		echo "unknown pipeline: $*"; \
 		exit 1; \
 	fi

@@ -40,6 +40,8 @@ jobs:
       - run: cargo build
       - run: make tests
         working-directory: integration-tests
+      - run: make wavelet-sim-tests
+        working-directory: integration-tests
   check-proofs:
     runs-on: ubuntu-latest
     steps:
