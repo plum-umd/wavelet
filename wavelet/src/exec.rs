@@ -19,6 +19,10 @@ pub struct ExecArgs {
     /// Initializes a memory with the given array of values ("MEM=V1,V2,...")
     #[arg(long, num_args = 0..)]
     mem: Vec<String>,
+
+    /// Do not report intemediate steps, and keep executing until termination.
+    #[arg(long)]
+    no_bound: bool,
 }
 
 #[derive(Debug, Error)]
@@ -90,7 +94,7 @@ impl ExecArgs {
         let mut cycles = 0;
         let mut fired = 0;
         loop {
-            let trace = config.eager_steps(Some(10))?;
+            let trace = config.eager_steps(if self.no_bound { None } else { Some(10) })?;
             if trace.is_empty() {
                 break;
             }
