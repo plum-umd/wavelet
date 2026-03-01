@@ -16,7 +16,7 @@ inductive RewriteName (χ : Type u) where
   | base (_ : χ)
   | rw (_ : RewriteName χ)
   | rename (_ : Nat) (_ : RewriteName χ)
-  deriving Repr, Hashable, DecidableEq, Lean.ToJson, Lean.FromJson
+  deriving Repr, DecidableEq, Hashable, Lean.ToJson, Lean.FromJson
 
 structure RewriteState Op χ V [Arity Op] [DecidableEq χ] [Hashable χ] where
   aps : AtomicProcs Op (RewriteName χ) V

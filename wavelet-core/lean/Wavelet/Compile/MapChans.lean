@@ -1,3 +1,4 @@
+import Wavelet.Data.Basic
 import Wavelet.Dataflow.Proc
 
 /-! Renaming channels of a `Proc`/`AtomicProc`. -/
@@ -21,21 +22,23 @@ def Proc.mapChans [Arity Op] (f : χ → χ') (p : Proc Op χ V m n) : Proc Op �
     atoms := p.atoms.mapChans f,
   }
 
-abbrev RenameM χ := StateM (List χ)
+abbrev RenameM χ [DecidableEq χ] [Hashable χ] := StateM (Std.HashMap χ Nat)
 
 /-- Gets the corresponding index of a name, or creates a new index. -/
-def RenameM.mapName [DecidableEq χ]
+def RenameM.mapName
+  [DecidableEq χ] [Hashable χ]
   (renamer : Nat → χ → χ')
   (name : χ) : RenameM χ χ' := do
   let names ← get
-  match names.findIdx? (· = name) with
+  match names.get? name with
   | some idx => return renamer idx name
   | none =>
-    set (names ++ [name])
-    return renamer names.length name
+    let idx := names.size
+    set (names.insert name idx)
+    return renamer idx name
 
 def AtomicProc.renameChansM
-  [Arity Op] [DecidableEq χ]
+  [Arity Op] [DecidableEq χ] [Hashable χ]
   (renamer : Nat → χ → χ')
   : AtomicProc Op χ V → RenameM χ (AtomicProc Op χ' V)
   | .op o inputs outputs => do
@@ -48,13 +51,13 @@ def AtomicProc.renameChansM
     return .async aop inputs outputs
 
 def AtomicProcs.renameChansM
-  [Arity Op] [DecidableEq χ]
+  [Arity Op] [DecidableEq χ] [Hashable χ]
   (renamer : Nat → χ → χ')
   : AtomicProcs Op χ V → RenameM χ (AtomicProcs Op χ' V)
   := List.mapM (AtomicProc.renameChansM renamer)
 
 def Proc.renameChansM
-  [Arity Op] [DecidableEq χ]
+  [Arity Op] [DecidableEq χ] [Hashable χ]
   (renamer : Nat → χ → χ')
   (p : Proc Op χ V m n) : RenameM χ (Proc Op χ' V m n) :=
   return {
@@ -65,9 +68,9 @@ def Proc.renameChansM
 
 /-- Rename channels in a `Proc` to unique `Nat`s. -/
 def Proc.renameChans
-  [Arity Op] [DecidableEq χ]
+  [Arity Op] [DecidableEq χ] [Hashable χ]
   (renamer : Nat → χ → χ')
   (p : Proc Op χ V m n) : Proc Op χ' V m n :=
-  (Proc.renameChansM renamer p).run' []
+  (Proc.renameChansM renamer p).run' {}
 
 end Wavelet.Dataflow

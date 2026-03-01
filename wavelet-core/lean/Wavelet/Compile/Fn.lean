@@ -27,7 +27,7 @@ inductive ChanName (χ : Type u) where
   -- Only sent during the final steers
   | final_dest (i : Nat)
   | final_tail_arg (i : Nat)
-  deriving Repr, Lean.ToJson, Lean.FromJson
+  deriving Repr, Hashable, Lean.ToJson, Lean.FromJson
 
 mutual
 
