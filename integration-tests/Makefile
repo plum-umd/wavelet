@@ -144,6 +144,14 @@ test-wavelet-sim-%: .venv/bin/activate tests/%/test.wavelet.json
 		tests/$*/test.py \
 		--interface wavelet-sim 2>&1 | tee tests/$*/test.wavelet-sim.log
 
+# Test RipTide-compiled design using dataflow simulation
+.PHONY: test-riptide-sim-%
+test-riptide-sim-%: .venv/bin/activate tests/%/test.riptide.json
+	@. .venv/bin/activate && python3 -m sim \
+		tests/$*/test.riptide.json \
+		tests/$*/test.py \
+		--interface riptide-sim 2>&1 | tee tests/$*/test.riptide-sim.log
+
 # Test Polygeist-CIRCT-generated design
 .PHONY: test-circt-%
 test-circt-%: .venv/bin/activate tests/%/test.circt.sv
@@ -159,6 +167,7 @@ test-circt-%: .venv/bin/activate tests/%/test.circt.sv
 %-tests:
 	@if [ "$*" != "wavelet" ] && \
 		[ "$*" != "wavelet-sim" ] && \
+		[ "$*" != "riptide-sim" ] && \
 		[ "$*" != "circt" ]; then \
 		echo "unknown pipeline: $*"; \
 		exit 1; \

@@ -64,6 +64,22 @@ def sim_wavelet(args):
     with open(test_path) as f:
         exec(f.read())
     
+def sim_riptide(args):
+    """Run high-level simulation on a compiled RipTide dataflow graph."""
+
+    design_path = Path(args.design).resolve()
+    assert design_path.suffix == ".json", f"expected a RipTide dataflow graph in JSON format, but got {args.design}"
+
+    os.environ["DUT_INTERFACE"] = "riptide-sim"
+    os.environ["DUT_DESIGN"] = str(design_path)
+
+    # Execute the test Python file
+    test_path = Path(args.reference).resolve()
+    assert test_path.suffix == ".py", f"expected a Python source file for the reference implementation, but got {args.reference}"
+
+    with open(test_path) as f:
+        exec(f.read())
+
 def main():
     parser = argparse.ArgumentParser(description="Run tests on the compiled design.")
     parser.add_argument("design", help="Path to the compiled SystemVerilog design or Wavelet dataflow graph.")
@@ -75,6 +91,8 @@ def main():
 
     if args.interface == "wavelet-sim":
         sim_wavelet(args)
+    elif args.interface == "riptide-sim":
+        sim_riptide(args)
     else:
         sim_verilog(args)
 

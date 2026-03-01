@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import os
 import re
 import sys
+import json
 import inspect
 import subprocess
 import cocotb
@@ -17,6 +18,7 @@ from pathlib import Path
 from .wavelet import WaveletDut
 from .circt import CirctDut
 from .common import MemoryState
+from .riptide import run as riptide_run
 
 @dataclass
 class InputArg:
@@ -215,6 +217,48 @@ def sim_wavelet(f, tests: list[list[InputArg]]):
 
     print(f"total cycles: {total_cycles}", file=sys.stderr, flush=True)
 
+def sim_riptide(f, tests: list[list[InputArg]]):
+    design_path = os.environ.get("DUT_DESIGN")
+    assert design_path is not None, "DUT_DESIGN environment variable is not set"
+    design_path = Path(design_path).resolve()
+    assert design_path.exists(), f"DUT design not found at {design_path}"
+
+    with open(design_path) as fp:
+        graph_json = json.load(fp)
+
+    # Build a positional mapping from Python param names to JSON arg names,
+    # since the two may differ in casing (e.g. Python "M" vs JSON "m").
+    json_args = graph_json["function"]["args"]
+    assert len(json_args) == len(tests[0]), \
+        f"JSON function has {len(json_args)} args but test has {len(tests[0])} params"
+    py_to_json = {arg.param: json_args[i]["name"] for i, arg in enumerate(tests[0])}
+    total_cycles = 0
+
+    for test in tests:
+        scalar_args = {py_to_json[arg.param]: arg.value for arg in test if not arg.is_array()}
+        mem_arrays = {py_to_json[arg.param]: arg.value for arg in test if arg.is_array()}
+
+        scalar_desc = ', '.join(f"{k}={v}" for k, v in scalar_args.items())
+        print(f"test vector ({scalar_desc}) ... ", file=sys.stderr, flush=True, end="")
+
+        memories, cycles = riptide_run(graph_json, scalar_args, mem_arrays)
+        total_cycles += cycles
+        print(f"finished in {cycles} cycles", file=sys.stderr, flush=True)
+
+        # Compare with reference
+        _, py_mems = run_python_ref(f, test)
+
+        array_params = [arg.param for arg in test if arg.is_array()]
+        assert len(py_mems) == len(array_params)
+        for py_mem, name in zip(py_mems, array_params):
+            json_name = py_to_json[name]
+            dut_mem = memories.get(json_name, [])
+            py_mem_list = py_mem.value.to_list()
+            assert dut_mem == py_mem_list, \
+                f"memory mismatch for array output {name}: got {dut_mem}, expected {py_mem_list}"
+
+    print(f"total cycles: {total_cycles}", file=sys.stderr, flush=True)
+
 def reference(*tests: tuple[None | int | list[int], ...]):
     """
     A decorator wrapper around `cocotb.test` to test the functional equivalence between
@@ -232,6 +276,10 @@ def reference(*tests: tuple[None | int | list[int], ...]):
     def decorator(f):
         nonlocal tests
         tests = parse_input_args(f, tests)
+
+        if os.environ.get("DUT_INTERFACE") == "riptide-sim":
+            sim_riptide(f, tests)
+            return f
 
         if os.environ.get("DUT_INTERFACE") == "wavelet-sim":
             # Use high-level Wavelet dataflow simulation instead of using cocotb
