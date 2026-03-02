@@ -8,6 +8,16 @@ namespace Wavelet.Dataflow
 
 open Semantics
 
+/-- Marks some operators as "trivial" for more realistic cycle counts and graph sizes. -/
+def AtomicProc.isTrivial [Arity Op] : AtomicProc Op χ V → Bool
+  | .async (AsyncOp.fork ..) ..
+  | .async (AsyncOp.forward ..) ..
+  | .async (AsyncOp.forwardc ..) ..
+  | .async (AsyncOp.inact ..) ..
+  | .async (AsyncOp.const ..) ..
+  | .async (AsyncOp.sink ..) .. => false
+  | _ => true
+
 /-- More performant replacement for `ChanMap` only for the interpreter. -/
 private abbrev ChanMapImpl χ V [DecidableEq χ] [Hashable χ] := Std.HashMap χ (List V)
 
@@ -210,16 +220,35 @@ private def stepAtom (idx : Nat) (c : ConfigImpl Op χ V m n)
       })
   | _ => failure
 
-private def eagerStep (c : ConfigImpl Op χ V m n)
-  : M (Array (Nat × Label Op V m n) × ConfigImpl Op χ V m n) :=
-  let fireable := (Array.range c.atoms.size).filter
-    λ idx => (c.stepAtom (M := M) idx).isSome
+private def eagerStep
+  (c : ConfigImpl Op χ V m n)
+  (filter : AtomicProc Op χ V → Bool := λ _ => true) :
+    M (Array (Nat × Label Op V m n) × ConfigImpl Op χ V m n)
+  :=
+  let fireable := (Array.finRange c.atoms.size).filter
+    λ idx : Fin _ =>
+      filter c.atoms[idx] &&
+      (c.stepAtom (M := M) idx).isSome
   fireable.foldlM
     (init := (#[], c))
-    λ (trace, c) idx =>
+    λ (trace, c) (idx : Fin _) =>
       match c.stepAtom (M := M) idx with
       | some m => do let (label, c') ← m; return (trace.push (idx, label), c')
       | none => pure (trace, c)
+
+private partial def eagerNonTrivialStep
+  (c : ConfigImpl Op χ V m n) :
+    M (Array (Nat × Label Op V m n) × ConfigImpl Op χ V m n)
+  := do
+  let (tr, c') ← eagerStep c
+  fireAllTrivialStep tr c'
+  where
+    fireAllTrivialStep tr c := do
+      let (tr', c') ← eagerStep c (·.isTrivial)
+      if tr'.isEmpty then
+        return (tr ++ tr', c)
+      else
+        fireAllTrivialStep (tr ++ tr') c'
 
 /-- Performs at most `bound` eager steps or until termination. -/
 private partial def eagerSteps
@@ -232,6 +261,21 @@ private partial def eagerSteps
   if tr.isEmpty then
     return ([], c)
   let (tail, c'') ← eagerSteps (Nat.pred <$> bound) c'
+  return (tr.toList :: tail, c'')
+
+/-- Performs at most `bound` eager steps or until termination,
+at each step, trivial operators like fork/const are fired repeatedly
+until no trivial operators are fireable any more. -/
+private partial def eagerNonTrivialSteps
+  (bound : Option Nat := none)
+  (c : ConfigImpl Op χ V m n) :
+    M (List (List (Nat × Label Op V m n)) × ConfigImpl Op χ V m n) := do
+  if let some 0 := bound then
+    return ([], c)
+  let (tr, c') ← c.eagerNonTrivialStep (M := M)
+  if tr.isEmpty then
+    return ([], c)
+  let (tail, c'') ← eagerNonTrivialSteps (Nat.pred <$> bound) c'
   return (tr.toList :: tail, c'')
 
 end ConfigImpl
@@ -262,6 +306,15 @@ def Config.eagerSteps
   (c : Config Op χ V m n) :
     M (List (List (Nat × Label Op V m n)) × Config Op χ V m n) := do
   let (trace, c') ← (ConfigImpl.fromConfig c).eagerSteps (M := M) bound
+  return (trace, c'.toConfig)
+
+/-- Similar to `Config.eagerSteps`, but one step is considered to include
+firing of all available operators *followed by* any trivial operators. -/
+def Config.eagerNonTrivialSteps
+  (bound : Option Nat := none)
+  (c : Config Op χ V m n) :
+    M (List (List (Nat × Label Op V m n)) × Config Op χ V m n) := do
+  let (trace, c') ← (ConfigImpl.fromConfig c).eagerNonTrivialSteps (M := M) bound
   return (trace, c'.toConfig)
 
 end Wavelet.Dataflow

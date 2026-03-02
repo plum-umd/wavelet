@@ -827,11 +827,19 @@ def Config.popOutputs
 
 /-- Eagerly fires all fireable operators for `bound` steps (if specified),
 or until termination. -/
-partial def Config.eagerSteps
+def Config.eagerSteps
   (bound : Option Nat := none)
   (c : Config) :
     Except String (List (List Label) × Config) := do
   let ((tr, config'), state') ← (c.config.eagerSteps (M := SemM) bound).run c.state
+  let tr := tr.map (λ labels => labels.map λ (idx, label) => .mk _ _ idx label)
+  return (tr, { c with config := config', state := state' })
+
+def Config.eagerNonTrivialSteps
+  (bound : Option Nat := none)
+  (c : Config) :
+    Except String (List (List Label) × Config) := do
+  let ((tr, config'), state') ← (c.config.eagerNonTrivialSteps (M := SemM) bound).run c.state
   let tr := tr.map (λ labels => labels.map λ (idx, label) => .mk _ _ idx label)
   return (tr, { c with config := config', state := state' })
 

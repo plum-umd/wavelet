@@ -160,6 +160,7 @@ def sim_wavelet(f, tests: list[list[InputArg]]):
         args = [
             "exec",
             "--no-bound",
+            "--mod-trivial",
             str(design_path),
             "--args", ",".join(scalar_inputs),
         ] + sum(mem_flags, [])

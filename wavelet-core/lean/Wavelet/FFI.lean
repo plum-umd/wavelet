@@ -1,5 +1,6 @@
 import Wavelet.Frontend.RipTide
 import Wavelet.Backend.Handshake
+import Wavelet.Dataflow.Interpreter
 
 /-! Foreign interfaces for using Wavelet as a library. -/
 
@@ -56,14 +57,7 @@ def FFI.procNumAtoms (proc : RipTide.Proc) : USize :=
 def FFI.procNumNonTrivialAtoms (proc : RipTide.Proc) : USize :=
   USize.ofNat <|
     (proc.inner.proc.atoms
-    |>.filter (λ
-      | .async (AsyncOp.fork ..) ..
-      | .async (AsyncOp.forward ..) ..
-      | .async (AsyncOp.forwardc ..) ..
-      | .async (AsyncOp.inact ..) ..
-      | .async (AsyncOp.const ..) ..
-      | .async (AsyncOp.sink ..) .. => false
-      | _ => true)
+    |>.filter AtomicProc.isTrivial
     |>.length)
 
 /-- Returns the number of inputs. -/
@@ -195,6 +189,12 @@ or until termination. -/
 def FFI.configEagerSteps
   (c : Config) (bound : Option USize) : Except String (Array (Array Label) × Config) := do
   let (trace, c') ← c.eagerSteps (bound.map USize.toNat)
+  return ((trace.map List.toArray).toArray, c')
+
+@[export wavelet_riptide_config_eager_non_trivial_steps]
+def FFI.configEagerNonTrivialSteps
+  (c : Config) (bound : Option USize) : Except String (Array (Array Label) × Config) := do
+  let (trace, c') ← c.eagerNonTrivialSteps (bound.map USize.toNat)
   return ((trace.map List.toArray).toArray, c')
 
 @[export wavelet_riptide_label_index]

@@ -23,6 +23,10 @@ pub struct ExecArgs {
     /// Do not report intemediate steps, and keep executing until termination.
     #[arg(long)]
     no_bound: bool,
+
+    /// Do not count trivial operators towards the final step count.
+    #[arg(long)]
+    mod_trivial: bool,
 }
 
 #[derive(Debug, Error)]
@@ -93,8 +97,13 @@ impl ExecArgs {
         let mut progress = utils::TaskSpinner::new("executing")?;
         let mut cycles = 0;
         let mut fired = 0;
+        let bound = if self.no_bound { None } else { Some(10) };
         loop {
-            let trace = config.eager_steps(if self.no_bound { None } else { Some(10) })?;
+            let trace = if self.mod_trivial {
+                config.eager_non_trivial_steps(bound)?
+            } else {
+                config.eager_steps(bound)?
+            };
             if trace.is_empty() {
                 break;
             }
