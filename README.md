@@ -22,3 +22,13 @@ cd wavelet-core/lean
 lake exec cache get
 lake build Thm
 ```
+
+## Notes on LLM use
+
+While the initial stage of this project (the first ~450 commits) was done manually, we have started using AI-based coding assistants in our workflow.
+
+All commits that were primarily authored by a coding assistant (under human guidance) are marked with prefixes such as `[claude]`; for PRs that are squashed into one commit, these prefixes can be found in the specific pull request page.
+
+So far, the use of LLM has been limited to:
+- Integration test harnesses
+- GitHub Actions
