@@ -1,14 +1,20 @@
 MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 REPO_DIR := $(abspath $(MAKEFILE_DIR)/..)
-WAVELET := $(REPO_DIR)/target/debug/wavelet
+WAVELET := $(REPO_DIR)/target/release/wavelet
+CGEIST := $(REPO_DIR)/integration-tests/build/polygeist/bin/cgeist
+HLSTOOL := $(REPO_DIR)/integration-tests/build/circt/bin/hlstool
 
 TEST_NAMES := $(basename $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/test.rs)))))
 
 .PHONY: default
-default: tests
+default: wavelet-tests
 
 # Do not delete intermediate files
 .SECONDARY:
+
+#################################
+# Rules to build required tools #
+#################################
 
 build/circt/Makefile: circt
 	mkdir -p build/circt
@@ -23,7 +29,7 @@ build/circt/Makefile: circt
 		-DLLVM_PARALLEL_LINK_JOBS=1
 
 # Build CIRCT/hlstool
-build/circt/bin/hlstool: build/circt/Makefile
+$(HLSTOOL): build/circt/Makefile
 	cmake --build build/circt --target hlstool --parallel
 
 # Polygeist uses an older version of LLVM, so unfortunately
@@ -53,33 +59,85 @@ dynamatic/bin/dynamatic:
 
 # Build Wavelet
 $(WAVELET): $(REPO_DIR)/wavelet $(REPO_DIR)/wavelet-core $(REPO_DIR)/wavelet-elab
-	cd $(REPO_DIR) && cargo build
+	cd $(REPO_DIR) && cargo build --release
 
 .PHONY: build
-build: $(WAVELET) build/circt/bin/hlstool
+build: $(WAVELET) $(HLSTOOL)
 
-%.dfg.json: %.rs
-	$(WAVELET) compile $< -o $@
+#################################
+# Various compilation pipelines #
+#################################
+
+%.wavelet.json: %.rs
+	$(WAVELET) compile $< -o $@ 2>&1 | tee $@.log
+
+%.wavelet-noopt.json: %.rs
+	$(WAVELET) compile $< --no-opt -o $@ 2>&1 | tee $@.log
 
 # Compile tests from Wavelet/Rust to CIRCT/Handshake
-%.handshake.mlir: %.dfg.json
+%.wavelet.handshake.mlir: %.wavelet.json
+	$(WAVELET) handshake $< -o $@
+
+%.wavelet-noopt.handshake.mlir: %.wavelet-noopt.json
 	$(WAVELET) handshake $< -o $@
 
 # Compile CIRCT/Handshake to SystemVerilog
-%.wavelet.sv: %.handshake.mlir
-	build/circt/bin/hlstool $< \
+%.wavelet.sv: %.wavelet.handshake.mlir
+	$(HLSTOOL) $< \
+		--verilog \
 		--dynamic-hw \
 		--buffering-strategy=all \
-		--verilog \
 		--lowering-options=disallowLocalVariables \
 		--verify-each \
 		--verbose-pass-executions \
 		> $@.tmp || (rm -f $@.tmp && exit 1)
 	mv $@.tmp $@
 
-%.circt.sv: %.c
-	scripts/cgeist-hls.sh $< > $@.tmp || (rm -f $@.tmp && exit 1)
+%.wavelet-noopt.sv: %.wavelet-noopt.handshake.mlir
+	$(HLSTOOL) $< \
+		--verilog \
+		--dynamic-hw \
+		--buffering-strategy=all \
+		--lowering-options=disallowLocalVariables \
+		--verify-each \
+		--verbose-pass-executions \
+		> $@.tmp || (rm -f $@.tmp && exit 1)
 	mv $@.tmp $@
+
+# Compile C to MLIR/scf through Polygeist
+%.circt.scf.mlir: %.c
+	build/polygeist/bin/cgeist -O3 --memref-fullrank -S $< | \
+		sed -E 's/[[:space:]]*attributes[[:space:]]*\{[^}]*\}//g' > $@.tmp \
+		|| (rm -f $@.tmp && exit 1)
+	mv $@.tmp $@
+
+# Compile MLIR/scf to CIRCT/Handshake
+%.circt.handshake.mlir: %.circt.scf.mlir
+	$(HLSTOOL) $< \
+		--ir --output-level=core \
+		--dynamic-hw \
+		--buffering-strategy=all \
+		--lowering-options=disallowLocalVariables \
+		--verify-each \
+		--verbose-pass-executions \
+		> $@.tmp || (rm -f $@.tmp && exit 1)
+	mv $@.tmp $@
+
+# Compile MLIR/scf to SystemVerilog
+%.circt.sv: %.circt.scf.mlir
+	$(HLSTOOL) $< \
+		--verilog \
+		--dynamic-hw \
+		--buffering-strategy=all \
+		--lowering-options=disallowLocalVariables \
+		--verify-each \
+		--verbose-pass-executions \
+		> $@.tmp || (rm -f $@.tmp && exit 1)
+	mv $@.tmp $@
+
+######################
+# End-to-end testing #
+######################
 
 .venv/bin/activate: requirements.txt
 	python3 -m venv .venv
@@ -89,29 +147,80 @@ build: $(WAVELET) build/circt/bin/hlstool
 .PHONY: test-wavelet-%
 test-wavelet-%: .venv/bin/activate tests/%/test.wavelet.sv
 	@echo "NOTE: use ctrl + \ to interrupt."
-	@. .venv/bin/activate && python3 -m sim \
+	@set -eu -o pipefail; \
+	. .venv/bin/activate && python3 -m sim \
 		tests/$*/test.wavelet.sv \
-		--test tests/$*/test.py \
+		tests/$*/test.py \
 		--interface wavelet \
-		--top top
+		--top top 2>&1 | tee tests/$*/test.wavelet.log
+
+# Test Wavelet-generated design (without optimizations)
+.PHONY: test-wavelet-noopt-%
+test-wavelet-noopt-%: .venv/bin/activate tests/%/test.wavelet-noopt.sv
+	@echo "NOTE: use ctrl + \ to interrupt."
+	@set -eu -o pipefail; \
+	. .venv/bin/activate && python3 -m sim \
+		tests/$*/test.wavelet-noopt.sv \
+		tests/$*/test.py \
+		--interface wavelet \
+		--top top 2>&1 | tee tests/$*/test.wavelet-noopt.log
 
 # Test Polygeist-CIRCT-generated design
 .PHONY: test-circt-%
 test-circt-%: .venv/bin/activate tests/%/test.circt.sv
 	@echo "NOTE: use ctrl + \ to interrupt."
-	@. .venv/bin/activate && python3 -m sim \
+	@set -eu -o pipefail; \
+	. .venv/bin/activate && python3 -m sim \
 		tests/$*/test.circt.sv \
-		--test tests/$*/test.py \
+		tests/$*/test.py \
 		--interface circt \
-		--top $*
+		--top $* 2>&1 | tee tests/$*/test.circt.log
 
-.PHONY: tests
-tests: wavelet-tests
+# Test Wavelet-generated design, but using high-level dataflow simulation
+.PHONY: test-wavelet-sim-%
+test-wavelet-sim-%: .venv/bin/activate tests/%/test.wavelet.json
+	@set -eu -o pipefail; \
+	. .venv/bin/activate && python3 -m sim \
+		tests/$*/test.wavelet.json \
+		tests/$*/test.py \
+		--interface wavelet-sim 2>&1 | tee tests/$*/test.wavelet-sim.log
 
-# Run equivalence tests using the selected pipline (wavelet/circt)
+# Test (unoptimized) Wavelet-generated design, but using high-level dataflow simulation
+.PHONY: test-wavelet-noopt-sim-%
+test-wavelet-noopt-sim-%: .venv/bin/activate tests/%/test.wavelet-noopt.json
+	@set -eu -o pipefail; \
+	. .venv/bin/activate && python3 -m sim \
+		tests/$*/test.wavelet-noopt.json \
+		tests/$*/test.py \
+		--interface wavelet-sim 2>&1 | tee tests/$*/test.wavelet-noopt-sim.log
+
+# Test RipTide-compiled design using high-level dataflow simulation
+.PHONY: test-riptide-sim-%
+test-riptide-sim-%: .venv/bin/activate tests/%/test.riptide.json
+	@set -eu -o pipefail; \
+	. .venv/bin/activate && python3 -m sim \
+		tests/$*/test.riptide.json \
+		tests/$*/test.py \
+		--interface riptide-sim 2>&1 | tee tests/$*/test.riptide-sim.log
+
+# Test RipTide-compiled design (no-stream version) using high-level dataflow simulation
+.PHONY: test-riptide-sim-%
+test-riptide-sim-nostream-%: .venv/bin/activate tests/%/test.riptide.nostream.json
+	@set -eu -o pipefail; \
+	. .venv/bin/activate && python3 -m sim \
+		tests/$*/test.riptide.nostream.json \
+		tests/$*/test.py \
+		--interface riptide-sim 2>&1 | tee tests/$*/test.riptide-sim.nostream.log
+
+# Run all available tests for a given pipeline
 .PHONY: %-tests
 %-tests:
-	@if [ "$*" != "wavelet" ] && [ "$*" != "circt" ]; then \
+	@if [ "$*" != "wavelet" ] && \
+		[ "$*" != "wavelet-noopt" ] && \
+		[ "$*" != "wavelet-sim" ] && \
+		[ "$*" != "wavelet-noopt-sim" ] && \
+		[ "$*" != "riptide-sim" ] && \
+		[ "$*" != "circt" ]; then \
 		echo "unknown pipeline: $*"; \
 		exit 1; \
 	fi
@@ -120,7 +229,7 @@ tests: wavelet-tests
 	@PASS=0; FAIL=0; \
 	for name in $(TEST_NAMES); do \
 		printf "$$name ..."; \
-		if $(MAKE) test-$*-$$name > tests/$$name/test.$*.log 2>&1; then \
+		if $(MAKE) test-$*-$$name > /dev/null 2>&1; then \
 			echo " PASS"; \
 			PASS=$$((PASS + 1)); \
 		else \
@@ -138,10 +247,10 @@ tests: wavelet-tests
 
 .PHONY: clean
 clean:
-	rm -rf tests/*/*.sv \
-		tests/*/*.handshake.mlir \
-		tests/*/*.dfg.json \
-		tests/*/cocotb.makefile \
-		tests/*/results.xml \
-		tests/*/sim_build \
+	rm -rf \
+		sim_build \
+		tests/*/*.sv \
+		tests/*/*.mlir \
+		tests/*/*.wavelet.json \
+		tests/*/*.wavelet-noopt.json \
 		tests/*/*.log

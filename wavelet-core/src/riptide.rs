@@ -576,6 +576,45 @@ impl Config {
             Err(err) => Err(RipTideError::ConfigExecError(err.to_str()?.to_string())),
         }
     }
+
+    /// Similar to `Config::eager_steps`, but the step count is taken modulo any trivial operators.
+    pub fn eager_non_trivial_steps(
+        &mut self,
+        bound: Option<usize>,
+    ) -> Result<Vec<Vec<Label>>, RipTideError> {
+        extern "C" {
+            fn wavelet_riptide_config_eager_non_trivial_steps(
+                config: lean_obj_arg,
+                bound: lean_obj_arg,
+            ) -> lean_obj_res;
+        }
+        let bound = bound.map(LeanObject::from);
+        let bound = LeanObject::from(bound);
+        ensure_init_lean();
+        let res = LeanObject::from_lean_obj_res(unsafe {
+            wavelet_riptide_config_eager_non_trivial_steps(
+                self.0.clone().to_lean_obj_arg(),
+                bound.to_lean_obj_arg(),
+            )
+        });
+        match Result::<_, _>::try_from(&res)? {
+            Ok(res) => {
+                let res: (LeanObject, LeanObject) = (&res).try_into()?;
+                let trace: Vec<LeanObject> = (&res.0).try_into()?;
+                let trace = trace
+                    .into_iter()
+                    .map(|step| -> Result<_, RipTideError> {
+                        let step: Vec<LeanObject> = (&step).try_into()?;
+                        Ok(step.into_iter().map(Label).collect())
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let new_config = res.1;
+                self.0 = new_config;
+                Ok(trace)
+            }
+            Err(err) => Err(RipTideError::ConfigExecError(err.to_str()?.to_string())),
+        }
+    }
 }
 
 impl Label {

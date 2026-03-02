@@ -16,7 +16,7 @@ inductive RewriteName (χ : Type u) where
   | base (_ : χ)
   | rw (_ : RewriteName χ)
   | rename (_ : Nat) (_ : RewriteName χ)
-  deriving Repr, Hashable, DecidableEq, Lean.ToJson, Lean.FromJson
+  deriving Repr, DecidableEq, Hashable, Lean.ToJson, Lean.FromJson
 
 structure RewriteState Op χ V [Arity Op] [DecidableEq χ] [Hashable χ] where
   aps : AtomicProcs Op (RewriteName χ) V
@@ -24,6 +24,7 @@ structure RewriteState Op χ V [Arity Op] [DecidableEq χ] [Hashable χ] where
   matched : List Nat
   disabledRules : List String
 
+/-- Builds a map from channel names to "related" atom indices for faster lookup. -/
 def RewriteState.buildChanToAtomsMap [Arity Op] [DecidableEq χ] [Hashable χ]
   (aps : AtomicProcs Op (RewriteName χ) V) :
     Std.HashMap (RewriteName χ) (List (Fin aps.length)) :=
@@ -39,8 +40,6 @@ def RewriteState.init [Arity Op] [DecidableEq χ] [Hashable χ]
   (disabledRules : List String) : RewriteState Op χ V :=
   {
     aps,
-    -- Builds a map from channel names to "related" atom indices
-    -- for faster lookup.
     chanToAtoms := buildChanToAtomsMap aps,
     matched := [],
     disabledRules,
@@ -136,25 +135,12 @@ def Rewrite.apply [Arity Op] [DecidableEq χ] [Hashable χ]
     atoms := AtomicProcs.mapChans .rw (aps' ++ unmatched)
   })
 
-/-- Apply the given rewrite until failure. -/
-partial def Rewrite.applyUntilFail
-  [Arity Op] [DecidableEq χ] [Hashable χ]
-  (rw : Rewrite Op χ V)
-  (proc : Proc Op (RewriteName χ) V m n)
-  (disabledRules : List String := []) : Nat × Proc Op (RewriteName χ) V m n :=
-    loop 0 proc
-  where
-    loop numRewrites proc : Nat × Proc Op (RewriteName χ) V m n :=
-      match rw.apply proc disabledRules with
-      | some (_rwName, proc') => loop (numRewrites + 1) proc'
-      | none => (numRewrites, proc)
-
 abbrev RewriteStats := Std.HashMap String Nat
 
 /-- Similar to `applyUntilFail` but performs `renameChans` every round
 for slightly better performance, and also returns some stats about
 rewrite rules used. -/
-partial def Rewrite.applyUntilFailNat
+partial def Rewrite.applyUntilFail
   [Arity Op] [DecidableEq χ] [Hashable χ]
   (renamer : Nat → RewriteName χ → χ)
   (rw : Rewrite Op χ V)
@@ -164,7 +150,7 @@ partial def Rewrite.applyUntilFailNat
   where
     initStats := allRewriteNames.foldl (λ m name => m.insert name 0)
       (Std.HashMap.emptyWithCapacity allRewriteNames.length)
-    loop numRewrites proc stats :=
+    loop numRewrites proc stats : Nat × RewriteStats × Proc Op χ V m n :=
       match rw.apply (proc.mapChans .base) disabledRules with
       | some (rwName, proc') =>
         let stats := stats.insert rwName (stats.getD rwName 0 + 1)

@@ -13,7 +13,7 @@ inductive EraseName (χ : Type u) where
   | output (name : χ)
   | join (name₁ : χ) (name₂ : χ)
   | op_finish (name : χ)
-  deriving Repr, DecidableEq, Lean.ToJson, Lean.FromJson
+  deriving Repr, DecidableEq, Hashable, Lean.ToJson, Lean.FromJson
 
 /-- Translates operators with ghost tokens into the base operators. -/
 def AtomicProc.eraseGhost
