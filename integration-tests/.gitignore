@@ -8,6 +8,7 @@ __pycache__/
 *.makefile
 *.log
 *.wavelet.json
+*.wavelet-noopt.json
 
 # cocotb artifacts
 results.xml

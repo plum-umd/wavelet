@@ -36,13 +36,13 @@ pub struct CompileArgs {
     #[arg(long, value_name = "FILE")]
     emit_elab_json: Option<PathBuf>,
 
-    /// Emit the unoptimized process IR in JSON to the given file.
-    #[arg(long, value_name = "FILE")]
-    emit_unopt: Option<PathBuf>,
-
     /// Exclude array declarations.
     #[arg(long)]
     exclude_arrays: bool,
+
+    /// Disable the majority of optimizations
+    #[arg(long)]
+    no_opt: bool,
 
     /// Instantiate constants to concrete values ("K1=V1,K2=V2,..."),
     /// so that internal memories (`#[alloc]`) have a concrete size.
@@ -170,11 +170,6 @@ impl CompileArgs {
             .validate()
             .context("when validating dataflow after control-flow lowering")?;
 
-        if let Some(path) = &self.emit_unopt {
-            std::fs::write(path, core_proc.to_json()?)
-                .context("when writing unoptimized process to file")?;
-        }
-
         // Remove unnecessary output(s).
         let core_proc = if self.no_trim_io {
             core_proc
@@ -182,14 +177,59 @@ impl CompileArgs {
             core_proc.trim_unit_io()
         };
 
-        // Some graph rewriting for legalization and optimization
         // TODO: Disabling some rules for now since the handshake
         // backend does not support `inv` operator yet.
-        let core_proc = utils::TaskSpinner::run::<_, CompileError>("optimization", |progress| {
-            let core_proc = core_proc.optimize(vec![
-                "carry-fork-steer-to-inv-left",
-                "carry-fork-steer-to-inv-right",
+        let mut disabled_rules = vec![
+            "carry-fork-steer-to-inv-left",
+            "carry-fork-steer-to-inv-right",
+        ];
+
+        // Disable the majority of optimizations except for
+        // required legalization rewrites.
+        if self.no_opt {
+            disabled_rules.extend([
+                "fold-forward-aop-receiver",
+                "fold-forward-aop-sender",
+                "fold-forward-op-receiver",
+                "fold-forward-op-sender",
+                "switch-sink-left",
+                "switch-sink-right",
+                "steer-const-true",
+                "steer-const-false",
+                "steer-sink",
+                "steer-steer",
+                "steer-order-steer",
+                "par-steer-steer",
+                "steer-fork-steer",
+                "const-steer",
+                "fork-0",
+                "fork-1",
+                "fork-sink",
+                "fork-fork",
+                "order-1",
+                "order-order",
+                "order-sync-path",
+                "order-sink",
+                "order-const",
+                "order-const-head",
+                "const-sink",
+                "inact-sink",
+                "carry-steer-cycle-to-sink",
+                "carry-order-steer-cycle-to-sink",
+                "carry-false",
+                "carry-true",
+                "merge-sink",
+                "merge-steer-true",
+                "merge-steer-false",
+                "merge-dedup",
+                "merge-same-const",
+                "merge-true-false-const",
             ]);
+        }
+
+        // Some graph rewriting for legalization and optimization
+        let core_proc = utils::TaskSpinner::run::<_, CompileError>("optimization", |progress| {
+            let core_proc = core_proc.optimize(disabled_rules);
             progress.set_message(format!(
                 "{} ({} non-trivial) ops",
                 core_proc.num_atoms(),

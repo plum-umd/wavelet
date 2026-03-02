@@ -71,12 +71,29 @@ build: $(WAVELET) $(HLSTOOL)
 %.wavelet.json: %.rs
 	$(WAVELET) compile $< -o $@ 2>&1 | tee $@.log
 
+%.wavelet-noopt.json: %.rs
+	$(WAVELET) compile $< --no-opt -o $@ 2>&1 | tee $@.log
+
 # Compile tests from Wavelet/Rust to CIRCT/Handshake
 %.wavelet.handshake.mlir: %.wavelet.json
 	$(WAVELET) handshake $< -o $@
 
+%.wavelet-noopt.handshake.mlir: %.wavelet-noopt.json
+	$(WAVELET) handshake $< -o $@
+
 # Compile CIRCT/Handshake to SystemVerilog
 %.wavelet.sv: %.wavelet.handshake.mlir
+	$(HLSTOOL) $< \
+		--verilog \
+		--dynamic-hw \
+		--buffering-strategy=all \
+		--lowering-options=disallowLocalVariables \
+		--verify-each \
+		--verbose-pass-executions \
+		> $@.tmp || (rm -f $@.tmp && exit 1)
+	mv $@.tmp $@
+
+%.wavelet-noopt.sv: %.wavelet-noopt.handshake.mlir
 	$(HLSTOOL) $< \
 		--verilog \
 		--dynamic-hw \
@@ -137,6 +154,17 @@ test-wavelet-%: .venv/bin/activate tests/%/test.wavelet.sv
 		--interface wavelet \
 		--top top 2>&1 | tee tests/$*/test.wavelet.log
 
+# Test Wavelet-generated design (without optimizations)
+.PHONY: test-wavelet-noopt-%
+test-wavelet-noopt-%: .venv/bin/activate tests/%/test.wavelet-noopt.sv
+	@echo "NOTE: use ctrl + \ to interrupt."
+	@set -eu -o pipefail; \
+	. .venv/bin/activate && python3 -m sim \
+		tests/$*/test.wavelet-noopt.sv \
+		tests/$*/test.py \
+		--interface wavelet \
+		--top top 2>&1 | tee tests/$*/test.wavelet-noopt.log
+
 # Test Polygeist-CIRCT-generated design
 .PHONY: test-circt-%
 test-circt-%: .venv/bin/activate tests/%/test.circt.sv
@@ -156,6 +184,15 @@ test-wavelet-sim-%: .venv/bin/activate tests/%/test.wavelet.json
 		tests/$*/test.wavelet.json \
 		tests/$*/test.py \
 		--interface wavelet-sim 2>&1 | tee tests/$*/test.wavelet-sim.log
+
+# Test (unoptimized) Wavelet-generated design, but using high-level dataflow simulation
+.PHONY: test-wavelet-noopt-sim-%
+test-wavelet-noopt-sim-%: .venv/bin/activate tests/%/test.wavelet-noopt.json
+	@set -eu -o pipefail; \
+	. .venv/bin/activate && python3 -m sim \
+		tests/$*/test.wavelet-noopt.json \
+		tests/$*/test.py \
+		--interface wavelet-sim 2>&1 | tee tests/$*/test.wavelet-noopt-sim.log
 
 # Test RipTide-compiled design using high-level dataflow simulation
 .PHONY: test-riptide-sim-%
@@ -179,7 +216,9 @@ test-riptide-sim-nostream-%: .venv/bin/activate tests/%/test.riptide.nostream.js
 .PHONY: %-tests
 %-tests:
 	@if [ "$*" != "wavelet" ] && \
+		[ "$*" != "wavelet-noopt" ] && \
 		[ "$*" != "wavelet-sim" ] && \
+		[ "$*" != "wavelet-noopt-sim" ] && \
 		[ "$*" != "riptide-sim" ] && \
 		[ "$*" != "circt" ]; then \
 		echo "unknown pipeline: $*"; \
@@ -213,4 +252,5 @@ clean:
 		tests/*/*.sv \
 		tests/*/*.mlir \
 		tests/*/*.wavelet.json \
+		tests/*/*.wavelet-noopt.json \
 		tests/*/*.log
