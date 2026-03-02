@@ -294,7 +294,7 @@ def reference(*tests: tuple[None | int | list[int], ...]):
 
             input_args = [ arg.copy() for arg in tests[test_idx] ]
             
-            py_res, py_mems = await run_python_ref(f, input_args)
+            py_res, py_mems = run_python_ref(f, input_args)
 
             dut_interface = os.environ.get("DUT_INTERFACE", "wavelet")
             if dut_interface == "wavelet":
