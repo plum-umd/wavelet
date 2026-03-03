@@ -290,6 +290,7 @@ test-riptide-sim-nostream-%: .venv/bin/activate tests/%/test.riptide.nostream.js
 .PHONY: %-pnr
 %-pnr:
 	@if [ "$*" != "wavelet" ] && \
+		[ "$*" != "wavelet-noopt" ] && \
 		[ "$*" != "circt" ]; then \
 		echo "unknown pipeline for placement and routing: $*"; \
 		exit 1; \

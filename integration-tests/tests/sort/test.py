@@ -2,11 +2,9 @@ import random
 from sim import reference
 
 @reference(
-    # Even count may not be correct, but the behavior
-    # should still match the reference
     ([0], [0], 0, 0),
-    ([random.randint(-20, 20) for _ in range(3)], [0] * 3, 2, 3),
-    ([random.randint(-20, 20) for _ in range(6)], [0] * 6, 3, 6),
+    ([-20, 0, 20], [0] * 3, 2, 3),
+    ([5, 6, -2, 9, 10, -10], [0] * 6, 3, 6),
 )
 def sort(a, z, even_count, N):
     def cond_read(j, odd):
