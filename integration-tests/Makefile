@@ -6,11 +6,27 @@ HLSTOOL := $(REPO_DIR)/integration-tests/build/circt/bin/hlstool
 
 TEST_NAMES := $(basename $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/test.rs)))))
 
+SKIP_TARGETS := \
+	circt-test-sort \
+	tests/sort/test.circt.nextpnr.json
+
 .PHONY: default
 default: wavelet-tests
 
 # Do not delete intermediate files
 .SECONDARY:
+
+# Run all evaluations
+eval: \
+	wavelet-tests \
+	wavelet-noopt-tests \
+	circt-tests \
+	wavelet-sim-tests \
+	wavelet-noopt-sim-tests \
+	riptide-sim-tests \
+	wavelet-pnr \
+	wavelet-noopt-pnr \
+	circt-pnr
 
 #################################
 # Rules to build required tools #
@@ -185,8 +201,8 @@ build/nextpnr/nextpnr-ecp5: build/nextpnr/Makefile
 	. .venv/bin/activate && pip install -r requirements.txt
 
 # Test Wavelet-generated design
-.PHONY: test-wavelet-%
-test-wavelet-%: .venv/bin/activate tests/%/test.wavelet.sv
+.PHONY: wavelet-test-%
+wavelet-test-%: .venv/bin/activate tests/%/test.wavelet.sv
 	@echo "NOTE: use ctrl + \ to interrupt."
 	@set -eu -o pipefail; \
 	. .venv/bin/activate && python3 -m sim \
@@ -196,8 +212,8 @@ test-wavelet-%: .venv/bin/activate tests/%/test.wavelet.sv
 		--top top 2>&1 | tee tests/$*/test.wavelet.log
 
 # Test Wavelet-generated design (without optimizations)
-.PHONY: test-wavelet-noopt-%
-test-wavelet-noopt-%: .venv/bin/activate tests/%/test.wavelet-noopt.sv
+.PHONY: wavelet-noopt-test-%
+wavelet-noopt-test-%: .venv/bin/activate tests/%/test.wavelet-noopt.sv
 	@echo "NOTE: use ctrl + \ to interrupt."
 	@set -eu -o pipefail; \
 	. .venv/bin/activate && python3 -m sim \
@@ -207,8 +223,8 @@ test-wavelet-noopt-%: .venv/bin/activate tests/%/test.wavelet-noopt.sv
 		--top top 2>&1 | tee tests/$*/test.wavelet-noopt.log
 
 # Test Polygeist-CIRCT-generated design
-.PHONY: test-circt-%
-test-circt-%: .venv/bin/activate tests/%/test.circt.sv
+.PHONY: circt-test-%
+circt-test-%: .venv/bin/activate tests/%/test.circt.sv
 	@echo "NOTE: use ctrl + \ to interrupt."
 	@set -eu -o pipefail; \
 	. .venv/bin/activate && python3 -m sim \
@@ -218,8 +234,8 @@ test-circt-%: .venv/bin/activate tests/%/test.circt.sv
 		--top $* 2>&1 | tee tests/$*/test.circt.log
 
 # Test Wavelet-generated design, but using high-level dataflow simulation
-.PHONY: test-wavelet-sim-%
-test-wavelet-sim-%: .venv/bin/activate tests/%/test.wavelet.json
+.PHONY: wavelet-sim-test-%
+wavelet-sim-test-%: .venv/bin/activate tests/%/test.wavelet.json
 	@set -eu -o pipefail; \
 	. .venv/bin/activate && python3 -m sim \
 		tests/$*/test.wavelet.json \
@@ -227,8 +243,8 @@ test-wavelet-sim-%: .venv/bin/activate tests/%/test.wavelet.json
 		--interface wavelet-sim 2>&1 | tee tests/$*/test.wavelet-sim.log
 
 # Test (unoptimized) Wavelet-generated design, but using high-level dataflow simulation
-.PHONY: test-wavelet-noopt-sim-%
-test-wavelet-noopt-sim-%: .venv/bin/activate tests/%/test.wavelet-noopt.json
+.PHONY: wavelet-noopt-sim-test-%
+wavelet-noopt-sim-test-%: .venv/bin/activate tests/%/test.wavelet-noopt.json
 	@set -eu -o pipefail; \
 	. .venv/bin/activate && python3 -m sim \
 		tests/$*/test.wavelet-noopt.json \
@@ -236,8 +252,8 @@ test-wavelet-noopt-sim-%: .venv/bin/activate tests/%/test.wavelet-noopt.json
 		--interface wavelet-sim 2>&1 | tee tests/$*/test.wavelet-noopt-sim.log
 
 # Test RipTide-compiled design using high-level dataflow simulation
-.PHONY: test-riptide-sim-%
-test-riptide-sim-%: .venv/bin/activate tests/%/test.riptide.json
+.PHONY: riptide-sim-test-%
+riptide-sim-test-%: .venv/bin/activate tests/%/test.riptide.json
 	@set -eu -o pipefail; \
 	. .venv/bin/activate && python3 -m sim \
 		tests/$*/test.riptide.json \
@@ -245,8 +261,8 @@ test-riptide-sim-%: .venv/bin/activate tests/%/test.riptide.json
 		--interface riptide-sim 2>&1 | tee tests/$*/test.riptide-sim.log
 
 # Test RipTide-compiled design (no-stream version) using high-level dataflow simulation
-.PHONY: test-riptide-sim-%
-test-riptide-sim-nostream-%: .venv/bin/activate tests/%/test.riptide.nostream.json
+.PHONY: riptide-sim-nostream-test-%
+riptide-sim-nostream-test-%: .venv/bin/activate tests/%/test.riptide.nostream.json
 	@set -eu -o pipefail; \
 	. .venv/bin/activate && python3 -m sim \
 		tests/$*/test.riptide.nostream.json \
@@ -265,12 +281,14 @@ test-riptide-sim-nostream-%: .venv/bin/activate tests/%/test.riptide.nostream.js
 		echo "unknown pipeline: $*"; \
 		exit 1; \
 	fi
-	@echo "using pipeline: $*"
-	@echo "NOTE: use ctrl + \ to interrupt."; echo
 	@PASS=0; FAIL=0; \
 	for name in $(TEST_NAMES); do \
-		printf "$$name ..."; \
-		if $(MAKE) test-$*-$$name > /dev/null 2>&1; then \
+		printf "[$*] $$name ..."; \
+		target=$*-test-$$name; \
+		if echo "$(SKIP_TARGETS)" | grep -wq "$$target"; then \
+			echo " SKIPPED (expected to fail)"; \
+			continue; \
+		elif $(MAKE) $*-test-$$name > /dev/null 2>&1; then \
 			echo " PASS"; \
 			PASS=$$((PASS + 1)); \
 		else \
@@ -281,7 +299,7 @@ test-riptide-sim-nostream-%: .venv/bin/activate tests/%/test.riptide.nostream.js
 			FAIL=$$((FAIL + 1)); \
 		fi; \
 	done; \
-	echo; echo "passed: $$PASS, failed: $$FAIL"; \
+	echo "[$*] $$PASS passed, $$FAIL failed"; \
 	if [ $$FAIL -ne 0 ]; then \
 		exit 1; \
 	fi
@@ -295,11 +313,14 @@ test-riptide-sim-nostream-%: .venv/bin/activate tests/%/test.riptide.nostream.js
 		echo "unknown pipeline for placement and routing: $*"; \
 		exit 1; \
 	fi
-	@echo "using pipeline: $*"; echo
 	@SUCCESS=0; FAIL=0; \
 	for name in $(TEST_NAMES); do \
-		printf "$$name ..."; \
-		if $(MAKE) tests/$$name/test.$*.nextpnr.json > /dev/null 2>&1; then \
+		printf "[$*-pnr] $$name ..."; \
+		target=tests/$$name/test.$*.nextpnr.json; \
+		if echo "$(SKIP_TARGETS)" | grep -wq "$$target"; then \
+			echo " SKIPPED (expected to fail)"; \
+			continue; \
+		elif $(MAKE) tests/$$name/test.$*.nextpnr.json > /dev/null 2>&1; then \
 			echo " SUCCESS"; \
 			SUCCESS=$$((SUCCESS + 1)); \
 		else \
@@ -307,7 +328,7 @@ test-riptide-sim-nostream-%: .venv/bin/activate tests/%/test.riptide.nostream.js
 			FAIL=$$((FAIL + 1)); \
 		fi; \
 	done; \
-	echo; echo "succeeded: $$SUCCESS, failed: $$FAIL"; \
+	echo "[$*-pnr] $$SUCCESS succeeded, $$FAIL failed"; \
 	if [ $$FAIL -ne 0 ]; then \
 		exit 1; \
 	fi

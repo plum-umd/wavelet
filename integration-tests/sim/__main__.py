@@ -33,7 +33,12 @@ def sim_verilog(args):
 
         runner = get_runner(args.sim)
         args.top = args.top.replace("-", "_")
-        runner.build(sources=[args.design], hdl_toplevel=args.top, timescale=("1ns", "1ps"))
+        runner.build(
+            sources=[args.design],
+            hdl_toplevel=args.top,
+            timescale=("1ns", "1ps"),
+            build_dir=Path(tmp_dir) / "sim_build",
+        )
         result_path = runner.test(
             hdl_toplevel=args.top,
             test_module=[ f"{TEST_MODULE_NAME}.{test_path.stem}" ],
@@ -41,6 +46,7 @@ def sim_verilog(args):
                 "DUT_INTERFACE": args.interface,
                 "DUT_DESIGN": str(Path(args.design).resolve()),
             },
+            build_dir=Path(tmp_dir) / "sim_build",
         )
 
         # TODO: This is a bit hacky.
