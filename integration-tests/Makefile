@@ -286,6 +286,31 @@ test-riptide-sim-nostream-%: .venv/bin/activate tests/%/test.riptide.nostream.js
 		exit 1; \
 	fi
 
+# Place and route all tests
+.PHONY: %-pnr
+%-pnr:
+	@if [ "$*" != "wavelet" ] && \
+		[ "$*" != "circt" ]; then \
+		echo "unknown pipeline for placement and routing: $*"; \
+		exit 1; \
+	fi
+	@echo "using pipeline: $*"; echo
+	@SUCCESS=0; FAIL=0; \
+	for name in $(TEST_NAMES); do \
+		printf "$$name ..."; \
+		if $(MAKE) tests/$$name/test.$*.nextpnr.json > /dev/null 2>&1; then \
+			echo " SUCCESS"; \
+			SUCCESS=$$((SUCCESS + 1)); \
+		else \
+			echo " FAIL"; \
+			FAIL=$$((FAIL + 1)); \
+		fi; \
+	done; \
+	echo; echo "succeeded: $$SUCCESS, failed: $$FAIL"; \
+	if [ $$FAIL -ne 0 ]; then \
+		exit 1; \
+	fi
+
 .PHONY: clean
 clean:
 	rm -rf \
