@@ -4,11 +4,15 @@ __pycache__/
 *.py[codz]
 
 *.sv
+*.v
 *.mlir
 *.makefile
 *.log
 *.wavelet.json
 *.wavelet-noopt.json
+*.netlist.json
+*.nextpnr.json
+*.tmp
 
 # cocotb artifacts
 results.xml

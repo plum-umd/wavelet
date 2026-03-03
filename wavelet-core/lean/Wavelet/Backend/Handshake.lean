@@ -249,8 +249,8 @@ def emitHeader
   (additionalOuts : List ExternalPort) : EmitM σ Unit := do
   -- Arguments and their external names.
   let args ← proc.inputs.toList.mapM λ v => do
-    return s!"{← EmitVar.emit v}: {← EmitType.emit v}"
-  let args := args ++ additionalIns.map λ i => s!"{i.name}: {i.ty}"
+    return s!"{← EmitVar.emit v}.tmp: {← EmitType.emit v}"
+  let args := args ++ additionalIns.map λ i => s!"{i.name}.tmp: {i.ty}"
   let argNames := proc.inputs.toList.mapIdx λ i _ => s!"\"in{i}\""
   let argNames := argNames ++ additionalIns.map λ i => s!"\"{i.extName}\""
   -- Return (types) and their external names.
@@ -264,6 +264,15 @@ def emitHeader
   let attrs := "{" ++ attrs ++ "}"
   .writeLn <| s!"handshake.func @top({", ".intercalate args}) \
     -> ({", ".intercalate retTys}) attributes {attrs}" ++ " {"
+  -- Generate buffers for each input
+  -- TODO: Figure out why this is needed
+  .indentBy 2
+  for v in proc.inputs.toList do
+    let var ← EmitVar.emit v
+    let ty ← EmitType.emit v
+    IndentWriterT.writeLn s!"{var} = buffer [1] seq {var}.tmp : {ty}"
+  for i in additionalIns do
+    IndentWriterT.writeLn s!"{i.name} = buffer [1] seq {i.name}.tmp : {i.ty}"
 
 /-- Emits the final return operation. -/
 def emitReturn (proc : Proc Op χ V m n) (additionalOuts : List ExternalPort) : EmitM σ Unit := do
@@ -277,7 +286,6 @@ def emitProc (proc : Proc Op χ V m n) : EmitM σ Unit := do
   let additionalIns ← instEmitOp.additionalInputs
   let additionalOuts ← instEmitOp.additionalOutputs
   emitHeader proc additionalIns additionalOuts
-  .indentBy 2
   instEmitOp.init
   emitAtomicProcs proc.atoms
   instEmitOp.finalize
