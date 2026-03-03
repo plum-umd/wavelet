@@ -16,6 +16,9 @@ default: wavelet-tests
 # Rules to build required tools #
 #################################
 
+.PHONY: build
+build: $(WAVELET) $(HLSTOOL)
+
 build/circt/Makefile: circt
 	mkdir -p build/circt
 	cmake circt/llvm/llvm -B build/circt \
@@ -61,8 +64,25 @@ dynamatic/bin/dynamatic:
 $(WAVELET): $(REPO_DIR)/wavelet $(REPO_DIR)/wavelet-core $(REPO_DIR)/wavelet-elab
 	cd $(REPO_DIR) && cargo build --release
 
-.PHONY: build
-build: $(WAVELET) $(HLSTOOL)
+# Configure and build prjtrellis
+build/prjtrellis/Makefile: prjtrellis
+	mkdir -p build/prjtrellis
+	cmake prjtrellis/libtrellis -B build/prjtrellis \
+		-DCMAKE_INSTALL_PREFIX=build/prjtrellis/install
+
+build/prjtrellis/install/bin/ecpbram: build/prjtrellis/Makefile
+	cmake --build build/prjtrellis --parallel
+	cmake --install build/prjtrellis
+
+# Configure and build nextpnr-ecp5
+build/nextpnr/Makefile: nextpnr
+	mkdir -p build/nextpnr
+	cmake nextpnr -B build/nextpnr \
+		-DARCH=ecp5 \
+		-DTRELLIS_INSTALL_PREFIX=$(realpath build/prjtrellis/install)
+
+build/nextpnr/nextpnr-ecp5: build/nextpnr/Makefile
+	cmake --build build/nextpnr --target nextpnr-ecp5 --parallel
 
 #################################
 # Various compilation pipelines #
@@ -86,7 +106,7 @@ build: $(WAVELET) $(HLSTOOL)
 	$(HLSTOOL) $< \
 		--verilog \
 		--dynamic-hw \
-		--buffering-strategy=all \
+		--buffering-strategy=cycles \
 		--lowering-options=disallowLocalVariables \
 		--verify-each \
 		--verbose-pass-executions \
@@ -97,7 +117,7 @@ build: $(WAVELET) $(HLSTOOL)
 	$(HLSTOOL) $< \
 		--verilog \
 		--dynamic-hw \
-		--buffering-strategy=all \
+		--buffering-strategy=cycles \
 		--lowering-options=disallowLocalVariables \
 		--verify-each \
 		--verbose-pass-executions \
@@ -116,7 +136,7 @@ build: $(WAVELET) $(HLSTOOL)
 	$(HLSTOOL) $< \
 		--ir --output-level=core \
 		--dynamic-hw \
-		--buffering-strategy=all \
+		--buffering-strategy=cycles \
 		--lowering-options=disallowLocalVariables \
 		--verify-each \
 		--verbose-pass-executions \
@@ -128,12 +148,33 @@ build: $(WAVELET) $(HLSTOOL)
 	$(HLSTOOL) $< \
 		--verilog \
 		--dynamic-hw \
-		--buffering-strategy=all \
+		--buffering-strategy=cycles \
 		--lowering-options=disallowLocalVariables \
 		--verify-each \
 		--verbose-pass-executions \
 		> $@.tmp || (rm -f $@.tmp && exit 1)
 	mv $@.tmp $@
+
+# Convert to Verilog to resolve any unsupported SystemVerilog constructs
+%.v: %.sv
+	sv2v $< > $@.tmp || (rm -f $@.tmp && exit 1)
+	mv $@.tmp $@
+
+# Synthesis with Yosys
+%.netlist.json: %.v
+	yosys -p "read_verilog $<; synth_ecp5 -json $@" > $@.log 2>&1
+
+# Placement and routing
+%.nextpnr.json: %.netlist.json
+	build/nextpnr/nextpnr-ecp5 \
+		--json $< \
+		--um-85k \
+		--package CABGA756 \
+		--speed 6 \
+		--out-of-context \
+		--timing-allow-fail \
+		--lpf-allow-unconstrained \
+		--write $@ > $@.log 2>&1
 
 ######################
 # End-to-end testing #
@@ -245,12 +286,41 @@ test-riptide-sim-nostream-%: .venv/bin/activate tests/%/test.riptide.nostream.js
 		exit 1; \
 	fi
 
+# Place and route all tests
+.PHONY: %-pnr
+%-pnr:
+	@if [ "$*" != "wavelet" ] && \
+		[ "$*" != "circt" ]; then \
+		echo "unknown pipeline for placement and routing: $*"; \
+		exit 1; \
+	fi
+	@echo "using pipeline: $*"; echo
+	@SUCCESS=0; FAIL=0; \
+	for name in $(TEST_NAMES); do \
+		printf "$$name ..."; \
+		if $(MAKE) tests/$$name/test.$*.nextpnr.json > /dev/null 2>&1; then \
+			echo " SUCCESS"; \
+			SUCCESS=$$((SUCCESS + 1)); \
+		else \
+			echo " FAIL"; \
+			FAIL=$$((FAIL + 1)); \
+		fi; \
+	done; \
+	echo; echo "succeeded: $$SUCCESS, failed: $$FAIL"; \
+	if [ $$FAIL -ne 0 ]; then \
+		exit 1; \
+	fi
+
 .PHONY: clean
 clean:
 	rm -rf \
 		sim_build \
 		tests/*/*.sv \
+		tests/*/*.v \
 		tests/*/*.mlir \
 		tests/*/*.wavelet.json \
 		tests/*/*.wavelet-noopt.json \
-		tests/*/*.log
+		tests/*/*.netlist.json \
+		tests/*/*.nextpnr.json \
+		tests/*/*.log \
+		tests/*/*.tmp
