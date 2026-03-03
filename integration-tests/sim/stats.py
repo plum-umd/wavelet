@@ -52,13 +52,9 @@ def parse_rtl_cycles(path: Path) -> int | None:
     m = re.search(r"SKIP=\d+\s+([0-9.]+)", text)
     return int(float(m.group(1))) if m else None
 
-def parse_graph_size_wavelet(path: Path) -> int | None:
-    """From compile log: '[optimization] N (M non-trivial) ops' -> M"""
-    text = read_file(path)
-    if text is None:
-        return None
-    m = re.search(r"\[optimization\]\s+\d+\s+\((\d+)\s+non-trivial\)", text)
-    return int(m.group(1)) if m else None
+def graph_size(stats: tuple[int, int, int] | None) -> int | None:
+    """Total non-trivial ops from a (cf, sync, mem) tuple."""
+    return sum(stats) if stats else None
 
 def parse_graph_size_riptide(path: Path) -> int | None:
     """Vertex count from riptide JSON."""
@@ -134,13 +130,14 @@ def parse_nextpnr(path: Path) -> dict | None:
     freq_mhz = float(freq_ms[-1].group(1)) if freq_ms else None
     return {"luts": luts, "ffs": ffs, "freq_mhz": freq_mhz}
 
-def cf_overhead(stats: tuple[int, int, int] | None) -> float | None:
-    """cf_ops / (sync_ops + mem_ops)"""
+def cf_pct_str(stats: tuple[int, int, int] | None) -> str | None:
+    """Format CF ops as 'N (X%)' where X is percentage of non-trivial ops."""
     if stats is None:
         return None
     cf, sync, mem = stats
-    denom = sync + mem
-    return round(cf / denom, 2) if denom else None
+    total = cf + sync + mem
+    pct = round(100 * cf / total) if total else 0
+    return rf"{cf} ({pct}\%)"
 
 def collect_cgra(name: str) -> dict:
     """Collect all CGRA table columns for one benchmark."""
@@ -149,28 +146,21 @@ def collect_cgra(name: str) -> dict:
     steps_wv_noopt = parse_total_cycles(test_path(name, "wavelet-noopt-sim.log"))
     steps_rp = parse_total_cycles(test_path(name, "riptide-sim.log"))
 
-    # Graph sizes: non-trivial ops from compile log (wavelet), vertex count (riptide)
-    gs_wv = parse_graph_size_wavelet(test_path(name, "wavelet.json.log"))
-    gs_wv_noopt = parse_graph_size_wavelet(test_path(name, "wavelet-noopt.json.log"))
-    gs_rp = parse_graph_size_riptide(test_path(name, "riptide.json"))
-
-    # CF ops and overhead from dataflow graph JSON
+    # Op stats from dataflow graph JSON: (cf, sync, mem) counts
     wv_cf = parse_wavelet_cf_stats(test_path(name, "wavelet.json"))
     wv_noopt_cf = parse_wavelet_cf_stats(test_path(name, "wavelet-noopt.json"))
     rp_cf = parse_riptide_cf_stats(test_path(name, "riptide.json"))
 
+    # Graph sizes: non-trivial ops (wavelet), vertex count (riptide)
+    gs_rp = parse_graph_size_riptide(test_path(name, "riptide.json"))
+
     return {
         "steps": { "wv": steps_wv, "wv_noopt": steps_wv_noopt, "rp": steps_rp },
-        "graph_size": { "wv": gs_wv, "wv_noopt": gs_wv_noopt, "rp": gs_rp },
-        "cf_ops": {
-            "wv": wv_cf[0] if wv_cf else None,
-            "wv_noopt": wv_noopt_cf[0] if wv_noopt_cf else None,
-            "rp": rp_cf[0] if rp_cf else None,
-        },
-        "cf_overhead": {
-            "wv": cf_overhead(wv_cf),
-            "wv_noopt": cf_overhead(wv_noopt_cf),
-            "rp": cf_overhead(rp_cf),
+        "graph_size": { "wv": graph_size(wv_cf), "wv_noopt": graph_size(wv_noopt_cf), "rp": gs_rp },
+        "cf_pct": {
+            "wv": cf_pct_str(wv_cf),
+            "wv_noopt": cf_pct_str(wv_noopt_cf),
+            "rp": cf_pct_str(rp_cf),
         },
     }
 
@@ -264,10 +254,9 @@ def generate_cgra_table(all_stats: dict[str, dict]) -> str:
     return emit_table(
         all_stats,
         metrics=[
-            ("Steps",        "steps",       0),
-            ("Graph Sizes",  "graph_size",  0),
-            ("CF Ops",       "cf_ops",      0),
-            ("CF Overhead",  "cf_overhead", 2),
+            ("Steps",             "steps",      0),
+            ("Graph Sizes",       "graph_size", 0),
+            (r"Control Flow Ops (\%)", "cf_pct", 0),
         ],
         compilers=[
             (r"\textbf{Wv}",     "wv"),
