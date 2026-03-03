@@ -6,27 +6,11 @@ HLSTOOL := $(REPO_DIR)/integration-tests/build/circt/bin/hlstool
 
 TEST_NAMES := $(basename $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/test.rs)))))
 
-SKIP_TARGETS := \
-	circt-test-sort \
-	tests/sort/test.circt.nextpnr.json
-
 .PHONY: default
 default: wavelet-tests
 
 # Do not delete intermediate files
 .SECONDARY:
-
-# Run all evaluations
-eval: \
-	wavelet-tests \
-	wavelet-noopt-tests \
-	circt-tests \
-	wavelet-sim-tests \
-	wavelet-noopt-sim-tests \
-	riptide-sim-tests \
-	wavelet-pnr \
-	wavelet-noopt-pnr \
-	circt-pnr
 
 #################################
 # Rules to build required tools #
@@ -284,11 +268,7 @@ riptide-sim-nostream-test-%: .venv/bin/activate tests/%/test.riptide.nostream.js
 	@PASS=0; FAIL=0; \
 	for name in $(TEST_NAMES); do \
 		printf "[$*] $$name ..."; \
-		target=$*-test-$$name; \
-		if echo "$(SKIP_TARGETS)" | grep -wq "$$target"; then \
-			echo " SKIPPED (expected to fail)"; \
-			continue; \
-		elif $(MAKE) $*-test-$$name > /dev/null 2>&1; then \
+		if $(MAKE) $*-test-$$name > /dev/null 2>&1; then \
 			echo " PASS"; \
 			PASS=$$((PASS + 1)); \
 		else \
@@ -316,11 +296,7 @@ riptide-sim-nostream-test-%: .venv/bin/activate tests/%/test.riptide.nostream.js
 	@SUCCESS=0; FAIL=0; \
 	for name in $(TEST_NAMES); do \
 		printf "[$*-pnr] $$name ..."; \
-		target=tests/$$name/test.$*.nextpnr.json; \
-		if echo "$(SKIP_TARGETS)" | grep -wq "$$target"; then \
-			echo " SKIPPED (expected to fail)"; \
-			continue; \
-		elif $(MAKE) tests/$$name/test.$*.nextpnr.json > /dev/null 2>&1; then \
+		if $(MAKE) tests/$$name/test.$*.nextpnr.json > /dev/null 2>&1; then \
 			echo " SUCCESS"; \
 			SUCCESS=$$((SUCCESS + 1)); \
 		else \
@@ -346,3 +322,64 @@ clean:
 		tests/*/*.nextpnr.json \
 		tests/*/*.log \
 		tests/*/*.tmp
+
+###################################
+# Targets for artifact evaluation #
+###################################
+
+# Skip some targets that are expected to fail
+SKIP_TARGETS := circt-eval-sort
+
+# $(1): label, $(2): test name, $(3): sub-make targets
+define run-eval
+	$(if $(filter $(1)-eval-$(2),$(SKIP_TARGETS)),\
+		@echo "[$(1)] $(2) ... SKIP",\
+		@log=$$(mktemp); \
+		if $(MAKE) --no-print-directory $(3) > "$$log" 2>&1; then \
+			echo "[$(1)] $(2) ... PASS"; \
+		else \
+			echo "[$(1)] $(2) ... FAIL"; \
+			echo "============== log =============="; \
+			cat "$$log"; \
+			echo "================================="; \
+			rm -f "$$log"; \
+			exit 1; \
+		fi; \
+		rm -f "$$log")
+endef
+
+.PHONY: \
+	wavelet-eval-% \
+	wavelet-noopt-eval-% \
+	circt-eval-% \
+	wavelet-sim-eval-% \
+	wavelet-noopt-sim-eval-% \
+	riptide-sim-eval-%
+
+wavelet-eval-%:
+	$(call run-eval,wavelet,$*,wavelet-test-$* tests/$*/test.wavelet.nextpnr.json)
+
+wavelet-noopt-eval-%:
+	$(call run-eval,wavelet-noopt,$*,wavelet-noopt-test-$* tests/$*/test.wavelet-noopt.nextpnr.json)
+
+circt-eval-%:
+	$(call run-eval,circt,$*,circt-test-$* tests/$*/test.circt.nextpnr.json)
+
+wavelet-sim-eval-%:
+	$(call run-eval,wavelet-sim,$*,wavelet-sim-test-$*)
+
+wavelet-noopt-sim-eval-%:
+	$(call run-eval,wavelet-noopt-sim,$*,wavelet-noopt-sim-test-$*)
+
+riptide-sim-eval-%:
+	$(call run-eval,riptide-sim,$*,riptide-sim-test-$*)
+
+# Run all evaluations
+eval: $(foreach name,$(TEST_NAMES), \
+	wavelet-eval-$(name) \
+	wavelet-noopt-eval-$(name) \
+	circt-eval-$(name) \
+	wavelet-sim-eval-$(name) \
+	wavelet-noopt-sim-eval-$(name) \
+	riptide-sim-eval-$(name) \
+)
