@@ -3,6 +3,7 @@ REPO_DIR := $(abspath $(MAKEFILE_DIR)/..)
 WAVELET := $(REPO_DIR)/target/release/wavelet
 CGEIST := $(REPO_DIR)/integration-tests/build/polygeist/bin/cgeist
 HLSTOOL := $(REPO_DIR)/integration-tests/build/circt/bin/hlstool
+WAVELET_COMPILE_FLAGS :=
 
 TEST_NAMES := $(basename $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/test.rs)))))
 
@@ -89,10 +90,10 @@ build/nextpnr/nextpnr-ecp5: build/nextpnr/Makefile
 #################################
 
 %.wavelet.json: %.rs
-	$(WAVELET) compile $< -o $@ 2>&1 | tee $@.log
+	$(WAVELET) compile $< $(WAVELET_COMPILE_FLAGS) -o $@ 2>&1 | tee $@.log
 
 %.wavelet-noopt.json: %.rs
-	$(WAVELET) compile $< --no-opt -o $@ 2>&1 | tee $@.log
+	$(WAVELET) compile $< --no-opt $(WAVELET_COMPILE_FLAGS) -o $@ 2>&1 | tee $@.log
 
 # Compile tests from Wavelet/Rust to CIRCT/Handshake
 %.wavelet.handshake.mlir: %.wavelet.json
@@ -327,6 +328,18 @@ clean:
 # Targets for artifact evaluation #
 ###################################
 
+EVAL_NAMES := \
+	dither \
+	dmm \
+	dmv \
+	nn-conv \
+	nn-fc \
+	nn-norm \
+	nn-pool \
+	nn-relu \
+	nn-vadd \
+	sort
+
 # Skip some targets that are expected to fail
 SKIP_TARGETS := circt-eval-sort
 
@@ -335,7 +348,7 @@ define run-eval
 	$(if $(filter $(1)-eval-$(2),$(SKIP_TARGETS)),\
 		@echo "[$(1)] $(2) ... SKIP",\
 		@log=$$(mktemp); \
-		if $(MAKE) --no-print-directory $(3) > "$$log" 2>&1; then \
+		if $(MAKE) --no-print-directory WAVELET_COMPILE_FLAGS="$(WAVELET_COMPILE_FLAGS)" $(3) > "$$log" 2>&1; then \
 			echo "[$(1)] $(2) ... PASS"; \
 		else \
 			echo "[$(1)] $(2) ... FAIL"; \
@@ -356,30 +369,23 @@ endef
 	wavelet-noopt-sim-eval-% \
 	riptide-sim-eval-%
 
+wavelet-eval-%: WAVELET_COMPILE_FLAGS := --ghost-check
 wavelet-eval-%:
-	$(call run-eval,wavelet,$*,wavelet-test-$* tests/$*/test.wavelet.nextpnr.json)
+	$(call run-eval,wavelet,$*,wavelet-test-$* wavelet-sim-test-$* tests/$*/test.wavelet.nextpnr.json)
 
 wavelet-noopt-eval-%:
-	$(call run-eval,wavelet-noopt,$*,wavelet-noopt-test-$* tests/$*/test.wavelet-noopt.nextpnr.json)
+	$(call run-eval,wavelet-noopt,$*,wavelet-noopt-test-$* wavelet-noopt-sim-test-$* tests/$*/test.wavelet-noopt.nextpnr.json)
 
 circt-eval-%:
 	$(call run-eval,circt,$*,circt-test-$* tests/$*/test.circt.nextpnr.json)
 
-wavelet-sim-eval-%:
-	$(call run-eval,wavelet-sim,$*,wavelet-sim-test-$*)
-
-wavelet-noopt-sim-eval-%:
-	$(call run-eval,wavelet-noopt-sim,$*,wavelet-noopt-sim-test-$*)
-
-riptide-sim-eval-%:
-	$(call run-eval,riptide-sim,$*,riptide-sim-test-$*)
+riptide-eval-%:
+	$(call run-eval,riptide,$*,riptide-sim-test-$*)
 
 # Run all evaluations
-eval: $(foreach name,$(TEST_NAMES), \
+eval: $(foreach name,$(EVAL_NAMES), \
 	wavelet-eval-$(name) \
 	wavelet-noopt-eval-$(name) \
 	circt-eval-$(name) \
-	wavelet-sim-eval-$(name) \
-	wavelet-noopt-sim-eval-$(name) \
-	riptide-sim-eval-$(name) \
+	riptide-eval-$(name) \
 )

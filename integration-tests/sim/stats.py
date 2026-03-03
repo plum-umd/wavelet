@@ -130,6 +130,25 @@ def parse_nextpnr(path: Path) -> dict | None:
     freq_mhz = float(freq_ms[-1].group(1)) if freq_ms else None
     return {"luts": luts, "ffs": ffs, "freq_mhz": freq_mhz}
 
+def parse_compiler_perf(path: Path) -> dict[str, float] | None:
+    """Parse compiler phase timings from a .wavelet.json.log file."""
+    text = read_file(path)
+    if text is None:
+        return None
+    phases = {
+        "type checking + elaboration": "tc",
+        "validating token placement": "tv",
+        "lowering control-flow": "cfc",
+        "optimization": "opt",
+    }
+    result = {}
+    for phase_label, key in phases.items():
+        m = re.search(rf"\[{re.escape(phase_label)}\] finished in (\d+) ms", text)
+        if m:
+            result[key] = int(m.group(1)) / 1000.0
+    return result if len(result) == len(phases) else None
+
+
 def cf_pct_str(stats: tuple[int, int, int] | None) -> str | None:
     """Format CF ops as 'N (X%)' where X is percentage of non-trivial ops."""
     if stats is None:
@@ -281,12 +300,43 @@ def generate_hls_table(all_stats: dict[str, dict]) -> str:
         ],
     )
 
+def collect_compiler_perf(name: str) -> dict[str, float | None]:
+    """Collect compiler phase timings for one benchmark."""
+    perf = parse_compiler_perf(test_path(name, "wavelet.json.log"))
+    if perf is None:
+        return {"tc": None, "tv": None, "opt": None, "total": None}
+    perf["total"] = round(perf["tc"] + perf["tv"] + perf["cfc"] + perf["opt"], 2)
+    del perf["cfc"]
+    return perf
+
+def generate_compiler_perf_table(all_stats: dict[str, dict]) -> str:
+    cols = [
+        ("TC",    "tc"),
+        ("TV",    "tv"),
+        ("Opt",   "opt"),
+        ("Total", "total"),
+    ]
+    lines = [r"\begin{tabular}{lrrrr}"]
+    lines.append("Test & " + " & ".join(h for h, _ in cols) + r" \\")
+    lines.append(r"\hline")
+    for name in BENCH_NAMES:
+        stats = all_stats[name]
+        cells = [tt_name(name)]
+        for _, key in cols:
+            cells.append(to_cell(stats[key]))
+        lines.append(" & ".join(cells) + r" \\")
+    lines.append(r"\end{tabular}")
+    return "\n".join(lines)
+
 def main():
     cgra = {name: collect_cgra(name) for name in BENCH_NAMES}
     hls = {name: collect_hls(name) for name in BENCH_NAMES}
+    perf = {name: collect_compiler_perf(name) for name in BENCH_NAMES}
     print(generate_cgra_table(cgra))
     print()
     print(generate_hls_table(hls))
+    print()
+    print(generate_compiler_perf_table(perf))
 
 if __name__ == "__main__":
     main()
