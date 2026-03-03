@@ -15,8 +15,8 @@ def AtomicProc.isTrivial [Arity Op] : AtomicProc Op χ V → Bool
   | .async (AsyncOp.forwardc ..) ..
   | .async (AsyncOp.inact ..) ..
   | .async (AsyncOp.const ..) ..
-  | .async (AsyncOp.sink ..) .. => false
-  | _ => true
+  | .async (AsyncOp.sink ..) .. => true
+  | _ => false
 
 /-- More performant replacement for `ChanMap` only for the interpreter. -/
 private abbrev ChanMapImpl χ V [DecidableEq χ] [Hashable χ] := Std.HashMap χ (List V)
@@ -246,7 +246,7 @@ private partial def eagerNonTrivialStep
     fireAllTrivialStep tr c := do
       let (tr', c') ← eagerStep c (·.isTrivial)
       if tr'.isEmpty then
-        return (tr ++ tr', c)
+        return (tr, c)
       else
         fireAllTrivialStep (tr ++ tr') c'
 

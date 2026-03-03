@@ -57,7 +57,7 @@ def FFI.procNumAtoms (proc : RipTide.Proc) : USize :=
 def FFI.procNumNonTrivialAtoms (proc : RipTide.Proc) : USize :=
   USize.ofNat <|
     (proc.inner.proc.atoms
-    |>.filter AtomicProc.isTrivial
+    |>.filter (¬AtomicProc.isTrivial ·)
     |>.length)
 
 /-- Returns the number of inputs. -/
