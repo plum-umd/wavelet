@@ -14,6 +14,14 @@ fn main() {
     println!("cargo::rerun-if-changed=lean/lean-toolchain");
     println!("cargo::rerun-if-changed=lean/.lake/packages/batteries/.lake/build/lib");
 
+    // Fetch Lake dependencies
+    let status = Command::new("lake")
+        .current_dir("lean")
+        .args(["exec", "cache", "get"])
+        .status()
+        .expect("failed to run `lake exec cache get`");
+    assert!(status.success(), "`lake exec cache` get failed");
+
     // Find Lean library paths
     let output = Command::new("lean")
         .current_dir("lean")
@@ -37,14 +45,6 @@ fn main() {
         "lean prefix does not exist: {}",
         lean_dir.display()
     );
-
-    // Fetch Lake dependencies
-    let status = Command::new("lake")
-        .current_dir("lean")
-        .args(["exec", "cache", "get"])
-        .status()
-        .expect("failed to run `lake exec cache get`");
-    assert!(status.success(), "`lake exec cache` get failed");
 
     // Build `libWavelet` and `libBatteries`
     let status = Command::new("lake")

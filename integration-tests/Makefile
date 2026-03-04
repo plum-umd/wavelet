@@ -1,3 +1,4 @@
+SHELL := /bin/bash -o pipefail
 TEST_NAMES := $(basename $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/test.rs)))))
 
 CGEIST := build/polygeist/bin/cgeist
@@ -180,16 +181,11 @@ build/nextpnr/nextpnr-ecp5: build/nextpnr/Makefile
 # End-to-end testing #
 ######################
 
-.venv/bin/activate: requirements.txt
-	python3 -m venv .venv
-	. .venv/bin/activate && pip install -r requirements.txt
-
 # Test Wavelet-generated design
 .PHONY: wavelet-test-%
-wavelet-test-%: .venv/bin/activate tests/%/test.wavelet.sv
+wavelet-test-%: tests/%/test.wavelet.sv
 	@echo "NOTE: use ctrl + \ to interrupt."
-	@set -eu -o pipefail; \
-	. .venv/bin/activate && python3 -m sim \
+	@python3 -m sim \
 		tests/$*/test.wavelet.sv \
 		tests/$*/test.py \
 		--interface wavelet \
@@ -197,10 +193,9 @@ wavelet-test-%: .venv/bin/activate tests/%/test.wavelet.sv
 
 # Test Wavelet-generated design (without optimizations)
 .PHONY: wavelet-noopt-test-%
-wavelet-noopt-test-%: .venv/bin/activate tests/%/test.wavelet-noopt.sv
+wavelet-noopt-test-%: tests/%/test.wavelet-noopt.sv
 	@echo "NOTE: use ctrl + \ to interrupt."
-	@set -eu -o pipefail; \
-	. .venv/bin/activate && python3 -m sim \
+	@python3 -m sim \
 		tests/$*/test.wavelet-noopt.sv \
 		tests/$*/test.py \
 		--interface wavelet \
@@ -208,10 +203,9 @@ wavelet-noopt-test-%: .venv/bin/activate tests/%/test.wavelet-noopt.sv
 
 # Test Polygeist-CIRCT-generated design
 .PHONY: circt-test-%
-circt-test-%: .venv/bin/activate tests/%/test.circt.sv
+circt-test-%: tests/%/test.circt.sv
 	@echo "NOTE: use ctrl + \ to interrupt."
-	@set -eu -o pipefail; \
-	. .venv/bin/activate && python3 -m sim \
+	@python3 -m sim \
 		tests/$*/test.circt.sv \
 		tests/$*/test.py \
 		--interface circt \
@@ -219,36 +213,32 @@ circt-test-%: .venv/bin/activate tests/%/test.circt.sv
 
 # Test Wavelet-generated design, but using high-level dataflow simulation
 .PHONY: wavelet-sim-test-%
-wavelet-sim-test-%: .venv/bin/activate tests/%/test.wavelet.json
-	@set -eu -o pipefail; \
-	. .venv/bin/activate && python3 -m sim \
+wavelet-sim-test-%: tests/%/test.wavelet.json
+	@python3 -m sim \
 		tests/$*/test.wavelet.json \
 		tests/$*/test.py \
 		--interface wavelet-sim 2>&1 | tee tests/$*/test.wavelet-sim.log
 
 # Test (unoptimized) Wavelet-generated design, but using high-level dataflow simulation
 .PHONY: wavelet-noopt-sim-test-%
-wavelet-noopt-sim-test-%: .venv/bin/activate tests/%/test.wavelet-noopt.json
-	@set -eu -o pipefail; \
-	. .venv/bin/activate && python3 -m sim \
+wavelet-noopt-sim-test-%: tests/%/test.wavelet-noopt.json
+	@python3 -m sim \
 		tests/$*/test.wavelet-noopt.json \
 		tests/$*/test.py \
 		--interface wavelet-sim 2>&1 | tee tests/$*/test.wavelet-noopt-sim.log
 
 # Test RipTide-compiled design using high-level dataflow simulation
 .PHONY: riptide-sim-test-%
-riptide-sim-test-%: .venv/bin/activate tests/%/test.riptide.json
-	@set -eu -o pipefail; \
-	. .venv/bin/activate && python3 -m sim \
+riptide-sim-test-%: tests/%/test.riptide.json
+	@python3 -m sim \
 		tests/$*/test.riptide.json \
 		tests/$*/test.py \
 		--interface riptide-sim 2>&1 | tee tests/$*/test.riptide-sim.log
 
 # Test RipTide-compiled design (no-stream version) using high-level dataflow simulation
 .PHONY: riptide-sim-nostream-test-%
-riptide-sim-nostream-test-%: .venv/bin/activate tests/%/test.riptide.nostream.json
-	@set -eu -o pipefail; \
-	. .venv/bin/activate && python3 -m sim \
+riptide-sim-nostream-test-%: tests/%/test.riptide.nostream.json
+	@python3 -m sim \
 		tests/$*/test.riptide.nostream.json \
 		tests/$*/test.py \
 		--interface riptide-sim 2>&1 | tee tests/$*/test.riptide-sim.nostream.log

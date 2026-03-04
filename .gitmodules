@@ -1,7 +1,6 @@
 [submodule "integration-tests/circt"]
 	path = integration-tests/circt
 	url = https://github.com/llvm/circt.git
-	branch = main
 [submodule "integration-tests/polygeist"]
 	path = integration-tests/polygeist
 	url = https://github.com/llvm/Polygeist.git
@@ -15,3 +14,6 @@
 [submodule "integration-tests/nextpnr"]
 	path = integration-tests/nextpnr
 	url = https://github.com/YosysHQ/nextpnr.git
+[submodule "integration-tests/verilator"]
+	path = integration-tests/verilator
+	url = https://github.com/verilator/verilator.git

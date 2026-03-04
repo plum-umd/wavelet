@@ -37,6 +37,10 @@ jobs:
       - uses: ./.github/actions/setup-verilator
         with:
           version: v5.044
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.13
+      - run: pip install -r requirements.txt
       - run: cargo build
       - run: make tests
         working-directory: integration-tests
