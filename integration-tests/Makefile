@@ -22,7 +22,7 @@ build: $(WAVELET) $(HLSTOOL)
 build/circt/Makefile: circt
 	mkdir -p build/circt
 	cmake circt/llvm/llvm -B build/circt \
-		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_BUILD_TYPE=Release \
 		-DLLVM_ENABLE_ASSERTIONS=ON \
 		-DLLVM_TARGETS_TO_BUILD=host \
 		-DLLVM_ENABLE_PROJECTS=mlir \
@@ -40,7 +40,7 @@ $(HLSTOOL): build/circt/Makefile
 build/polygeist/Makefile: polygeist
 	mkdir -p build/polygeist
 	cmake polygeist/llvm-project/llvm -B build/polygeist \
-		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_BUILD_TYPE=Release \
 		-DLLVM_ENABLE_ASSERTIONS=ON \
 		-DLLVM_TARGETS_TO_BUILD=host \
 		-DLLVM_ENABLE_PROJECTS="mlir;clang" \
@@ -80,10 +80,21 @@ build/nextpnr/Makefile: nextpnr build/prjtrellis/install
 	mkdir -p build/nextpnr
 	cmake nextpnr -B build/nextpnr \
 		-DARCH=ecp5 \
-		-DTRELLIS_INSTALL_PREFIX=build/prjtrellis/install
+		-DTRELLIS_INSTALL_PREFIX=$(realpath build/prjtrellis/install)
 
 build/nextpnr/nextpnr-ecp5: build/nextpnr/Makefile
 	$(MAKE) -C build/nextpnr nextpnr-ecp5
+
+build/verilator/bin/verilator: verilator
+	mkdir -p build/verilator
+	cd verilator && \
+		autoconf && \
+		./configure --prefix=$(realpath build/verilator) && \
+		$(MAKE) install
+
+build/yosys/yosys: yosys
+	mkdir -p build/yosys
+	cd build/yosys && $(MAKE) -f $(realpath yosys/Makefile)
 
 #################################
 # Various compilation pipelines #

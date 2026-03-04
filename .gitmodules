@@ -4,10 +4,6 @@
 [submodule "integration-tests/polygeist"]
 	path = integration-tests/polygeist
 	url = https://github.com/llvm/Polygeist.git
-[submodule "integration-tests/dynamatic"]
-	path = integration-tests/dynamatic
-	url = https://github.com/zhengyao-lin/dynamatic.git
-	branch = wavelet
 [submodule "integration-tests/prjtrellis"]
 	path = integration-tests/prjtrellis
 	url = https://github.com/YosysHQ/prjtrellis.git
@@ -17,3 +13,6 @@
 [submodule "integration-tests/verilator"]
 	path = integration-tests/verilator
 	url = https://github.com/verilator/verilator.git
+[submodule "integration-tests/yosys"]
+	path = integration-tests/yosys
+	url = https://github.com/YosysHQ/yosys.git
