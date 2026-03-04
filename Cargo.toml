@@ -4,7 +4,6 @@ members = [
     "wavelet-elab",
     "wavelet-embedding",
     "wavelet-core",
-    "wavelet-eval",
     "wavelet",
 ]
 default-members = ["wavelet"]
