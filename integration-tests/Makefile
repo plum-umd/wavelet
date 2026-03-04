@@ -361,12 +361,21 @@ define run-eval
 endef
 
 .PHONY: \
+	wavelet-compile-% \
+	wavelet-noopt-compile-% \
 	wavelet-eval-% \
 	wavelet-noopt-eval-% \
 	circt-eval-% \
 	wavelet-sim-eval-% \
 	wavelet-noopt-sim-eval-% \
 	riptide-sim-eval-%
+
+wavelet-compile-%: WAVELET_COMPILE_FLAGS := --ghost-check
+wavelet-compile-%:
+	$(call run-eval,wavelet,$*,tests/$*/test.wavelet.json)
+
+wavelet-noopt-compile-%:
+	$(call run-eval,wavelet-noopt,$*,tests/$*/test.wavelet-noopt.json)
 
 wavelet-eval-%: WAVELET_COMPILE_FLAGS := --ghost-check
 wavelet-eval-%:
@@ -387,4 +396,11 @@ eval: $(foreach name,$(EVAL_NAMES), \
 	wavelet-noopt-eval-$(name) \
 	circt-eval-$(name) \
 	riptide-eval-$(name) \
+)
+
+# Only run relevant Wavelet compilation targets
+# Used for better performance estimates.
+eval-compile: $(foreach name,$(EVAL_NAMES), \
+	wavelet-compile-$(name) \
+	wavelet-noopt-compile-$(name) \
 )

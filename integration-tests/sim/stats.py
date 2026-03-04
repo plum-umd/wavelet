@@ -369,6 +369,57 @@ def generate_compiler_perf_table(all_stats: dict[str, dict]) -> str:
     lines.append(r"\end{tabular}")
     return "\n".join(lines)
 
+def geomean(values: list[float]) -> float:
+    """Geometric mean of a list of positive floats."""
+    from math import prod, pow
+    return pow(prod(values), 1.0 / len(values))
+
+def geomean_ratio(all_stats: dict, metric: str, num_key: str, den_key: str) -> float | None:
+    """Geometric mean of num/den ratios across benchmarks, skipping None."""
+    ratios = []
+    for name in BENCH_NAMES:
+        m = all_stats[name][metric]
+        n, d = m.get(num_key), m.get(den_key)
+        if n is not None and d is not None and d != 0:
+            ratios.append(n / d)
+    return round(geomean(ratios), 2) if ratios else None
+
+def emit_geomeans(cgra: dict, hls: dict, perf: dict) -> str:
+    defs = [
+        ("WvStepsOverRP",      "steps",     "wv",       "rp"),
+        ("WvNooptStepsOverRP", "steps",     "wv_noopt", "rp"),
+        ("WvGSOverRP",         "graph_size","wv",       "rp"),
+        ("WvNooptGSOverRP",    "graph_size","wv_noopt", "rp"),
+    ]
+    hls_defs = [
+        ("WvCycOverCRT",       "cycles",    "wv",       "crt"),
+        ("WvNooptCycOverCRT",  "cycles",    "wv_noopt", "crt"),
+        ("WvExecOverCRT",      "exec_time", "wv",       "crt"),
+        ("WvNooptExecOverCRT", "exec_time", "wv_noopt", "crt"),
+        ("WvLUTsOverCRT",      "luts",      "wv",       "crt"),
+        ("WvNooptLUTsOverCRT", "luts",      "wv_noopt", "crt"),
+        ("WvFFsOverCRT",       "ffs",       "wv",       "crt"),
+        ("WvNooptFFsOverCRT",  "ffs",       "wv_noopt", "crt"),
+    ]
+    lines = []
+    for var, metric, num, den in defs:
+        val = geomean_ratio(cgra, metric, num, den)
+        lines.append(rf"\newcommand{{\{var}}}{{{val}}}")
+    for var, metric, num, den in hls_defs:
+        val = geomean_ratio(hls, metric, num, den)
+        lines.append(rf"\newcommand{{\{var}}}{{{val}}}")
+    # DSL LoC / C LoC geometric mean
+    ratios = []
+    for name in BENCH_NAMES:
+        dsl = perf[name]["loc_dsl"]
+        c = perf[name]["loc_c"]
+        if dsl is not None and c is not None and c != 0:
+            ratios.append(dsl / c)
+    if ratios:
+        val = round(geomean(ratios), 2)
+        lines.append(rf"\newcommand{{\DSLOverC}}{{{val}}}")
+    return "\n".join(lines)
+
 def main():
     cgra = {name: collect_cgra(name) for name in BENCH_NAMES}
     hls = {name: collect_hls(name) for name in BENCH_NAMES}
@@ -378,6 +429,8 @@ def main():
     print(generate_hls_table(hls))
     print()
     print(generate_compiler_perf_table(perf))
+    print()
+    print(emit_geomeans(cgra, hls, perf))
 
 if __name__ == "__main__":
     main()
