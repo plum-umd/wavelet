@@ -156,7 +156,7 @@ def cf_pct_str(stats: tuple[int, int, int] | None) -> str | None:
     cf, sync, mem = stats
     total = cf + sync + mem
     pct = round(100 * cf / total) if total else 0
-    return rf"{cf} ({pct}\%)"
+    return rf"{pct}"
 
 def collect_cgra(name: str) -> dict:
     """Collect all CGRA table columns for one benchmark."""
@@ -273,9 +273,9 @@ def generate_cgra_table(all_stats: dict[str, dict]) -> str:
     return emit_table(
         all_stats,
         metrics=[
-            ("Steps",             "steps",      0),
-            ("Graph Sizes",       "graph_size", 0),
-            (r"Control Flow Ops (\%)", "cf_pct", 0),
+            ("Steps",       "steps",      0),
+            ("Graph Sizes", "graph_size", 0),
+            (r"\%CF Ops",   "cf_pct",     0),
         ],
         compilers=[
             (r"\textbf{Wv}",     "wv"),
@@ -300,29 +300,70 @@ def generate_hls_table(all_stats: dict[str, dict]) -> str:
         ],
     )
 
+def is_comment(line: str, ext: str) -> bool:
+    """Check if a line is a comment (single-line // or C-style /* ... */)."""
+    s = line.strip()
+    if s.startswith("//"):
+        return True
+    if ext == "c" and (s.startswith("/*") or s.startswith("*") or s.endswith("*/")):
+        return True
+    return False
+
+def count_lines(path: Path) -> int | None:
+    """Count non-empty, non-comment lines in a file."""
+    text = read_file(path)
+    if text is None:
+        return None
+    ext = path.suffix.lstrip(".")
+    return sum(1 for line in text.splitlines()
+               if line.strip() and not is_comment(line, ext))
+
+def count_annotations(path: Path) -> int | None:
+    """Count annotation lines: #[cap...] attributes and fence!() calls."""
+    text = read_file(path)
+    if text is None:
+        return None
+    count = 0
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#[cap"):
+            count += 1
+        elif "fence!()" in stripped:
+            count += 1
+    return count
+
 def collect_compiler_perf(name: str) -> dict[str, float | None]:
-    """Collect compiler phase timings for one benchmark."""
+    """Collect compiler phase timings and source LoC for one benchmark."""
     perf = parse_compiler_perf(test_path(name, "wavelet.json.log"))
     if perf is None:
-        return {"tc": None, "tv": None, "opt": None, "total": None}
-    perf["total"] = round(perf["tc"] + perf["tv"] + perf["cfc"] + perf["opt"], 2)
-    del perf["cfc"]
-    return perf
+        result = {"tc": None, "tv": None, "opt": None, "total": None}
+    else:
+        perf["total"] = round(perf["tc"] + perf["tv"] + perf["cfc"] + perf["opt"], 2)
+        del perf["cfc"]
+        result = perf
+    result["loc_c"] = count_lines(test_path(name, "c"))
+    result["loc_dsl"] = count_lines(test_path(name, "rs"))
+    result["loc_ann"] = count_annotations(test_path(name, "rs"))
+    return result
 
 def generate_compiler_perf_table(all_stats: dict[str, dict]) -> str:
-    cols = [
-        ("TC",    "tc"),
-        ("TV",    "tv"),
-        ("Opt",   "opt"),
-        ("Total", "total"),
-    ]
-    lines = [r"\begin{tabular}{lrrrr}"]
-    lines.append("Test & " + " & ".join(h for h, _ in cols) + r" \\")
+    loc_cols = [("C", "loc_c"), ("DSL", "loc_dsl"), ("Ann", "loc_ann")]
+    time_cols = [("TC", "tc"), ("TV", "tv"), ("Opt", "opt"), ("Total", "total")]
+    lines = [r"\begin{tabular}{l|rrr|rrrr}"]
+    lines.append(
+        r"& \multicolumn{3}{c|}{Source LoC}"
+        r" & \multicolumn{4}{c}{Compiler Time (s)} \\"
+    )
+    loc_hdrs = " & ".join(h for h, _ in loc_cols)
+    time_hdrs = " & ".join(h for h, _ in time_cols)
+    lines.append(f"Test & {loc_hdrs} & {time_hdrs}" + r" \\")
     lines.append(r"\hline")
     for name in BENCH_NAMES:
         stats = all_stats[name]
         cells = [tt_name(name)]
-        for _, key in cols:
+        for _, key in loc_cols:
+            cells.append(to_cell(stats[key], 0))
+        for _, key in time_cols:
             cells.append(to_cell(stats[key]))
         lines.append(" & ".join(cells) + r" \\")
     lines.append(r"\end{tabular}")
