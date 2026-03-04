@@ -1,11 +1,9 @@
-MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
-REPO_DIR := $(abspath $(MAKEFILE_DIR)/..)
-WAVELET := $(REPO_DIR)/target/release/wavelet
-CGEIST := $(REPO_DIR)/integration-tests/build/polygeist/bin/cgeist
-HLSTOOL := $(REPO_DIR)/integration-tests/build/circt/bin/hlstool
-WAVELET_COMPILE_FLAGS :=
-
 TEST_NAMES := $(basename $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/test.rs)))))
+
+CGEIST := build/polygeist/bin/cgeist
+HLSTOOL := build/circt/bin/hlstool
+WAVELET := ../target/release/wavelet
+WAVELET_COMPILE_FLAGS :=
 
 .PHONY: default
 default: wavelet-tests
@@ -34,7 +32,7 @@ build/circt/Makefile: circt
 
 # Build CIRCT/hlstool
 $(HLSTOOL): build/circt/Makefile
-	cmake --build build/circt --target hlstool --parallel
+	$(MAKE) -C build/circt hlstool
 
 # Polygeist uses an older version of LLVM, so unfortunately
 # we have to build LLVM and MLIR twice.
@@ -54,9 +52,10 @@ build/polygeist/Makefile: polygeist
 
 # Build Polygeist
 build/polygeist/bin/cgeist: build/polygeist/Makefile
-	cmake --build build/polygeist --target cgeist --parallel
+	$(MAKE) -C build/polygeist cgeist
 
 # Build Dynamatic (using its Docker image)
+# TODO: Experimental
 dynamatic/bin/dynamatic:
 	docker build -t dynamatic-build dynamatic
 	docker run -it -v $(realpath dynamatic):/dynamatic -w /dynamatic dynamatic-build ./build.sh
@@ -71,19 +70,19 @@ build/prjtrellis/Makefile: prjtrellis
 	cmake prjtrellis/libtrellis -B build/prjtrellis \
 		-DCMAKE_INSTALL_PREFIX=build/prjtrellis/install
 
-build/prjtrellis/install/bin/ecpbram: build/prjtrellis/Makefile
-	cmake --build build/prjtrellis --parallel
+build/prjtrellis/install: build/prjtrellis/Makefile
+	$(MAKE) -C build/prjtrellis
 	cmake --install build/prjtrellis
 
 # Configure and build nextpnr-ecp5
-build/nextpnr/Makefile: nextpnr
+build/nextpnr/Makefile: nextpnr build/prjtrellis/install
 	mkdir -p build/nextpnr
 	cmake nextpnr -B build/nextpnr \
 		-DARCH=ecp5 \
-		-DTRELLIS_INSTALL_PREFIX=$(realpath build/prjtrellis/install)
+		-DTRELLIS_INSTALL_PREFIX=build/prjtrellis/install
 
 build/nextpnr/nextpnr-ecp5: build/nextpnr/Makefile
-	cmake --build build/nextpnr --target nextpnr-ecp5 --parallel
+	$(MAKE) -C build/nextpnr nextpnr-ecp5
 
 #################################
 # Various compilation pipelines #
@@ -127,7 +126,7 @@ build/nextpnr/nextpnr-ecp5: build/nextpnr/Makefile
 
 # Compile C to MLIR/scf through Polygeist
 %.circt.scf.mlir: %.c
-	build/polygeist/bin/cgeist -O3 --memref-fullrank -S $< | \
+	$(CGEIST) -O3 --memref-fullrank -S $< | \
 		sed -E 's/[[:space:]]*attributes[[:space:]]*\{[^}]*\}//g' > $@.tmp \
 		|| (rm -f $@.tmp && exit 1)
 	mv $@.tmp $@
@@ -266,22 +265,23 @@ riptide-sim-nostream-test-%: .venv/bin/activate tests/%/test.riptide.nostream.js
 		echo "unknown pipeline: $*"; \
 		exit 1; \
 	fi
-	@PASS=0; FAIL=0; \
+	@pass=0; fail=0; log=$$(mktemp); \
 	for name in $(TEST_NAMES); do \
 		printf "[$*] $$name ..."; \
-		if $(MAKE) $*-test-$$name > /dev/null 2>&1; then \
+		if $(MAKE) $*-test-$$name > "$$log" 2>&1; then \
 			echo " PASS"; \
-			PASS=$$((PASS + 1)); \
+			pass=$$((pass + 1)); \
 		else \
 			echo " FAIL"; \
 			echo "============== log =============="; \
-			cat tests/$$name/test.$*.log; \
+			cat "$$log"; \
 			echo "================================="; \
-			FAIL=$$((FAIL + 1)); \
+			fail=$$((fail + 1)); \
 		fi; \
 	done; \
-	echo "[$*] $$PASS passed, $$FAIL failed"; \
-	if [ $$FAIL -ne 0 ]; then \
+	rm -f "$$log"; \
+	echo "[$*] $$pass passed, $$fail failed"; \
+	if [ $$fail -ne 0 ]; then \
 		exit 1; \
 	fi
 
@@ -294,26 +294,25 @@ riptide-sim-nostream-test-%: .venv/bin/activate tests/%/test.riptide.nostream.js
 		echo "unknown pipeline for placement and routing: $*"; \
 		exit 1; \
 	fi
-	@SUCCESS=0; FAIL=0; \
+	@success=0; fail=0; \
 	for name in $(TEST_NAMES); do \
 		printf "[$*-pnr] $$name ..."; \
 		if $(MAKE) tests/$$name/test.$*.nextpnr.json > /dev/null 2>&1; then \
 			echo " SUCCESS"; \
-			SUCCESS=$$((SUCCESS + 1)); \
+			success=$$((success + 1)); \
 		else \
 			echo " FAIL"; \
-			FAIL=$$((FAIL + 1)); \
+			fail=$$((fail + 1)); \
 		fi; \
 	done; \
-	echo "[$*-pnr] $$SUCCESS succeeded, $$FAIL failed"; \
-	if [ $$FAIL -ne 0 ]; then \
+	echo "[$*-pnr] $$success succeeded, $$fail failed"; \
+	if [ $$fail -ne 0 ]; then \
 		exit 1; \
 	fi
 
 .PHONY: clean
 clean:
 	rm -rf \
-		sim_build \
 		tests/*/*.sv \
 		tests/*/*.v \
 		tests/*/*.mlir \
