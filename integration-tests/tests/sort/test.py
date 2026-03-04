@@ -1,4 +1,3 @@
-import random
 from sim import reference
 
 @reference(

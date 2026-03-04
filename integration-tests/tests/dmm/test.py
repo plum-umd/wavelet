@@ -1,13 +1,12 @@
-import random
 from sim import reference
 
 @reference(
     (0, 0, 0, [0], [0], [0]),
-    (2, 3, 2, [random.randint(0, 100) for _ in range(6)], [random.randint(0, 100) for _ in range(6)], [0 for _ in range(4)]),
-    (3, 2, 4, [random.randint(0, 100) for _ in range(6)], [random.randint(0, 100) for _ in range(8)], [0 for _ in range(12)]),
-    (4, 4, 4, [random.randint(0, 100) for _ in range(16)], [random.randint(0, 100) for _ in range(16)], [0 for _ in range(16)]),
-    (1, 5, 3, [random.randint(0, 100) for _ in range(5)], [random.randint(0, 100) for _ in range(15)], [0 for _ in range(3)]),
-    (5, 1, 2, [random.randint(0, 100) for _ in range(5)], [random.randint(0, 100) for _ in range(2)], [0 for _ in range(10)]),
+    (2, 3, 2, [81, 14, 3, 94, 35, 31], [28, 17, 94, 13, 86, 94], [0] * 4),
+    (3, 2, 4, [69, 11, 75, 54, 4, 3], [11, 27, 29, 64, 77, 3, 71, 25], [0] * 12),
+    (4, 4, 4, [91, 83, 89, 69, 53, 28, 57, 75, 35, 0, 97, 20, 89, 54, 43, 35], [19, 27, 97, 43, 13, 11, 48, 12, 45, 44, 77, 33, 5, 93, 58, 68], [0] * 16),
+    (1, 5, 3, [15, 48, 10, 70, 37], [80, 79, 46, 73, 24, 90, 8, 5, 84, 29, 98, 37, 10, 29, 12], [0] * 3),
+    (5, 1, 2, [48, 35, 58, 81, 46], [20, 47], [0] * 10),
 )
 def dmm(M, N, P, a, b, z):
     for i in range(M):

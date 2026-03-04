@@ -1,14 +1,13 @@
-import random
 from sim import reference
 
 @reference(
     (0, 0, [], [], []),
-    (0, 1, [], [random.randint(0, 100) for _ in range(1)], []),
-    (2, 3, [random.randint(0, 100) for _ in range(6)], [random.randint(0, 100) for _ in range(3)], [0 for _ in range(2)]),
-    (3, 2, [random.randint(0, 100) for _ in range(6)], [random.randint(0, 100) for _ in range(2)], [0 for _ in range(3)]),
-    (4, 4, [random.randint(0, 100) for _ in range(16)], [random.randint(0, 100) for _ in range(4)], [0 for _ in range(4)]),
-    (1, 5, [random.randint(0, 100) for _ in range(5)], [random.randint(0, 100) for _ in range(5)], [0 for _ in range(1)]),
-    (5, 1, [random.randint(0, 100) for _ in range(5)], [random.randint(0, 100) for _ in range(1)], [0 for _ in range(5)]),
+    (0, 1, [], [45], []),
+    (2, 3, [26, 85, 34, 89, 87, 82], [9, 77, 81], [0] * 2),
+    (3, 2, [21, 68, 93, 31, 20, 59], [48, 34], [0] * 3),
+    (4, 4, [81, 88, 71, 28, 87, 41, 98, 99, 7, 29, 4, 40, 51, 34, 8, 27], [72, 91, 40, 27], [0] * 4),
+    (1, 5, [83, 63, 50, 82, 58], [18, 33, 17, 31, 95], [0] * 1),
+    (5, 1, [71, 68, 33, 95, 74], [54], [0] * 5),
 )
 def dmv(M, N, a, x, y):
     for i in range(M):

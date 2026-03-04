@@ -1,10 +1,9 @@
-import random
 from sim import reference
 
 @reference(
     (
-        [random.randint(-10, 10) for _ in range(4)],
-        [random.randint(0, 300) for _ in range(16)],
+        [8, 2, 1, -3],
+        [70, 260, 252, 46, 24, 56, 78, 81, 216, 32, 197, 195, 239, 270, 128, 283],
         [0] * 13,
         2, 2, 2, 1, 0, 16, 4, 13,
     ),
