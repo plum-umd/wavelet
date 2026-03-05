@@ -22,7 +22,7 @@ build: $(WAVELET) $(HLSTOOL)
 build/circt/Makefile: circt
 	mkdir -p build/circt
 	cmake circt/llvm/llvm -B build/circt \
-		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_BUILD_TYPE=RelWithDeb \
 		-DLLVM_ENABLE_ASSERTIONS=ON \
 		-DLLVM_TARGETS_TO_BUILD=host \
 		-DLLVM_ENABLE_PROJECTS=mlir \
@@ -40,7 +40,7 @@ $(HLSTOOL): build/circt/Makefile
 build/polygeist/Makefile: polygeist
 	mkdir -p build/polygeist
 	cmake polygeist/llvm-project/llvm -B build/polygeist \
-		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_BUILD_TYPE=RelWithDeb \
 		-DLLVM_ENABLE_ASSERTIONS=ON \
 		-DLLVM_TARGETS_TO_BUILD=host \
 		-DLLVM_ENABLE_PROJECTS="mlir;clang" \
@@ -90,7 +90,7 @@ build/verilator/bin/verilator: verilator
 	cd verilator && \
 		autoconf && \
 		./configure --prefix=$(realpath build/verilator) && \
-		$(MAKE) install
+		$(MAKE) && $(MAKE) install
 
 build/yosys/yosys: yosys
 	mkdir -p build/yosys
