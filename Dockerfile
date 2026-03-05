@@ -152,17 +152,16 @@ FROM ubuntu:24.04 AS runtime
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        git curl make build-essential libtcl \
+        git curl lld make build-essential libtcl \
         python3 python3-pip python3-dev \
-        libboost-program-options-dev \
-        libboost-thread-dev && \
+        libboost-program-options1.83.0 \
+        libboost-thread1.83.0 && \
     rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL https://elan.lean-lang.org/elan-init.sh | sh -s -- -y
 
 COPY --from=build /wavelet /wavelet
 WORKDIR /wavelet
 # This includes a global Z3 install
-RUN pip3 install --break-system-packages -r integration-tests/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r integration-tests/requirements.txt
 
 RUN cp -a integration-tests/build/sv2v/. /usr/local/ && \
     cp -a integration-tests/build/yosys/. /usr/local/ && \
@@ -172,10 +171,67 @@ RUN cp -a integration-tests/build/sv2v/. /usr/local/ && \
         integration-tests/build/yosys \
         integration-tests/build/verilator
 
-# RUN curl -fsSL https://code-server.dev/install.sh | sh -s
+RUN curl -fsSL https://elan.lean-lang.org/elan-init.sh | sh -s -- -y
+RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain none
+RUN curl -fsSL https://code-server.dev/install.sh | sh -s
+
+# Configure code-server
+RUN code-server --install-extension leanprover.lean4 && \
+    code-server --install-extension rust-lang.rust-analyzer
+COPY <<EOF /root/.local/share/code-server/User/settings.json
+{
+    "chat.disableAIFeatures": true,
+    "workbench.colorTheme": "Default Dark Modern",
+    "workbench.startupEditor": "readme",
+    "security.workspace.trust.enabled": false,
+    "workbench.secondarySideBar.defaultVisibility": "hidden",
+    "task.allowAutomaticTasks": "on"
+}
+EOF
+COPY <<EOF /wavelet/.vscode/tasks.json
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Open Panel",
+            "type": "shell",
+            "command": "\${command:workbench.action.togglePanel}",
+            "problemMatcher": [],
+            "runOptions": { "runOn": "folderOpen" }
+        },
+        {
+            "label": "Install Rust Toolchain",
+            "type": "shell",
+            "command": "rustup toolchain install",
+            "runOptions": { "runOn": "folderOpen" },
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated",
+                "close": true
+            },
+            "isBackground": true
+        },
+        {
+            "label": "Install Lean Toolchain",
+            "type": "shell",
+            "command": "elan toolchain install \\"\$(cat lean-toolchain)\\"",
+            "options": { "cwd": "\${workspaceFolder}/wavelet-core/lean" },
+            "runOptions": { "runOn": "folderOpen" },
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated",
+                "close": true
+            },
+            "isBackground": true
+        }
+    ]
+}
+EOF
+
+COPY README.md README.md
 
 FROM scratch AS final
 COPY --from=runtime / /
 WORKDIR /wavelet
-ENV PATH="/root/.elan/bin:${PATH}"
+ENV PATH="/root/.elan/bin:/root/.cargo/bin:${PATH}"
 ENTRYPOINT ["/bin/bash"]
