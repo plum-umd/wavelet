@@ -14,14 +14,9 @@ fn main() {
     println!("cargo::rerun-if-changed=lean/lean-toolchain");
     println!("cargo::rerun-if-changed=lean/.lake/packages/batteries/.lake/build/lib");
 
-    // The executable part of Wavelet only depends on Batteries,
-    // so we can skip fetching the cache for the entire mathlib.
-    // let status = Command::new("lake")
-    //     .current_dir("lean")
-    //     .args(["exec", "cache", "get"])
-    //     .status()
-    //     .expect("failed to run `lake exec cache get`");
-    // assert!(status.success(), "`lake exec cache` get failed");
+    // Skipping `lake exec cache get` since the executable part
+    // of Wavelet only depends on Batteries, and it is faster
+    // to build it instead of fetching the entire cache of mathlib.
 
     // Find Lean library paths
     let output = Command::new("lean")
