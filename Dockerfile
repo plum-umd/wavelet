@@ -1,0 +1,181 @@
+FROM ubuntu:24.04 AS build
+
+# Install toolchains and dependencies
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && \
+    apt-get install -y \
+        curl build-essential lld git ninja-build \
+        cmake libboost-all-dev libeigen3-dev \
+        flex bison help2man gawk libffi-dev \
+        libfl-dev libreadline-dev tcl-dev
+
+RUN curl -fsSL https://elan.lean-lang.org/elan-init.sh | sh -s -- -y
+RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain none
+RUN curl -fsSL https://get.haskellstack.org/ | sh -s
+RUN curl -fsSL https://astral.sh/uv/install.sh | sh -s
+
+ENV PATH="/root/.elan/bin:/root/.cargo/bin:${PATH}"
+
+# Build integration test dependencies
+# Make sure to run this command first:
+# ```
+# git submodule update --init --recursive --depth=1 --jobs=$(nproc)
+# ```
+WORKDIR /wavelet/integration-tests
+
+# Build CIRCT
+COPY integration-tests/circt circt
+RUN mkdir -p build/circt && \
+    cmake circt/llvm/llvm -G Ninja -B build/circt \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DLLVM_ENABLE_ASSERTIONS=ON \
+		-DLLVM_TARGETS_TO_BUILD=host \
+		-DLLVM_ENABLE_PROJECTS=mlir \
+		-DLLVM_EXTERNAL_PROJECTS=circt \
+		-DLLVM_EXTERNAL_CIRCT_SOURCE_DIR=circt \
+		-DLLVM_ENABLE_LLD=ON \
+		-DLLVM_PARALLEL_LINK_JOBS=1 \
+        -DLLVM_INCLUDE_TESTS=OFF \
+        -DLLVM_INCLUDE_EXAMPLES=OFF \
+        -DLLVM_INCLUDE_BENCHMARKS=OFF \
+        -DLLVM_ENABLE_BINDINGS=OFF \
+        -DMLIR_INCLUDE_TESTS=OFF && \
+    cmake --build build/circt --target hlstool
+
+# Build Polygeist
+COPY integration-tests/polygeist polygeist
+RUN mkdir -p build/polygeist && \
+    cmake polygeist/llvm-project/llvm -G Ninja -B build/polygeist \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DLLVM_ENABLE_ASSERTIONS=ON \
+		-DLLVM_TARGETS_TO_BUILD=host \
+		-DLLVM_ENABLE_PROJECTS="mlir;clang" \
+		-DLLVM_EXTERNAL_PROJECTS=polygeist \
+		-DLLVM_EXTERNAL_POLYGEIST_SOURCE_DIR=polygeist \
+		-DLLVM_ENABLE_LLD=OFF \
+		-DLLVM_USE_LINKER=lld \
+		-DPOLYGEIST_USE_LINKER=lld \
+        -DLLVM_INCLUDE_TESTS=OFF \
+        -DLLVM_INCLUDE_EXAMPLES=OFF \
+        -DLLVM_INCLUDE_BENCHMARKS=OFF \
+        -DLLVM_ENABLE_BINDINGS=OFF \
+        -DMLIR_INCLUDE_TESTS=OFF && \
+    cmake --build build/polygeist --target cgeist
+
+# Build nextpnr and prjtrellis
+RUN git clone https://github.com/YosysHQ/prjtrellis.git && \
+    git -C prjtrellis checkout 73bd411 && \
+    git -C prjtrellis submodule update --init --recursive --depth=1 --jobs=$(nproc) && \
+    git clone https://github.com/YosysHQ/nextpnr.git && \
+    git -C nextpnr checkout ab7aa9f && \
+    git -C nextpnr submodule update --init --recursive --depth=1 --jobs=$(nproc)
+RUN mkdir -p build/prjtrellis build/nextpnr && \
+    cmake prjtrellis/libtrellis -G Ninja -B build/prjtrellis \
+		-DCMAKE_INSTALL_PREFIX=$(realpath build/prjtrellis/install) && \
+    cmake --build build/prjtrellis && \
+    cmake --install build/prjtrellis && \
+    cmake nextpnr -G Ninja -B build/nextpnr \
+		-DARCH=ecp5 \
+		-DTRELLIS_INSTALL_PREFIX=$(realpath build/prjtrellis/install) && \
+    cmake --build build/nextpnr --target nextpnr-ecp5
+
+# Build sv2v
+RUN git clone https://github.com/zachjs/sv2v.git && \
+    git -C sv2v checkout v0.0.13 && \
+    make -C sv2v -j$(nproc) && \
+    mkdir -p build/sv2v/bin && \
+    cp sv2v/bin/sv2v build/sv2v/bin/sv2v
+
+# Build Yosys
+RUN git clone https://github.com/YosysHQ/yosys.git && \
+    git -C yosys fetch origin v0.62 && \
+    git -C yosys checkout v0.62 && \
+    git -C yosys submodule update --init --recursive --depth=1 --jobs=$(nproc) && \
+    mkdir -p build/yosys && \
+    cd yosys && \
+    make -j$(nproc) && \
+    make install DESTDIR=$(realpath ../build/yosys) PREFIX=
+
+# Build Verilator
+RUN git clone https://github.com/verilator/verilator.git && \
+    git -C verilator checkout v5.044 && \
+    git -C verilator submodule update --init --recursive --depth=1 --jobs=$(nproc) && \
+    mkdir -p build/verilator && \
+	cd verilator && \
+    autoconf && \
+    ./configure --prefix=$(realpath ../build/verilator) && \
+    make -j$(nproc) && \
+    make install
+
+# Build Wavelet
+WORKDIR /wavelet
+COPY .cargo .cargo
+COPY wavelet wavelet
+COPY wavelet-core wavelet-core
+COPY wavelet-elab wavelet-elab
+COPY wavelet-embedding wavelet-embedding
+COPY Cargo.toml Cargo.toml
+COPY Cargo.lock Cargo.lock
+COPY rust-toolchain.toml rust-toolchain.toml
+RUN cargo build --release
+
+# Add rest of the required files
+COPY integration-tests/sim integration-tests/sim
+COPY integration-tests/tests integration-tests/tests
+COPY integration-tests/Makefile integration-tests/Makefile
+COPY integration-tests/requirements.txt integration-tests/requirements.txt
+
+# Some clean up
+RUN cd integration-tests && \
+    rm -rf circt polygeist prjtrellis nextpnr verilator yosys sv2v && \
+    mv build build-old && \
+    mkdir -p \
+        build/circt/bin \
+        build/polygeist/bin \
+        build/nextpnr && \
+    mv build-old/circt/bin/hlstool build/circt/bin/hlstool && \
+    mv build-old/polygeist/bin/cgeist build/polygeist/bin/cgeist && \
+    mv build-old/nextpnr/nextpnr-ecp5 build/nextpnr/nextpnr-ecp5 && \
+    mv build-old/verilator build-old/yosys build-old/sv2v build && \
+    rm -rf build-old
+
+RUN mv target/release/wavelet wavelet-bin && \
+    rm -rf target && \
+    mkdir -p target/release && \
+    mv wavelet-bin target/release/wavelet
+
+RUN cd wavelet-core/lean && lake clean
+
+FROM ubuntu:24.04 AS runtime
+
+# Install runtime dependencies
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        git curl make build-essential libtcl \
+        python3 python3-pip python3-dev \
+        libboost-program-options-dev \
+        libboost-thread-dev && \
+    rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL https://elan.lean-lang.org/elan-init.sh | sh -s -- -y
+
+COPY --from=build /wavelet /wavelet
+WORKDIR /wavelet
+# This includes a global Z3 install
+RUN pip3 install --break-system-packages -r integration-tests/requirements.txt
+
+RUN cp -a integration-tests/build/sv2v/. /usr/local/ && \
+    cp -a integration-tests/build/yosys/. /usr/local/ && \
+    cp -a integration-tests/build/verilator/. /usr/local/ && \
+    rm -rf \
+        integration-tests/build/sv2v \
+        integration-tests/build/yosys \
+        integration-tests/build/verilator
+
+# RUN curl -fsSL https://code-server.dev/install.sh | sh -s
+
+FROM scratch AS final
+COPY --from=runtime / /
+WORKDIR /wavelet
+ENV PATH="/root/.elan/bin:${PATH}"
+ENTRYPOINT ["/bin/bash"]
