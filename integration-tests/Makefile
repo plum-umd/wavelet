@@ -183,6 +183,7 @@ build/yosys/yosys: yosys
 		--um-85k \
 		--package CABGA756 \
 		--speed 6 \
+		--seed 0 \
 		--out-of-context \
 		--timing-allow-fail \
 		--lpf-allow-unconstrained \

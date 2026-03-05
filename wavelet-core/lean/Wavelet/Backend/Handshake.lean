@@ -500,16 +500,15 @@ instance [Repr α] [ToString α]
     -- For external memory, we need to conservatively insert
     -- additional buffers to avoid deadlocks.
     -- TODO: Figure out a better solution.
-    let (portAddr, portVal, portDone) ← if ← EmitState.isExternal loc then
+    let (portAddr, portVal) ← if ← EmitState.isExternal loc then
       let portAddrBuf ← .freshVar
       let portValBuf ← .freshVar
       let portDoneBuf ← .freshVar
       .writeLn s!"{port.addrVar} = buffer [1] seq {portAddrBuf} : {addrTy}"
       .writeLn s!"{port.dataVar} = buffer [1] seq {portValBuf} : {valTy}"
-      .writeLn s!"{portDoneBuf} = buffer [1] seq {port.doneVar} : {Handshake.PrimType.none}"
-      pure (portAddrBuf, portValBuf, port.doneVar)
+      pure (portAddrBuf, portValBuf)
     else
-      pure (port.addrVar, port.dataVar, port.doneVar)
+      pure (port.addrVar, port.dataVar)
     -- Wait for all inputs to arrive, interact with the memory port
     -- and then forward the done signal.
     let addrCopy1 ← .freshVar
@@ -521,7 +520,7 @@ instance [Repr α] [ToString α]
     .writeLn s!"{ctrl} = join {addrCopy1}, {valCopy1} : {addrTy}, {valTy}"
     .writeLn s!"{portVal}, {portAddr} = store [{addrCopy2}] {valCopy2}, {ctrl} : \
       {addrTy}, {valTy}"
-    .writeLn <| s!"{← EmitVar.emit done} = br {portDone} : {Handshake.PrimType.none}"
+    .writeLn <| s!"{← EmitVar.emit done} = br {port.doneVar} : {Handshake.PrimType.none}"
   -- | .const v, inputs, outputs
   -- | .copy n, inputs, outputs
   | .sel, inputs, outputs => do
