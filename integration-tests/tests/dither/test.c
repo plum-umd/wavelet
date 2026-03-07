@@ -1,4 +1,4 @@
-void dither(int rows, int cols, int src[1024], int dst[1024])
+void dither(int rows, int cols, int src[restrict 1024], int dst[restrict 1024])
 {
     for (int i = 0; i < rows; i++) {
         int err = 0;

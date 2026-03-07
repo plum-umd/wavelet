@@ -1,4 +1,4 @@
-void dmm(int m, int n, int p, int A[1024], int B[1024], int Z[1024]) {
+void dmm(int m, int n, int p, int A[restrict 1024], int B[restrict 1024], int Z[restrict 1024]) {
 	int dest_idx = 0;
 	int filter_idx = 0;
 	for(int i = 0; i < m; i++) {

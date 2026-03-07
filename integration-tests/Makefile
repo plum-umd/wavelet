@@ -263,6 +263,7 @@ riptide-sim-nostream-test-%: tests/%/test.riptide.nostream.json
 		[ "$*" != "wavelet-sim" ] && \
 		[ "$*" != "wavelet-noopt-sim" ] && \
 		[ "$*" != "riptide-sim" ] && \
+		[ "$*" != "riptide-sim-nostream" ] && \
 		[ "$*" != "circt" ]; then \
 		echo "unknown pipeline: $*"; \
 		exit 1; \
@@ -392,12 +393,16 @@ circt-eval-%:
 riptide-eval-%:
 	$(call run-eval,riptide,$*,riptide-sim-test-$*)
 
+riptide-nostream-eval-%:
+	$(call run-eval,riptide-nostream,$*,riptide-sim-nostream-test-$*)
+
 # Run all evaluations
 eval: $(foreach name,$(EVAL_NAMES), \
 	wavelet-eval-$(name) \
 	wavelet-noopt-eval-$(name) \
 	circt-eval-$(name) \
 	riptide-eval-$(name) \
+	riptide-nostream-eval-$(name) \
 )
 
 # Only run relevant Wavelet compilation targets

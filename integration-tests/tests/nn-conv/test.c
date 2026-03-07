@@ -2,7 +2,7 @@
 #define SHRT_MAX 32767
 
 void nn_conv(
-	int weight[1024], int src[1024], int dest[1024],
+	int weight[restrict 1024], int src[restrict 1024], int dest[restrict 1024],
 	int weight_rows, int weight_cols,
 	int wc_bump, int wc_wr_bump,
 	int shift, int src_size, int weight_size, int output_cols

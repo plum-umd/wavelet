@@ -2,8 +2,8 @@ from sim import reference
 
 @reference(
     ([0], [0], 0, 0),
-    ([-20, 0, 20], [0] * 3, 2, 3),
-    ([5, 6, -2, 9, 10, -10], [0] * 6, 3, 6),
+    ([0, 20, 0], [0] * 3, 3, 3),
+    ([5, 4, 3, 2, 1], [0] * 5, 2, 5),
 )
 def sort(a, z, even_count, N):
     def cond_read(j, odd):

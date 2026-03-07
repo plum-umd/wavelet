@@ -1,4 +1,4 @@
-void sort(int A[1024], int Z[1024], int even_count, int size) {
+void sort(int A[restrict 1024], int Z[restrict 1024], int even_count, int size) {
 	int count = even_count;
 	for(int i = 0; i < 32; i++) {
 		int odd = i & 0x1;

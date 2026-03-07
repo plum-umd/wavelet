@@ -43,6 +43,11 @@ def parse_total_cycles(path: Path) -> int | None:
     m = re.search(r"total cycles:\s*(\d+)", text)
     return int(m.group(1)) if m else None
 
+def has_memory_mismatch(path: Path) -> bool:
+    """Check if a simulation log contains 'memory mismatch' warnings."""
+    text = read_file(path)
+    return text is not None and "memory mismatch" in text
+
 def parse_rtl_cycles(path: Path) -> int | None:
     """Assuming simulation clock period is 1 ns."""
     text = read_file(path)
@@ -164,23 +169,32 @@ def collect_cgra(name: str) -> dict:
     steps_wv = parse_total_cycles(test_path(name, "wavelet-sim.log"))
     steps_wv_noopt = parse_total_cycles(test_path(name, "wavelet-noopt-sim.log"))
     steps_rp = parse_total_cycles(test_path(name, "riptide-sim.log"))
+    steps_rp_noopt = parse_total_cycles(test_path(name, "riptide-sim.nostream.log"))
 
     # Op stats from dataflow graph JSON: (cf, sync, mem) counts
     wv_cf = parse_wavelet_cf_stats(test_path(name, "wavelet.json"))
     wv_noopt_cf = parse_wavelet_cf_stats(test_path(name, "wavelet-noopt.json"))
     rp_cf = parse_riptide_cf_stats(test_path(name, "riptide.json"))
+    rp_noopt_cf = parse_riptide_cf_stats(test_path(name, "riptide.nostream.json"))
 
     # Graph sizes: non-trivial ops (wavelet), vertex count (riptide)
     gs_rp = parse_graph_size_riptide(test_path(name, "riptide.json"))
+    gs_rp_noopt = parse_graph_size_riptide(test_path(name, "riptide.nostream.json"))
+
+    # Memory mismatch errors in simulation logs
+    err_rp = has_memory_mismatch(test_path(name, "riptide-sim.log"))
+    err_rp_noopt = has_memory_mismatch(test_path(name, "riptide-sim.nostream.log"))
 
     return {
-        "steps": { "wv": steps_wv, "wv_noopt": steps_wv_noopt, "rp": steps_rp },
-        "graph_size": { "wv": graph_size(wv_cf), "wv_noopt": graph_size(wv_noopt_cf), "rp": gs_rp },
+        "steps": { "wv": steps_wv, "wv_noopt": steps_wv_noopt, "rp": steps_rp, "rp_noopt": steps_rp_noopt },
+        "graph_size": { "wv": graph_size(wv_cf), "wv_noopt": graph_size(wv_noopt_cf), "rp": gs_rp, "rp_noopt": gs_rp_noopt },
         "cf_pct": {
             "wv": cf_pct_str(wv_cf),
             "wv_noopt": cf_pct_str(wv_noopt_cf),
             "rp": cf_pct_str(rp_cf),
+            "rp_noopt": cf_pct_str(rp_noopt_cf),
         },
+        "errors": { "rp": err_rp, "rp_noopt": err_rp_noopt },
     }
 
 def collect_hls(name: str) -> dict:
@@ -239,6 +253,8 @@ def emit_table(
     metrics: list[tuple[str, str, int]],
     # (display label, dict key in inner dicts)
     compilers: list[tuple[str, str]],
+    errors_key: str | None = None,
+    error_metrics: set[str] | None = None,
 ) -> str:
     nc = len(compilers)
     col_spec = "l" + (f"|{'r' * nc}") * len(metrics)
@@ -259,11 +275,15 @@ def emit_table(
     # Data rows
     for name in BENCH_NAMES:
         stats = all_stats[name]
+        errors = stats.get(errors_key, {}) if errors_key else {}
         cells = [tt_name(name)]
         for _, metric_key, decimals in metrics:
             metric = stats[metric_key]
             for _, comp_key in compilers:
-                cells.append(to_cell(metric[comp_key], decimals))
+                cell = to_cell(metric[comp_key], decimals)
+                if errors.get(comp_key) and (error_metrics is None or metric_key in error_metrics):
+                    cell = rf"$\times${cell}"
+                cells.append(cell)
         lines.append(" & ".join(cells) + r" \\")
 
     lines.append(r"\end{tabular}")
@@ -281,7 +301,10 @@ def generate_cgra_table(all_stats: dict[str, dict]) -> str:
             (r"\textbf{Wv}",     "wv"),
             (r"\textbf{Wv}$^*$", "wv_noopt"),
             ("RP",               "rp"),
+            ("RP$^*$",           "rp_noopt"),
         ],
+        errors_key="errors",
+        error_metrics={"steps"},
     )
 
 def generate_hls_table(all_stats: dict[str, dict]) -> str:
@@ -386,10 +409,14 @@ def geomean_ratio(all_stats: dict, metric: str, num_key: str, den_key: str) -> f
 
 def emit_geomeans(cgra: dict, hls: dict, perf: dict) -> str:
     defs = [
-        ("WvStepsOverRP",      "steps",     "wv",       "rp"),
-        ("WvNooptStepsOverRP", "steps",     "wv_noopt", "rp"),
-        ("WvGSOverRP",         "graph_size","wv",       "rp"),
-        ("WvNooptGSOverRP",    "graph_size","wv_noopt", "rp"),
+        ("WvStepsOverRP",          "steps",     "wv",       "rp"),
+        ("WvNooptStepsOverRP",     "steps",     "wv_noopt", "rp"),
+        ("WvStepsOverRPNoopt",     "steps",     "wv",       "rp_noopt"),
+        ("WvNooptStepsOverRPNoopt","steps",     "wv_noopt", "rp_noopt"),
+        ("WvGSOverRP",             "graph_size","wv",       "rp"),
+        ("WvNooptGSOverRP",        "graph_size","wv_noopt", "rp"),
+        ("WvGSOverRPNoopt",        "graph_size","wv",       "rp_noopt"),
+        ("WvNooptGSOverRPNoopt",   "graph_size","wv_noopt", "rp_noopt"),
     ]
     hls_defs = [
         ("WvCycOverCRT",       "cycles",    "wv",       "crt"),

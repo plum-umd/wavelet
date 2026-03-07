@@ -69,6 +69,10 @@ class Op:
     def fire(self, mem):
         raise NotImplementedError
 
+def s32(v):
+    v = v & 0xFFFFFFFF
+    return v - 0x100000000 if v >= 0x80000000 else v
+
 class BinOp(Op):
     fn = staticmethod(lambda a, b: 0)
     def fire(self, mem):
@@ -76,23 +80,27 @@ class BinOp(Op):
 
 @operator("ARITH_CFG_OP_ADD", "ARITH_CFG_OP_GEP", "ARITH_CFG_OP_GEP2", "ARITH_CFG_OP_GEP4")
 class Add(BinOp):
-    fn = staticmethod(lambda a, b: a + b)
+    fn = staticmethod(lambda a, b: s32(a + b))
 
 @operator("ARITH_CFG_OP_SUB")
 class Sub(BinOp):
-    fn = staticmethod(lambda a, b: a - b)
+    fn = staticmethod(lambda a, b: s32(a - b))
 
 @operator("MUL_CFG_OP_MUL", "MUL_CFG_OP_CLIP")
 class Mul(BinOp):
-    fn = staticmethod(lambda a, b: a * b)
+    fn = staticmethod(lambda a, b: s32(a * b))
 
 @operator("ARITH_CFG_OP_SHL")
 class Shl(BinOp):
-    fn = staticmethod(lambda a, b: a << b)
+    fn = staticmethod(lambda a, b: s32(a << b))
 
 @operator("ARITH_CFG_OP_ASHR")
 class Ashr(BinOp):
     fn = staticmethod(lambda a, b: a >> b)
+
+@operator("ARITH_CFG_OP_LSHR")
+class Lshr(BinOp):
+    fn = staticmethod(lambda a, b: (a & 0xFFFFFFFF) >> b)
 
 @operator("ARITH_CFG_OP_AND")
 class And(BinOp):
@@ -114,21 +122,37 @@ class Eq(BinOp):
 class Ne(BinOp):
     fn = staticmethod(lambda a, b: a != b)
 
-@operator("ARITH_CFG_OP_SGT", "ARITH_CFG_OP_UGT")
-class Gt(BinOp):
+@operator("ARITH_CFG_OP_SGT")
+class Sgt(BinOp):
     fn = staticmethod(lambda a, b: a > b)
 
-@operator("ARITH_CFG_OP_SGE", "ARITH_CFG_OP_UGE")
-class Ge(BinOp):
+@operator("ARITH_CFG_OP_UGT")
+class Ugt(BinOp):
+    fn = staticmethod(lambda a, b: (a & 0xFFFFFFFF) > (b & 0xFFFFFFFF))
+
+@operator("ARITH_CFG_OP_SGE")
+class Sge(BinOp):
     fn = staticmethod(lambda a, b: a >= b)
 
-@operator("ARITH_CFG_OP_SLT", "ARITH_CFG_OP_ULT")
-class Lt(BinOp):
+@operator("ARITH_CFG_OP_UGE")
+class Uge(BinOp):
+    fn = staticmethod(lambda a, b: (a & 0xFFFFFFFF) >= (b & 0xFFFFFFFF))
+
+@operator("ARITH_CFG_OP_SLT")
+class Slt(BinOp):
     fn = staticmethod(lambda a, b: a < b)
 
-@operator("ARITH_CFG_OP_SLE", "ARITH_CFG_OP_ULE")
-class Le(BinOp):
+@operator("ARITH_CFG_OP_ULT")
+class Ult(BinOp):
+    fn = staticmethod(lambda a, b: (a & 0xFFFFFFFF) < (b & 0xFFFFFFFF))
+
+@operator("ARITH_CFG_OP_SLE")
+class Sle(BinOp):
     fn = staticmethod(lambda a, b: a <= b)
+
+@operator("ARITH_CFG_OP_ULE")
+class Ule(BinOp):
+    fn = staticmethod(lambda a, b: (a & 0xFFFFFFFF) <= (b & 0xFFFFFFFF))
 
 @operator("CF_CFG_OP_SELECT")
 class Select(Op):
@@ -218,13 +242,13 @@ class Invariant(Op):
 @operator("STREAM_CFG_OP_STREAM")
 class Stream(Op):
     CMP = {
-        "STREAM_CFG_CMP_ULT": lambda i, b: not i < b,
+        "STREAM_CFG_CMP_ULT": lambda i, b: not (i & 0xFFFFFFFF) < (b & 0xFFFFFFFF),
         "STREAM_CFG_CMP_SLT": lambda i, b: not i < b,
-        "STREAM_CFG_CMP_ULE": lambda i, b: not i <= b,
+        "STREAM_CFG_CMP_ULE": lambda i, b: not (i & 0xFFFFFFFF) <= (b & 0xFFFFFFFF),
         "STREAM_CFG_CMP_SLE": lambda i, b: not i <= b,
-        "STREAM_CFG_CMP_UGT": lambda i, b: i > b,
+        "STREAM_CFG_CMP_UGT": lambda i, b: (i & 0xFFFFFFFF) > (b & 0xFFFFFFFF),
         "STREAM_CFG_CMP_SGT": lambda i, b: i > b,
-        "STREAM_CFG_CMP_UGE": lambda i, b: i >= b,
+        "STREAM_CFG_CMP_UGE": lambda i, b: (i & 0xFFFFFFFF) >= (b & 0xFFFFFFFF),
         "STREAM_CFG_CMP_SGE": lambda i, b: i >= b,
     }
 
@@ -232,20 +256,20 @@ class Stream(Op):
         super().__init__(*args, **kwargs)
         self.stream_idx = None
 
+    def is_enabled(self):
+        return self.stream_idx is not None or self.all_inputs_ready()
+
     def fire(self, mem):
         start, bound = self.inputs[0].peek(), self.inputs[1].peek()
         if self.stream_idx is None:
             self.stream_idx = start
-        if start == bound:
-            self.pop_all()
-            self.stream_idx = None
-            return
         done = self.CMP[self.cmp](self.stream_idx, bound)
+        done_flag = int(done != self.pred)
         if not done:
             self.push(self.stream_idx, 0)
-        self.stream_idx += self.inputs[2].peek()
-        self.push(done, 1)
-        if done != self.pred:
+            self.stream_idx += self.inputs[2].peek()
+        self.push(done_flag, 1)
+        if done:
             self.pop_all()
             self.stream_idx = None
 
@@ -336,7 +360,15 @@ def parse_graph(graph_json, scalar_args, mem_arrays):
                     ch.push(value)
                 vtx.inputs.append(ch)
 
-    return vertices, mem
+    non_hold_channels = set()
+    for v in graph_json["vertices"]:
+        vtx = vertices[v["ID"]]
+        for i, alternatives in enumerate(v["inputs"]):
+            src = alternatives[0]
+            if src["type"] != "data" or not src["hold"]:
+                non_hold_channels.add(id(vtx.inputs[i]))
+
+    return vertices, mem, non_hold_channels
 
 def simulate(vertices, mem, max_cycles=None):
     vlist = list(vertices.values())
@@ -352,8 +384,13 @@ def simulate(vertices, mem, max_cycles=None):
         cycle += 1
 
 def run(graph_json, scalar_args, mem_arrays, max_cycles=None):
-    vertices, mem = parse_graph(graph_json, scalar_args, mem_arrays)
+    vertices, mem, non_hold_channels = parse_graph(graph_json, scalar_args, mem_arrays)
     cycles = simulate(vertices, mem, max_cycles)
+    # A sanity check for leftover messages
+    for v in vertices.values():
+        for i, ch in enumerate(v.inputs):
+            if id(ch) not in non_hold_channels:
+                assert not ch.has_data(), f"vertex {v.id} ({v.name}) input {i} has leftover data: {ch.buf}"
     return mem.as_arrays(), cycles
 
 def main():
