@@ -11,8 +11,6 @@ import json
 
 from pathlib import Path
 
-TESTS_DIR = Path(__file__).parent.parent / "tests"
-
 BENCH_NAMES = [
     "nn_vadd", "nn_norm", "nn_relu", "nn_pool",
     "nn_fc", "nn_conv", "dmv", "dmm", "dither", "sort",
@@ -23,7 +21,7 @@ CF_OPS = { "switch", "steer", "merge", "carry", "order", "forwardc", "inv" }
 MEM_OPS = { "load", "store" }
 
 def test_path(name: str, suffix: str) -> Path:
-    return TESTS_DIR / name.replace("_", "-") / f"test.{suffix}"
+    return Path(__file__).parent.parent / "tests" / name.replace("_", "-") / f"test.{suffix}"
 
 def read_file(path: Path) -> str | None:
     try:
@@ -328,6 +326,8 @@ def is_comment(line: str, ext: str) -> bool:
     s = line.strip()
     if s.startswith("//"):
         return True
+    if ext == "lean" and (s.startswith("--") or s.startswith("/-") or s.startswith("-/") or s.endswith("-/")):
+        return True
     if ext == "c" and (s.startswith("/*") or s.startswith("*") or s.endswith("*/")):
         return True
     return False
@@ -407,7 +407,7 @@ def geomean_ratio(all_stats: dict, metric: str, num_key: str, den_key: str) -> f
             ratios.append(n / d)
     return round(geomean(ratios), 2) if ratios else None
 
-def emit_geomeans(cgra: dict, hls: dict, perf: dict) -> str:
+def emit_stats(cgra: dict, hls: dict, perf: dict) -> str:
     defs = [
         ("WvStepsOverRP",          "steps",     "wv",       "rp"),
         ("WvNooptStepsOverRP",     "steps",     "wv_noopt", "rp"),
@@ -445,6 +445,152 @@ def emit_geomeans(cgra: dict, hls: dict, perf: dict) -> str:
     if ratios:
         val = round(geomean(ratios), 2)
         lines.append(rf"\newcommand{{\DSLOverC}}{{{val}}}")
+    # Simulation proof ratio: proof LoC / (code + spec) LoC for CFC and Linking
+    project_root = Path(__file__).parent.parent.parent
+    lean_base = project_root / "wavelet-core" / "lean" / "Wavelet"
+    sim_components = [
+        (CF_CONVERSION_CODE, lean_base, CF_CONVERSION_SPEC, CF_CONVERSION_PROOF),
+        (LINKING_CODE,       lean_base, LINKING_SPEC,       LINKING_PROOF),
+    ]
+    sim_code_spec = 0
+    sim_proof = 0
+    for code_files, code_base, spec_files, proof_files in sim_components:
+        sim_code_spec += count_files(code_base, code_files) + count_files(lean_base, spec_files)
+        sim_proof += count_files(lean_base, proof_files)
+    if sim_code_spec > 0:
+        val = round(sim_proof / sim_code_spec, 1)
+        lines.append(rf"\newcommand{{\simProofRatio}}{{{val}}}")
+    return "\n".join(lines)
+
+TYPE_CHECKER_CODE = [
+    "lib.rs", "main.rs", "ir.rs", "check.rs", "error.rs", "env.rs", "parse.rs",
+    "logic/mod.rs", "logic/cap.rs", "logic/region.rs",
+    "logic/semantic/mod.rs", "logic/semantic/solver.rs", "logic/semantic/region_set.rs",
+    "logic/syntactic/mod.rs", "logic/syntactic/solver.rs",
+    "ghost/mod.rs", "ghost/ir.rs", "ghost/affine.rs", "ghost/fracperms.rs",
+    "ghost/json.rs", "ghost/lower.rs",
+]
+
+PERM_VALIDATOR_CODE = [
+    "ghost/checker/mod.rs", "ghost/checker/context.rs", "ghost/checker/perm_env.rs",
+    "ghost/checker/permission.rs", "ghost/checker/pretty_print.rs",
+    "ghost/checker/expr_checker.rs", "ghost/checker/stmt_checker.rs",
+    "ghost/checker/program_checker.rs", "ghost/checker/tail_checker.rs",
+    "ghost/checker/tests.rs",
+]
+
+CF_CONVERSION_CODE = [
+    "Compile/Fn.lean",
+    "Seq/Fn.lean", "Dataflow/Proc.lean", "Dataflow/AsyncOp.lean",
+]
+CF_CONVERSION_SPEC = [
+    "Semantics/Defs.lean", "Semantics/OpInterp.lean",
+    "Seq/AffineVar.lean", "Seq/VarMap.lean",
+    "Dataflow/AffineChan.lean",
+    "Dataflow/ChanMap.lean",
+    "Data/Basic.lean",
+]
+CF_CONVERSION_PROOF = [
+    "Thm/Compile/Fn/AffineVar.lean", "Thm/Compile/Fn/Lemmas.lean",
+    "Thm/Compile/Fn/Simulation.lean",
+    "Thm/Compile/Fn/Simulation/Br.lean", "Thm/Compile/Fn/Simulation/BrMerges.lean",
+    "Thm/Compile/Fn/Simulation/Init.lean", "Thm/Compile/Fn/Simulation/Invariants.lean",
+    "Thm/Compile/Fn/Simulation/Op.lean", "Thm/Compile/Fn/Simulation/Ret.lean",
+    "Thm/Compile/Fn/Simulation/Tail.lean",
+    "Thm/Seq/AffineVar.lean", "Thm/Seq/VarMap.lean",
+    "Thm/Dataflow/AffineChan.lean", "Thm/Dataflow/ChanMap.lean",
+    "Thm/Dataflow/AltStep.lean",
+    "Thm/Data/Function.lean", "Thm/Data/List.lean", "Thm/Data/Vector.lean",
+    "Thm/Semantics/Simulation.lean", "Thm/Seq/Invariants.lean",
+]
+
+LINKING_CODE = ["Compile/Prog.lean", "Compile/MapChans.lean", "Seq/Prog.lean"]
+LINKING_SPEC = ["Semantics/Link.lean"]
+LINKING_PROOF = [
+    "Thm/Compile/AffineOp.lean", "Thm/Compile/MapChans.lean", "Thm/Compile/Prog.lean",
+    "Thm/Compile/Prog/AffineVar.lean", "Thm/Compile/Prog/Simulation.lean",
+    "Thm/Seq/Prog.lean", "Thm/Semantics/Link.lean",
+]
+
+DETERMINACY_SPEC = [
+    "Determinacy/PCM.lean", "Determinacy/OpSpec.lean", "Semantics/Lts.lean",
+]
+DETERMINACY_PROOF = [
+    "Thm/Determinacy/Confluence.lean", "Thm/Determinacy/Congr.lean",
+    "Thm/Determinacy/Convert.lean", "Thm/Determinacy/Defs.lean",
+    "Thm/Determinacy/Determinism.lean", "Thm/Determinacy/DisjointTokens.lean",
+    "Thm/Determinacy/HasNoTokenConst.lean", "Thm/Determinacy/Hetero.lean",
+    "Thm/Determinacy/MapTokens.lean", "Thm/Determinacy/OpSpec.lean",
+    "Thm/Determinacy/PCM.lean",
+    "Thm/Semantics/Confluence.lean", "Thm/Semantics/Guard.lean",
+    "Thm/Semantics/Invariant.lean", "Thm/Semantics/Label.lean",
+    "Thm/Semantics/OpInterp.lean",
+    "Thm/Dataflow/EqMod.lean", "Thm/Dataflow/IndexedStep.lean",
+    "Thm/HighLevel.lean",
+]
+
+OPTIMIZATION_CODE = ["Compile/Rewrite.lean", "Compile/EraseGhost.lean"]
+
+def count_files(base_dir: Path, files: list[str]) -> int:
+    total = 0
+    for f in files:
+        n = count_lines(base_dir / f)
+        if n is None:
+            print(f"  WARNING: missing file {base_dir / f}")
+            continue
+        total += n
+    return total
+
+def fmt_loc(n: int) -> str:
+    if n == 0:
+        return "-"
+    return f"{n:,}"
+
+def generate_loc_table() -> str:
+    """Generate LaTeX table estimating lines of code by component."""
+    project_root = Path(__file__).parent.parent.parent
+    lean_base = project_root / "wavelet-core" / "lean" / "Wavelet"
+    rust_base = project_root / "wavelet-elab" / "src"
+
+    # (name, time, code_files, code_base, spec_files, proof_files)
+    # TODO: the man-week estimates are hardcoded now, based on the commit history
+    components = [
+        ("Type Checker",    8,  TYPE_CHECKER_CODE,    rust_base, [],                  []),
+        ("Perm. Validator", 4,  PERM_VALIDATOR_CODE,  rust_base, [],                  []),
+        ("CF Conversion",   8,  CF_CONVERSION_CODE,   lean_base, CF_CONVERSION_SPEC,  CF_CONVERSION_PROOF),
+        ("Linking",         4,  LINKING_CODE,          lean_base, LINKING_SPEC,        LINKING_PROOF),
+        ("Determinacy",     8,  [],                    lean_base, DETERMINACY_SPEC,    DETERMINACY_PROOF),
+        ("Optimization",    3,  OPTIMIZATION_CODE,     lean_base, [],                  []),
+    ]
+
+    lines = [r"\begin{tabular}{l|rrrr}"]
+    lines.append(r"    Component & Time & Code & Spec & Proofs \\")
+    lines.append(r"    \hline")
+
+    total_time = 0
+    total_code = 0
+    total_spec = 0
+    total_proof = 0
+
+    for name, time, code_files, code_base, spec_files, proof_files in components:
+        code_n = count_files(code_base, code_files)
+        spec_n = count_files(lean_base, spec_files)
+        proof_n = count_files(lean_base, proof_files)
+
+        total_time += time
+        total_code += code_n
+        total_spec += spec_n
+        total_proof += proof_n
+
+        lines.append(
+            f"    {name:20s}& {time}   & {fmt_loc(code_n):>7s} & {fmt_loc(spec_n):>7s} & {fmt_loc(proof_n):>7s} \\\\"
+        )
+
+    lines.append(r"    \hline")
+    lines.append(
+        f"    {'Total':20s}& {total_time}  & {fmt_loc(total_code):>7s} & {fmt_loc(total_spec):>7s} & {fmt_loc(total_proof):>7s} \\\\"
+    )
+    lines.append(r"\end{tabular}")
     return "\n".join(lines)
 
 def main():
@@ -470,8 +616,13 @@ def main():
     print(generate_compiler_perf_table(perf))
     print("}")
     print()
+    print("%%%%%%%% LoC Table %%%%%%%%")
+    print(r"\newcommand{\evalloc}{")
+    print(generate_loc_table())
+    print("}")
+    print()
     print("%%%%%%%% Other Stats %%%%%%%%")
-    print(emit_geomeans(cgra, hls, perf))
+    print(emit_stats(cgra, hls, perf))
 
 if __name__ == "__main__":
     main()
