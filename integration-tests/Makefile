@@ -411,3 +411,10 @@ eval-compile: $(foreach name,$(EVAL_NAMES), \
 	wavelet-compile-$(name) \
 	wavelet-noopt-compile-$(name) \
 )
+
+sanity-check: \
+	wavelet-eval-simple \
+	wavelet-noopt-eval-simple \
+	circt-eval-simple \
+	riptide-eval-simple \
+	riptide-nostream-eval-simple

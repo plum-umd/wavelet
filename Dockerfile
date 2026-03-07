@@ -144,7 +144,7 @@ RUN mv target/release/wavelet wavelet-bin && \
     mkdir -p target/release && \
     mv wavelet-bin target/release/wavelet
 
-RUN cd wavelet-core/lean && lake clean
+RUN rm -rf wavelet-core/lean/.lake
 
 FROM ubuntu:24.04 AS runtime
 
@@ -163,19 +163,26 @@ WORKDIR /wavelet
 # This includes a global Z3 install
 RUN pip3 install --no-cache-dir --break-system-packages -r integration-tests/requirements.txt
 
+# Strip some binaries to reduce image size
+RUN strip --strip-all integration-tests/build/nextpnr/nextpnr-ecp5 && \
+    strip --strip-all integration-tests/build/circt/bin/hlstool && \
+    strip --strip-all integration-tests/build/polygeist/bin/cgeist
+
 RUN cp -a integration-tests/build/sv2v/. /usr/local/ && \
     cp -a integration-tests/build/yosys/. /usr/local/ && \
     cp -a integration-tests/build/verilator/. /usr/local/ && \
     rm -rf \
         integration-tests/build/sv2v \
         integration-tests/build/yosys \
-        integration-tests/build/verilator
+        integration-tests/build/verilator && \
+    rm -f /usr/local/bin/verilator_bin_dbg
 
 RUN curl -fsSL https://elan.lean-lang.org/elan-init.sh | sh -s -- -y
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain none
-RUN curl -fsSL https://code-server.dev/install.sh | sh -s
+RUN curl -fsSL https://code-server.dev/install.sh | sh -s -- --method standalone
 
 # Configure code-server
+ENV PATH="/root/.local/bin:${PATH}"
 RUN code-server --install-extension leanprover.lean4 && \
     code-server --install-extension rust-lang.rust-analyzer
 COPY <<EOF /root/.local/share/code-server/User/settings.json
@@ -233,5 +240,5 @@ COPY README.md README.md
 FROM scratch AS final
 COPY --from=runtime / /
 WORKDIR /wavelet
-ENV PATH="/root/.elan/bin:/root/.cargo/bin:${PATH}"
+ENV PATH="/root/.elan/bin:/root/.cargo/bin:/root/.local/bin:${PATH}"
 ENTRYPOINT ["/bin/bash"]
