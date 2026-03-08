@@ -115,7 +115,6 @@ COPY .cargo .cargo
 COPY wavelet wavelet
 COPY wavelet-core wavelet-core
 COPY wavelet-elab wavelet-elab
-COPY wavelet-embedding wavelet-embedding
 COPY Cargo.toml Cargo.toml
 COPY Cargo.lock Cargo.lock
 COPY rust-toolchain.toml rust-toolchain.toml
@@ -238,8 +237,10 @@ EOF
 
 # Documentation and UX
 COPY README.md README.md
+RUN echo "PS1='\\w \\\$ '" > /root/.bashrc
+COPY <<EOF2 /usr/local/bin/entry.sh
+#!/bin/bash
 
-COPY <<EOF2 /root/.bashrc
 # Check ANSI support
 if [[ -t 1 ]] && tput setaf 1 >/dev/null 2>&1 && [[ -z "\${NO_COLOR-}" ]]; then
     bold=\$(tput bold)
@@ -247,8 +248,6 @@ if [[ -t 1 ]] && tput setaf 1 >/dev/null 2>&1 && [[ -z "\${NO_COLOR-}" ]]; then
     underline=\$(tput smul)
     reset=\$(tput sgr0)
     green=\$(tput setaf 2)
-    tput smcup
-    trap 'tput rmcup' EXIT
 else
     bold=
     italic=
@@ -257,7 +256,18 @@ else
     green=
 fi
 
+if [ "\$1" == "ae-server" ]; then
 cat <<EOF
+
+Please visit \${underline}\${bold}http://localhost:8080\${reset} to access the in-browser editor.
+
+If you can't access it, make sure that you have started the container with \${bold}-p 127.0.0.1:8080:8080\${reset}.
+
+EOF
+code-server --bind-addr 0.0.0.0:8080 --auth none /wavelet
+else
+cat <<EOF
+
 Welcome to the artifact accompanying the paper:
 
     \${bold}Let it Flow: A Formally Verified Compilation Framework for Asynchronous Dataflow\${reset}
@@ -273,43 +283,12 @@ You can also exit and restart this image as a VS code server for a better experi
 Then visit \${underline}\${bold}http://localhost:8080\${reset} to access the in-browser editor.
 
 EOF
-
-PS1='\\w \\\$ '
-EOF2
-
-COPY <<EOF2 /usr/local/bin/ae-server
-#!/bin/bash
-
-# Check ANSI support
-if [[ -t 1 ]] && tput setaf 1 >/dev/null 2>&1 && [[ -z "\${NO_COLOR-}" ]]; then
-    bold=\$(tput bold)
-    italic=\$(tput sitm)
-    underline=\$(tput smul)
-    reset=\$(tput sgr0)
-    green=\$(tput setaf 2)
-    tput smcup
-    trap 'tput rmcup' EXIT
-else
-    bold=
-    italic=
-    underline=
-    reset=
-    green=
 fi
-
-cat <<EOF
-Please visit \${underline}\${bold}http://localhost:8080\${reset} to access the in-browser editor.
-
-If you can't access it, make sure that you have started the container with \${bold}-p 127.0.0.1:8080:8080\${reset}.
-
-EOF
-
-code-server --bind-addr 0.0.0.0:8080 --auth none /wavelet
 EOF2
-RUN chmod +x /usr/local/bin/ae-server
+RUN chmod +x /usr/local/bin/entry.sh
 
 FROM scratch AS final
 COPY --from=runtime / /
 WORKDIR /wavelet
 ENV PATH="/root/.elan/bin:/root/.cargo/bin:${PATH}"
-ENTRYPOINT ["/bin/bash"]
+ENTRYPOINT ["/usr/local/bin/entry.sh"]

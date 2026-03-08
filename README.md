@@ -56,10 +56,10 @@ The rest of the guide assumes that you have started the Docker image following t
 
 ## Step-by-Step Instructions [1 hour]
 
-In this section, we first describe steps to reproduce the statistics in Figures 11-14 in the paper (E1),
-and then we show the correspondence between the Lean formalization and various on-paper theorems (E2).
+In this section, we first describe steps to reproduce Figures 11-14 in the paper,
+and then we show the correspondence between our Lean formalization and on-paper theorems.
 
-### (E1) Evaluation Results (Section 6)
+### Evaluation Results (Section 6)
 
 The following commands will run all the benchmarks mentioned in Section 6,
 and then produce Figures 11-14 in LaTeX:
@@ -115,25 +115,22 @@ For example,
 - `test.wavelet.netlist.json.log` and `test.wavelet.nextpnr.json.log` are logs from
   Yosys and nextpnr for synthesis/placement/routing on the design.
 
-### (E2) Lean Formalization (Section 5)
+### Lean Formalization (Section 5)
 
 This section describes the correspondence between our Lean formalization
-and its correspondence to definitions and results in Section 5.
+and various definitions and results in Section 5.
 
 For this step, it is recommended to start our image as a VS Code server
 and use the in-brower editor to view our source code (see Step 4 in the **Getting Started Guide**).
 
 Alternatively, you can also download our source code zip file (`wavelet-src.zip`)
-or clone our GitHub repository. Some instructions below assumes that you are using
-VS Code with the Lean 4 extension installed (which is already the case if you are
-using the in-browser editor).
+or clone our [GitHub repository](https://github.com/plum-umd/wavelet/tree/pldi-ae).
+Some instructions below assumes that you are using VS Code with the
+[Lean 4 extension](https://lean-lang.org/install/) installed (which is already the case
+if you are using the in-browser editor).
 
-All of our Lean formalization lies in `wavelet-core/lean`, and all the paths in
-this section are relative to `wavelet-core/lean`. Assuming this is the first time
-you have installed the Lean 4 extension, if you open any Lean source file in VS Code,
-a popup window will show on the bottom right indicating that it is installing the
-right Lean 4 toolchain. Wait for that to finish, and then you should be able to see
-a Lean InfoView on the right half of the editor whenever you open a Lean source file.
+All of our Lean formalization lies in `wavelet-core/lean`, and all paths in this section
+are relative to it.
 
 To verify all the proofs, run
 ```
@@ -141,10 +138,10 @@ cd wavelet-core/lean
 lake exec cache get
 lake build Thm
 ```
+This might take a while since it needs to fetch right Lean toolchain and build cache for
+[mathlib](https://github.com/leanprover-community/mathlib4).
 
-We now give pointers to all key definitions and theorems in our Section 5,
-which describes our verified dataflow compiler in Lean.
-
+Here are the pointers to all key definitions and theorems in our Section 5:
 - Section 5.1
   - Syntax and semantics of L_let: `Wavelet/Dataflow/Proc.lean`.
   - Syntax and semantics of L_flow: `Wavelet/Seq/Fn.lean` and `Wavelet/Seq/Prog.lean`.
@@ -160,6 +157,23 @@ which describes our verified dataflow compiler in Lean.
 - Section 5.4
   - Most rewrite rules are implemented in `Wavelet/Compile/Rewrite.lean`,
     and they are currently unverified.
+
+The structure of the `Wavelet` directory:
+- `Wavelet/Backend`: Lowering pass to CIRCT `handshake`.
+- `Wavelet/Compile`: Various compilation passes.
+- `Wavelet/Data`: Basic data structures and lemmas.
+- `Wavelet/Dataflow`: Syntax and semantics of our dataflow calculus L_flow.
+- `Wavelet/Determinacy`: Basic definitions for the determinacy results.
+- `Wavelet/Frontend`: Formats to interface with the Rust frontend.
+- `Wavelet/Semantics`: Common semantic utilities.
+- `Wavelet/Seq`: Syntax and semantics of L_let.
+- `Wavelet/Thm`: All proofs and specifications of Wavelet.
+
+**Quick Note:** If this is the first time you view Lean code in VS Code, you will likely
+see a popup window on the bottom right corner of the editor, indicating that it is installing
+the Lean toolchain. Once that's finished, you should see a Lean "InfoView" panel on the right
+side of the editor whenever you open a Lean file, and you sometimes need to click "Restart File"
+button in the InfoView to load the file correctly.
 
 ## (Optional) Using Wavelet
 
