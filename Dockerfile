@@ -190,7 +190,7 @@ RUN cp -a /wavelet/integration-tests/build/sv2v/. /usr/local/ && \
 COPY <<EOF /root/.local/share/code-server/User/settings.json
 {
     "chat.disableAIFeatures": true,
-    "workbench.colorTheme": "Default Dark Modern",
+    "workbench.colorTheme": "Default Light Modern",
     "workbench.startupEditor": "readme",
     "security.workspace.trust.enabled": false,
     "workbench.secondarySideBar.defaultVisibility": "hidden",
@@ -237,7 +237,7 @@ COPY <<EOF /wavelet/.vscode/tasks.json
 }
 EOF
 
-COPY README.md README.md
+COPY README.md /wavelet/README.md
 RUN echo "PS1='\\w \\\$ '" > /root/.bashrc
 COPY <<EOF2 /usr/local/bin/entry.sh
 #!/bin/bash
