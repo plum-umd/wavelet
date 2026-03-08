@@ -138,7 +138,11 @@ RUN cd integration-tests && \
     mv build-old/polygeist/bin/cgeist build/polygeist/bin/cgeist && \
     mv build-old/nextpnr/nextpnr-ecp5 build/nextpnr/nextpnr-ecp5 && \
     mv build-old/verilator build-old/yosys build-old/sv2v build && \
-    rm -rf build-old
+    rm -rf build-old build/verilator/bin/verilator_bin_dbg
+
+RUN strip --strip-all integration-tests/build/nextpnr/nextpnr-ecp5 && \
+    strip --strip-all integration-tests/build/circt/bin/hlstool && \
+    strip --strip-all integration-tests/build/polygeist/bin/cgeist
 
 RUN mv target/release/wavelet wavelet-bin && \
     rm -rf target && \
@@ -159,24 +163,10 @@ RUN apt-get update && \
         libboost-thread1.83.0 && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /wavelet /wavelet
-WORKDIR /wavelet
 # This includes a global Z3 install
-RUN pip3 install --no-cache-dir --break-system-packages -r integration-tests/requirements.txt
-
-# Strip some binaries to reduce image size
-RUN strip --strip-all integration-tests/build/nextpnr/nextpnr-ecp5 && \
-    strip --strip-all integration-tests/build/circt/bin/hlstool && \
-    strip --strip-all integration-tests/build/polygeist/bin/cgeist
-
-RUN cp -a integration-tests/build/sv2v/. /usr/local/ && \
-    cp -a integration-tests/build/yosys/. /usr/local/ && \
-    cp -a integration-tests/build/verilator/. /usr/local/ && \
-    rm -rf \
-        integration-tests/build/sv2v \
-        integration-tests/build/yosys \
-        integration-tests/build/verilator && \
-    rm -f /usr/local/bin/verilator_bin_dbg
+COPY integration-tests/requirements.txt /tmp/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt && \
+    rm /tmp/requirements.txt
 
 RUN curl -fsSL https://elan.lean-lang.org/elan-init.sh | sh -s -- -y
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain none
@@ -185,6 +175,18 @@ RUN curl -fsSL https://code-server.dev/install.sh | sh -s -- --version 4.109.5
 # Configure code-server
 RUN code-server --install-extension leanprover.lean4 && \
     code-server --install-extension rust-lang.rust-analyzer
+
+# Install built binaries and strip some binaries to reduce image size
+COPY --from=build /wavelet /wavelet
+RUN cp -a /wavelet/integration-tests/build/sv2v/. /usr/local/ && \
+    cp -a /wavelet/integration-tests/build/yosys/. /usr/local/ && \
+    cp -a /wavelet/integration-tests/build/verilator/. /usr/local/ && \
+    rm -rf \
+        /wavelet/integration-tests/build/sv2v \
+        /wavelet/integration-tests/build/yosys \
+        /wavelet/integration-tests/build/verilator
+
+# Documentation and UX
 COPY <<EOF /root/.local/share/code-server/User/settings.json
 {
     "chat.disableAIFeatures": true,
@@ -221,7 +223,7 @@ COPY <<EOF /wavelet/.vscode/tasks.json
         {
             "label": "Install Lean Toolchain",
             "type": "shell",
-            "command": "elan toolchain install \\"\$(cat lean-toolchain)\\"",
+            "command": "elan toolchain install \\"\$(cat lean-toolchain)\\" || true",
             "options": { "cwd": "\${workspaceFolder}/wavelet-core/lean" },
             "runOptions": { "runOn": "folderOpen" },
             "presentation": {
@@ -235,7 +237,6 @@ COPY <<EOF /wavelet/.vscode/tasks.json
 }
 EOF
 
-# Documentation and UX
 COPY README.md README.md
 RUN echo "PS1='\\w \\\$ '" > /root/.bashrc
 COPY <<EOF2 /usr/local/bin/entry.sh
@@ -257,16 +258,16 @@ else
 fi
 
 if [ "\$1" == "ae-server" ]; then
-cat <<EOF
+    cat <<EOF
 
 Please visit \${underline}\${bold}http://localhost:8080\${reset} to access the in-browser editor.
 
 If you can't access it, make sure that you have started the container with \${bold}-p 127.0.0.1:8080:8080\${reset}.
 
 EOF
-code-server --bind-addr 0.0.0.0:8080 --auth none /wavelet
+    exec code-server --bind-addr 0.0.0.0:8080 --auth none "\${@:2}" /wavelet
 else
-cat <<EOF
+    cat <<EOF
 
 Welcome to the artifact accompanying the paper:
 
@@ -283,6 +284,7 @@ You can also exit and restart this image as a VS code server for a better experi
 Then visit \${underline}\${bold}http://localhost:8080\${reset} to access the in-browser editor.
 
 EOF
+    exec /bin/bash "\$@"
 fi
 EOF2
 RUN chmod +x /usr/local/bin/entry.sh
