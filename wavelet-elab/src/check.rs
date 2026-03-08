@@ -54,6 +54,115 @@ fn substitute_region(region: &Region, subst: &BTreeMap<String, String>) -> Regio
     Region::from_intervals(intervals)
 }
 
+fn is_array_param(ty: &Ty) -> bool {
+    matches!(ty, Ty::RefShrd { .. } | Ty::RefUniq { .. })
+}
+
+struct PreparedCall<R: RegionModel> {
+    typed_args: Vec<TypedVar>,
+    required_delta: Delta<R>,
+}
+
+fn instantiate_required_delta<L: CapabilityLogic>(
+    fn_def: &FnDef<UntypedVar>,
+    array_args: &[UntypedVar],
+    subst_map: &BTreeMap<String, String>,
+) -> Delta<L::Region>
+where
+    L::Region: RegionModel,
+{
+    let mut required_delta = Delta::<L::Region>::default();
+    for (cap_pat, arg_var) in fn_def.caps.iter().zip(array_args.iter()) {
+        let mut instantiated_cap = Cap::<L::Region>::default();
+        if let Some(uniq_region) = &cap_pat.uniq {
+            let substituted = substitute_region(uniq_region, subst_map);
+            instantiated_cap.uniq = <L::Region as RegionModel>::from_region(&substituted);
+        }
+        if let Some(shrd_region) = &cap_pat.shrd {
+            let substituted = substitute_region(shrd_region, subst_map);
+            instantiated_cap.shrd = <L::Region as RegionModel>::from_region(&substituted);
+        }
+        required_delta.0.insert(arg_var.0.clone(), instantiated_cap);
+    }
+    required_delta
+}
+
+fn prepare_call<L: CapabilityLogic>(
+    ctx: &mut Ctx<L>,
+    fn_def: &FnDef<UntypedVar>,
+    args: &[UntypedVar],
+    call_kind: &str,
+) -> Result<PreparedCall<L::Region>, TypeError>
+where
+    L::Region: RegionModel,
+{
+    let value_params: Vec<_> = fn_def
+        .params
+        .iter()
+        .filter(|param| !is_array_param(&param.ty))
+        .collect();
+    let array_params: Vec<_> = fn_def
+        .params
+        .iter()
+        .filter(|param| is_array_param(&param.ty))
+        .collect();
+
+    let expected_value_args = value_params.len();
+    if args.len() < expected_value_args {
+        return Err(TypeError::InvalidOp {
+            op: format!("{call_kind} to {} has too few arguments", fn_def.name.0),
+        });
+    }
+
+    let mut subst_map = BTreeMap::new();
+    let mut typed_args = Vec::with_capacity(args.len());
+
+    for (param, arg_var) in value_params
+        .iter()
+        .zip(args.iter().take(expected_value_args))
+    {
+        let mut arg_ty = ctx.ty_of(arg_var)?;
+        if arg_ty != param.ty {
+            let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param.ty, Ty::Int(_));
+            if both_int {
+                if arg_var.0.starts_with("_lit_") {
+                    ctx.bind_var(&arg_var.0, param.ty.clone());
+                    arg_ty = param.ty.clone();
+                } else {
+                    arg_ty = param.ty.clone();
+                }
+            }
+            if arg_ty != param.ty {
+                return Err(TypeError::TypeMismatch {
+                    expected: TypeError::type_name(&param.ty),
+                    found: TypeError::type_name(&arg_ty),
+                });
+            }
+        }
+        subst_map.insert(param.name.clone(), arg_var.0.clone());
+        typed_args.push(arg_var.add_type(arg_ty));
+    }
+
+    let array_args = &args[expected_value_args..];
+    if array_args.len() != array_params.len() {
+        return Err(TypeError::InvalidOp {
+            op: format!(
+                "{call_kind} to {} has wrong number of array arguments",
+                fn_def.name.0
+            ),
+        });
+    }
+
+    for arg_var in array_args {
+        typed_args.push(arg_var.add_type(ctx.ty_of(arg_var)?));
+    }
+
+    Ok(PreparedCall {
+        typed_args,
+        required_delta: instantiate_required_delta::<L>(fn_def, array_args, &subst_map),
+    })
+}
+
 /// Options controlling how the type checker behaves.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CheckOptions {
@@ -1194,96 +1303,21 @@ where
             args,
             fence,
         } => {
-            // Look up function definition.
             let fn_def = registry
                 .get(func)
                 .ok_or_else(|| TypeError::UndefinedFunction(func.0.clone()))?;
-
-            // Check that args match parameter types (value parameters only, not arrays).
-            let value_params: Vec<_> = fn_def
-                .params
-                .iter()
-                .filter(|tvar| !matches!(tvar.ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
-                .collect();
-            let array_params: Vec<_> = fn_def
-                .params
-                .iter()
-                .filter(|tvar| matches!(tvar.ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
-                .collect();
-
-            // Build substitution map for indices (param names -> arg vars).
-            let mut subst_map = std::collections::BTreeMap::new();
-
-            // Check value parameters and build substitution.
-            let expected_value_args = value_params.len();
-            if args.len() < expected_value_args {
-                return Err(TypeError::InvalidOp {
-                    op: format!("function call to {} has too few arguments", func.0),
-                });
-            }
-            for (i, param) in value_params.iter().enumerate() {
-                let arg_var = &args[i];
-                let mut arg_ty = ctx.ty_of(arg_var)?;
-                if arg_ty != param.ty {
-                    // Allow integer type coercion for literals or between signed/unsigned
-                    let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param.ty, Ty::Int(_));
-                    if both_int {
-                        // If it's a literal binding, rebind it to the expected type
-                        if arg_var.0.starts_with("_lit_") {
-                            ctx.bind_var(&arg_var.0, param.ty.clone());
-                            arg_ty = param.ty.clone();
-                        } else {
-                            // For non-literal integers, allow implicit conversion between signed/unsigned
-                            // This handles cases like `let x = 0; f(x)` where f expects i32
-                            arg_ty = param.ty.clone();
-                        }
-                    }
-                    if arg_ty != param.ty {
-                        return Err(TypeError::TypeMismatch {
-                            expected: TypeError::type_name(&param.ty),
-                            found: TypeError::type_name(&arg_ty),
-                        });
-                    }
-                }
-                // Record substitution for index expressions.
-                subst_map.insert(param.name.clone(), arg_var.0.clone());
-            }
-
-            // Check array arguments and their capabilities.
-            let array_args = &args[expected_value_args..];
-            if array_args.len() != array_params.len() {
-                return Err(TypeError::InvalidOp {
-                    op: format!(
-                        "function call to {} has wrong number of array arguments",
-                        func.0
-                    ),
-                });
-            }
-
-            // Instantiate and check each capability pattern.
-            let mut required_delta = Delta::<L::Region>::default();
-            for (cap_pat, arg_var) in fn_def.caps.iter().zip(array_args.iter()) {
-                // Substitute indices in the capability pattern.
-                let mut instantiated_cap = Cap::<L::Region>::default();
-                if let Some(uniq_region) = &cap_pat.uniq {
-                    let substituted = substitute_region(uniq_region, &subst_map);
-                    instantiated_cap.uniq = <L::Region as RegionModel>::from_region(&substituted);
-                }
-                if let Some(shrd_region) = &cap_pat.shrd {
-                    let substituted = substitute_region(shrd_region, &subst_map);
-                    instantiated_cap.shrd = <L::Region as RegionModel>::from_region(&substituted);
-                }
-
-                required_delta.0.insert(arg_var.0.clone(), instantiated_cap);
-            }
+            let prepared = prepare_call::<L>(ctx, fn_def, args, "function call")?;
 
             // Check that we have sufficient capabilities.
-            if !ctx.logic.delta_leq(&ctx.phi, &required_delta, &ctx.delta) {
+            if !ctx
+                .logic
+                .delta_leq(&ctx.phi, &prepared.required_delta, &ctx.delta)
+            {
                 return Err(TypeError::InsufficientCapability {
                     array: format!("function call to {}", func.0),
                     required: format!(
                         "{}",
-                        display_delta_with(ctx.logic, &ctx.phi, &required_delta)
+                        display_delta_with(ctx.logic, &ctx.phi, &prepared.required_delta)
                     ),
                     available: format!("{}", display_delta_with(ctx.logic, &ctx.phi, &ctx.delta)),
                 });
@@ -1293,7 +1327,7 @@ where
             if !*fence {
                 ctx.delta = ctx
                     .logic
-                    .delta_diff(&ctx.phi, &ctx.delta, &required_delta)
+                    .delta_diff(&ctx.phi, &ctx.delta, &prepared.required_delta)
                     .ok_or_else(|| TypeError::CapabilitySubtractError {
                         array: format!("function call to {}", func.0),
                     })?;
@@ -1311,15 +1345,10 @@ where
             ctx.bind_var(&vars[0].0, fn_def.returns.clone());
             finalize_statement(ctx, stmt);
 
-            let mut typed_args = Vec::new();
-            for arg in args.iter() {
-                typed_args.push(arg.add_type(ctx.ty_of(arg)?));
-            }
-
             Ok(Stmt::LetCall {
                 vars: vec![vars[0].add_type(fn_def.returns.clone())],
                 func: func.clone(),
-                args: typed_args,
+                args: prepared.typed_args,
                 fence: *fence,
             })
         }
@@ -1396,96 +1425,21 @@ where
             Ok((ty_then, typed_tail))
         }
         Tail::TailCall { func, args } => {
-            // Look up function definition.
             let fn_def = registry
                 .get(func)
                 .ok_or_else(|| TypeError::UndefinedFunction(func.0.clone()))?;
-
-            // Check that args match parameter types (value parameters only, not arrays).
-            let value_params: Vec<_> = fn_def
-                .params
-                .iter()
-                .filter(|tvar| !matches!(tvar.ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
-                .collect();
-            let array_params: Vec<_> = fn_def
-                .params
-                .iter()
-                .filter(|tvar| matches!(tvar.ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
-                .collect();
-
-            // Build substitution map for indices (param names -> arg vars).
-            let mut subst_map = std::collections::BTreeMap::new();
-
-            // Check value parameters and build substitution.
-            let expected_value_args = value_params.len();
-            if args.len() < expected_value_args {
-                return Err(TypeError::InvalidOp {
-                    op: format!("tail call to {} has too few arguments", func.0),
-                });
-            }
-            for (i, param) in value_params.iter().enumerate() {
-                let arg_var = &args[i];
-                let mut arg_ty = ctx.ty_of(arg_var)?;
-                if arg_ty != param.ty {
-                    // Allow integer type coercion for literals or between signed/unsigned
-                    let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param.ty, Ty::Int(_));
-                    if both_int {
-                        // If it's a literal binding, rebind it to the expected type
-                        if arg_var.0.starts_with("_lit_") {
-                            ctx.bind_var(&arg_var.0, param.ty.clone());
-                            arg_ty = param.ty.clone();
-                        } else {
-                            // For non-literal integers, allow implicit conversion between signed/unsigned
-                            // This handles cases like `let x = 0; f(x)` where f expects i32
-                            arg_ty = param.ty.clone();
-                        }
-                    }
-                    if arg_ty != param.ty {
-                        return Err(TypeError::TypeMismatch {
-                            expected: TypeError::type_name(&param.ty),
-                            found: TypeError::type_name(&arg_ty),
-                        });
-                    }
-                }
-                // Record substitution for index expressions.
-                subst_map.insert(param.name.clone(), arg_var.0.clone());
-            }
-
-            // Check array arguments and their capabilities.
-            let array_args = &args[expected_value_args..];
-            if array_args.len() != array_params.len() {
-                return Err(TypeError::InvalidOp {
-                    op: format!(
-                        "tail call to {} has wrong number of array arguments",
-                        func.0
-                    ),
-                });
-            }
-
-            // Instantiate and check each capability pattern.
-            let mut required_delta = Delta::<L::Region>::default();
-            for (cap_pat, arg_var) in fn_def.caps.iter().zip(array_args.iter()) {
-                // Substitute indices in the capability pattern.
-                let mut instantiated_cap = Cap::<L::Region>::default();
-                if let Some(uniq_region) = &cap_pat.uniq {
-                    let substituted = substitute_region(uniq_region, &subst_map);
-                    instantiated_cap.uniq = <L::Region as RegionModel>::from_region(&substituted);
-                }
-                if let Some(shrd_region) = &cap_pat.shrd {
-                    let substituted = substitute_region(shrd_region, &subst_map);
-                    instantiated_cap.shrd = <L::Region as RegionModel>::from_region(&substituted);
-                }
-
-                required_delta.0.insert(arg_var.0.clone(), instantiated_cap);
-            }
+            let prepared = prepare_call::<L>(ctx, fn_def, args, "tail call")?;
 
             // Check that we have sufficient capabilities.
-            if !ctx.logic.delta_leq(&ctx.phi, &required_delta, &ctx.delta) {
+            if !ctx
+                .logic
+                .delta_leq(&ctx.phi, &prepared.required_delta, &ctx.delta)
+            {
                 return Err(TypeError::InsufficientCapability {
                     array: format!("tail call to {}", func.0),
                     required: format!(
                         "{}",
-                        display_delta_with(ctx.logic, &ctx.phi, &required_delta)
+                        display_delta_with(ctx.logic, &ctx.phi, &prepared.required_delta)
                     ),
                     available: format!("{}", display_delta_with(ctx.logic, &ctx.phi, &ctx.delta)),
                 });
@@ -1498,17 +1452,11 @@ where
                 print_context_contents(ctx);
             }
 
-            // TODO: Check if signedness coercion works well with this.
-            let mut typed_args = Vec::new();
-            for arg in args.iter() {
-                typed_args.push(arg.add_type(ctx.ty_of(arg)?));
-            }
-
             Ok((
                 fn_def.returns.clone(),
                 Tail::TailCall {
                     func: func.clone(),
-                    args: typed_args,
+                    args: prepared.typed_args,
                 },
             ))
         }
