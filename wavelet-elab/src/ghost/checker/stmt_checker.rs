@@ -592,7 +592,17 @@ pub fn check_ghost_stmt_jnsplt_jnsplt_call<V: Variable>(
 
     if ctx.verbose {
         println!("  Required p_sync: {}", render_perm_expr(&required_sync));
-        println!("  Required p_garb: {}", render_perm_expr(&required_garb));
+    }
+
+    let required_garb_norm = required_garb
+        .normalize(&ctx.phi, &ctx.solver)
+        .ok_or_else(|| "Required p_garb permissions could not be normalised".to_string())?;
+    if required_garb_norm != PermExpr::empty() {
+        return Err(format!(
+            "Call to {} expects non-empty p_garb {}, but non-tail calls must pass empty garbage",
+            func.0,
+            render_perm_expr(&required_garb_norm)
+        ));
     }
 
     if ctx.verbose {
@@ -607,7 +617,8 @@ pub fn check_ghost_stmt_jnsplt_jnsplt_call<V: Variable>(
     let needed_sync = required_sync
         .collect_permissions(&ctx.phi, &ctx.solver)
         .ok_or_else(|| "Required p_sync permissions could not be normalised".to_string())?;
-    let mut consumed_sync: Vec<Permission> = Vec::new();
+    let mut retained_sync: Vec<Permission> = Vec::new();
+    let mut returned_sync: Vec<Permission> = Vec::new();
     for need in &needed_sync {
         let is_unique = is_unique_fraction(&need.fraction);
         let need_to_consume = if is_unique {
@@ -615,7 +626,11 @@ pub fn check_ghost_stmt_jnsplt_jnsplt_call<V: Variable>(
         } else {
             ensure_shared_fraction_available(ctx, &available_sync, need, &func.0, "p_sync")?
         };
-        consumed_sync.push(need_to_consume.clone());
+        if is_unique {
+            returned_sync.push(need_to_consume.clone());
+        } else {
+            retained_sync.push(need_to_consume.clone());
+        }
         if ctx.verbose {
             println!(
                 "    {} permission required for p_sync: {}",
@@ -649,33 +664,25 @@ pub fn check_ghost_stmt_jnsplt_jnsplt_call<V: Variable>(
             func.0
         ));
     }
-    let remainder_sync_clone = remainder_sync_expr.clone();
+    let restored_sync_expr = PermExpr::union(vec![
+        remainder_sync_expr.clone(),
+        permissions_to_expr(retained_sync),
+    ]);
 
     if ctx.verbose {
         println!(
             "    Remainder p_sync: {}",
             render_perm_expr(&remainder_sync_expr)
         );
-        println!("  Consuming p_garb permissions...");
+        println!("  Threading current p_garb through the call...");
     }
 
-    ctx.bind_perm(right1, remainder_sync_expr);
-
-    let mut join_inputs2 = inputs2.clone();
-    if !join_inputs2.iter().any(|var| var.0 == right1.0) {
-        if ctx.verbose {
-            println!(
-                "  Second JoinSplit missing remainder {}; threading it through",
-                right1.0
-            );
-        }
-        join_inputs2.push(right1.clone());
-    }
+    ctx.bind_perm(right1, restored_sync_expr.clone());
 
     if ctx.verbose {
         println!(
             "  Second JoinSplit: joining [{}]",
-            join_inputs2
+            inputs2
                 .iter()
                 .map(|v| v.0.as_str())
                 .collect::<Vec<_>>()
@@ -683,56 +690,12 @@ pub fn check_ghost_stmt_jnsplt_jnsplt_call<V: Variable>(
         );
     }
 
-    let joined_perm2 = ctx.join_perms(&join_inputs2)?;
+    let joined_perm2 = ctx.join_perms(inputs2)?;
 
     if ctx.verbose {
         println!("    Joined (p_garb): {}", render_perm_expr(&joined_perm2));
     }
-
-    let mut available_garb = joined_perm2
-        .collect_permissions(&ctx.phi, &ctx.solver)
-        .ok_or_else(|| {
-            "Joined permissions for second JoinSplit could not be normalised".to_string()
-        })?;
-    let needed_garb = required_garb
-        .collect_permissions(&ctx.phi, &ctx.solver)
-        .ok_or_else(|| "Required p_garb permissions could not be normalised".to_string())?;
-    let mut consumed_garb: Vec<Permission> = Vec::new();
-    for need in &needed_garb {
-        let is_unique = is_unique_fraction(&need.fraction);
-        let need_to_consume = if is_unique {
-            need.clone()
-        } else {
-            ensure_shared_fraction_available(ctx, &available_garb, need, &func.0, "p_garb")?
-        };
-        consumed_garb.push(need_to_consume.clone());
-        if ctx.verbose {
-            println!(
-                "    {} permission required for p_garb: {}",
-                if is_unique { "Unique" } else { "Shared" },
-                render_permission(need)
-            );
-        }
-        if !consume_permission(&mut available_garb, &need_to_consume, &ctx.phi, &ctx.solver) {
-            if ctx.verbose {
-                println!(
-                    "    ✗ Cannot consume required permission: {}",
-                    render_permission(&need_to_consume)
-                );
-                println!("      Available permissions:");
-                for perm in &available_garb {
-                    println!("        - {}", render_permission(perm));
-                }
-            }
-            return Err(format!(
-                "Call to {} cannot provide required {} permission for {} in p_garb",
-                func.0,
-                if is_unique { "unique" } else { "shared" },
-                need.array.0
-            ));
-        }
-    }
-    let remainder_garb_expr = permissions_to_expr(available_garb);
+    let remainder_garb_expr = joined_perm2;
 
     if ctx.verbose {
         println!(
@@ -740,35 +703,9 @@ pub fn check_ghost_stmt_jnsplt_jnsplt_call<V: Variable>(
             render_perm_expr(&remainder_garb_expr)
         );
     }
+    ctx.bind_perm(right2, remainder_garb_expr);
 
-    // Reconstitute the post-call remainders by adding back the permissions that
-    // were temporarily lent to the callee.
-    let adjusted_required_sync = permissions_to_expr(consumed_sync);
-    let adjusted_required_garb = permissions_to_expr(consumed_garb);
-    let restored_sync = PermExpr::union(vec![
-        remainder_sync_clone.clone(),
-        adjusted_required_sync.clone(),
-    ]);
-    let restored_garb = PermExpr::union(vec![remainder_garb_expr, adjusted_required_garb.clone()]);
-
-    ctx.bind_perm(right1, restored_sync);
-
-    let mut cleaned_garb_flat = restored_garb
-        .collect_permissions(&ctx.phi, &ctx.solver)
-        .ok_or_else(|| "Restored p_garb after call could not be normalised".to_string())?;
-    if let Some(sync_remainder_flat) =
-        remainder_sync_clone.collect_permissions(&ctx.phi, &ctx.solver)
-    {
-        for perm in sync_remainder_flat {
-            let _ = consume_permission(&mut cleaned_garb_flat, &perm, &ctx.phi, &ctx.solver);
-        }
-    }
-    let cleaned_garb = permissions_to_expr(cleaned_garb_flat);
-
-    ctx.bind_perm(right2, cleaned_garb);
-
-    let ret_perm_expr = PermExpr::union(vec![adjusted_required_sync, adjusted_required_garb]);
-    ctx.register_return_contribution(ghost_ret, ret_perm_expr.clone());
+    let ret_perm_expr = permissions_to_expr(returned_sync);
     ctx.bind_perm(ghost_ret, ret_perm_expr);
 
     Ok(())

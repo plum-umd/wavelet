@@ -40,10 +40,6 @@ pub struct CheckContext {
     pub signatures: HashMap<String, FunctionSignature>,
     /// Cached entry permissions (p_sync, p_garb) for the function being checked.
     current_fn_entry_perms: Option<(PermExpr, PermExpr)>,
-    /// Ghost variables that temporarily hold permissions returned from calls or
-    /// have had permissions injected back into them for bookkeeping. These
-    /// contributions should be ignored when validating the final return.
-    return_contributions: HashMap<String, Vec<PermExpr>>,
     /// Emit detailed traces of the checking context as it evolves.
     pub verbose: bool,
 }
@@ -56,7 +52,6 @@ impl CheckContext {
             solver,
             signatures: HashMap::new(),
             current_fn_entry_perms: None,
-            return_contributions: HashMap::new(),
             verbose: false,
         }
     }
@@ -68,7 +63,6 @@ impl CheckContext {
             solver,
             signatures: HashMap::new(),
             current_fn_entry_perms: None,
-            return_contributions: HashMap::new(),
             verbose,
         }
     }
@@ -109,26 +103,6 @@ impl CheckContext {
         self.current_fn_entry_perms.as_ref()
     }
 
-    /// Remember that `var` contains bookkeeping-only permissions which should be
-    /// discounted at function return.
-    pub fn register_return_contribution(&mut self, var: &GhostVar, perm: PermExpr) {
-        self.return_contributions
-            .entry(var.0.clone())
-            .or_insert_with(Vec::new)
-            .push(perm);
-    }
-
-    /// Retrieve and remove the recorded return contribution for `var`, if any.
-    pub fn take_return_contribution(&mut self, var: &GhostVar) -> Option<PermExpr> {
-        self.return_contributions.remove(&var.0).map(|mut perms| {
-            if perms.len() == 1 {
-                perms.remove(0)
-            } else {
-                PermExpr::union(perms)
-            }
-        })
-    }
-
     /// Create a fresh symbolic fraction variable using the shared counter.
     pub fn fresh_fraction_var(&self, prefix: &str) -> FractionExpr {
         let id = FRACTION_FRESH_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -152,14 +126,15 @@ impl CheckContext {
     ///
     /// For a capability pattern like `A: uniq @ i..N`, we create:
     /// - p_sync_a = 1.0@A{i..N}  (the unique/writable region)
-    /// - p_garb_a = 1.0@A{0..i} (or more generally the complement region {0..N} \ {i..N})
+    /// - p_garb_a = eps
     ///
     /// For `A: shrd @ i..N`, we create:
     /// - p_sync_a = f@A{i..N} where f is a symbolic fraction, where f ∈ (0, 1] (to be
     ///   added to Phi)
-    /// - p_garb_a = f@A{0..N \ i..N} (the complement region)
+    /// - p_garb_a = eps
     ///
-    /// The final `p_sync` and `p_garb` permissions are the unions over all arrays.
+    /// The final `p_sync` is the union over all array capabilities, and `p_garb`
+    /// starts empty. Tail calls thread accumulated garbage explicitly.
     pub fn caps_to_permissions(
         &mut self,
         caps: &[CapPattern],
@@ -169,18 +144,15 @@ impl CheckContext {
     ) {
         let mut preconds = preconditions;
         let mut sync_perms = Vec::new();
-        let mut garb_perms = Vec::new();
 
         for cap_pattern in caps {
             let array = UntypedVar(cap_pattern.array.clone());
 
-            // Get the total region for this array (0..len)
             let len_idx = match &cap_pattern.len {
                 crate::ir::ArrayLen::Const(n) => Idx::Const(*n as i64),
                 crate::ir::ArrayLen::Symbol(name) => Idx::Var(name.clone()),
                 crate::ir::ArrayLen::Expr(expr) => expr.clone(),
             };
-            let total_region = RegionSetExpr::interval(Idx::Const(0), len_idx.clone());
 
             let mut record_interval_bounds = |region: &crate::logic::region::Region| {
                 if let Some(preconds_vec) = preconds.as_mut() {
@@ -204,12 +176,6 @@ impl CheckContext {
                     region_expr.clone(),
                 );
                 sync_perms.push(PermExpr::singleton(sync_perm));
-
-                // Create p_garb_a = 1.0@A{total \ uniq_region}
-                let garb_region = RegionSetExpr::difference(total_region.clone(), region_expr);
-                let garb_perm =
-                    Permission::new(FractionExpr::from_int(1), array.clone(), garb_region);
-                garb_perms.push(PermExpr::singleton(garb_perm));
             }
 
             // Process shrd region if present
@@ -227,11 +193,6 @@ impl CheckContext {
                 // Create p_sync_a = f@A{shrd_region}
                 let sync_perm = Permission::new(frac.clone(), array.clone(), region_expr.clone());
                 sync_perms.push(PermExpr::singleton(sync_perm));
-
-                // Create p_garb_a = f@A{total \ shrd_region}
-                let garb_region = RegionSetExpr::difference(total_region, region_expr);
-                let garb_perm = Permission::new(frac, array, garb_region);
-                garb_perms.push(PermExpr::singleton(garb_perm));
             }
         }
 
@@ -243,38 +204,17 @@ impl CheckContext {
         };
         self.bind_perm(p_sync, sync_expr);
 
-        // Bind p_garb to the union of all garb permissions
-        let garb_expr = if garb_perms.is_empty() {
-            PermExpr::empty()
-        } else {
-            PermExpr::union(garb_perms)
-        };
-        self.bind_perm(p_garb, garb_expr);
+        self.bind_perm(p_garb, PermExpr::empty());
     }
 
     /// Try to join multiple permissions and check validity.
     pub fn join_perms(&mut self, inputs: &[GhostVar]) -> Result<PermExpr, String> {
         let mut real_inputs: Vec<PermExpr> = Vec::new();
-        let mut alias_inputs: Vec<PermExpr> = Vec::new();
 
         for var in inputs {
             if let Some(expr) = self.penv.remove(var) {
-                if self.return_contributions.contains_key(&var.0) {
-                    if self.verbose {
-                        println!(
-                            "  ▹ Ignoring bookkeeping contribution from {} during join",
-                            var.0
-                        );
-                    }
-                    alias_inputs.push(expr);
-                } else {
-                    real_inputs.push(expr);
-                }
+                real_inputs.push(expr);
             }
-        }
-
-        if real_inputs.is_empty() && !alias_inputs.is_empty() {
-            real_inputs.extend(alias_inputs.drain(..));
         }
 
         let result = PermExpr::union(real_inputs);

@@ -45,20 +45,6 @@ pub fn check_ghost_tail_with_joinsplit<V: Variable>(
                         .join(", ")
                 );
             }
-            for var in inputs {
-                if let Some(contrib) = ctx.take_return_contribution(var) {
-                    if let Some(current) = ctx.lookup_perm(var).cloned() {
-                        let cleaned = PermExpr::Sub(Box::new(current), Box::new(contrib));
-                        if !cleaned.is_valid(&ctx.phi, &ctx.solver) {
-                            return Err(format!(
-                                "Return permission cleanup for {} produced an invalid expression",
-                                var.0
-                            ));
-                        }
-                        ctx.bind_perm(var, cleaned);
-                    }
-                }
-            }
 
             let joined_perm = ctx.join_perms(inputs)?;
             let joined_flat = joined_perm
@@ -89,38 +75,12 @@ pub fn check_ghost_tail_with_joinsplit<V: Variable>(
 
             let expected_total =
                 PermExpr::union(vec![entry_perms.0.clone(), entry_perms.1.clone()]);
-
-            let mut expected_flat = expected_total
-                .collect_permissions(&ctx.phi, &ctx.solver)
-                .ok_or_else(|| "Entry permissions could not be normalised".to_string())?;
-
-            if ctx.verbose {
-                println!(
-                    "  Verifying returned permissions consume exactly the entry permissions..."
-                );
-            }
-
-            for perm_piece in &joined_flat {
-                if !consume_permission(&mut expected_flat, perm_piece, &ctx.phi, &ctx.solver) {
-                    return Err(format!(
-                        "Return permission contains {} which was not present at function entry",
-                        render_permission(perm_piece)
-                    ));
-                }
-            }
-
-            if !expected_flat.is_empty() {
-                if ctx.verbose {
-                    println!("  ✗ Missing permissions in return:");
-                    for missing in &expected_flat {
-                        println!("    - {}", render_permission(missing));
-                    }
-                }
-                return Err(
-                    "Return permission is missing resources that were provided at function entry"
-                        .to_string(),
-                );
-            }
+            check_exact_permission_match(
+                ctx,
+                &cleaned_join,
+                &expected_total,
+                "returned permissions",
+            )?;
 
             if ctx.verbose {
                 println!("  ✓ Return permissions match entry permissions exactly");
@@ -247,12 +207,9 @@ pub fn check_ghost_tail_with_two_joinsplits<V: Variable>(
 
             let required_sync =
                 substitute_perm_expr_with_maps(&sig.initial_perms.0, &idx_substitutions);
-            let required_garb =
-                substitute_perm_expr_with_maps(&sig.initial_perms.1, &idx_substitutions);
 
             if ctx.verbose {
                 println!("  Required p_sync: {}", render_perm_expr(&required_sync));
-                println!("  Required p_garb: {}", render_perm_expr(&required_garb));
             }
 
             if ctx.verbose {
@@ -268,6 +225,7 @@ pub fn check_ghost_tail_with_two_joinsplits<V: Variable>(
                 .collect_permissions(&ctx.phi, &ctx.solver)
                 .ok_or_else(|| "Required p_sync permissions could not be normalised".to_string())?;
             let mut fraction_bindings: HashMap<String, FractionExpr> = HashMap::new();
+            let mut consumed_sync: Vec<Permission> = Vec::new();
             for need in &needed_sync {
                 let is_unique = is_unique_fraction(&need.fraction);
                 let need_to_consume = if is_unique {
@@ -296,6 +254,7 @@ pub fn check_ghost_tail_with_two_joinsplits<V: Variable>(
                 } else {
                     need.clone()
                 };
+                consumed_sync.push(need_to_consume.clone());
                 if ctx.verbose {
                     println!(
                         "    {} permission required for p_sync: {}",
@@ -330,12 +289,11 @@ pub fn check_ghost_tail_with_two_joinsplits<V: Variable>(
 
             if ctx.verbose {
                 println!("    ✓ p_sync consumed successfully");
-                println!("  Consuming p_garb permissions...");
             }
 
             if ctx.verbose {
                 println!(
-                    "  Second JoinSplit (p_garb): joining [{}]",
+                    "  Second JoinSplit (tail accumulator): joining [{}]",
                     inputs2
                         .iter()
                         .map(|v| v.0.as_str())
@@ -346,7 +304,7 @@ pub fn check_ghost_tail_with_two_joinsplits<V: Variable>(
 
             let joined_perm2 = ctx.join_perms(inputs2)?;
 
-            let mut available_garb = joined_perm2
+            let available_garb = joined_perm2
                 .collect_permissions(&ctx.phi, &ctx.solver)
                 .ok_or_else(|| {
                     "Joined permissions for second JoinSplit could not be normalised".to_string()
@@ -354,76 +312,27 @@ pub fn check_ghost_tail_with_two_joinsplits<V: Variable>(
 
             if ctx.verbose {
                 println!("    Joined: {}", render_perm_expr(&joined_perm2));
-                println!(
-                    "    Joined flattened: {}",
-                    render_perm_expr(&permissions_to_expr(available_garb.clone()))
-                );
             }
-            let needed_garb = required_garb
-                .collect_permissions(&ctx.phi, &ctx.solver)
-                .ok_or_else(|| "Required p_garb permissions could not be normalised".to_string())?;
-            for need in &needed_garb {
-                let is_unique = is_unique_fraction(&need.fraction);
-                let mut need_to_consume = need.clone();
-                if !is_unique {
-                    if let Some(var_name) = fraction_expr_var_name(&need.fraction) {
-                        if let Some(bound_frac) = fraction_bindings.get(var_name) {
-                            let ensured = ensure_shared_fraction_available(
-                                ctx,
-                                &available_garb,
-                                need,
-                                &func.0,
-                                "p_garb",
-                                Some(bound_frac.clone()),
-                            )?;
-                            need_to_consume = ensured;
-                        }
-                    }
-                }
-                if ctx.verbose {
-                    println!(
-                        "    Permission required for p_garb: {}",
-                        render_permission(&need_to_consume)
-                    );
-                }
-                if !consume_permission(&mut available_garb, &need_to_consume, &ctx.phi, &ctx.solver)
-                {
-                    if ctx.verbose {
-                        println!(
-                            "    ✗ Cannot consume required permission: {}",
-                            render_permission(&need_to_consume)
-                        );
-                    }
-                    return Err(format!(
-                        "TailCall to {} cannot provide required permission for p_garb",
-                        func.0
-                    ));
-                }
-            }
-            let leftover_expr = permissions_to_expr(available_garb);
-            let leftover_norm =
-                leftover_expr
-                    .normalize(&ctx.phi, &ctx.solver)
-                    .ok_or_else(|| {
-                        "TailCall leftover permissions could not be normalised".to_string()
-                    })?;
-            leftover_norm
-                .collect_permissions(&ctx.phi, &ctx.solver)
-                .ok_or_else(|| {
-                    "TailCall leftover permissions could not be collected".to_string()
-                })?;
+            let tail_garb_expr = permissions_to_expr(available_garb);
+            let passed_total = PermExpr::union(vec![
+                permissions_to_expr(consumed_sync),
+                tail_garb_expr.clone(),
+            ]);
 
             if ctx.verbose {
-                if leftover_norm == PermExpr::empty() {
-                    println!("    ✓ p_garb consumed exactly");
-                } else {
-                    println!(
-                        "    Remaining ghost_left permission after p_garb consumption: {}",
-                        render_perm_expr(&leftover_norm)
-                    );
-                }
-                println!("  Verifying total permissions match entry permissions...");
+                println!(
+                    "    Tail-call p_garb: {}",
+                    render_perm_expr(&tail_garb_expr)
+                );
+                println!("  Verifying tail-call arguments preserve the entry total...");
             }
+
+            let entry_perms = ctx.current_fn_entry_perms().ok_or_else(|| {
+                "TailCall encountered without recorded entry permissions".to_string()
+            })?;
+            let expected_total =
+                PermExpr::union(vec![entry_perms.0.clone(), entry_perms.1.clone()]);
+            check_exact_permission_match(ctx, &passed_total, &expected_total, "tail-call inputs")?;
 
             Ok(())
         }
@@ -567,6 +476,44 @@ fn ensure_shared_fraction_available(
     }
 
     Ok(shared_perm)
+}
+
+fn check_exact_permission_match(
+    ctx: &CheckContext,
+    actual: &PermExpr,
+    expected: &PermExpr,
+    what: &str,
+) -> Result<(), String> {
+    let actual_flat = actual
+        .collect_permissions(&ctx.phi, &ctx.solver)
+        .ok_or_else(|| format!("{what} could not be normalised"))?;
+    let mut expected_flat = expected
+        .collect_permissions(&ctx.phi, &ctx.solver)
+        .ok_or_else(|| "Entry permissions could not be normalised".to_string())?;
+
+    for perm_piece in &actual_flat {
+        if !consume_permission(&mut expected_flat, perm_piece, &ctx.phi, &ctx.solver) {
+            return Err(format!(
+                "{} contain {} which was not present in the expected entry permissions",
+                what,
+                render_permission(perm_piece)
+            ));
+        }
+    }
+
+    if !expected_flat.is_empty() {
+        if ctx.verbose {
+            println!("  ✗ Missing permissions in {what}:");
+            for missing in &expected_flat {
+                println!("    - {}", render_permission(missing));
+            }
+        }
+        return Err(format!(
+            "{what} are missing resources that were present in the expected entry permissions"
+        ));
+    }
+
+    Ok(())
 }
 
 /// Check a tail if-else expression.
