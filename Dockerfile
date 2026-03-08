@@ -237,7 +237,7 @@ COPY <<EOF /wavelet/.vscode/tasks.json
 EOF
 
 # Documentation and UX
-COPY AE.md README.md
+COPY README.md README.md
 
 COPY <<EOF2 /root/.bashrc
 # Check ANSI support

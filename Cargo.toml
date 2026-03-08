@@ -2,7 +2,6 @@
 resolver = "3"
 members = [
     "wavelet-elab",
-    "wavelet-embedding",
     "wavelet-core",
     "wavelet",
 ]
