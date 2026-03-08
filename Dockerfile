@@ -1,3 +1,5 @@
+# This is a Docker image intended for artifact evaluation at PLDI.
+
 FROM ubuntu:24.04 AS build
 
 # Install toolchains and dependencies
@@ -234,7 +236,77 @@ COPY <<EOF /wavelet/.vscode/tasks.json
 }
 EOF
 
-COPY README.md README.md
+# Documentation and UX
+COPY AE.md README.md
+
+COPY <<EOF2 /root/.bashrc
+# Check ANSI support
+if [[ -t 1 ]] && tput setaf 1 >/dev/null 2>&1 && [[ -z "\${NO_COLOR-}" ]]; then
+    bold=\$(tput bold)
+    italic=\$(tput sitm)
+    underline=\$(tput smul)
+    reset=\$(tput sgr0)
+    green=\$(tput setaf 2)
+    tput smcup
+    trap 'tput rmcup' EXIT
+else
+    bold=
+    italic=
+    underline=
+    reset=
+    green=
+fi
+
+cat <<EOF
+Welcome to the artifact accompanying the paper:
+
+    \${bold}Let it Flow: A Formally Verified Compilation Framework for Asynchronous Dataflow\${reset}
+
+To run some quick sanity checks:
+
+    \\\$ make -C integration-tests sanity-check \${reset}
+
+You can also exit and restart this image as a VS code server for a better experience:
+
+    \\\$ docker run -p 127.0.0.1:8080:8080 wavelet-artifact ae-server
+
+Then visit \${underline}\${bold}http://localhost:8080\${reset} to access the in-browser editor.
+
+EOF
+
+PS1='\\w \\\$ '
+EOF2
+
+COPY <<EOF2 /usr/local/bin/ae-server
+#!/bin/bash
+
+# Check ANSI support
+if [[ -t 1 ]] && tput setaf 1 >/dev/null 2>&1 && [[ -z "\${NO_COLOR-}" ]]; then
+    bold=\$(tput bold)
+    italic=\$(tput sitm)
+    underline=\$(tput smul)
+    reset=\$(tput sgr0)
+    green=\$(tput setaf 2)
+    tput smcup
+    trap 'tput rmcup' EXIT
+else
+    bold=
+    italic=
+    underline=
+    reset=
+    green=
+fi
+
+cat <<EOF
+Please visit \${underline}\${bold}http://localhost:8080\${reset} to access the in-browser editor.
+
+If you can't access it, make sure that you have started the container with \${bold}-p 127.0.0.1:8080:8080\${reset}.
+
+EOF
+
+code-server --bind-addr 0.0.0.0:8080 --auth none /wavelet
+EOF2
+RUN chmod +x /usr/local/bin/ae-server
 
 FROM scratch AS final
 COPY --from=runtime / /

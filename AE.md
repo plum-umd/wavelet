@@ -10,7 +10,7 @@ compilers in [RipTide](https://ieeexplore.ieee.org/document/9923793) and
 We begin with some quick steps to set up everything correctly,
 followed by more detailed instructions to evaluate our artifact.
 
-## Getting Started [10 min]
+## Getting Started Guide [10 min]
 
 Please follow these steps to download and start our Docker image:
 
@@ -25,14 +25,17 @@ Please follow these steps to download and start our Docker image:
 4. To start the image, choose one of the following two options: 
    - (Recommended) If your machine has a browser, you can start the image as a VS Code server:
      ```sh
-     docker run -p 127.0.0.1:8080:8080 wavelet-artifact <TODO>
+     docker run -p 127.0.0.1:8080:8080 wavelet-artifact ae-server
      ```
      Then in your local browser, visit `localhost:8080` to view the artifact
      in an in-browser VS Code editor.
 
      This helps with exploring the Lean code base in the next section,
      since it has the Lean 4 extension installed.
-   - If you prefer only using the terminal, simply run `docker run -it wavelet-artifact`
+   - If you prefer only using the terminal, simply run
+     ```sh
+     docker run -it wavelet-artifact
+     ```
 
 5. Both options above should provide you with a terminal window in the right directory.
    Then as a final sanity check, run
@@ -118,7 +121,7 @@ This section describes the correspondence between our Lean formalization
 and its correspondence to definitions and results in Section 5.
 
 For this step, it is recommended to start our image as a VS Code server
-and use the in-brower editor to view our source code (see Step 4 in the **Getting Started** section).
+and use the in-brower editor to view our source code (see Step 4 in the **Getting Started Guide**).
 
 Alternatively, you can also download our source code zip file (`wavelet-src.zip`)
 or clone our GitHub repository. Some instructions below assumes that you are using
@@ -143,16 +146,54 @@ We now give pointers to all key definitions and theorems in our Section 5,
 which describes our verified dataflow compiler in Lean.
 
 - Section 5.1
-    - Syntax and semantics of L_let: `Wavelet/Dataflow/Proc.lean`.
-    - Syntax and semantics of L_flow: `Wavelet/Seq/Fn.lean` and `Wavelet/Seq/Prog.lean`.
-    - Common definitions of LTS and simulation: `Wavelet/Semantics/Defs.lean` and `Wavelet/Semantics/Lts.lean`.
+  - Syntax and semantics of L_let: `Wavelet/Dataflow/Proc.lean`.
+  - Syntax and semantics of L_flow: `Wavelet/Seq/Fn.lean` and `Wavelet/Seq/Prog.lean`.
+  - Common definitions of LTS and simulation: `Wavelet/Semantics/Defs.lean` and `Wavelet/Semantics/Lts.lean`.
 - Section 5.2
-    - Control flow conversion implementation: `Wavelet/Compile/Fn.lean`.
-    - Control flow conversion forward simulation (Theorem 5.2): `sim_compile_fn` in `Wavelet/Thm/Compile/Fn/Simulation.lean`.
-    - Linking implementation: `Wavelet/Compile/Prog.lean` and `Wavelet/Compile/MapChans.lean`.
-    - Linking forward simulation (Theorem 5.5): `sim_compile_prog` in `Wavelet/Thm/Compile/Prog/Simulation.lean`.
+  - Control flow conversion implementation: `Wavelet/Compile/Fn.lean`.
+  - Control flow conversion forward simulation (Theorem 5.2): `sim_compile_fn` in `Wavelet/Thm/Compile/Fn/Simulation.lean`.
+  - Linking implementation: `Wavelet/Compile/Prog.lean` and `Wavelet/Compile/MapChans.lean`.
+  - Linking forward simulation (Theorem 5.5): `sim_compile_prog` in `Wavelet/Thm/Compile/Prog/Simulation.lean`.
 - Section 5.3
-    - Theorem 5.7: `proc_interp_guarded_hetero_terminal_confl` in `Wavelet/Thm/Determinacy/Hetero.lean`.
-    - Theorem 5.9: `compile_strong_norm` in `Wavelet/Thm/HighLevel.lean`.
+  - Theorem 5.7: `proc_interp_guarded_hetero_terminal_confl` in `Wavelet/Thm/Determinacy/Hetero.lean`.
+  - Theorem 5.9: `compile_strong_norm` in `Wavelet/Thm/HighLevel.lean`.
 - Section 5.4
-    - Most rewrite rules are implemented in `Wavelet/Compile/Rewrite.lean`, and they are currently unverified.
+  - Most rewrite rules are implemented in `Wavelet/Compile/Rewrite.lean`,
+    and they are currently unverified.
+
+## (Optional) Using Wavelet
+
+If you are interested in trying out Wavelet on your own programs,
+please use the pre-built standalone CLI at `target/release/wavelet`,
+or re-build it within the image with `cargo build --release`.
+
+Say you want to test Wavelet on the example program at
+`integration-tests/tests/simple/test.rs`:
+- To compile it to a Wavelet dataflow graph in JSON:
+  ```sh
+  target/release/wavelet compile integration-tests/tests/simple/test.rs > dfg.json
+  ```
+- To generates a visualization of the compiled graph in Graphviz DOT format:
+  ```sh
+  target/release/wavelet plot dfg.json
+  ```
+  You can copy and paste it in an online Graphviz renderer such as
+  [this one](https://dreampuf.github.io/GraphvizOnline).
+- To convert the dataflow graph to [CIRCT's `handshake` dialect](https://circt.llvm.org/docs/Dialects/Handshake/):
+  ```sh
+  target/release/wavelet handshake dfg.json
+  ```
+  The output can then be further compiled using CIRCT (e.g., using the pre-built
+  `integration-tests/build/circt/bin/hlstool`).
+- To simulate the dataflow graph's execution:
+  ```sh
+  target/release/wavelet exec dfg.json --args 0,10,0
+  ```
+
+Note that, as a prototype, Wavelet's input Rust DSL (embedding of the L_let language
+in our paper) has limited functionality, and your input program must have correct
+capability and fence annotations, and satisfy the static control flow restrictions
+in Section 4.3 (e.g., only branching and tail recursion are allowed).
+
+You can look at other examples `integration-tests/tests/*/test.rs` for how to specify
+capability and fences, as well as to satisfy the control-flow constraints.
