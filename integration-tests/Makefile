@@ -5,6 +5,7 @@ CGEIST := build/polygeist/bin/cgeist
 HLSTOOL := build/circt/bin/hlstool
 WAVELET := ../target/release/wavelet
 WAVELET_COMPILE_FLAGS :=
+NEXTPNR_FLAGS :=
 
 .PHONY: default
 default: wavelet-tests
@@ -187,6 +188,7 @@ build/yosys/yosys: yosys
 		--out-of-context \
 		--timing-allow-fail \
 		--lpf-allow-unconstrained \
+		$(NEXTPNR_FLAGS) \
 		--write $@ > $@.log 2>&1
 
 ######################
@@ -345,12 +347,21 @@ EVAL_NAMES := \
 # Skip some targets that are expected to fail
 SKIP_TARGETS := circt-eval-sort
 
+# Routing takes too long for these designs,
+# so we use placement-only timing estimates.
+NO_ROUTING_TARGETS := \
+	wavelet-noopt-eval-nn-conv \
+	wavelet-noopt-eval-nn-pool
+
 # $(1): label, $(2): test name, $(3): sub-make targets
 define run-eval
-	$(if $(filter $(1)-eval-$(2),$(SKIP_TARGETS)),\
-		@echo "[$(1)] $(2) ... SKIP",\
+	$(if $(filter $(1)-eval-$(2),$(SKIP_TARGETS)), \
+		@echo "[$(1)] $(2) ... SKIP", \
 		@log=$$(mktemp); \
-		if $(MAKE) --no-print-directory WAVELET_COMPILE_FLAGS="$(WAVELET_COMPILE_FLAGS)" $(3) > "$$log" 2>&1; then \
+		if $(MAKE) --no-print-directory \
+			NEXTPNR_FLAGS="$(if $(filter $(1)-eval-$(2),$(NO_ROUTING_TARGETS)),--no-route,)" \
+			WAVELET_COMPILE_FLAGS="$(WAVELET_COMPILE_FLAGS)" \
+			$(3) > "$$log" 2>&1; then \
 			echo "[$(1)] $(2) ... PASS"; \
 		else \
 			echo "[$(1)] $(2) ... FAIL"; \

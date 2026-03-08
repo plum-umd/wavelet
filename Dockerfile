@@ -179,10 +179,9 @@ RUN cp -a integration-tests/build/sv2v/. /usr/local/ && \
 
 RUN curl -fsSL https://elan.lean-lang.org/elan-init.sh | sh -s -- -y
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain none
-RUN curl -fsSL https://code-server.dev/install.sh | sh -s -- --method standalone
+RUN curl -fsSL https://code-server.dev/install.sh | sh -s -- --version 4.109.5
 
 # Configure code-server
-ENV PATH="/root/.local/bin:${PATH}"
 RUN code-server --install-extension leanprover.lean4 && \
     code-server --install-extension rust-lang.rust-analyzer
 COPY <<EOF /root/.local/share/code-server/User/settings.json
@@ -240,5 +239,5 @@ COPY README.md README.md
 FROM scratch AS final
 COPY --from=runtime / /
 WORKDIR /wavelet
-ENV PATH="/root/.elan/bin:/root/.cargo/bin:/root/.local/bin:${PATH}"
+ENV PATH="/root/.elan/bin:/root/.cargo/bin:${PATH}"
 ENTRYPOINT ["/bin/bash"]

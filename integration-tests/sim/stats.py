@@ -131,7 +131,9 @@ def parse_nextpnr(path: Path) -> dict | None:
     luts = int(luts_m.group(1)) if luts_m else None
     ffs = int(ffs_m.group(1)) if ffs_m else None
     freq_mhz = float(freq_ms[-1].group(1)) if freq_ms else None
-    return {"luts": luts, "ffs": ffs, "freq_mhz": freq_mhz}
+    # One match = post-placement only (post-routing not yet available)
+    freq_post_placement = len(freq_ms) == 1
+    return {"luts": luts, "ffs": ffs, "freq_mhz": freq_mhz, "freq_post_placement": freq_post_placement}
 
 def parse_compiler_perf(path: Path) -> dict[str, float] | None:
     """Parse compiler phase timings from a .wavelet.json.log file."""
@@ -216,12 +218,20 @@ def collect_hls(name: str) -> dict:
             return None
         return round(cyc / pnr["freq_mhz"], 1)
 
+    def is_post_placement(pnr):
+        return pnr is not None and pnr.get("freq_post_placement", False)
+
     return {
         "cycles": { "wv": cyc_wv, "wv_noopt": cyc_wv_noopt, "crt": cyc_crt },
         "exec_time": {
             "wv": exec_time(cyc_wv, pnr_wv),
             "wv_noopt": exec_time(cyc_wv_noopt, pnr_wv_noopt),
             "crt": exec_time(cyc_crt, pnr_crt),
+        },
+        "freq_post_placement": {
+            "wv": is_post_placement(pnr_wv),
+            "wv_noopt": is_post_placement(pnr_wv_noopt),
+            "crt": is_post_placement(pnr_crt),
         },
         "luts": {
             "wv": get(pnr_wv, "luts"),
@@ -253,6 +263,9 @@ def emit_table(
     compilers: list[tuple[str, str]],
     errors_key: str | None = None,
     error_metrics: set[str] | None = None,
+    # dict key whose bool values trigger a dagger on specified metrics
+    dagger_key: str | None = None,
+    dagger_metrics: set[str] | None = None,
 ) -> str:
     nc = len(compilers)
     col_spec = "l" + (f"|{'r' * nc}") * len(metrics)
@@ -274,13 +287,16 @@ def emit_table(
     for name in BENCH_NAMES:
         stats = all_stats[name]
         errors = stats.get(errors_key, {}) if errors_key else {}
+        daggers = stats.get(dagger_key, {}) if dagger_key else {}
         cells = [tt_name(name)]
         for _, metric_key, decimals in metrics:
             metric = stats[metric_key]
             for _, comp_key in compilers:
                 cell = to_cell(metric[comp_key], decimals)
                 if errors.get(comp_key) and (error_metrics is None or metric_key in error_metrics):
-                    cell = rf"$\times${cell}"
+                    cell = cell + r"$^\times$"
+                if daggers.get(comp_key) and (dagger_metrics is None or metric_key in dagger_metrics) and cell != "--":
+                    cell = cell + r"$^\dagger$"
                 cells.append(cell)
         lines.append(" & ".join(cells) + r" \\")
 
@@ -319,6 +335,8 @@ def generate_hls_table(all_stats: dict[str, dict]) -> str:
             (r"\textbf{Wv}$^*$", "wv_noopt"),
             ("CRT",              "crt"),
         ],
+        dagger_key="freq_post_placement",
+        dagger_metrics={"exec_time"},
     )
 
 def is_comment(line: str, ext: str) -> bool:
