@@ -4,7 +4,7 @@ pub mod solver;
 pub use super::cap::{Cap, CapPattern, Delta};
 pub use super::region::{Interval, Region};
 pub use region_set::{check_equivalent, check_subset, overlaps, RegionSetExpr};
-pub use solver::{Atom, Idx, Phi, PhiSolver, SmtSolver};
+pub use solver::{Atom, Idx, Phi, PhiSolver, SmtBackend, SmtSolver, SmtSolverConfig};
 
 use crate::logic::CapabilityLogic;
 
@@ -18,6 +18,12 @@ impl SemanticLogic {
     pub fn new() -> Self {
         Self {
             solver: SmtSolver::new(),
+        }
+    }
+
+    pub fn with_solver_config(config: SmtSolverConfig) -> Self {
+        Self {
+            solver: SmtSolver::from_config(config),
         }
     }
 

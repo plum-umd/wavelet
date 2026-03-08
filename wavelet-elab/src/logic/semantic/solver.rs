@@ -1,20 +1,15 @@
 //! SMT-based reasoning for proposition contexts.
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{self, Display},
+    io::{BufRead, BufReader, Read, Write},
+    process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
 };
-
-use smtlib::prelude::Sorted;
-use smtlib::terms::IntoWithStorage;
-use smtlib::{backend::z3_binary::Z3Binary, Bool, Int, Real, SatResult, Solver, Storage};
-
-use smtlib::terms::StaticSorted;
-use smtlib_lowlevel::ast;
 
 use crate::logic::cap::RegionModel;
 
@@ -170,49 +165,144 @@ pub trait PhiSolver {
     fn entails(&self, ctx: &Phi, atom: &Atom) -> bool;
 }
 
-/// SMT-backed solver that delegates to Z3 through the `smtlib` crate.
-pub struct SmtSolver {
-    z3_path: String,
-    timeout_ms: Option<u64>,
-    rlimit: Option<u64>,
-    log_queries: Arc<AtomicBool>,
-    solver: Arc<Mutex<Option<SolverInstance>>>,
+/// Supported SMT backends.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SmtBackend {
+    #[default]
+    Z3,
+    Cvc5,
 }
 
-impl SmtSolver {
-    /// Create a solver that looks for `z3` on the current `$PATH` with
-    /// no timeout.
+impl SmtBackend {
+    fn default_command(self) -> &'static str {
+        match self {
+            SmtBackend::Z3 => "z3",
+            SmtBackend::Cvc5 => "cvc5",
+        }
+    }
+
+    fn configure_command(self, command: &mut Command, config: &SmtSolverConfig) {
+        match self {
+            SmtBackend::Z3 => {
+                command.args(["-in", "-smt2"]);
+                if let Some(timeout_ms) = config.timeout_ms {
+                    command.arg(format!("-t:{timeout_ms}"));
+                }
+                if let Some(rlimit) = config.rlimit {
+                    command.arg(format!("rlimit={rlimit}"));
+                }
+            }
+            SmtBackend::Cvc5 => {
+                command.args(["--lang=smt2", "--incremental"]);
+            }
+        }
+    }
+}
+
+impl Display for SmtBackend {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SmtBackend::Z3 => write!(f, "z3"),
+            SmtBackend::Cvc5 => write!(f, "cvc5"),
+        }
+    }
+}
+
+/// Configuration for launching the SMT solver process.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SmtSolverConfig {
+    backend: SmtBackend,
+    timeout_ms: Option<u64>,
+    rlimit: Option<u64>,
+}
+
+impl Default for SmtSolverConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SmtSolverConfig {
+    /// Create a default Z3 configuration.
     pub fn new() -> Self {
+        Self::with_backend(SmtBackend::Z3)
+    }
+
+    /// Create a configuration for the given backend.
+    pub fn with_backend(backend: SmtBackend) -> Self {
         Self {
-            z3_path: "z3".into(),
+            backend,
             timeout_ms: None,
             rlimit: None,
-            log_queries: Arc::new(AtomicBool::new(false)),
-            solver: Arc::new(Mutex::new(None)),
         }
     }
 
-    /// Customize the path used to invoke the Z3 binary.
-    pub fn with_z3_path(path: impl Into<String>) -> Self {
-        Self {
-            z3_path: path.into(),
-            timeout_ms: None,
-            rlimit: None,
-            log_queries: Arc::new(AtomicBool::new(false)),
-            solver: Arc::new(Mutex::new(None)),
-        }
-    }
-
-    /// Configure a timeout (in milliseconds) applied to solver
-    /// invocations.
+    /// Configure a timeout (in milliseconds) applied to solver invocations.
     pub fn with_timeout(mut self, timeout_ms: u64) -> Self {
         self.timeout_ms = Some(timeout_ms);
         self
     }
 
-    /// Configure Z3's `:rlimit` counter.
+    /// Configure a resource limit for backends that support it.
     pub fn with_rlimit(mut self, rlimit: u64) -> Self {
         self.rlimit = Some(rlimit);
+        self
+    }
+
+    /// Return the selected backend.
+    pub fn backend(&self) -> SmtBackend {
+        self.backend
+    }
+
+    /// Return the configured timeout, if any.
+    pub fn timeout_ms(&self) -> Option<u64> {
+        self.timeout_ms
+    }
+
+    /// Return the configured resource limit, if any.
+    pub fn rlimit(&self) -> Option<u64> {
+        self.rlimit
+    }
+}
+
+/// SMT-backed solver that emits SMT-LIB directly and invokes an external solver.
+pub struct SmtSolver {
+    config: SmtSolverConfig,
+    log_queries: Arc<AtomicBool>,
+    cache: Arc<Mutex<HashMap<String, CheckSatResult>>>,
+    process: Arc<Mutex<Option<SolverProcess>>>,
+}
+
+impl SmtSolver {
+    /// Create a solver that looks for `z3` on the current `$PATH`.
+    pub fn new() -> Self {
+        Self::from_config(SmtSolverConfig::new())
+    }
+
+    /// Create a solver from an explicit backend configuration.
+    pub fn from_config(config: SmtSolverConfig) -> Self {
+        Self {
+            config,
+            log_queries: Arc::new(AtomicBool::new(false)),
+            cache: Arc::new(Mutex::new(HashMap::new())),
+            process: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Create a solver for the given backend using its default command name.
+    pub fn with_backend(backend: SmtBackend) -> Self {
+        Self::from_config(SmtSolverConfig::with_backend(backend))
+    }
+
+    /// Configure a timeout (in milliseconds) applied to solver invocations.
+    pub fn with_timeout(mut self, timeout_ms: u64) -> Self {
+        self.config = self.config.clone().with_timeout(timeout_ms);
+        self
+    }
+
+    /// Configure a resource limit for backends that support it.
+    pub fn with_rlimit(mut self, rlimit: u64) -> Self {
+        self.config = self.config.clone().with_rlimit(rlimit);
         self
     }
 
@@ -221,18 +311,114 @@ impl SmtSolver {
         self.log_queries.store(enabled, Ordering::SeqCst);
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn z3_path(&self) -> &str {
-        &self.z3_path
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn timeout_ms(&self) -> Option<u64> {
-        self.timeout_ms
-    }
-
     pub(crate) fn is_query_logging_enabled(&self) -> bool {
         self.log_queries.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn backend(&self) -> SmtBackend {
+        self.config.backend()
+    }
+
+    pub(crate) fn command(&self) -> &str {
+        self.config.backend().default_command()
+    }
+
+    pub(crate) fn timeout_ms(&self) -> Option<u64> {
+        self.config.timeout_ms()
+    }
+
+    pub(crate) fn rlimit(&self) -> Option<u64> {
+        self.config.rlimit()
+    }
+
+    pub fn config(&self) -> &SmtSolverConfig {
+        &self.config
+    }
+
+    fn build_entailment_script(&self, ctx: &Phi, goal: &Atom) -> String {
+        let mut int_vars = BTreeSet::new();
+        let mut bool_vars = BTreeSet::new();
+        let mut real_vars = BTreeSet::new();
+
+        for assumption in ctx.iter() {
+            collect_atom_vars(assumption, &mut int_vars, &mut bool_vars, &mut real_vars);
+        }
+        collect_atom_vars(goal, &mut int_vars, &mut bool_vars, &mut real_vars);
+
+        let symbols = SymbolTable::new(&int_vars, &bool_vars, &real_vars);
+        let encoder = Encoder::new(&symbols);
+
+        let mut lines = vec!["(reset)".to_string(), "(set-logic ALL)".to_string()];
+        for decl in symbols.declarations() {
+            lines.push(decl);
+        }
+        for assumption in ctx.iter() {
+            lines.push(format!("(assert {})", encoder.encode_atom(assumption)));
+        }
+        let negated_goal = Atom::Not(Box::new(goal.clone()));
+        lines.push(format!("(assert {})", encoder.encode_atom(&negated_goal)));
+        lines.push("(check-sat)".to_string());
+        lines.join("\n")
+    }
+
+    fn run_script(&self, script: &str) -> Result<CheckSatResult, String> {
+        let mut process_guard = match self.process.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+
+        if process_guard.is_none() {
+            *process_guard = Some(SolverProcess::new(&self.config)?);
+        }
+
+        let output = match process_guard
+            .as_mut()
+            .expect("solver process should be initialised")
+            .execute(script)
+        {
+            Ok(output) => output,
+            Err(err) => {
+                *process_guard = None;
+                return Err(err);
+            }
+        };
+
+        if let Some(result) = parse_check_sat_result(&output) {
+            Ok(result)
+        } else {
+            Err(format!(
+                "{} backend '{}' produced no satisfiability result\noutput:\n{}",
+                self.backend(),
+                self.command(),
+                output
+            ))
+        }
+    }
+
+    fn log_query(&self, script: &str, result: Result<CheckSatResult, &str>) {
+        if !self.is_query_logging_enabled() {
+            return;
+        }
+
+        println!(
+            "; {} entailment query via {} ({})",
+            self.backend(),
+            self.command(),
+            match (self.timeout_ms(), self.rlimit()) {
+                (Some(timeout), Some(rlimit)) =>
+                    format!("timeout={}ms, rlimit={}", timeout, rlimit),
+                (Some(timeout), None) => format!("timeout={}ms", timeout),
+                (None, Some(rlimit)) => format!("rlimit={}", rlimit),
+                (None, None) => "default options".to_string(),
+            }
+        );
+        for line in script.lines() {
+            println!("{line}");
+        }
+        match result {
+            Ok(status) => println!("; result: {status}"),
+            Err(err) => println!("; solver failure: {err}"),
+        }
     }
 }
 
@@ -245,27 +431,29 @@ impl Default for SmtSolver {
 impl Clone for SmtSolver {
     fn clone(&self) -> Self {
         Self {
-            z3_path: self.z3_path.clone(),
-            timeout_ms: self.timeout_ms,
-            rlimit: self.rlimit,
+            config: self.config.clone(),
             log_queries: Arc::clone(&self.log_queries),
-            solver: Arc::clone(&self.solver),
+            cache: Arc::clone(&self.cache),
+            process: Arc::clone(&self.process),
         }
     }
 }
 
 impl fmt::Debug for SmtSolver {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let has_solver = self
-            .solver
+        let has_process = self
+            .process
             .lock()
             .map(|guard| guard.is_some())
             .unwrap_or(false);
+        let cache_entries = self.cache.lock().map(|guard| guard.len()).unwrap_or(0);
         f.debug_struct("SmtSolver")
-            .field("z3_path", &self.z3_path)
-            .field("timeout_ms", &self.timeout_ms)
-            .field("rlimit", &self.rlimit)
-            .field("solver_cached", &has_solver)
+            .field("backend", &self.backend())
+            .field("command", &self.command())
+            .field("timeout_ms", &self.timeout_ms())
+            .field("rlimit", &self.rlimit())
+            .field("process_cached", &has_process)
+            .field("cache_entries", &cache_entries)
             .field("log_queries", &self.log_queries.load(Ordering::Relaxed))
             .finish()
     }
@@ -275,287 +463,382 @@ impl PhiSolver for SmtSolver {
     type Region = super::region_set::RegionSetExpr;
 
     fn entails(&self, ctx: &Phi, atom: &Atom) -> bool {
-        let mut solver_guard = match self.solver.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let script = self.build_entailment_script(ctx, atom);
+        if let Some(status) = self
+            .cache
+            .lock()
+            .map(|cache| cache.get(&script).copied())
+            .unwrap_or(None)
+        {
+            self.log_query(&script, Ok(status));
+            return matches!(status, CheckSatResult::Unsat);
+        }
 
-        if solver_guard.is_none() {
-            match SolverInstance::new(&self.z3_path) {
-                Ok(instance) => {
-                    *solver_guard = Some(instance);
+        match self.run_script(&script) {
+            Ok(status) => {
+                if let Ok(mut cache) = self.cache.lock() {
+                    cache.insert(script.clone(), status);
                 }
-                Err(err) => {
-                    eprintln!("failed to initialise z3 backend: {err}");
-                    return false;
-                }
+                self.log_query(&script, Ok(status));
+                matches!(status, CheckSatResult::Unsat)
+            }
+            Err(err) => {
+                eprintln!("solver failure while checking entailment: {err}");
+                self.log_query(&script, Err(&err));
+                false
             }
         }
+    }
+}
 
-        let instance = solver_guard.as_mut().expect("solver instance initialised");
-        let storage_ptr = instance.storage_ptr();
-        let solver = instance.solver_mut();
-        let storage = unsafe { &*storage_ptr };
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CheckSatResult {
+    Sat,
+    Unsat,
+    Unknown,
+}
 
-        if let Some(timeout) = self.timeout_ms {
-            let timeout = timeout.min(usize::MAX as u64) as usize;
-            if let Err(err) = solver.set_timeout(timeout) {
-                eprintln!("failed to set solver timeout: {err}");
-            }
+impl Display for CheckSatResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CheckSatResult::Sat => write!(f, "sat"),
+            CheckSatResult::Unsat => write!(f, "unsat"),
+            CheckSatResult::Unknown => write!(f, "unknown"),
         }
+    }
+}
 
-        if let Some(limit) = self.rlimit {
-            let limit = limit.min(usize::MAX as u64) as usize;
-            if let Err(err) = solver.set_rlimit(limit) {
-                eprintln!("failed to set solver rlimit: {err}");
+fn parse_check_sat_result(output: &str) -> Option<CheckSatResult> {
+    output.lines().find_map(|line| match line.trim() {
+        "sat" => Some(CheckSatResult::Sat),
+        "unsat" => Some(CheckSatResult::Unsat),
+        "unknown" => Some(CheckSatResult::Unknown),
+        _ => None,
+    })
+}
+
+const QUERY_SENTINEL: &str = "__wavelet_query_end__";
+
+struct SolverProcess {
+    backend: SmtBackend,
+    command: String,
+    child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+    stderr: ChildStderr,
+}
+
+impl SolverProcess {
+    fn new(config: &SmtSolverConfig) -> Result<Self, String> {
+        let command_name = config.backend().default_command().to_string();
+        let mut command = Command::new(&command_name);
+        config.backend().configure_command(&mut command, config);
+        command.stdin(Stdio::piped());
+        command.stdout(Stdio::piped());
+        command.stderr(Stdio::piped());
+
+        let mut child = command.spawn().map_err(|err| {
+            format!(
+                "failed to launch {} backend '{}': {err}",
+                config.backend(),
+                command_name
+            )
+        })?;
+
+        let stdin = child.stdin.take().ok_or_else(|| {
+            format!(
+                "failed to open stdin for {} backend '{}'",
+                config.backend(),
+                command_name
+            )
+        })?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            format!(
+                "failed to open stdout for {} backend '{}'",
+                config.backend(),
+                command_name
+            )
+        })?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            format!(
+                "failed to open stderr for {} backend '{}'",
+                config.backend(),
+                command_name
+            )
+        })?;
+
+        Ok(Self {
+            backend: config.backend(),
+            command: command_name,
+            child,
+            stdin,
+            stdout: BufReader::new(stdout),
+            stderr,
+        })
+    }
+
+    fn execute(&mut self, script: &str) -> Result<String, String> {
+        self.stdin.write_all(script.as_bytes()).map_err(|err| {
+            format!(
+                "failed to send SMT-LIB script to {} backend '{}': {err}",
+                self.backend, self.command
+            )
+        })?;
+        self.stdin.write_all(b"\n").map_err(|err| {
+            format!(
+                "failed to terminate SMT-LIB script for {} backend '{}': {err}",
+                self.backend, self.command
+            )
+        })?;
+        self.stdin
+            .write_all(format!("(echo \"{QUERY_SENTINEL}\")\n").as_bytes())
+            .map_err(|err| {
+                format!(
+                    "failed to write SMT sentinel to {} backend '{}': {err}",
+                    self.backend, self.command
+                )
+            })?;
+        self.stdin.flush().map_err(|err| {
+            format!(
+                "failed to flush SMT-LIB script to {} backend '{}': {err}",
+                self.backend, self.command
+            )
+        })?;
+
+        let mut output = String::new();
+        loop {
+            let mut line = String::new();
+            let bytes = self.stdout.read_line(&mut line).map_err(|err| {
+                format!(
+                    "failed to read output from {} backend '{}': {err}",
+                    self.backend, self.command
+                )
+            })?;
+            if bytes == 0 {
+                let mut stderr = String::new();
+                let _ = self.stderr.read_to_string(&mut stderr);
+                let status = self
+                    .child
+                    .try_wait()
+                    .ok()
+                    .flatten()
+                    .map(|status| status.to_string())
+                    .unwrap_or_else(|| "still running".to_string());
+                return Err(format!(
+                    "{} backend '{}' closed stdout unexpectedly (status: {})\nstderr:\n{}",
+                    self.backend, self.command, status, stderr
+                ));
             }
-        }
-
-        let mut encoder = Encoder::new(storage);
-        let logging = self.log_queries.load(Ordering::Relaxed);
-        let mut smt_trace = Vec::new();
-        if logging {
-            smt_trace.push("; z3 entailment query".to_string());
-            smt_trace.push("; assumptions".to_string());
-        }
-
-        let mut had_assert_failure = false;
-        for assumption in ctx.iter() {
-            let term = encoder.encode_atom(assumption);
-            if logging {
-                smt_trace.push(format!("(assert {})", term));
-            }
-            if let Err(err) = solver.assert(term) {
-                eprintln!("failed to assert assumption: {err}");
-                if logging {
-                    smt_trace.push(format!("; solver error while asserting assumption: {err}"));
-                }
-                had_assert_failure = true;
+            let trimmed = line.trim();
+            if trimmed == QUERY_SENTINEL || trimmed.trim_matches('"') == QUERY_SENTINEL {
                 break;
             }
+            output.push_str(&line);
         }
 
-        let mut result = false;
-        if !had_assert_failure {
-            let negated_atom = Atom::Not(Box::new(atom.clone()));
-            let negated = encoder.encode_atom(&negated_atom);
-            if logging {
-                smt_trace.push(format!("(assert {}) ; negated goal", negated));
-                smt_trace.push("(check-sat)".to_string());
-            }
-
-            let mut sat_outcome: Option<String> = None;
-            match solver.scope(|solver| {
-                solver.assert(negated)?;
-                let outcome = solver.check_sat()?;
-                sat_outcome = Some(format!("{:?}", outcome));
-                match outcome {
-                    SatResult::Unsat => Ok(true),
-                    _ => Ok(false),
-                }
-            }) {
-                Ok(scope_result) => {
-                    result = scope_result;
-                    if logging {
-                        if let Some(outcome) = sat_outcome {
-                            smt_trace.push(format!("; result: {outcome}"));
-                        }
-                        for line in &smt_trace {
-                            println!("{line}");
-                        }
-                    }
-                }
-                Err(err) => {
-                    eprintln!("solver failure while checking entailment: {err}");
-                    if logging {
-                        smt_trace.push(format!("; solver failure: {err}"));
-                        for line in &smt_trace {
-                            println!("{line}");
-                        }
-                    }
-                }
-            }
-        } else if logging {
-            for line in &smt_trace {
-                println!("{line}");
-            }
-        }
-
-        if let Err(err) = solver.reset() {
-            eprintln!("failed to reset solver state: {err}");
-        }
-
-        drop(solver_guard);
-
-        result
+        Ok(output)
     }
 }
 
-struct SolverInstance {
-    storage: *mut Storage,
-    solver: Solver<'static, Z3Binary>,
-}
-
-impl SolverInstance {
-    fn new(z3_path: &str) -> Result<Self, String> {
-        let storage = Box::into_raw(Box::new(Storage::new()));
-        let storage_ref = unsafe { &*storage };
-
-        let backend = match Z3Binary::new(z3_path) {
-            Ok(backend) => backend,
-            Err(err) => {
-                unsafe {
-                    drop(Box::from_raw(storage));
-                }
-                return Err(err.to_string());
-            }
-        };
-
-        let solver = match Solver::new(storage_ref, backend) {
-            Ok(solver) => solver,
-            Err(err) => {
-                unsafe {
-                    drop(Box::from_raw(storage));
-                }
-                return Err(err.to_string());
-            }
-        };
-
-        Ok(Self { storage, solver })
-    }
-
-    fn storage_ptr(&self) -> *const Storage {
-        self.storage as *const Storage
-    }
-
-    fn solver_mut(&mut self) -> &mut Solver<'static, Z3Binary> {
-        &mut self.solver
-    }
-}
-
-impl Drop for SolverInstance {
+impl Drop for SolverProcess {
     fn drop(&mut self) {
-        if let Err(err) = self.solver.run_command(ast::Command::Exit) {
-            eprintln!("failed to shut down z3 backend: {err}");
-        }
-        // Safety: storage was created with Box::into_raw in new()
-        unsafe {
-            drop(Box::from_raw(self.storage));
-        }
+        let _ = self.stdin.write_all(b"(exit)\n");
+        let _ = self.stdin.flush();
+        let _ = self.child.wait();
     }
 }
 
-pub struct Encoder<'st> {
-    storage: &'st Storage,
-    int_vars: HashMap<String, Int<'st>>,
-    bool_vars: HashMap<String, Bool<'st>>,
-    real_vars: HashMap<String, Real<'st>>,
+struct SymbolTable {
+    ints: BTreeMap<String, String>,
+    bools: BTreeMap<String, String>,
+    reals: BTreeMap<String, String>,
 }
 
-impl<'st> Encoder<'st> {
-    fn new(storage: &'st Storage) -> Self {
+impl SymbolTable {
+    fn new(
+        int_vars: &BTreeSet<String>,
+        bool_vars: &BTreeSet<String>,
+        real_vars: &BTreeSet<String>,
+    ) -> Self {
         Self {
-            storage,
-            int_vars: HashMap::new(),
-            bool_vars: HashMap::new(),
-            real_vars: HashMap::new(),
+            ints: assign_symbols("idx", int_vars),
+            bools: assign_symbols("bool", bool_vars),
+            reals: assign_symbols("real", real_vars),
         }
     }
 
-    fn encode_idx(&mut self, idx: &Idx) -> Int<'st> {
+    fn declarations(&self) -> Vec<String> {
+        let mut lines = Vec::new();
+        for symbol in self.ints.values() {
+            lines.push(format!("(declare-const {symbol} Int)"));
+        }
+        for symbol in self.bools.values() {
+            lines.push(format!("(declare-const {symbol} Bool)"));
+        }
+        for symbol in self.reals.values() {
+            lines.push(format!("(declare-const {symbol} Real)"));
+        }
+        lines
+    }
+
+    fn int_symbol(&self, name: &str) -> &str {
+        self.ints
+            .get(name)
+            .map(String::as_str)
+            .unwrap_or_else(|| panic!("missing Int symbol for variable `{name}`"))
+    }
+
+    fn bool_symbol(&self, name: &str) -> &str {
+        self.bools
+            .get(name)
+            .map(String::as_str)
+            .unwrap_or_else(|| panic!("missing Bool symbol for variable `{name}`"))
+    }
+
+    fn real_symbol(&self, name: &str) -> &str {
+        self.reals
+            .get(name)
+            .map(String::as_str)
+            .unwrap_or_else(|| panic!("missing Real symbol for variable `{name}`"))
+    }
+}
+
+fn assign_symbols(prefix: &str, vars: &BTreeSet<String>) -> BTreeMap<String, String> {
+    vars.iter()
+        .enumerate()
+        .map(|(idx, name)| (name.clone(), format!("__{}_{}", prefix, idx)))
+        .collect()
+}
+
+struct Encoder<'a> {
+    symbols: &'a SymbolTable,
+}
+
+impl<'a> Encoder<'a> {
+    fn new(symbols: &'a SymbolTable) -> Self {
+        Self { symbols }
+    }
+
+    fn encode_idx(&self, idx: &Idx) -> String {
         match idx {
-            Idx::Const(n) => Int::new(self.storage, *n),
-            Idx::Var(name) => *self
-                .int_vars
-                .entry(name.clone())
-                .or_insert_with(|| Int::new_const(self.storage, name).into()),
-            Idx::Add(lhs, rhs) => {
-                let l = self.encode_idx(lhs);
-                let r = self.encode_idx(rhs);
-                l + r
-            }
-            Idx::Sub(lhs, rhs) => {
-                let l = self.encode_idx(lhs);
-                let r = self.encode_idx(rhs);
-                l - r
-            }
-            Idx::Mul(lhs, rhs) => {
-                let l = self.encode_idx(lhs);
-                let r = self.encode_idx(rhs);
-                l * r
-            }
+            Idx::Const(value) => encode_int_const(*value),
+            Idx::Var(name) => self.symbols.int_symbol(name).to_string(),
+            Idx::Add(lhs, rhs) => format!("(+ {} {})", self.encode_idx(lhs), self.encode_idx(rhs)),
+            Idx::Sub(lhs, rhs) => format!("(- {} {})", self.encode_idx(lhs), self.encode_idx(rhs)),
+            Idx::Mul(lhs, rhs) => format!("(* {} {})", self.encode_idx(lhs), self.encode_idx(rhs)),
         }
     }
 
-    fn encode_real(&mut self, expr: &RealExpr) -> Real<'st> {
+    fn encode_real(&self, expr: &RealExpr) -> String {
         match expr {
-            RealExpr::Const(n, d) => {
-                // Convert the rational to a Real value
-                // We compute the exact decimal value
-                let value = (*n as f64) / (*d as f64);
-                value.into_with_storage(self.storage)
-            }
-            RealExpr::Var(name) => *self
-                .real_vars
-                .entry(name.clone())
-                .or_insert_with(|| Real::new_const(self.storage, name).into()),
+            RealExpr::Const(num, den) => encode_real_const(*num, *den),
+            RealExpr::Var(name) => self.symbols.real_symbol(name).to_string(),
             RealExpr::Add(lhs, rhs) => {
-                let l = self.encode_real(lhs);
-                let r = self.encode_real(rhs);
-                l + r
+                format!("(+ {} {})", self.encode_real(lhs), self.encode_real(rhs))
             }
             RealExpr::Sub(lhs, rhs) => {
-                let l = self.encode_real(lhs);
-                let r = self.encode_real(rhs);
-                l - r
+                format!("(- {} {})", self.encode_real(lhs), self.encode_real(rhs))
             }
         }
     }
 
-    fn encode_bool_var(&mut self, name: &str) -> Bool<'st> {
-        *self
-            .bool_vars
-            .entry(name.to_string())
-            .or_insert_with(|| Bool::new_const(self.storage, name).into())
-    }
-
-    fn encode_atom(&mut self, atom: &Atom) -> Bool<'st> {
+    fn encode_atom(&self, atom: &Atom) -> String {
         match atom {
-            Atom::Le(lhs, rhs) => {
-                let l = self.encode_idx(lhs);
-                let r = self.encode_idx(rhs);
-                l.le(r)
-            }
-            Atom::Lt(lhs, rhs) => {
-                let l = self.encode_idx(lhs);
-                let r = self.encode_idx(rhs);
-                l.lt(r)
-            }
-            Atom::Eq(lhs, rhs) => {
-                let l = self.encode_idx(lhs);
-                let r = self.encode_idx(rhs);
-                l._eq(r)
-            }
+            Atom::Le(lhs, rhs) => format!("(<= {} {})", self.encode_idx(lhs), self.encode_idx(rhs)),
+            Atom::Lt(lhs, rhs) => format!("(< {} {})", self.encode_idx(lhs), self.encode_idx(rhs)),
+            Atom::Eq(lhs, rhs) => format!("(= {} {})", self.encode_idx(lhs), self.encode_idx(rhs)),
             Atom::RealLe(lhs, rhs) => {
-                let l = self.encode_real(lhs);
-                let r = self.encode_real(rhs);
-                l.le(r)
+                format!("(<= {} {})", self.encode_real(lhs), self.encode_real(rhs))
             }
             Atom::RealLt(lhs, rhs) => {
-                let l = self.encode_real(lhs);
-                let r = self.encode_real(rhs);
-                l.lt(r)
+                format!("(< {} {})", self.encode_real(lhs), self.encode_real(rhs))
             }
             Atom::RealEq(lhs, rhs) => {
-                let l = self.encode_real(lhs);
-                let r = self.encode_real(rhs);
-                l._eq(r)
+                format!("(= {} {})", self.encode_real(lhs), self.encode_real(rhs))
             }
-            Atom::BoolVar(name) => self.encode_bool_var(name),
-            Atom::And(lhs, rhs) => self.encode_atom(lhs) & self.encode_atom(rhs),
-            Atom::Or(lhs, rhs) => self.encode_atom(lhs) | self.encode_atom(rhs),
-            Atom::Implies(lhs, rhs) => self.encode_atom(lhs).implies(self.encode_atom(rhs)),
-            Atom::Not(inner) => !self.encode_atom(inner),
+            Atom::BoolVar(name) => self.symbols.bool_symbol(name).to_string(),
+            Atom::And(lhs, rhs) => {
+                format!("(and {} {})", self.encode_atom(lhs), self.encode_atom(rhs))
+            }
+            Atom::Or(lhs, rhs) => {
+                format!("(or {} {})", self.encode_atom(lhs), self.encode_atom(rhs))
+            }
+            Atom::Implies(lhs, rhs) => {
+                format!("(=> {} {})", self.encode_atom(lhs), self.encode_atom(rhs))
+            }
+            Atom::Not(inner) => format!("(not {})", self.encode_atom(inner)),
+        }
+    }
+}
+
+fn encode_int_const(value: i64) -> String {
+    if value < 0 {
+        format!("(- {})", value.unsigned_abs())
+    } else {
+        value.to_string()
+    }
+}
+
+fn encode_real_const(num: i64, den: i64) -> String {
+    assert!(den != 0, "real constant denominator must not be zero");
+    let (num, den) = if den < 0 { (-num, -den) } else { (num, den) };
+    let den = u64::try_from(den).expect("real denominator should be positive");
+    let positive = format!("(/ {} {})", num.unsigned_abs(), den);
+    if num < 0 {
+        format!("(- {positive})")
+    } else {
+        positive
+    }
+}
+
+fn collect_atom_vars(
+    atom: &Atom,
+    ints: &mut BTreeSet<String>,
+    bools: &mut BTreeSet<String>,
+    reals: &mut BTreeSet<String>,
+) {
+    match atom {
+        Atom::Le(lhs, rhs) | Atom::Lt(lhs, rhs) | Atom::Eq(lhs, rhs) => {
+            collect_idx_vars(lhs, ints);
+            collect_idx_vars(rhs, ints);
+        }
+        Atom::RealLe(lhs, rhs) | Atom::RealLt(lhs, rhs) | Atom::RealEq(lhs, rhs) => {
+            collect_real_vars(lhs, reals);
+            collect_real_vars(rhs, reals);
+        }
+        Atom::BoolVar(name) => {
+            bools.insert(name.clone());
+        }
+        Atom::And(lhs, rhs) | Atom::Or(lhs, rhs) | Atom::Implies(lhs, rhs) => {
+            collect_atom_vars(lhs, ints, bools, reals);
+            collect_atom_vars(rhs, ints, bools, reals);
+        }
+        Atom::Not(inner) => collect_atom_vars(inner, ints, bools, reals),
+    }
+}
+
+fn collect_idx_vars(idx: &Idx, ints: &mut BTreeSet<String>) {
+    match idx {
+        Idx::Const(_) => {}
+        Idx::Var(name) => {
+            ints.insert(name.clone());
+        }
+        Idx::Add(lhs, rhs) | Idx::Sub(lhs, rhs) | Idx::Mul(lhs, rhs) => {
+            collect_idx_vars(lhs, ints);
+            collect_idx_vars(rhs, ints);
+        }
+    }
+}
+
+fn collect_real_vars(expr: &RealExpr, reals: &mut BTreeSet<String>) {
+    match expr {
+        RealExpr::Const(_, _) => {}
+        RealExpr::Var(name) => {
+            reals.insert(name.clone());
+        }
+        RealExpr::Add(lhs, rhs) | RealExpr::Sub(lhs, rhs) => {
+            collect_real_vars(lhs, reals);
+            collect_real_vars(rhs, reals);
         }
     }
 }

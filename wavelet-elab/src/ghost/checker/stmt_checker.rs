@@ -745,16 +745,21 @@ pub fn check_ghost_stmt_jnsplt_jnsplt_call<V: Variable>(
     // were temporarily lent to the callee.
     let adjusted_required_sync = permissions_to_expr(consumed_sync);
     let adjusted_required_garb = permissions_to_expr(consumed_garb);
-    let restored_sync = PermExpr::union(vec![remainder_sync_clone, adjusted_required_sync.clone()]);
+    let restored_sync = PermExpr::union(vec![
+        remainder_sync_clone.clone(),
+        adjusted_required_sync.clone(),
+    ]);
     let restored_garb = PermExpr::union(vec![remainder_garb_expr, adjusted_required_garb.clone()]);
 
-    ctx.bind_perm(right1, restored_sync.clone());
+    ctx.bind_perm(right1, restored_sync);
 
     let mut cleaned_garb_flat = restored_garb
         .collect_permissions(&ctx.phi, &ctx.solver)
         .ok_or_else(|| "Restored p_garb after call could not be normalised".to_string())?;
-    if let Some(sync_flat) = restored_sync.collect_permissions(&ctx.phi, &ctx.solver) {
-        for perm in sync_flat {
+    if let Some(sync_remainder_flat) =
+        remainder_sync_clone.collect_permissions(&ctx.phi, &ctx.solver)
+    {
+        for perm in sync_remainder_flat {
             let _ = consume_permission(&mut cleaned_garb_flat, &perm, &ctx.phi, &ctx.solver);
         }
     }
@@ -762,7 +767,6 @@ pub fn check_ghost_stmt_jnsplt_jnsplt_call<V: Variable>(
 
     ctx.bind_perm(right2, cleaned_garb);
 
-    // bind ghost_ret with the sum of the callee's needed sync and garb permissions
     let ret_perm_expr = PermExpr::union(vec![adjusted_required_sync, adjusted_required_garb]);
     ctx.register_return_contribution(ghost_ret, ret_perm_expr.clone());
     ctx.bind_perm(ghost_ret, ret_perm_expr);

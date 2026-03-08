@@ -10,7 +10,15 @@ use super::pretty_print::trace_context;
 
 /// Check a ghost program for permission correctness.
 pub fn check_ghost_program<V: Variable>(program: &GhostProgram<V>) -> Result<(), String> {
-    check_ghost_program_with_verbose(program, false)
+    check_ghost_program_with_solver_and_verbose(program, SmtSolver::new(), false)
+}
+
+/// Check a ghost program with an explicit solver configuration.
+pub fn check_ghost_program_with_solver<V: Variable>(
+    program: &GhostProgram<V>,
+    solver: SmtSolver,
+) -> Result<(), String> {
+    check_ghost_program_with_solver_and_verbose(program, solver, false)
 }
 
 /// Check a ghost program for permission correctness with optional verbose mode.
@@ -18,7 +26,15 @@ pub fn check_ghost_program_with_verbose<V: Variable>(
     program: &GhostProgram<V>,
     verbose: bool,
 ) -> Result<(), String> {
-    let solver = SmtSolver::new();
+    check_ghost_program_with_solver_and_verbose(program, SmtSolver::new(), verbose)
+}
+
+/// Check a ghost program with an explicit solver and optional verbose mode.
+pub fn check_ghost_program_with_solver_and_verbose<V: Variable>(
+    program: &GhostProgram<V>,
+    solver: SmtSolver,
+    verbose: bool,
+) -> Result<(), String> {
     let mut ctx = CheckContext::new_with_verbose(solver.clone(), verbose);
 
     // First pass: collect function signatures
@@ -26,7 +42,7 @@ pub fn check_ghost_program_with_verbose<V: Variable>(
         println!("=== Collecting function signatures ===\n");
     }
     for def in &program.defs {
-        let sig = build_function_signature(def);
+        let sig = build_function_signature(def, solver.clone());
         if verbose {
             println!("Function: {}", def.name.0);
             println!(
@@ -77,12 +93,14 @@ pub fn check_ghost_program_with_verbose<V: Variable>(
 
 /// Build a function signature from a ghost function definition.
 /// This extracts the initial permission setup from CapPattern.
-fn build_function_signature<V: Variable>(def: &GhostFnDef<V>) -> FunctionSignature {
+fn build_function_signature<V: Variable>(
+    def: &GhostFnDef<V>,
+    solver: SmtSolver,
+) -> FunctionSignature {
     use crate::ghost::ir::GhostVar;
 
     let params = def.params.clone();
 
-    let solver = SmtSolver::new();
     let mut temp_ctx = CheckContext::new(solver);
 
     let p_sync = GhostVar("__sig_p_sync".to_string());
