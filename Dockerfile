@@ -284,7 +284,7 @@ You can also exit and restart this image as a VS code server for a better experi
 Then visit \${underline}\${bold}http://localhost:8080\${reset} to access the in-browser editor.
 
 EOF
-    exec /bin/bash "\$@"
+    exec "\${@:-/bin/bash}"
 fi
 EOF2
 RUN chmod +x /usr/local/bin/entry.sh
