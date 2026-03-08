@@ -2,6 +2,9 @@ name: Build Wavelet
 on: [push, workflow_dispatch]
 env:
   CACHE_VERSION: v3
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   unit-tests:
     strategy:

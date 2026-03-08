@@ -1,4 +1,4 @@
-[Artifact Evaluation] Let it Flow: A Formally Verified Compilation Framework for Asynchronous Dataflow
+Let it Flow: A Formally Verified Compilation Framework for Asynchronous Dataflow
 ---
 
 Thank you for evaluating our artifact!
