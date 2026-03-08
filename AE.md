@@ -11,10 +11,10 @@ We begin with some quick steps to set up everything correctly, followed by more 
 Please follow these steps to download and start our Docker image:
 
 1. Make sure you have [Docker installed](https://docs.docker.com/engine/install/). Our artifact is tested using Docker 27, but other versions should work too.
-2. Download the artifact image matching your machine's architecture (i.e., `artifact-image-x64.tar.gz` or `artifact-image-aarch64.tar.gz`).
+2. Download the artifact image matching your machine's architecture (i.e., `wavelet-artifact-x64.tar.gz` or `wavelet-artifact-aarch64.tar.gz`).
 3. Load the image. This should add a local image called `wavelet-artifact`.
     ```sh
-    docker load -i artifact-image-<arch>.tar.gz
+    docker load -i wavelet-artifact-<arch>.tar.gz
     ```
 4. To start the image, choose one of the following two options: 
     - (Recommended) If your machine has a browser, you can start the image as a VS Code server:
@@ -83,6 +83,7 @@ The commands above will compile/test/synthesize 10 test cases in `integration-te
 
 For 1 and 2, the source files are `integration-tests/tests/*/test.rs`, which contain our L_let DSL source code embedded in Rust.
 For 3, 4, and 5, the source files are `integration-tests/tests/*/test.c`.
+Note that since RipTide is not open-sourced, we directly provide their compiled dataflow graphs named `test.riptide.json` and `test.riptide.nostream.json`.
 The Python files `integration-tests/tests/*/test.py` are reference implementations and test cases that will be tested against every output dataflow graph and SystemVerilog design.
 
 You can also find various compilation results and logs in each test folder (e.g., `integration-tests/tests/dither`), and all output files will be tagged with the pipeline identifier.
