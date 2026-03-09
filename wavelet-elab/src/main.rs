@@ -3,12 +3,28 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use thiserror::Error;
 use wavelet_elab::check::{check_program_with_options, CheckOptions};
-use wavelet_elab::ghost::check_ghost_program_with_verbose;
+use wavelet_elab::ghost::check_ghost_program_with_solver_and_verbose;
 use wavelet_elab::ghost::json::{export_program_json, ExportError};
+use wavelet_elab::logic::semantic::{SmtBackend, SmtSolver, SmtSolverConfig};
 use wavelet_elab::{parse_program, synthesize_ghost_program, ParseError, SemanticLogic, TypeError};
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum CliSmtBackend {
+    Z3,
+    Cvc5,
+}
+
+impl From<CliSmtBackend> for SmtBackend {
+    fn from(value: CliSmtBackend) -> Self {
+        match value {
+            CliSmtBackend::Z3 => SmtBackend::Z3,
+            CliSmtBackend::Cvc5 => SmtBackend::Cvc5,
+        }
+    }
+}
 
 /// Command line interface for the dfx analyzer.
 #[derive(Parser, Debug)]
@@ -34,6 +50,10 @@ struct Cli {
     /// Log SMT solver queries issued during checking.
     #[arg(long = "log-solver")]
     log_solver: bool,
+
+    /// Select the SMT backend used by both the type checker and ghost checker.
+    #[arg(long = "smt-backend", value_enum, default_value_t = CliSmtBackend::Z3)]
+    smt_backend: CliSmtBackend,
 
     /// Emit a textual rendering of the ghost program.
     #[arg(long)]
@@ -98,10 +118,13 @@ fn run(cli: Cli) -> Result<(), CliError> {
         output,
         verbose,
         log_solver,
+        smt_backend,
         emit_ghost,
         batch,
         skip_ghost_check,
     } = cli;
+
+    let solver_config = build_solver_config(smt_backend);
 
     // Handle batch mode
     if let Some(batch_file) = batch {
@@ -110,6 +133,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
             output,
             verbose,
             log_solver,
+            solver_config,
             emit_ghost,
             skip_ghost_check,
         );
@@ -122,9 +146,14 @@ fn run(cli: Cli) -> Result<(), CliError> {
         output,
         verbose,
         log_solver,
+        solver_config,
         emit_ghost,
         skip_ghost_check,
     )
+}
+
+fn build_solver_config(backend: CliSmtBackend) -> SmtSolverConfig {
+    SmtSolverConfig::with_backend(backend.into())
 }
 
 fn run_batch(
@@ -132,6 +161,7 @@ fn run_batch(
     output: Option<PathBuf>,
     verbose: bool,
     log_solver: bool,
+    solver_config: SmtSolverConfig,
     emit_ghost: bool,
     skip_ghost_check: bool,
 ) -> Result<(), CliError> {
@@ -184,6 +214,7 @@ fn run_batch(
             file_output,
             verbose,
             log_solver,
+            solver_config.clone(),
             emit_ghost,
             skip_ghost_check,
         ) {
@@ -222,6 +253,7 @@ fn process_single_file(
     output: Option<PathBuf>,
     verbose: bool,
     log_solver: bool,
+    solver_config: SmtSolverConfig,
     emit_ghost: bool,
     skip_ghost_check: bool,
 ) -> Result<(), CliError> {
@@ -238,7 +270,9 @@ fn process_single_file(
     let mut options = CheckOptions::default();
     options.verbose = verbose;
     options.log_solver_queries = log_solver;
-    let logic = SemanticLogic::new();
+    let solver = SmtSolver::from_config(solver_config);
+    solver.set_query_logging(log_solver);
+    let logic = SemanticLogic::with_solver(solver.clone());
     if verbose {
         println!("\n╔═══════════════════════════════════════════════════════════╗");
         println!("║                  Checking Input Program                   ║");
@@ -262,11 +296,13 @@ fn process_single_file(
             println!("╚═══════════════════════════════════════════════════════════╝\n");
         }
 
-        check_ghost_program_with_verbose(&ghost, verbose).map_err(|err| CliError::Type {
-            path: input.clone(),
-            source: TypeError::InvalidOp {
-                op: format!("Ghost program check failed: {}", err),
-            },
+        check_ghost_program_with_solver_and_verbose(&ghost, solver, verbose).map_err(|err| {
+            CliError::Type {
+                path: input.clone(),
+                source: TypeError::InvalidOp {
+                    op: format!("Ghost program check failed: {}", err),
+                },
+            }
         })?;
         if verbose {
             println!("\n✅ Ghost program validation succeeded!\n");

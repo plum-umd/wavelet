@@ -1,7 +1,6 @@
 //! The core type checking logic for the restricted language.
 
 use std::collections::BTreeMap;
-use std::fmt;
 
 use crate::env::{Ctx, FnRegistry};
 use crate::error::TypeError;
@@ -10,9 +9,15 @@ use crate::ir::{
 };
 use crate::logic::cap::{Cap, Delta, RegionModel};
 use crate::logic::region::Region;
-use crate::logic::semantic::solver::{Atom, Idx, Phi};
+use crate::logic::semantic::solver::{Atom, Idx};
 use crate::logic::semantic::Interval;
 use crate::logic::CapabilityLogic;
+
+use report::{
+    capture_trace_snapshot, display_cap_with, display_delta_with, print_statement_transition,
+    render_fn_signature, render_stmt, render_tail, render_ty, trace_capability_check,
+    trace_context, trace_function_header, trace_step,
+};
 
 /// Substitute variable names in an index expression according to a map.
 fn substitute_idx(idx: &Idx, subst: &BTreeMap<String, String>) -> Idx {
@@ -54,6 +59,115 @@ fn substitute_region(region: &Region, subst: &BTreeMap<String, String>) -> Regio
     Region::from_intervals(intervals)
 }
 
+fn is_array_param(ty: &Ty) -> bool {
+    matches!(ty, Ty::RefShrd { .. } | Ty::RefUniq { .. })
+}
+
+struct PreparedCall<R: RegionModel> {
+    typed_args: Vec<TypedVar>,
+    required_delta: Delta<R>,
+}
+
+fn instantiate_required_delta<L: CapabilityLogic>(
+    fn_def: &FnDef<UntypedVar>,
+    array_args: &[UntypedVar],
+    subst_map: &BTreeMap<String, String>,
+) -> Delta<L::Region>
+where
+    L::Region: RegionModel,
+{
+    let mut required_delta = Delta::<L::Region>::default();
+    for (cap_pat, arg_var) in fn_def.caps.iter().zip(array_args.iter()) {
+        let mut instantiated_cap = Cap::<L::Region>::default();
+        if let Some(uniq_region) = &cap_pat.uniq {
+            let substituted = substitute_region(uniq_region, subst_map);
+            instantiated_cap.uniq = <L::Region as RegionModel>::from_region(&substituted);
+        }
+        if let Some(shrd_region) = &cap_pat.shrd {
+            let substituted = substitute_region(shrd_region, subst_map);
+            instantiated_cap.shrd = <L::Region as RegionModel>::from_region(&substituted);
+        }
+        required_delta.0.insert(arg_var.0.clone(), instantiated_cap);
+    }
+    required_delta
+}
+
+fn prepare_call<L: CapabilityLogic>(
+    ctx: &mut Ctx<L>,
+    fn_def: &FnDef<UntypedVar>,
+    args: &[UntypedVar],
+    call_kind: &str,
+) -> Result<PreparedCall<L::Region>, TypeError>
+where
+    L::Region: RegionModel,
+{
+    let value_params: Vec<_> = fn_def
+        .params
+        .iter()
+        .filter(|param| !is_array_param(&param.ty))
+        .collect();
+    let array_params: Vec<_> = fn_def
+        .params
+        .iter()
+        .filter(|param| is_array_param(&param.ty))
+        .collect();
+
+    let expected_value_args = value_params.len();
+    if args.len() < expected_value_args {
+        return Err(TypeError::InvalidOp {
+            op: format!("{call_kind} to {} has too few arguments", fn_def.name.0),
+        });
+    }
+
+    let mut subst_map = BTreeMap::new();
+    let mut typed_args = Vec::with_capacity(args.len());
+
+    for (param, arg_var) in value_params
+        .iter()
+        .zip(args.iter().take(expected_value_args))
+    {
+        let mut arg_ty = ctx.ty_of(arg_var)?;
+        if arg_ty != param.ty {
+            let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param.ty, Ty::Int(_));
+            if both_int {
+                if arg_var.0.starts_with("_lit_") {
+                    ctx.bind_var(&arg_var.0, param.ty.clone());
+                    arg_ty = param.ty.clone();
+                } else {
+                    arg_ty = param.ty.clone();
+                }
+            }
+            if arg_ty != param.ty {
+                return Err(TypeError::TypeMismatch {
+                    expected: TypeError::type_name(&param.ty),
+                    found: TypeError::type_name(&arg_ty),
+                });
+            }
+        }
+        subst_map.insert(param.name.clone(), arg_var.0.clone());
+        typed_args.push(arg_var.add_type(arg_ty));
+    }
+
+    let array_args = &args[expected_value_args..];
+    if array_args.len() != array_params.len() {
+        return Err(TypeError::InvalidOp {
+            op: format!(
+                "{call_kind} to {} has wrong number of array arguments",
+                fn_def.name.0
+            ),
+        });
+    }
+
+    for arg_var in array_args {
+        typed_args.push(arg_var.add_type(ctx.ty_of(arg_var)?));
+    }
+
+    Ok(PreparedCall {
+        typed_args,
+        required_delta: instantiate_required_delta::<L>(fn_def, array_args, &subst_map),
+    })
+}
+
 /// Options controlling how the type checker behaves.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CheckOptions {
@@ -61,33 +175,6 @@ pub struct CheckOptions {
     pub verbose: bool,
     /// When true, log SMT queries issued to Z3.
     pub log_solver_queries: bool,
-}
-
-fn render_idx(idx: &Idx) -> String {
-    match idx {
-        Idx::Const(n) => n.to_string(),
-        Idx::Var(v) => v.clone(),
-        Idx::Add(a, b) => format!("({} + {})", render_idx(a), render_idx(b)),
-        Idx::Sub(a, b) => format!("({} - {})", render_idx(a), render_idx(b)),
-        Idx::Mul(a, b) => format!("({} * {})", render_idx(a), render_idx(b)),
-    }
-}
-
-fn render_atom(atom: &Atom) -> String {
-    match atom {
-        Atom::Le(a, b) => format!("{} <= {}", render_idx(a), render_idx(b)),
-        Atom::Lt(a, b) => format!("{} < {}", render_idx(a), render_idx(b)),
-        Atom::Eq(a, b) => format!("{} == {}", render_idx(a), render_idx(b)),
-        Atom::RealLe(_, _) | Atom::RealLt(_, _) | Atom::RealEq(_, _) => {
-            // Real atoms are not expected in this context
-            panic!("Real atoms are not supported in render_atom")
-        }
-        Atom::BoolVar(name) => name.clone(),
-        Atom::And(lhs, rhs) => format!("({}) && ({})", render_atom(lhs), render_atom(rhs)),
-        Atom::Or(lhs, rhs) => format!("({}) || ({})", render_atom(lhs), render_atom(rhs)),
-        Atom::Implies(lhs, rhs) => format!("({}) => ({})", render_atom(lhs), render_atom(rhs)),
-        Atom::Not(inner) => format!("!({})", render_atom(inner)),
-    }
 }
 
 fn bool_atom(name: &str) -> Atom {
@@ -157,268 +244,6 @@ where
     }
 }
 
-fn render_cap<L: CapabilityLogic>(logic: &L, phi: &Phi, cap: &Cap<L::Region>) -> String
-where
-    L::Region: RegionModel,
-{
-    let solver = logic.solver();
-    let shrd_empty = cap.shrd.is_empty(phi, solver);
-    let uniq_empty = cap.uniq.is_empty(phi, solver);
-    match (shrd_empty, uniq_empty) {
-        (true, true) => "<empty>".to_string(),
-        (false, true) => format!("shrd: {}", cap.shrd.display_with(phi, solver)),
-        (true, false) => format!("uniq: {}", cap.uniq.display_with(phi, solver)),
-        (false, false) => format!(
-            "shrd: {}; uniq: {}",
-            cap.shrd.display_with(phi, solver),
-            cap.uniq.display_with(phi, solver)
-        ),
-    }
-}
-
-fn display_cap_with<'a, L: CapabilityLogic>(
-    logic: &'a L,
-    phi: &'a Phi,
-    cap: &'a Cap<L::Region>,
-) -> CapDisplay<'a, L>
-where
-    L::Region: RegionModel,
-{
-    CapDisplay { logic, phi, cap }
-}
-
-fn display_delta_with<'a, L: CapabilityLogic>(
-    logic: &'a L,
-    phi: &'a Phi,
-    delta: &'a Delta<L::Region>,
-) -> DeltaDisplay<'a, L>
-where
-    L::Region: RegionModel,
-{
-    DeltaDisplay { logic, phi, delta }
-}
-
-struct CapDisplay<'a, L: CapabilityLogic>
-where
-    L::Region: RegionModel,
-{
-    logic: &'a L,
-    phi: &'a Phi,
-    cap: &'a Cap<L::Region>,
-}
-
-impl<'a, L: CapabilityLogic> fmt::Display for CapDisplay<'a, L>
-where
-    L::Region: RegionModel,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", render_cap(self.logic, self.phi, self.cap))
-    }
-}
-
-struct DeltaDisplay<'a, L: CapabilityLogic>
-where
-    L::Region: RegionModel,
-{
-    logic: &'a L,
-    phi: &'a Phi,
-    delta: &'a Delta<L::Region>,
-}
-
-impl<'a, L: CapabilityLogic> fmt::Display for DeltaDisplay<'a, L>
-where
-    L::Region: RegionModel,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.delta.0.is_empty() {
-            return write!(f, "<empty>");
-        }
-        let mut first = true;
-        write!(f, "{{")?;
-        for (name, cap) in &self.delta.0 {
-            if !first {
-                write!(f, ", ")?;
-            }
-            first = false;
-            write!(f, "{}: {}", name, render_cap(self.logic, self.phi, cap))?;
-        }
-        write!(f, "}}")
-    }
-}
-
-fn render_ty(ty: &Ty) -> String {
-    TypeError::type_name(ty)
-}
-
-fn render_val(val: &Val) -> String {
-    match val {
-        Val::Int(n) => n.to_string(),
-        Val::Bool(b) => b.to_string(),
-        Val::Unit => "()".to_string(),
-    }
-}
-
-fn render_array_len(len: &crate::ir::ArrayLen) -> String {
-    len.display()
-}
-
-fn render_op<V: Variable>(op: &Op<V>, vars: &[V]) -> String {
-    match op {
-        Op::Add => format!("{:?} = {:?} + {:?}", vars[2], vars[0], vars[1]),
-        Op::Sub => format!("{:?} = {:?} - {:?}", vars[2], vars[0], vars[1]),
-        Op::Mul => format!("{:?} = {:?} * {:?}", vars[2], vars[0], vars[1]),
-        Op::Sdiv => format!("{:?} = {:?} s/ {:?}", vars[2], vars[0], vars[1]),
-        Op::Udiv => format!("{:?} = {:?} u/ {:?}", vars[2], vars[0], vars[1]),
-        Op::And => format!("{:?} = {:?} && {:?}", vars[2], vars[0], vars[1]),
-        Op::Or => format!("{:?} = {:?} || {:?}", vars[2], vars[0], vars[1]),
-        Op::Not => format!("{:?} = !{:?}", vars[1], vars[0]),
-        Op::BitAnd => format!("{:?} = {:?} & {:?}", vars[2], vars[0], vars[1]),
-        Op::BitOr => format!("{:?} = {:?} | {:?}", vars[2], vars[0], vars[1]),
-        Op::BitXor => format!("{:?} = {:?} ^ {:?}", vars[2], vars[0], vars[1]),
-        Op::Shl => format!("{:?} = {:?} << {:?}", vars[2], vars[0], vars[1]),
-        Op::Ashr => format!("{:?} = {:?} a>> {:?}", vars[2], vars[0], vars[1]),
-        Op::Lshr => format!("{:?} = {:?} l>> {:?}", vars[2], vars[0], vars[1]),
-        Op::SignedLessThan => format!("{:?} = {:?} s< {:?}", vars[2], vars[0], vars[1]),
-        Op::SignedLessEqual => format!("{:?} = {:?} s<= {:?}", vars[2], vars[0], vars[1]),
-        Op::UnsignedLessThan => format!("{:?} = {:?} u< {:?}", vars[2], vars[0], vars[1]),
-        Op::UnsignedLessEqual => format!("{:?} = {:?} u<= {:?}", vars[2], vars[0], vars[1]),
-        Op::Equal => format!("{:?} = {:?} == {:?}", vars[2], vars[0], vars[1]),
-        Op::NotEqual => format!("{:?} = {:?} != {:?}", vars[2], vars[0], vars[1]),
-        Op::Load { array, index, len } => {
-            format!(
-                "{:?} = {:?}[{:?}] (len {})",
-                vars[0],
-                array,
-                index,
-                render_array_len(len)
-            )
-        }
-        Op::Store {
-            array,
-            index,
-            value,
-            len,
-        } => {
-            format!(
-                "store {:?} -> {:?}[{:?}] (len {})",
-                value,
-                array,
-                index,
-                render_array_len(len)
-            )
-        }
-    }
-}
-
-fn render_stmt<V: Variable>(stmt: &Stmt<V>) -> String {
-    match stmt {
-        Stmt::LetVal { var, val, fence } => {
-            let mut msg = format!("let {:?} = {}", var, render_val(val));
-            if *fence {
-                msg.push_str(" [fenced]");
-            }
-            msg
-        }
-        Stmt::LetOp { vars, op, fence } => {
-            let mut msg = render_op(op, vars);
-            if *fence {
-                msg.push_str(" [fenced]");
-            }
-            msg
-        }
-        Stmt::LetCall {
-            vars,
-            func,
-            args,
-            fence,
-        } => {
-            let mut msg = String::new();
-            if vars.is_empty() {
-                msg.push_str("call ");
-            } else {
-                let dests = vars
-                    .iter()
-                    .map(|v| format!("{:?}", v))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                msg.push_str(&format!("let {} = ", dests));
-            }
-            let arg_list = args
-                .iter()
-                .map(|v| format!("{:?}", v))
-                .collect::<Vec<_>>()
-                .join(", ");
-            msg.push_str(&format!("{}({})", func, arg_list));
-            if *fence {
-                msg.push_str(" [fenced]");
-            }
-            msg
-        }
-    }
-}
-
-fn render_tail<V: Variable>(tail: &Tail<V>) -> String {
-    match tail {
-        Tail::RetVar(var) => format!("return {:?}", var),
-        Tail::IfElse { cond, .. } => format!("if {:?} {{ ... }} else {{ ... }}", cond),
-        Tail::TailCall { func, args } => {
-            let arg_list = args
-                .iter()
-                .map(|v| format!("{:?}", v))
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("tail call {}({})", func, arg_list)
-        }
-    }
-}
-
-fn trace_context<L: CapabilityLogic>(ctx: &Ctx<L>, stage: &str)
-where
-    L::Region: RegionModel,
-{
-    if !ctx.verbose {
-        return;
-    }
-
-    println!("\n=== {} ===", stage);
-    print_context_contents(ctx);
-}
-
-fn print_context_contents<L: CapabilityLogic>(ctx: &Ctx<L>)
-where
-    L::Region: RegionModel,
-{
-    if ctx.gamma.0.is_empty() {
-        println!("Gamma: <empty>");
-    } else {
-        println!("Gamma:");
-        for (name, ty) in ctx.gamma.0.iter() {
-            println!("  {}: {}", name, render_ty(ty));
-        }
-    }
-
-    if ctx.delta.0.is_empty() {
-        println!("Delta: <empty>");
-    } else {
-        println!("Delta:");
-        for (name, cap) in ctx.delta.0.iter() {
-            println!("  {}: {}", name, render_cap(ctx.logic, &ctx.phi, cap));
-        }
-    }
-
-    let atoms: Vec<_> = ctx.phi.iter().collect();
-    if atoms.is_empty() {
-        println!("Phi: <empty>");
-    } else {
-        println!("Phi:");
-        for atom in atoms {
-            println!("  {}", render_atom(atom));
-        }
-    }
-
-    println!();
-}
-
 // Optionally restore the initial capability environment (if fenced)
 fn finalize_statement<L: CapabilityLogic, V: Variable>(ctx: &mut Ctx<L>, stmt: &Stmt<V>)
 where
@@ -433,11 +258,6 @@ where
 
     if fenced {
         ctx.restore_initial_delta();
-    }
-
-    if ctx.verbose {
-        println!("After {}:", render_stmt(stmt));
-        print_context_contents(ctx);
     }
 }
 
@@ -500,7 +320,9 @@ where
 {
     // Initialise context with parameter types.
     logic.set_query_logging(options.log_solver_queries);
+    trace_function_header(def, options.verbose);
     let mut ctx = Ctx::new(logic, options.verbose);
+    ctx.current_fn_signature = Some(render_fn_signature(def));
     for TypedVar { name, ty } in &def.params {
         ctx.bind_var(name, ty.clone());
     }
@@ -542,29 +364,23 @@ where
 
     // Process statements sequentially.
     let mut typed_stmts = Vec::new();
-    for stmt in &expr.stmts {
-        if ctx.verbose {
-            println!("Processing statement: {}", render_stmt(stmt));
-        }
+    for (index, stmt) in expr.stmts.iter().enumerate() {
+        trace_step(ctx, &format!("stmt {index}: {}", render_stmt(stmt)));
+        let snapshot = capture_trace_snapshot(ctx);
         typed_stmts.push(check_stmt(ctx, stmt, registry)?);
+        print_statement_transition(
+            ctx,
+            &snapshot,
+            &format!("stmt {index}: {}", render_stmt(stmt)),
+        );
     }
 
-    if ctx.verbose {
-        println!("Evaluating tail: {}", render_tail(&expr.tail));
-        print_context_contents(ctx);
-    }
+    trace_step(ctx, &format!("tail: {}", render_tail(&expr.tail)));
 
     // Check tail.
     let (ty, typed_tail) = check_tail(ctx, &expr.tail, registry)?;
 
-    if ctx.verbose {
-        println!(
-            "Tail {} produced type {}",
-            render_tail(&expr.tail),
-            render_ty(&ty)
-        );
-        print_context_contents(ctx);
-    }
+    trace_step(ctx, &format!("tail result: {}", render_ty(&ty)));
 
     if &ty != expected {
         return Err(TypeError::TypeMismatch {
@@ -579,8 +395,8 @@ where
     })
 }
 
-/// Infer the type of an expression (for use in if-else branches).
-fn infer_expr_type<L: CapabilityLogic>(
+/// Check a branch expression and return its result type.
+fn check_branch_expr<L: CapabilityLogic>(
     ctx: &mut Ctx<L>,
     expr: &Expr<UntypedVar>,
     registry: &FnRegistry,
@@ -588,33 +404,27 @@ fn infer_expr_type<L: CapabilityLogic>(
 where
     L::Region: RegionModel,
 {
-    trace_context(ctx, "Inferring expression type");
+    trace_context(ctx, "Checking branch expression");
 
     // Process statements sequentially.
     let mut typed_stmts = Vec::new();
-    for stmt in &expr.stmts {
-        if ctx.verbose {
-            println!("Processing statement (infer): {}", render_stmt(stmt));
-        }
+    for (index, stmt) in expr.stmts.iter().enumerate() {
+        trace_step(ctx, &format!("branch stmt {index}: {}", render_stmt(stmt)));
+        let snapshot = capture_trace_snapshot(ctx);
         typed_stmts.push(check_stmt(ctx, stmt, registry)?);
+        print_statement_transition(
+            ctx,
+            &snapshot,
+            &format!("branch stmt {index}: {}", render_stmt(stmt)),
+        );
     }
 
-    if ctx.verbose {
-        println!("Inferring tail: {}", render_tail(&expr.tail));
-        print_context_contents(ctx);
-    }
+    trace_step(ctx, &format!("branch tail: {}", render_tail(&expr.tail)));
 
     // Check tail and return its type.
     let (ty, typed_tail) = check_tail(ctx, &expr.tail, registry)?;
 
-    if ctx.verbose {
-        println!(
-            "Inferred tail {} has type {}",
-            render_tail(&expr.tail),
-            render_ty(&ty)
-        );
-        print_context_contents(ctx);
-    }
+    trace_step(ctx, &format!("branch result type: {}", render_ty(&ty)));
 
     Ok((
         ty,
@@ -1056,17 +866,21 @@ where
                     req_cap.shrd = <L::Region as RegionModel>::from_region(&region);
                     let arr_name = &array.0;
                     let have_cap = ctx.delta.0.get(arr_name).cloned().unwrap_or_default();
-                    if !ctx.logic.cap_leq(&ctx.phi, &req_cap, &have_cap) {
+                    let required = format!("{}", display_cap_with(ctx.logic, &ctx.phi, &req_cap));
+                    let available = format!("{}", display_cap_with(ctx.logic, &ctx.phi, &have_cap));
+                    let ok = ctx.logic.cap_leq(&ctx.phi, &req_cap, &have_cap);
+                    trace_capability_check(
+                        ctx,
+                        &format!("load capability check: {}[{}]", array.0, index.0),
+                        &required,
+                        &available,
+                        ok,
+                    );
+                    if !ok {
                         return Err(TypeError::InsufficientCapability {
                             array: arr_name.clone(),
-                            required: format!(
-                                "{}",
-                                display_cap_with(ctx.logic, &ctx.phi, &req_cap)
-                            ),
-                            available: format!(
-                                "{}",
-                                display_cap_with(ctx.logic, &ctx.phi, &have_cap)
-                            ),
+                            required,
+                            available,
                         });
                     }
                     if !fenced {
@@ -1151,17 +965,21 @@ where
                     req_cap.uniq = <L::Region as RegionModel>::from_region(&region);
                     let arr_name = &array.0;
                     let have_cap = ctx.delta.0.get(arr_name).cloned().unwrap_or_default();
-                    if !ctx.logic.cap_leq(&ctx.phi, &req_cap, &have_cap) {
+                    let required = format!("{}", display_cap_with(ctx.logic, &ctx.phi, &req_cap));
+                    let available = format!("{}", display_cap_with(ctx.logic, &ctx.phi, &have_cap));
+                    let ok = ctx.logic.cap_leq(&ctx.phi, &req_cap, &have_cap);
+                    trace_capability_check(
+                        ctx,
+                        &format!("store capability check: {}[{}]", array.0, index.0),
+                        &required,
+                        &available,
+                        ok,
+                    );
+                    if !ok {
                         return Err(TypeError::InsufficientCapability {
                             array: arr_name.clone(),
-                            required: format!(
-                                "{}",
-                                display_cap_with(ctx.logic, &ctx.phi, &req_cap)
-                            ),
-                            available: format!(
-                                "{}",
-                                display_cap_with(ctx.logic, &ctx.phi, &have_cap)
-                            ),
+                            required,
+                            available,
                         });
                     }
                     if !fenced {
@@ -1194,98 +1012,32 @@ where
             args,
             fence,
         } => {
-            // Look up function definition.
             let fn_def = registry
                 .get(func)
                 .ok_or_else(|| TypeError::UndefinedFunction(func.0.clone()))?;
-
-            // Check that args match parameter types (value parameters only, not arrays).
-            let value_params: Vec<_> = fn_def
-                .params
-                .iter()
-                .filter(|tvar| !matches!(tvar.ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
-                .collect();
-            let array_params: Vec<_> = fn_def
-                .params
-                .iter()
-                .filter(|tvar| matches!(tvar.ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
-                .collect();
-
-            // Build substitution map for indices (param names -> arg vars).
-            let mut subst_map = std::collections::BTreeMap::new();
-
-            // Check value parameters and build substitution.
-            let expected_value_args = value_params.len();
-            if args.len() < expected_value_args {
-                return Err(TypeError::InvalidOp {
-                    op: format!("function call to {} has too few arguments", func.0),
-                });
-            }
-            for (i, param) in value_params.iter().enumerate() {
-                let arg_var = &args[i];
-                let mut arg_ty = ctx.ty_of(arg_var)?;
-                if arg_ty != param.ty {
-                    // Allow integer type coercion for literals or between signed/unsigned
-                    let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param.ty, Ty::Int(_));
-                    if both_int {
-                        // If it's a literal binding, rebind it to the expected type
-                        if arg_var.0.starts_with("_lit_") {
-                            ctx.bind_var(&arg_var.0, param.ty.clone());
-                            arg_ty = param.ty.clone();
-                        } else {
-                            // For non-literal integers, allow implicit conversion between signed/unsigned
-                            // This handles cases like `let x = 0; f(x)` where f expects i32
-                            arg_ty = param.ty.clone();
-                        }
-                    }
-                    if arg_ty != param.ty {
-                        return Err(TypeError::TypeMismatch {
-                            expected: TypeError::type_name(&param.ty),
-                            found: TypeError::type_name(&arg_ty),
-                        });
-                    }
-                }
-                // Record substitution for index expressions.
-                subst_map.insert(param.name.clone(), arg_var.0.clone());
-            }
-
-            // Check array arguments and their capabilities.
-            let array_args = &args[expected_value_args..];
-            if array_args.len() != array_params.len() {
-                return Err(TypeError::InvalidOp {
-                    op: format!(
-                        "function call to {} has wrong number of array arguments",
-                        func.0
-                    ),
-                });
-            }
-
-            // Instantiate and check each capability pattern.
-            let mut required_delta = Delta::<L::Region>::default();
-            for (cap_pat, arg_var) in fn_def.caps.iter().zip(array_args.iter()) {
-                // Substitute indices in the capability pattern.
-                let mut instantiated_cap = Cap::<L::Region>::default();
-                if let Some(uniq_region) = &cap_pat.uniq {
-                    let substituted = substitute_region(uniq_region, &subst_map);
-                    instantiated_cap.uniq = <L::Region as RegionModel>::from_region(&substituted);
-                }
-                if let Some(shrd_region) = &cap_pat.shrd {
-                    let substituted = substitute_region(shrd_region, &subst_map);
-                    instantiated_cap.shrd = <L::Region as RegionModel>::from_region(&substituted);
-                }
-
-                required_delta.0.insert(arg_var.0.clone(), instantiated_cap);
-            }
+            let prepared = prepare_call::<L>(ctx, fn_def, args, "function call")?;
+            let required = format!(
+                "{}",
+                display_delta_with(ctx.logic, &ctx.phi, &prepared.required_delta)
+            );
+            let available = format!("{}", display_delta_with(ctx.logic, &ctx.phi, &ctx.delta));
+            let ok = ctx
+                .logic
+                .delta_leq(&ctx.phi, &prepared.required_delta, &ctx.delta);
+            trace_capability_check(
+                ctx,
+                &format!("call capability check: {}", func.0),
+                &required,
+                &available,
+                ok,
+            );
 
             // Check that we have sufficient capabilities.
-            if !ctx.logic.delta_leq(&ctx.phi, &required_delta, &ctx.delta) {
+            if !ok {
                 return Err(TypeError::InsufficientCapability {
                     array: format!("function call to {}", func.0),
-                    required: format!(
-                        "{}",
-                        display_delta_with(ctx.logic, &ctx.phi, &required_delta)
-                    ),
-                    available: format!("{}", display_delta_with(ctx.logic, &ctx.phi, &ctx.delta)),
+                    required,
+                    available,
                 });
             }
 
@@ -1293,7 +1045,7 @@ where
             if !*fence {
                 ctx.delta = ctx
                     .logic
-                    .delta_diff(&ctx.phi, &ctx.delta, &required_delta)
+                    .delta_diff(&ctx.phi, &ctx.delta, &prepared.required_delta)
                     .ok_or_else(|| TypeError::CapabilitySubtractError {
                         array: format!("function call to {}", func.0),
                     })?;
@@ -1311,15 +1063,10 @@ where
             ctx.bind_var(&vars[0].0, fn_def.returns.clone());
             finalize_statement(ctx, stmt);
 
-            let mut typed_args = Vec::new();
-            for arg in args.iter() {
-                typed_args.push(arg.add_type(ctx.ty_of(arg)?));
-            }
-
             Ok(Stmt::LetCall {
                 vars: vec![vars[0].add_type(fn_def.returns.clone())],
                 func: func.clone(),
-                args: typed_args,
+                args: prepared.typed_args,
                 fence: *fence,
             })
         }
@@ -1359,6 +1106,7 @@ where
                 initial_delta: ctx.initial_delta.clone(),
                 phi: ctx.phi.clone(),
                 logic: ctx.logic,
+                current_fn_signature: ctx.current_fn_signature.clone(),
                 verbose: ctx.verbose,
             };
             ctx_th.phi.push(bool_atom(&cond.0));
@@ -1369,12 +1117,13 @@ where
                 initial_delta: ctx.initial_delta.clone(),
                 phi: ctx.phi.clone(),
                 logic: ctx.logic,
+                current_fn_signature: ctx.current_fn_signature.clone(),
                 verbose: ctx.verbose,
             };
             ctx_el.phi.push(not(bool_atom(&cond.0)));
-            // Type check both branches, allowing them to infer their return types.
-            let (ty_then, typed_then) = infer_expr_type(&mut ctx_th, then_e, registry)?;
-            let (ty_else, typed_else) = infer_expr_type(&mut ctx_el, else_e, registry)?;
+            // Type check both branches and compare their result types.
+            let (ty_then, typed_then) = check_branch_expr(&mut ctx_th, then_e, registry)?;
+            let (ty_else, typed_else) = check_branch_expr(&mut ctx_el, else_e, registry)?;
             let typed_tail = Tail::IfElse {
                 cond: cond.add_type(Ty::Bool),
                 then_e: typed_then.into(),
@@ -1396,121 +1145,602 @@ where
             Ok((ty_then, typed_tail))
         }
         Tail::TailCall { func, args } => {
-            // Look up function definition.
             let fn_def = registry
                 .get(func)
                 .ok_or_else(|| TypeError::UndefinedFunction(func.0.clone()))?;
-
-            // Check that args match parameter types (value parameters only, not arrays).
-            let value_params: Vec<_> = fn_def
-                .params
-                .iter()
-                .filter(|tvar| !matches!(tvar.ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
-                .collect();
-            let array_params: Vec<_> = fn_def
-                .params
-                .iter()
-                .filter(|tvar| matches!(tvar.ty, Ty::RefShrd { .. } | Ty::RefUniq { .. }))
-                .collect();
-
-            // Build substitution map for indices (param names -> arg vars).
-            let mut subst_map = std::collections::BTreeMap::new();
-
-            // Check value parameters and build substitution.
-            let expected_value_args = value_params.len();
-            if args.len() < expected_value_args {
-                return Err(TypeError::InvalidOp {
-                    op: format!("tail call to {} has too few arguments", func.0),
-                });
-            }
-            for (i, param) in value_params.iter().enumerate() {
-                let arg_var = &args[i];
-                let mut arg_ty = ctx.ty_of(arg_var)?;
-                if arg_ty != param.ty {
-                    // Allow integer type coercion for literals or between signed/unsigned
-                    let both_int = matches!(arg_ty, Ty::Int(_)) && matches!(param.ty, Ty::Int(_));
-                    if both_int {
-                        // If it's a literal binding, rebind it to the expected type
-                        if arg_var.0.starts_with("_lit_") {
-                            ctx.bind_var(&arg_var.0, param.ty.clone());
-                            arg_ty = param.ty.clone();
-                        } else {
-                            // For non-literal integers, allow implicit conversion between signed/unsigned
-                            // This handles cases like `let x = 0; f(x)` where f expects i32
-                            arg_ty = param.ty.clone();
-                        }
-                    }
-                    if arg_ty != param.ty {
-                        return Err(TypeError::TypeMismatch {
-                            expected: TypeError::type_name(&param.ty),
-                            found: TypeError::type_name(&arg_ty),
-                        });
-                    }
-                }
-                // Record substitution for index expressions.
-                subst_map.insert(param.name.clone(), arg_var.0.clone());
-            }
-
-            // Check array arguments and their capabilities.
-            let array_args = &args[expected_value_args..];
-            if array_args.len() != array_params.len() {
-                return Err(TypeError::InvalidOp {
-                    op: format!(
-                        "tail call to {} has wrong number of array arguments",
-                        func.0
-                    ),
-                });
-            }
-
-            // Instantiate and check each capability pattern.
-            let mut required_delta = Delta::<L::Region>::default();
-            for (cap_pat, arg_var) in fn_def.caps.iter().zip(array_args.iter()) {
-                // Substitute indices in the capability pattern.
-                let mut instantiated_cap = Cap::<L::Region>::default();
-                if let Some(uniq_region) = &cap_pat.uniq {
-                    let substituted = substitute_region(uniq_region, &subst_map);
-                    instantiated_cap.uniq = <L::Region as RegionModel>::from_region(&substituted);
-                }
-                if let Some(shrd_region) = &cap_pat.shrd {
-                    let substituted = substitute_region(shrd_region, &subst_map);
-                    instantiated_cap.shrd = <L::Region as RegionModel>::from_region(&substituted);
-                }
-
-                required_delta.0.insert(arg_var.0.clone(), instantiated_cap);
-            }
+            let prepared = prepare_call::<L>(ctx, fn_def, args, "tail call")?;
+            let required = format!(
+                "{}",
+                display_delta_with(ctx.logic, &ctx.phi, &prepared.required_delta)
+            );
+            let available = format!("{}", display_delta_with(ctx.logic, &ctx.phi, &ctx.delta));
+            let ok = ctx
+                .logic
+                .delta_leq(&ctx.phi, &prepared.required_delta, &ctx.delta);
+            trace_capability_check(
+                ctx,
+                &format!("tail-call capability check: {}", func.0),
+                &required,
+                &available,
+                ok,
+            );
 
             // Check that we have sufficient capabilities.
-            if !ctx.logic.delta_leq(&ctx.phi, &required_delta, &ctx.delta) {
+            if !ok {
                 return Err(TypeError::InsufficientCapability {
                     array: format!("tail call to {}", func.0),
-                    required: format!(
-                        "{}",
-                        display_delta_with(ctx.logic, &ctx.phi, &required_delta)
-                    ),
-                    available: format!("{}", display_delta_with(ctx.logic, &ctx.phi, &ctx.delta)),
+                    required,
+                    available,
                 });
             }
 
             // Tail calls don't consume (the caller's postcondition must match callee's precondition).
             // Return the function's return type.
-            if ctx.verbose {
-                println!("Tail call to {} verified", func.0);
-                print_context_contents(ctx);
-            }
-
-            // TODO: Check if signedness coercion works well with this.
-            let mut typed_args = Vec::new();
-            for arg in args.iter() {
-                typed_args.push(arg.add_type(ctx.ty_of(arg)?));
-            }
-
             Ok((
                 fn_def.returns.clone(),
                 Tail::TailCall {
                     func: func.clone(),
-                    args: typed_args,
+                    args: prepared.typed_args,
                 },
             ))
         }
+    }
+}
+
+mod report {
+    use std::fmt;
+
+    use crate::env::{Ctx, Gamma};
+    use crate::ir::{FnDef, Op, Stmt, Tail, Ty, UntypedVar, Val, Variable};
+    use crate::logic::cap::{Cap, Delta, RegionModel};
+    use crate::logic::semantic::solver::{Atom, Idx, Phi};
+    use crate::logic::CapabilityLogic;
+    use crate::TypeError;
+
+    pub fn render_idx(idx: &Idx) -> String {
+        match idx {
+            Idx::Const(n) => n.to_string(),
+            Idx::Var(v) => v.clone(),
+            Idx::Add(a, b) => format!("({} + {})", render_idx(a), render_idx(b)),
+            Idx::Sub(a, b) => format!("({} - {})", render_idx(a), render_idx(b)),
+            Idx::Mul(a, b) => format!("({} * {})", render_idx(a), render_idx(b)),
+        }
+    }
+
+    pub fn render_atom(atom: &Atom) -> String {
+        match atom {
+            Atom::Le(a, b) => format!("{} <= {}", render_idx(a), render_idx(b)),
+            Atom::Lt(a, b) => format!("{} < {}", render_idx(a), render_idx(b)),
+            Atom::Eq(a, b) => format!("{} == {}", render_idx(a), render_idx(b)),
+            Atom::RealLe(_, _) | Atom::RealLt(_, _) | Atom::RealEq(_, _) => {
+                panic!("Real atoms are not supported in type-checker reports")
+            }
+            Atom::BoolVar(name) => name.clone(),
+            Atom::And(lhs, rhs) => format!("({}) && ({})", render_atom(lhs), render_atom(rhs)),
+            Atom::Or(lhs, rhs) => format!("({}) || ({})", render_atom(lhs), render_atom(rhs)),
+            Atom::Implies(lhs, rhs) => format!("({}) => ({})", render_atom(lhs), render_atom(rhs)),
+            Atom::Not(inner) => format!("!({})", render_atom(inner)),
+        }
+    }
+
+    fn render_cap<L: CapabilityLogic>(logic: &L, phi: &Phi, cap: &Cap<L::Region>) -> String
+    where
+        L::Region: RegionModel,
+    {
+        let solver = logic.solver();
+        let shrd_empty = cap.shrd.is_empty(phi, solver);
+        let uniq_empty = cap.uniq.is_empty(phi, solver);
+        match (shrd_empty, uniq_empty) {
+            (true, true) => "<empty>".to_string(),
+            (false, true) => format!("shrd@{}", cap.shrd.display_with(phi, solver)),
+            (true, false) => format!("uniq@{}", cap.uniq.display_with(phi, solver)),
+            (false, false) => format!(
+                "shrd: {}; uniq: {}",
+                cap.shrd.display_with(phi, solver),
+                cap.uniq.display_with(phi, solver)
+            ),
+        }
+    }
+
+    pub fn display_cap_with<'a, L: CapabilityLogic>(
+        logic: &'a L,
+        phi: &'a Phi,
+        cap: &'a Cap<L::Region>,
+    ) -> CapDisplay<'a, L>
+    where
+        L::Region: RegionModel,
+    {
+        CapDisplay { logic, phi, cap }
+    }
+
+    pub fn display_delta_with<'a, L: CapabilityLogic>(
+        logic: &'a L,
+        phi: &'a Phi,
+        delta: &'a Delta<L::Region>,
+    ) -> DeltaDisplay<'a, L>
+    where
+        L::Region: RegionModel,
+    {
+        DeltaDisplay { logic, phi, delta }
+    }
+
+    pub struct CapDisplay<'a, L: CapabilityLogic>
+    where
+        L::Region: RegionModel,
+    {
+        logic: &'a L,
+        phi: &'a Phi,
+        cap: &'a Cap<L::Region>,
+    }
+
+    impl<'a, L: CapabilityLogic> fmt::Display for CapDisplay<'a, L>
+    where
+        L::Region: RegionModel,
+    {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{}", render_cap(self.logic, self.phi, self.cap))
+        }
+    }
+
+    pub struct DeltaDisplay<'a, L: CapabilityLogic>
+    where
+        L::Region: RegionModel,
+    {
+        logic: &'a L,
+        phi: &'a Phi,
+        delta: &'a Delta<L::Region>,
+    }
+
+    impl<'a, L: CapabilityLogic> fmt::Display for DeltaDisplay<'a, L>
+    where
+        L::Region: RegionModel,
+    {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            if self.delta.0.is_empty() {
+                return write!(f, "<empty>");
+            }
+            let mut first = true;
+            write!(f, "{{")?;
+            for (name, cap) in &self.delta.0 {
+                if !first {
+                    write!(f, ", ")?;
+                }
+                first = false;
+                write!(f, "{}: {}", name, render_cap(self.logic, self.phi, cap))?;
+            }
+            write!(f, "}}")
+        }
+    }
+
+    pub fn render_ty(ty: &Ty) -> String {
+        TypeError::type_name(ty)
+    }
+
+    pub fn render_fn_signature(def: &FnDef<UntypedVar>) -> String {
+        let params = def
+            .params
+            .iter()
+            .map(|param| format!("{}: {}", param.name, render_ty(&param.ty)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("{}({}) -> {}", def.name.0, params, render_ty(&def.returns))
+    }
+
+    fn render_val(val: &Val) -> String {
+        match val {
+            Val::Int(n) => n.to_string(),
+            Val::Bool(b) => b.to_string(),
+            Val::Unit => "()".to_string(),
+        }
+    }
+
+    fn render_var<V: Variable>(var: &V) -> String {
+        var.name().to_string()
+    }
+
+    fn render_array_len(len: &crate::ir::ArrayLen) -> String {
+        len.display()
+    }
+
+    fn render_op<V: Variable>(op: &Op<V>, vars: &[V]) -> String {
+        match op {
+            Op::Add => format!(
+                "{} = {} + {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::Sub => format!(
+                "{} = {} - {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::Mul => format!(
+                "{} = {} * {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::Sdiv => format!(
+                "{} = {} s/ {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::Udiv => format!(
+                "{} = {} u/ {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::And => format!(
+                "{} = {} && {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::Or => format!(
+                "{} = {} || {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::Not => format!("{} = !{}", render_var(&vars[1]), render_var(&vars[0])),
+            Op::BitAnd => format!(
+                "{} = {} & {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::BitOr => format!(
+                "{} = {} | {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::BitXor => format!(
+                "{} = {} ^ {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::Shl => format!(
+                "{} = {} << {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::Ashr => format!(
+                "{} = {} a>> {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::Lshr => format!(
+                "{} = {} l>> {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::SignedLessThan => format!(
+                "{} = {} s< {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::SignedLessEqual => format!(
+                "{} = {} s<= {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::UnsignedLessThan => format!(
+                "{} = {} u< {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::UnsignedLessEqual => format!(
+                "{} = {} u<= {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::Equal => format!(
+                "{} = {} == {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::NotEqual => format!(
+                "{} = {} != {}",
+                render_var(&vars[2]),
+                render_var(&vars[0]),
+                render_var(&vars[1])
+            ),
+            Op::Load { array, index, len } => format!(
+                "{} = {}[{}] (len {})",
+                render_var(&vars[0]),
+                render_var(array),
+                render_var(index),
+                render_array_len(len)
+            ),
+            Op::Store {
+                array,
+                index,
+                value,
+                len,
+            } => format!(
+                "store {} -> {}[{}] (len {})",
+                render_var(value),
+                render_var(array),
+                render_var(index),
+                render_array_len(len)
+            ),
+        }
+    }
+
+    pub fn render_stmt<V: Variable>(stmt: &Stmt<V>) -> String {
+        match stmt {
+            Stmt::LetVal { var, val, fence } => {
+                let mut msg = format!("let {} = {}", render_var(var), render_val(val));
+                if *fence {
+                    msg.push_str(" [fenced]");
+                }
+                msg
+            }
+            Stmt::LetOp { vars, op, fence } => {
+                let mut msg = render_op(op, vars);
+                if *fence {
+                    msg.push_str(" [fenced]");
+                }
+                msg
+            }
+            Stmt::LetCall {
+                vars,
+                func,
+                args,
+                fence,
+            } => {
+                let mut msg = String::new();
+                if vars.is_empty() {
+                    msg.push_str("call ");
+                } else {
+                    let dests = vars.iter().map(render_var).collect::<Vec<_>>().join(", ");
+                    msg.push_str(&format!("let {} = ", dests));
+                }
+                let arg_list = args.iter().map(render_var).collect::<Vec<_>>().join(", ");
+                msg.push_str(&format!("{}({})", func, arg_list));
+                if *fence {
+                    msg.push_str(" [fenced]");
+                }
+                msg
+            }
+        }
+    }
+
+    pub fn render_tail<V: Variable>(tail: &Tail<V>) -> String {
+        match tail {
+            Tail::RetVar(var) => format!("return {}", render_var(var)),
+            Tail::IfElse { cond, .. } => {
+                format!("if {} {{ ... }} else {{ ... }}", render_var(cond))
+            }
+            Tail::TailCall { func, args } => {
+                let arg_list = args.iter().map(render_var).collect::<Vec<_>>().join(", ");
+                format!("tail call {}({})", func, arg_list)
+            }
+        }
+    }
+
+    fn render_cap_pattern(cap: &crate::logic::cap::CapPattern) -> String {
+        let mut parts = Vec::new();
+        if let Some(shrd) = &cap.shrd {
+            parts.push(format!("shrd @ {}", shrd));
+        }
+        if let Some(uniq) = &cap.uniq {
+            parts.push(format!("uniq @ {}", uniq));
+        }
+        if parts.is_empty() {
+            format!("{}: <empty>", cap.array)
+        } else {
+            format!("{}: {}", cap.array, parts.join(", "))
+        }
+    }
+
+    pub fn trace_function_header(def: &FnDef<UntypedVar>, verbose: bool) {
+        if !verbose {
+            return;
+        }
+
+        println!("\n=== {} ===", render_fn_signature(def));
+        if def.caps.is_empty() {
+            println!("Capabilities: <empty>\n");
+        } else {
+            println!("Capabilities:");
+            for cap in &def.caps {
+                println!("  {}", render_cap_pattern(cap));
+            }
+            println!();
+        }
+    }
+
+    fn current_fn_signature<L: CapabilityLogic>(ctx: &Ctx<L>) -> String
+    where
+        L::Region: RegionModel,
+    {
+        ctx.current_fn_signature
+            .clone()
+            .unwrap_or_else(|| "<unknown function>".to_string())
+    }
+
+    pub fn trace_step<L: CapabilityLogic>(ctx: &Ctx<L>, label: &str)
+    where
+        L::Region: RegionModel,
+    {
+        if !ctx.verbose {
+            return;
+        }
+
+        println!("\n--- {} :: {} ---", current_fn_signature(ctx), label);
+    }
+
+    pub fn trace_context<L: CapabilityLogic>(ctx: &Ctx<L>, stage: &str)
+    where
+        L::Region: RegionModel,
+    {
+        if !ctx.verbose {
+            return;
+        }
+
+        println!("\n=== {} :: {} ===", current_fn_signature(ctx), stage);
+        print_context_contents(ctx);
+    }
+
+    pub fn print_context_contents<L: CapabilityLogic>(ctx: &Ctx<L>)
+    where
+        L::Region: RegionModel,
+    {
+        if ctx.gamma.0.is_empty() {
+            println!("Gamma: <empty>");
+        } else {
+            println!("Gamma:");
+            for (name, ty) in &ctx.gamma.0 {
+                println!("  {}: {}", name, render_ty(ty));
+            }
+        }
+
+        if ctx.delta.0.is_empty() {
+            println!("Delta: <empty>");
+        } else {
+            println!("Delta:");
+            for (name, cap) in &ctx.delta.0 {
+                println!("  {}: {}", name, render_cap(ctx.logic, &ctx.phi, cap));
+            }
+        }
+
+        print_phi(ctx);
+        println!();
+    }
+
+    pub fn print_gamma_and_phi<L: CapabilityLogic>(ctx: &Ctx<L>)
+    where
+        L::Region: RegionModel,
+    {
+        if ctx.gamma.0.is_empty() {
+            println!("Gamma: <empty>");
+        } else {
+            println!("Gamma:");
+            for (name, ty) in &ctx.gamma.0 {
+                println!("  {}: {}", name, render_ty(ty));
+            }
+        }
+        print_phi(ctx);
+    }
+
+    fn print_phi<L: CapabilityLogic>(ctx: &Ctx<L>)
+    where
+        L::Region: RegionModel,
+    {
+        let atoms: Vec<_> = ctx.phi.iter().collect();
+        if atoms.is_empty() {
+            println!("Phi: <empty>");
+        } else {
+            println!("Phi:");
+            for atom in atoms {
+                println!("  {}", render_atom(atom));
+            }
+        }
+    }
+
+    pub struct TypeTraceSnapshot<R: RegionModel> {
+        gamma: Gamma,
+        delta: Delta<R>,
+        phi_len: usize,
+    }
+
+    pub fn capture_trace_snapshot<L: CapabilityLogic>(ctx: &Ctx<L>) -> TypeTraceSnapshot<L::Region>
+    where
+        L::Region: RegionModel,
+    {
+        TypeTraceSnapshot {
+            gamma: ctx.gamma.clone(),
+            delta: ctx.delta.clone(),
+            phi_len: ctx.phi.atoms.len(),
+        }
+    }
+
+    pub fn print_statement_transition<L: CapabilityLogic>(
+        ctx: &Ctx<L>,
+        before: &TypeTraceSnapshot<L::Region>,
+        label: &str,
+    ) where
+        L::Region: RegionModel,
+    {
+        if !ctx.verbose {
+            return;
+        }
+
+        println!("After {label}:");
+
+        let mut changed = false;
+
+        let gamma_changes: Vec<_> = ctx
+            .gamma
+            .0
+            .iter()
+            .filter(|(name, ty)| before.gamma.0.get(*name) != Some(*ty))
+            .collect();
+        if !gamma_changes.is_empty() {
+            changed = true;
+            println!("  Gamma:");
+            for (name, ty) in gamma_changes {
+                println!("    {}: {}", name, render_ty(ty));
+            }
+        }
+
+        let before_delta = format!("{}", display_delta_with(ctx.logic, &ctx.phi, &before.delta));
+        let after_delta = format!("{}", display_delta_with(ctx.logic, &ctx.phi, &ctx.delta));
+        if before_delta != after_delta {
+            changed = true;
+            println!("  Delta: {}", after_delta);
+        }
+
+        let new_atoms = &ctx.phi.atoms[before.phi_len..];
+        if !new_atoms.is_empty() {
+            changed = true;
+            println!("  Phi:");
+            for atom in new_atoms {
+                println!("    {}", render_atom(atom));
+            }
+        }
+
+        if !changed {
+            println!("  no context change");
+        }
+
+        println!();
+    }
+
+    pub fn trace_capability_check<L: CapabilityLogic>(
+        ctx: &Ctx<L>,
+        site: &str,
+        required: &str,
+        available: &str,
+        success: bool,
+    ) where
+        L::Region: RegionModel,
+    {
+        if !ctx.verbose {
+            return;
+        }
+
+        println!("\n>>> {} :: {}", current_fn_signature(ctx), site);
+        print_gamma_and_phi(ctx);
+        println!("required: {required}");
+        println!("available: {available}");
+        println!("obligation: required <= available");
+        println!("{}", if success { "✓" } else { "✗" });
+        println!();
     }
 }
