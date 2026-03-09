@@ -1,3 +1,2 @@
 cocotb~=2.0
 pytest~=9.0
-z3-solver~=4.16.0.0

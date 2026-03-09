@@ -52,7 +52,7 @@ struct Cli {
     log_solver: bool,
 
     /// Select the SMT backend used by both the type checker and ghost checker.
-    #[arg(long = "smt-backend", value_enum, default_value_t = CliSmtBackend::Z3)]
+    #[arg(long = "smt-backend", value_enum, default_value_t = CliSmtBackend::Cvc5)]
     smt_backend: CliSmtBackend,
 
     /// Emit a textual rendering of the ghost program.
