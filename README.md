@@ -2,9 +2,10 @@ Wavelet is a formally verified compiler targeting asynchronous dataflow.
 
 ## Build
 
-First install prerequisites:
+Please first install the following dependencies:
 - [Elan (Lean version manager)](https://github.com/leanprover/elan)
 - [Cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html)
+- [cvc5-1.3.3](https://github.com/cvc5/cvc5/releases/tag/cvc5-1.3.3)
 
 Then simply run
 ```
