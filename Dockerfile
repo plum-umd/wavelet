@@ -157,13 +157,12 @@ FROM ubuntu:24.04 AS runtime
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        git curl lld make build-essential libtcl \
+        git curl lld unzip make build-essential libtcl \
         python3 python3-pip python3-dev \
         libboost-program-options1.83.0 \
         libboost-thread1.83.0 && \
     rm -rf /var/lib/apt/lists/*
 
-# This includes a global Z3 install
 COPY integration-tests/requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt && \
     rm /tmp/requirements.txt
@@ -171,6 +170,14 @@ RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
 RUN curl -fsSL https://elan.lean-lang.org/elan-init.sh | sh -s -- -y
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain none
 RUN curl -fsSL https://code-server.dev/install.sh | sh -s -- --version 4.109.5
+
+# Install cvc5-1.3.3
+RUN if [ "$(uname -m)" = "aarch64" ]; then arch=arm64; \
+    else arch=x86_64; fi && \
+    curl -fsSL -o /tmp/cvc5.zip "https://github.com/cvc5/cvc5/releases/download/cvc5-1.3.3/cvc5-Linux-$arch-static.zip" && \
+    unzip /tmp/cvc5.zip -d /tmp && \
+    mv /tmp/cvc5-Linux-*-static/bin/cvc5 /usr/local/bin && \
+    rm -r /tmp/cvc5.zip /tmp/cvc5-Linux-*-static
 
 # Configure code-server
 RUN code-server --install-extension leanprover.lean4 && \
