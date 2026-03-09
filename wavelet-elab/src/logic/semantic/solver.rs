@@ -225,7 +225,7 @@ impl Default for SmtSolverConfig {
 impl SmtSolverConfig {
     /// Create a default Z3 configuration.
     pub fn new() -> Self {
-        Self::with_backend(SmtBackend::Z3)
+        Self::with_backend(SmtBackend::Cvc5)
     }
 
     /// Create a configuration for the given backend.

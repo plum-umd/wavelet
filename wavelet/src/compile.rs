@@ -2,13 +2,28 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::Context;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use thiserror::Error;
 
 use wavelet_core::riptide;
 use wavelet_elab as elab;
 
 use crate::utils;
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum SmtBackend {
+    Z3,
+    Cvc5,
+}
+
+impl From<SmtBackend> for elab::logic::semantic::SmtBackend {
+    fn from(value: SmtBackend) -> Self {
+        match value {
+            SmtBackend::Z3 => elab::logic::semantic::SmtBackend::Z3,
+            SmtBackend::Cvc5 => elab::logic::semantic::SmtBackend::Cvc5,
+        }
+    }
+}
 
 /// A compiler from Wavelet's Rust dialect to the core dataflow IR.
 #[derive(Debug, Parser)]
@@ -27,6 +42,10 @@ pub struct CompileArgs {
     /// Enable translation validation for ghost token insertion.
     #[arg(long)]
     ghost_check: bool,
+
+    /// SMT backend to use the type checking and ghost token validation.
+    #[arg(value_enum, default_value_t = SmtBackend::Cvc5)]
+    smt_backend: SmtBackend,
 
     /// Emit the elaborated sequential IR to the given file.
     #[arg(long, value_name = "FILE")]
@@ -106,10 +125,13 @@ impl CompileArgs {
             return Err(CompileError::EmptyProgram);
         }
 
+        let smt_config =
+            elab::logic::semantic::SmtSolverConfig::with_backend(self.smt_backend.into());
+        let smt_solver = elab::logic::semantic::SmtSolver::from_config(smt_config);
         let typed_prog =
             utils::TaskSpinner::run::<_, CompileError>("type checking + elaboration", |_| {
                 prog.desugar_tail_calls();
-                let smt = elab::SemanticLogic::new();
+                let smt = elab::SemanticLogic::with_solver(smt_solver.clone());
                 Ok(elab::check::check_program_with_options(
                     &prog,
                     &smt,
@@ -121,8 +143,10 @@ impl CompileArgs {
         let elab_prog = elab::synthesize_ghost_program(&typed_prog);
         if self.ghost_check {
             utils::TaskSpinner::run("validating token placement", |_| {
-                elab::ghost::check_ghost_program_with_verbose(&elab_prog, false)
-                    .map_err(CompileError::ElabValidationError)
+                elab::ghost::check_ghost_program_with_solver_and_verbose(
+                    &elab_prog, smt_solver, false,
+                )
+                .map_err(CompileError::ElabValidationError)
             })?;
         }
 
