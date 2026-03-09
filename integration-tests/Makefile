@@ -5,6 +5,7 @@ CGEIST := build/polygeist/bin/cgeist
 HLSTOOL := build/circt/bin/hlstool
 WAVELET := ../target/release/wavelet
 WAVELET_COMPILE_FLAGS :=
+NEXTPNR_FLAGS :=
 
 .PHONY: default
 default: wavelet-tests
@@ -187,6 +188,7 @@ build/yosys/yosys: yosys
 		--out-of-context \
 		--timing-allow-fail \
 		--lpf-allow-unconstrained \
+		$(NEXTPNR_FLAGS) \
 		--write $@ > $@.log 2>&1
 
 ######################
@@ -325,96 +327,3 @@ clean:
 		tests/*/*.nextpnr.json \
 		tests/*/*.log \
 		tests/*/*.tmp
-
-###################################
-# Targets for artifact evaluation #
-###################################
-
-EVAL_NAMES := \
-	dither \
-	dmm \
-	dmv \
-	nn-conv \
-	nn-fc \
-	nn-norm \
-	nn-pool \
-	nn-relu \
-	nn-vadd \
-	sort
-
-# Skip some targets that are expected to fail
-SKIP_TARGETS := circt-eval-sort
-
-# $(1): label, $(2): test name, $(3): sub-make targets
-define run-eval
-	$(if $(filter $(1)-eval-$(2),$(SKIP_TARGETS)),\
-		@echo "[$(1)] $(2) ... SKIP",\
-		@log=$$(mktemp); \
-		if $(MAKE) --no-print-directory WAVELET_COMPILE_FLAGS="$(WAVELET_COMPILE_FLAGS)" $(3) > "$$log" 2>&1; then \
-			echo "[$(1)] $(2) ... PASS"; \
-		else \
-			echo "[$(1)] $(2) ... FAIL"; \
-			echo "============== log =============="; \
-			cat "$$log"; \
-			echo "================================="; \
-			rm -f "$$log"; \
-			exit 1; \
-		fi; \
-		rm -f "$$log")
-endef
-
-.PHONY: \
-	wavelet-compile-% \
-	wavelet-noopt-compile-% \
-	wavelet-eval-% \
-	wavelet-noopt-eval-% \
-	circt-eval-% \
-	wavelet-sim-eval-% \
-	wavelet-noopt-sim-eval-% \
-	riptide-sim-eval-%
-
-wavelet-compile-%: WAVELET_COMPILE_FLAGS := --ghost-check
-wavelet-compile-%:
-	$(call run-eval,wavelet,$*,tests/$*/test.wavelet.json)
-
-wavelet-noopt-compile-%:
-	$(call run-eval,wavelet-noopt,$*,tests/$*/test.wavelet-noopt.json)
-
-wavelet-eval-%: WAVELET_COMPILE_FLAGS := --ghost-check
-wavelet-eval-%:
-	$(call run-eval,wavelet,$*,wavelet-test-$* wavelet-sim-test-$* tests/$*/test.wavelet.nextpnr.json)
-
-wavelet-noopt-eval-%:
-	$(call run-eval,wavelet-noopt,$*,wavelet-noopt-test-$* wavelet-noopt-sim-test-$* tests/$*/test.wavelet-noopt.nextpnr.json)
-
-circt-eval-%:
-	$(call run-eval,circt,$*,circt-test-$* tests/$*/test.circt.nextpnr.json)
-
-riptide-eval-%:
-	$(call run-eval,riptide,$*,riptide-sim-test-$*)
-
-riptide-nostream-eval-%:
-	$(call run-eval,riptide-nostream,$*,riptide-sim-nostream-test-$*)
-
-# Run all evaluations
-eval: $(foreach name,$(EVAL_NAMES), \
-	wavelet-eval-$(name) \
-	wavelet-noopt-eval-$(name) \
-	circt-eval-$(name) \
-	riptide-eval-$(name) \
-	riptide-nostream-eval-$(name) \
-)
-
-# Only run relevant Wavelet compilation targets
-# Used for better performance estimates.
-eval-compile: $(foreach name,$(EVAL_NAMES), \
-	wavelet-compile-$(name) \
-	wavelet-noopt-compile-$(name) \
-)
-
-sanity-check: \
-	wavelet-eval-simple \
-	wavelet-noopt-eval-simple \
-	circt-eval-simple \
-	riptide-eval-simple \
-	riptide-nostream-eval-simple
