@@ -78,10 +78,8 @@ impl PermCtx {
         }
     }
 
-    fn move_restore_to_garb(&mut self) {
-        if !self.restore.is_empty() {
-            self.garb.extend(self.restore.drain(..));
-        }
+    fn apply_fence(&mut self) {
+        self.move_restore_to_sync();
     }
 }
 
@@ -140,12 +138,10 @@ impl FunctionLowerer {
             }
             Tail::TailCall { func, args } => {
                 let mut ctx = ctx;
-                let (need_perm, left_perm) = self.split_sync(builder, &mut ctx);
-                // for tail calls, we "garbage collect" any leftover permissions
-                ctx.garb.push(left_perm);
-                ctx.move_restore_to_garb();
+                let (need_perm, _) = self.split_sync(builder, &mut ctx);
 
-                let (left_perm, _) = self.join_split(builder, ctx.clear_and_get_garb());
+                let garb_inputs = ctx.all_inputs();
+                let (left_perm, _) = self.join_split(builder, garb_inputs);
 
                 GhostTail::TailCall {
                     func: func.clone(),
@@ -188,7 +184,7 @@ impl FunctionLowerer {
         // dummy zero token can be dropped
         // ctx.garb.push(ghost_out);
         if fenced {
-            ctx.move_restore_to_sync();
+            ctx.apply_fence();
         }
     }
 
@@ -243,7 +239,7 @@ impl FunctionLowerer {
             }
         }
         if fenced {
-            ctx.move_restore_to_sync();
+            ctx.apply_fence();
         }
     }
 
@@ -258,12 +254,8 @@ impl FunctionLowerer {
     ) {
         let (need_perm, _) = self.split_sync(builder, ctx);
 
-        // a non-tail call might need to GC some of the pending tokens
-        // so we "borrow" them into garb first
-        ctx.move_restore_to_garb();
         let inputs = ctx.clear_and_get_garb();
         let (left_perm, right_perm) = self.join_split(builder, inputs);
-        // then we "return" the left over garbage tokens back to the garbage context
         ctx.garb = vec![right_perm.clone()];
 
         let ret_perm = self.fresh();
@@ -280,7 +272,7 @@ impl FunctionLowerer {
         // needed later (fences will move them to sync)
         ctx.restore.push(ret_perm);
         if fence {
-            ctx.move_restore_to_sync();
+            ctx.apply_fence();
         }
     }
 

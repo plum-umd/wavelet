@@ -38,6 +38,7 @@ pub struct Ctx<'logic, L: CapabilityLogic> {
     pub initial_delta: Delta<L::Region>,
     pub phi: Phi,
     pub logic: &'logic L,
+    pub current_fn_signature: Option<String>,
     pub verbose: bool,
 }
 
@@ -50,6 +51,7 @@ impl<'logic, L: CapabilityLogic> Ctx<'logic, L> {
             initial_delta: Delta::default(),
             phi: Phi::default(),
             logic,
+            current_fn_signature: None,
             verbose,
         }
     }
