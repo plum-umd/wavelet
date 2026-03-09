@@ -1,0 +1,51 @@
+name: Setup cvc5
+description: Install cvc5 from GitHub Releases
+inputs:
+  version:
+    description: cvc5 release version (e.g. 1.3.3)
+    required: true
+  token:
+    description: GitHub token for downloading releases
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: cvc5-platform
+      shell: bash
+      run: |
+        case "${{ runner.arch }}" in
+          X64)   arch="x86_64" ;;
+          ARM64) arch="arm64" ;;
+          *) echo "Unsupported architecture: ${{ runner.arch }}" >&2; exit 1 ;;
+        esac
+        case "${{ runner.os }}" in
+          Linux) os="Linux" ;;
+          macOS) os="macOS" ;;
+          *) echo "Unsupported OS: ${{ runner.os }}" >&2; exit 1 ;;
+        esac
+        echo "asset=cvc5-${os}-${arch}-static.zip" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache/restore@v4
+      id: cvc5-cache
+      with:
+        path: /usr/local/bin/cvc5
+        key: cvc5-${{ inputs.version }}-${{ runner.os }}-${{ runner.arch }}
+    - if: steps.cvc5-cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        mkdir -p /tmp/cvc5
+        gh release download cvc5-${{ inputs.version }} \
+          --repo cvc5/cvc5 \
+          --pattern '${{ steps.cvc5-platform.outputs.asset }}' \
+          --dir /tmp/cvc5
+        unzip /tmp/cvc5/cvc5-*.zip -d /tmp/cvc5
+        sudo cp /tmp/cvc5/cvc5-*/bin/cvc5 /usr/local/bin/
+        rm -rf /tmp/cvc5
+    - uses: actions/cache/save@v4
+      if: steps.cvc5-cache.outputs.cache-hit != 'true'
+      with:
+        path: /usr/local/bin/cvc5
+        key: cvc5-${{ inputs.version }}-${{ runner.os }}-${{ runner.arch }}
+    - shell: bash
+      run: cvc5 --version
