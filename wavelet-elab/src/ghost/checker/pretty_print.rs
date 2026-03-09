@@ -1,13 +1,16 @@
 //! Pretty printing utilities for permissions and ghost expressions.
 
 use crate::ghost::fracperms::FractionExpr;
-use crate::ghost::ir::{GhostStmt, GhostTail};
-use crate::ir::Variable;
+use crate::ghost::ir::{GhostExpr, GhostFnDef, GhostStmt, GhostTail, GhostVar};
+use crate::ir::{Op, Variable};
 use crate::logic::semantic::region_set::RegionSetExpr;
 use crate::logic::semantic::solver::{Atom, Idx};
 
-use super::context::CheckContext;
 use super::permission::{PermExpr, Permission};
+
+fn render_var<V: Variable>(var: &V) -> String {
+    var.name().to_string()
+}
 
 pub fn render_idx(idx: &Idx) -> String {
     match idx {
@@ -89,29 +92,206 @@ pub fn render_perm_expr(expr: &PermExpr) -> String {
         PermExpr::Empty => "ε".to_string(),
         PermExpr::Singleton(perm) => render_permission(perm),
         PermExpr::Add(items) => {
-            if items.is_empty() {
-                "ε".to_string()
-            } else {
-                let rendered: Vec<_> = items.iter().map(render_perm_expr).collect();
-                format!("({})", rendered.join(" + "))
+            let rendered: Vec<_> = items
+                .iter()
+                .map(render_perm_expr)
+                .filter(|item| item != "ε")
+                .collect();
+            match rendered.len() {
+                0 => "ε".to_string(),
+                1 => rendered[0].clone(),
+                _ => format!("({})", rendered.join(" + ")),
             }
         }
         PermExpr::Sub(lhs, rhs) => {
-            format!("({} - {})", render_perm_expr(lhs), render_perm_expr(rhs))
+            let lhs = render_perm_expr(lhs);
+            let rhs = render_perm_expr(rhs);
+            if rhs == "ε" {
+                lhs
+            } else if lhs == "ε" && rhs == "ε" {
+                "ε".to_string()
+            } else {
+                format!("({} - {})", lhs, rhs)
+            }
+        }
+    }
+}
+
+pub fn render_permission_target(array: &str, region: &RegionSetExpr) -> String {
+    format!("{}{}", array, render_region(region))
+}
+
+pub fn render_named_perm_expr(name: impl Into<String>, expr: &PermExpr) -> String {
+    format!("{} = {}", name.into(), render_perm_expr(expr))
+}
+
+pub fn render_relation(lhs: impl Into<String>, op: &str, rhs: impl Into<String>) -> String {
+    format!("{} {} {}", lhs.into(), op, rhs.into())
+}
+
+pub fn render_fraction_of(name: impl Into<String>) -> String {
+    format!("frac({})", name.into())
+}
+
+pub fn render_perm_target_check(var: &GhostVar, array: &str, region: &RegionSetExpr) -> String {
+    render_relation(
+        format!("target({})", var.0),
+        "=",
+        render_permission_target(array, region),
+    )
+}
+
+pub fn render_perm_sum(vars: &[GhostVar]) -> String {
+    format!(
+        "sum({})",
+        vars.iter()
+            .map(|var| var.0.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+pub fn render_join_split_check(inputs: &[GhostVar], left: &GhostVar, right: &GhostVar) -> String {
+    render_relation(
+        render_perm_sum(inputs),
+        "=",
+        format!("{} + {}", left.0, right.0),
+    )
+}
+
+pub fn render_consistency_check(label: impl Into<String>) -> String {
+    format!("consistent(Φ + assumptions({}))", label.into())
+}
+
+fn render_pure_stmt<V: Variable>(inputs: &[V], output: &V, op: &Op<V>) -> String {
+    match op {
+        Op::Add if inputs.len() == 2 => format!(
+            "{} = {} + {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::Sub if inputs.len() == 2 => format!(
+            "{} = {} - {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::Mul if inputs.len() == 2 => format!(
+            "{} = {} * {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::Sdiv if inputs.len() == 2 => format!(
+            "{} = {} s/ {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::Udiv if inputs.len() == 2 => format!(
+            "{} = {} u/ {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::SignedLessThan if inputs.len() == 2 => format!(
+            "{} = {} s< {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::SignedLessEqual if inputs.len() == 2 => format!(
+            "{} = {} s<= {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::UnsignedLessThan if inputs.len() == 2 => format!(
+            "{} = {} u< {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::UnsignedLessEqual if inputs.len() == 2 => format!(
+            "{} = {} u<= {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::Equal if inputs.len() == 2 => format!(
+            "{} = {} == {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::NotEqual if inputs.len() == 2 => format!(
+            "{} = {} != {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::And if inputs.len() == 2 => format!(
+            "{} = {} && {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::Or if inputs.len() == 2 => format!(
+            "{} = {} || {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::Not if inputs.len() == 1 => {
+            format!("{} = !{}", render_var(output), render_var(&inputs[0]))
+        }
+        Op::BitAnd if inputs.len() == 2 => format!(
+            "{} = {} & {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::BitOr if inputs.len() == 2 => format!(
+            "{} = {} | {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::BitXor if inputs.len() == 2 => format!(
+            "{} = {} ^ {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::Shl if inputs.len() == 2 => format!(
+            "{} = {} << {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::Ashr if inputs.len() == 2 => format!(
+            "{} = {} a>> {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        Op::Lshr if inputs.len() == 2 => format!(
+            "{} = {} l>> {}",
+            render_var(output),
+            render_var(&inputs[0]),
+            render_var(&inputs[1])
+        ),
+        _ => {
+            let inputs_str = inputs.iter().map(render_var).collect::<Vec<_>>().join(", ");
+            format!("{} = {:?}({})", render_var(output), op, inputs_str)
         }
     }
 }
 
 pub fn render_ghost_stmt<V: Variable>(stmt: &GhostStmt<V>) -> String {
     match stmt {
-        GhostStmt::Pure { inputs, output, op } => {
-            let inputs_str = inputs
-                .iter()
-                .map(|v| format!("{:?}", v))
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("({:?} = {}({}))", output, op, inputs_str)
-        }
+        GhostStmt::Pure { inputs, output, op } => render_pure_stmt(inputs, output, op),
         GhostStmt::JoinSplit {
             left,
             right,
@@ -122,14 +302,14 @@ pub fn render_ghost_stmt<V: Variable>(stmt: &GhostStmt<V>) -> String {
                 .map(|v| v.0.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("{}, {} ← [{}]", left.0, right.0, inputs_str)
+            format!("{}, {} = jnsplt([{}])", left.0, right.0, inputs_str)
         }
         GhostStmt::Const {
             value,
             output,
             ghost_in,
         } => {
-            format!("{:?} = {}, [{}])", output, value, ghost_in.0,)
+            format!("{} = const({}) [{}]", render_var(output), value, ghost_in.0)
         }
         GhostStmt::Load {
             array,
@@ -139,8 +319,12 @@ pub fn render_ghost_stmt<V: Variable>(stmt: &GhostStmt<V>) -> String {
             ghost_out,
         } => {
             format!(
-                "{:?} = {:?}[{:?}], [{} → {}]",
-                output, array, index, ghost_in.0, ghost_out.0
+                "{} = {}[{}] [{} -> {}]",
+                render_var(output),
+                render_var(array),
+                render_var(index),
+                ghost_in.0,
+                ghost_out.0
             )
         }
         GhostStmt::Store {
@@ -151,8 +335,13 @@ pub fn render_ghost_stmt<V: Variable>(stmt: &GhostStmt<V>) -> String {
             ghost_out,
         } => {
             format!(
-                "{:?}[{:?}] := {:?}, [{} → ({}, {})]",
-                array, index, value, ghost_in.0, ghost_out.0 .0, ghost_out.1 .0
+                "store {}[{}] = {} [{} -> ({}, {})]",
+                render_var(array),
+                render_var(index),
+                render_var(value),
+                ghost_in.0,
+                ghost_out.0 .0,
+                ghost_out.1 .0
             )
         }
         GhostStmt::Call {
@@ -165,14 +354,10 @@ pub fn render_ghost_stmt<V: Variable>(stmt: &GhostStmt<V>) -> String {
         } => {
             let outputs_str = outputs
                 .iter()
-                .map(|v| format!("{:?}", v))
+                .map(render_var)
                 .collect::<Vec<_>>()
                 .join(", ");
-            let args_str = args
-                .iter()
-                .map(|v| format!("{:?}", v))
-                .collect::<Vec<_>>()
-                .join(", ");
+            let args_str = args.iter().map(render_var).collect::<Vec<_>>().join(", ");
             format!(
                 "{} = {}({}); [need={}, left={}, ret={}]",
                 outputs_str, func.0, args_str, ghost_need.0, ghost_left.0, ghost_ret.0
@@ -184,10 +369,10 @@ pub fn render_ghost_stmt<V: Variable>(stmt: &GhostStmt<V>) -> String {
 pub fn render_ghost_tail<V: Variable>(tail: &GhostTail<V>) -> String {
     match tail {
         GhostTail::Return { value, perm } => {
-            format!("ret({:?}, perm: {})", value, perm.0)
+            format!("return {} [perm={}]", render_var(value), perm.0)
         }
         GhostTail::IfElse { cond, .. } => {
-            format!("IfElse({:?})", cond)
+            format!("if {} {{ ... }} else {{ ... }}", render_var(cond))
         }
         GhostTail::TailCall {
             func,
@@ -195,49 +380,78 @@ pub fn render_ghost_tail<V: Variable>(tail: &GhostTail<V>) -> String {
             ghost_need,
             ghost_left,
         } => {
-            let args_str = args
-                .iter()
-                .map(|v| format!("{:?}", v))
-                .collect::<Vec<_>>()
-                .join(", ");
+            let args_str = args.iter().map(render_var).collect::<Vec<_>>().join(", ");
             format!(
-                "{}({}), [need={}, left={}]",
+                "tail call {}({}) [need={}, left={}]",
                 func.0, args_str, ghost_need.0, ghost_left.0
             )
         }
     }
 }
 
-pub fn trace_context(ctx: &CheckContext, stage: &str) {
-    if !ctx.verbose {
-        return;
-    }
-
-    println!("\n=== {} ===", stage);
-    print_context_contents(ctx);
+pub fn render_ghost_expr<V: Variable>(expr: &GhostExpr<V>) -> String {
+    let mut out = String::new();
+    write_expr(&mut out, expr, 0);
+    out.trim_end().to_string()
 }
 
-pub fn print_context_contents(ctx: &CheckContext) {
-    // Print permission environment
-    if ctx.penv.iter().count() == 0 {
-        println!("PermEnv: <empty>");
-    } else {
-        println!("PermEnv:");
-        for (name, perm) in ctx.penv.iter() {
-            println!("  {}: {}", name, render_perm_expr(perm));
-        }
-    }
+pub fn render_ghost_function<V: Variable>(def: &GhostFnDef<V>) -> String {
+    let params = def
+        .params
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let ghost_params = def
+        .ghost_params
+        .iter()
+        .map(|var| var.0.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
 
-    // Print logical constraints
-    let atoms: Vec<_> = ctx.phi.iter().collect();
-    if atoms.is_empty() {
-        println!("Φ: <empty>");
-    } else {
-        println!("Φ:");
-        for atom in atoms {
-            println!("  {}", render_atom(atom));
-        }
+    let mut out = String::new();
+    out.push_str(&format!("fn {}(", def.name.0));
+    out.push_str(&params);
+    if !ghost_params.is_empty() {
+        out.push_str("; ");
+        out.push_str(&ghost_params);
     }
+    out.push_str(&format!(") -> {} {{\n", def.returns));
+    for line in render_ghost_expr(&def.body).lines() {
+        out.push_str("  ");
+        out.push_str(line);
+        out.push('\n');
+    }
+    out.push('}');
+    out
+}
 
-    println!();
+fn write_expr<V: Variable>(out: &mut String, expr: &GhostExpr<V>, indent: usize) {
+    for stmt in &expr.stmts {
+        write_line(out, indent, &render_ghost_stmt(stmt));
+    }
+    write_tail(out, &expr.tail, indent);
+}
+
+fn write_tail<V: Variable>(out: &mut String, tail: &GhostTail<V>, indent: usize) {
+    match tail {
+        GhostTail::IfElse {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            write_line(out, indent, &format!("if {} {{", render_var(cond)));
+            write_expr(out, then_expr, indent + 2);
+            write_line(out, indent, "} else {");
+            write_expr(out, else_expr, indent + 2);
+            write_line(out, indent, "}");
+        }
+        _ => write_line(out, indent, &render_ghost_tail(tail)),
+    }
+}
+
+fn write_line(out: &mut String, indent: usize, line: &str) {
+    out.push_str(&" ".repeat(indent));
+    out.push_str(line);
+    out.push('\n');
 }

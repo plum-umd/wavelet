@@ -44,4 +44,15 @@ impl PermissionEnv {
     pub fn iter(&self) -> impl Iterator<Item = (&String, &PermExpr)> {
         self.perms.iter()
     }
+
+    pub fn len(&self) -> usize {
+        self.perms.len()
+    }
+
+    /// Merge another synthesized environment into this one.
+    pub fn extend_from(&mut self, other: &PermissionEnv) {
+        for (name, perm) in other.iter() {
+            self.perms.insert(name.clone(), perm.clone());
+        }
+    }
 }
