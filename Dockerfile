@@ -1,6 +1,6 @@
-FROM ubuntu:24.04 AS build
+# Base build image with all required toolchains
+FROM ubuntu:24.04 AS build-base
 
-# Install toolchains and dependencies
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y \
@@ -15,15 +15,19 @@ RUN curl -fsSL https://get.haskellstack.org/ | sh -s
 RUN curl -fsSL https://astral.sh/uv/install.sh | sh -s
 
 ENV PATH="/root/.elan/bin:/root/.cargo/bin:${PATH}"
-
-# Build integration test dependencies
 WORKDIR /wavelet/integration-tests
 
-# Build CIRCT 894bd8c
+#  ██████╗██╗██████╗  ██████╗████████╗
+# ██╔════╝██║██╔══██╗██╔════╝╚══██╔══╝
+# ██║     ██║██████╔╝██║        ██║
+# ██║     ██║██╔══██╗██║        ██║
+# ╚██████╗██║██║  ██║╚██████╗   ██║
+#  ╚═════╝╚═╝╚═╝  ╚═╝ ╚═════╝   ╚═╝
+FROM build-base AS build-circt
 RUN git clone https://github.com/llvm/circt.git && \
     git -C circt checkout 894bd8c && \
-    git -C circt submodule update --init --recursive --depth=1 --jobs=$(nproc) && \
-    mkdir -p build/circt && \
+    git -C circt submodule update --init --recursive --depth=1 --jobs=$(nproc)
+RUN mkdir -p build/circt && \
     cmake circt/llvm/llvm -G Ninja -B build/circt \
 		-DCMAKE_BUILD_TYPE=Release \
 		-DLLVM_ENABLE_ASSERTIONS=ON \
@@ -39,12 +43,24 @@ RUN git clone https://github.com/llvm/circt.git && \
         -DLLVM_ENABLE_BINDINGS=OFF \
         -DMLIR_INCLUDE_TESTS=OFF && \
     cmake --build build/circt --target hlstool
+RUN strip --strip-all build/circt/bin/hlstool && \
+    rm -rf circt && \
+    mv build build-old && \
+    mkdir -p build/circt/bin && \
+    mv build-old/circt/bin/hlstool build/circt/bin/hlstool && \
+    rm -rf build-old
 
-# Build Polygeist 77c04bb
-RUN git clone https://github.com/llvm/Polygeist.git && \
-    git -C circt checkout 77c04bb && \
-    git -C circt submodule update --init --recursive --depth=1 --jobs=$(nproc) && \
-    mkdir -p build/polygeist && \
+# ██████╗  ██████╗ ██╗  ██╗   ██╗ ██████╗ ███████╗██╗███████╗████████╗
+# ██╔══██╗██╔═══██╗██║  ╚██╗ ██╔╝██╔════╝ ██╔════╝██║██╔════╝╚══██╔══╝
+# ██████╔╝██║   ██║██║   ╚████╔╝ ██║  ███╗█████╗  ██║███████╗   ██║
+# ██╔═══╝ ██║   ██║██║    ╚██╔╝  ██║   ██║██╔══╝  ██║╚════██║   ██║
+# ██║     ╚██████╔╝███████╗██║   ╚██████╔╝███████╗██║███████║   ██║
+# ╚═╝      ╚═════╝ ╚══════╝╚═╝    ╚═════╝ ╚══════╝╚═╝╚══════╝   ╚═╝
+FROM build-base AS build-polygeist
+RUN git clone https://github.com/llvm/Polygeist.git polygeist && \
+    git -C polygeist checkout 77c04bb && \
+    git -C polygeist submodule update --init --recursive --depth=1 --jobs=$(nproc)
+RUN mkdir -p build/polygeist && \
     cmake polygeist/llvm-project/llvm -G Ninja -B build/polygeist \
 		-DCMAKE_BUILD_TYPE=Release \
 		-DLLVM_ENABLE_ASSERTIONS=ON \
@@ -61,8 +77,20 @@ RUN git clone https://github.com/llvm/Polygeist.git && \
         -DLLVM_ENABLE_BINDINGS=OFF \
         -DMLIR_INCLUDE_TESTS=OFF && \
     cmake --build build/polygeist --target cgeist
+RUN strip --strip-all build/polygeist/bin/cgeist && \
+    rm -rf polygeist && \
+    mv build build-old && \
+    mkdir -p build/polygeist/bin && \
+    mv build-old/polygeist/bin/cgeist build/polygeist/bin/cgeist && \
+    rm -rf build-old
 
-# Build nextpnr and prjtrellis
+# ███╗   ██╗███████╗██╗  ██╗████████╗██████╗ ███╗   ██╗██████╗
+# ████╗  ██║██╔════╝╚██╗██╔╝╚══██╔══╝██╔══██╗████╗  ██║██╔══██╗
+# ██╔██╗ ██║█████╗   ╚███╔╝    ██║   ██████╔╝██╔██╗ ██║██████╔╝
+# ██║╚██╗██║██╔══╝   ██╔██╗    ██║   ██╔═══╝ ██║╚██╗██║██╔══██╗
+# ██║ ╚████║███████╗██╔╝ ██╗   ██║   ██║     ██║ ╚████║██║  ██║
+# ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚═╝  ╚═══╝╚═╝  ╚═╝
+FROM build-base AS build-nextpnr
 RUN git clone https://github.com/YosysHQ/prjtrellis.git && \
     git -C prjtrellis checkout 73bd411 && \
     git -C prjtrellis submodule update --init --recursive --depth=1 --jobs=$(nproc) && \
@@ -78,15 +106,34 @@ RUN mkdir -p build/prjtrellis build/nextpnr && \
 		-DARCH=ecp5 \
 		-DTRELLIS_INSTALL_PREFIX=$(realpath build/prjtrellis/install) && \
     cmake --build build/nextpnr --target nextpnr-ecp5
+RUN strip --strip-all build/nextpnr/nextpnr-ecp5 && \
+    rm -rf prjtrellis nextpnr && \
+    mv build build-old && \
+    mkdir -p build/nextpnr && \
+    mv build-old/nextpnr/nextpnr-ecp5 build/nextpnr/nextpnr-ecp5 && \
+    rm -rf build-old
 
-# Build sv2v
+# ███████╗██╗   ██╗██████╗ ██╗   ██╗
+# ██╔════╝██║   ██║╚════██╗██║   ██║
+# ███████╗██║   ██║ █████╔╝██║   ██║
+# ╚════██║╚██╗ ██╔╝██╔═══╝ ╚██╗ ██╔╝
+# ███████║ ╚████╔╝ ███████╗ ╚████╔╝
+# ╚══════╝  ╚═══╝  ╚══════╝  ╚═══╝
+FROM build-base AS build-sv2v
 RUN git clone https://github.com/zachjs/sv2v.git && \
     git -C sv2v checkout v0.0.13 && \
     make -C sv2v -j$(nproc) && \
     mkdir -p build/sv2v/bin && \
     cp sv2v/bin/sv2v build/sv2v/bin/sv2v
+RUN rm -rf sv2v
 
-# Build Yosys
+# ██╗   ██╗ ██████╗ ███████╗██╗   ██╗███████╗
+# ╚██╗ ██╔╝██╔═══██╗██╔════╝╚██╗ ██╔╝██╔════╝
+#  ╚████╔╝ ██║   ██║███████╗ ╚████╔╝ ███████╗
+#   ╚██╔╝  ██║   ██║╚════██║  ╚██╔╝  ╚════██║
+#    ██║   ╚██████╔╝███████║   ██║   ███████║
+#    ╚═╝    ╚═════╝ ╚══════╝   ╚═╝   ╚══════╝
+FROM build-base AS build-yosys
 RUN git clone https://github.com/YosysHQ/yosys.git && \
     git -C yosys fetch origin v0.62 && \
     git -C yosys checkout v0.62 && \
@@ -95,8 +142,15 @@ RUN git clone https://github.com/YosysHQ/yosys.git && \
     cd yosys && \
     make -j$(nproc) && \
     make install DESTDIR=$(realpath ../build/yosys) PREFIX=
+RUN rm -rf yosys
 
-# Build Verilator
+# ██╗   ██╗███████╗██████╗ ██╗██╗      █████╗ ████████╗ ██████╗ ██████╗
+# ██║   ██║██╔════╝██╔══██╗██║██║     ██╔══██╗╚══██╔══╝██╔═══██╗██╔══██╗
+# ██║   ██║█████╗  ██████╔╝██║██║     ███████║   ██║   ██║   ██║██████╔╝
+# ╚██╗ ██╔╝██╔══╝  ██╔══██╗██║██║     ██╔══██║   ██║   ██║   ██║██╔══██╗
+#  ╚████╔╝ ███████╗██║  ██║██║███████╗██║  ██║   ██║   ╚██████╔╝██║  ██║
+#   ╚═══╝  ╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝
+FROM build-base AS build-verilator
 RUN git clone https://github.com/verilator/verilator.git && \
     git -C verilator checkout v5.044 && \
     git -C verilator submodule update --init --recursive --depth=1 --jobs=$(nproc) && \
@@ -106,8 +160,15 @@ RUN git clone https://github.com/verilator/verilator.git && \
     ./configure --prefix=$(realpath ../build/verilator) && \
     make -j$(nproc) && \
     make install
+RUN rm -rf verilator build/verilator/bin/verilator_bin_dbg
 
-# Build Wavelet
+# ██╗    ██╗ █████╗ ██╗   ██╗███████╗██╗     ███████╗████████╗
+# ██║    ██║██╔══██╗██║   ██║██╔════╝██║     ██╔════╝╚══██╔══╝
+# ██║ █╗ ██║███████║██║   ██║█████╗  ██║     █████╗     ██║
+# ██║███╗██║██╔══██║╚██╗ ██╔╝██╔══╝  ██║     ██╔══╝     ██║
+# ╚███╔███╔╝██║  ██║ ╚████╔╝ ███████╗███████╗███████╗   ██║
+#  ╚══╝╚══╝ ╚═╝  ╚═╝  ╚═══╝  ╚══════╝╚══════╝╚══════╝   ╚═╝
+FROM build-base AS build-wavelet
 WORKDIR /wavelet
 COPY .cargo .cargo
 COPY wavelet wavelet
@@ -117,38 +178,18 @@ COPY Cargo.toml Cargo.toml
 COPY Cargo.lock Cargo.lock
 COPY rust-toolchain.toml rust-toolchain.toml
 RUN cargo build --release
-
-# Add rest of the required files
-COPY integration-tests/sim integration-tests/sim
-COPY integration-tests/tests integration-tests/tests
-COPY integration-tests/Makefile integration-tests/Makefile
-COPY integration-tests/requirements.txt integration-tests/requirements.txt
-
-# Some clean up
-RUN cd integration-tests && \
-    rm -rf circt polygeist prjtrellis nextpnr verilator yosys sv2v && \
-    mv build build-old && \
-    mkdir -p \
-        build/circt/bin \
-        build/polygeist/bin \
-        build/nextpnr && \
-    mv build-old/circt/bin/hlstool build/circt/bin/hlstool && \
-    mv build-old/polygeist/bin/cgeist build/polygeist/bin/cgeist && \
-    mv build-old/nextpnr/nextpnr-ecp5 build/nextpnr/nextpnr-ecp5 && \
-    mv build-old/verilator build-old/yosys build-old/sv2v build && \
-    rm -rf build-old build/verilator/bin/verilator_bin_dbg
-
-RUN strip --strip-all integration-tests/build/nextpnr/nextpnr-ecp5 && \
-    strip --strip-all integration-tests/build/circt/bin/hlstool && \
-    strip --strip-all integration-tests/build/polygeist/bin/cgeist
-
-RUN mv target/release/wavelet wavelet-bin && \
+RUN rm -rf wavelet-core/lean/.lake && \
+    mv target/release/wavelet wavelet-bin && \
     rm -rf target && \
     mkdir -p target/release && \
     mv wavelet-bin target/release/wavelet
 
-RUN rm -rf wavelet-core/lean/.lake
-
+# ██████╗ ██╗   ██╗███╗   ██╗████████╗██╗███╗   ███╗███████╗
+# ██╔══██╗██║   ██║████╗  ██║╚══██╔══╝██║████╗ ████║██╔════╝
+# ██████╔╝██║   ██║██╔██╗ ██║   ██║   ██║██╔████╔██║█████╗
+# ██╔══██╗██║   ██║██║╚██╗██║   ██║   ██║██║╚██╔╝██║██╔══╝
+# ██║  ██║╚██████╔╝██║ ╚████║   ██║   ██║██║ ╚═╝ ██║███████╗
+# ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚═╝╚═╝     ╚═╝╚══════╝
 FROM ubuntu:24.04 AS runtime
 
 # Install runtime dependencies
@@ -181,8 +222,14 @@ RUN if [ "$(uname -m)" = "aarch64" ]; then arch=arm64; \
 RUN code-server --install-extension leanprover.lean4 && \
     code-server --install-extension rust-lang.rust-analyzer
 
-# Install built binaries and strip some binaries to reduce image size
-COPY --from=build /wavelet /wavelet
+# Pull builds from previous stages
+COPY --from=build-circt /wavelet/ /wavelet/
+COPY --from=build-polygeist /wavelet/ /wavelet/
+COPY --from=build-nextpnr /wavelet/ /wavelet/
+COPY --from=build-sv2v /wavelet/ /wavelet/
+COPY --from=build-yosys /wavelet/ /wavelet/
+COPY --from=build-verilator /wavelet/ /wavelet/
+COPY --from=build-wavelet /wavelet/ /wavelet/
 RUN cp -a /wavelet/integration-tests/build/sv2v/. /usr/local/ && \
     cp -a /wavelet/integration-tests/build/yosys/. /usr/local/ && \
     cp -a /wavelet/integration-tests/build/verilator/. /usr/local/ && \
@@ -242,7 +289,6 @@ COPY <<EOF /wavelet/.vscode/tasks.json
 }
 EOF
 
-COPY README.md /wavelet/README.md
 RUN echo "PS1='\\w \\\$ '" > /root/.bashrc
 COPY <<EOF2 /usr/local/bin/entry.sh
 #!/bin/bash
@@ -294,6 +340,18 @@ fi
 EOF2
 RUN chmod +x /usr/local/bin/entry.sh
 
+# Add rest of the required files
+COPY integration-tests/sim /wavelet/integration-tests/sim
+COPY integration-tests/tests /wavelet/integration-tests/tests
+COPY integration-tests/Makefile /wavelet/integration-tests/Makefile
+COPY README.md /wavelet/README.md
+
+# ███████╗██╗███╗   ██╗ █████╗ ██╗
+# ██╔════╝██║████╗  ██║██╔══██╗██║
+# █████╗  ██║██╔██╗ ██║███████║██║
+# ██╔══╝  ██║██║╚██╗██║██╔══██║██║
+# ██║     ██║██║ ╚████║██║  ██║███████╗
+# ╚═╝     ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝
 FROM scratch AS final
 COPY --from=runtime / /
 WORKDIR /wavelet
