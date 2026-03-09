@@ -14,9 +14,9 @@ runs:
       with:
         lake-package-directory: wavelet-core/lean
         auto-config: false
-    - uses: ./.github/actions/setup-z3
+    - uses: ./.github/actions/setup-cvc5
       with:
-        version: 4.15.4
+        version: 1.3.3
         token: ${{ inputs.token }}
     - shell: bash
       run: |
