@@ -3,7 +3,9 @@
 Dockerfile
 
 # These repos will be fetched within the Docker build
+integration-tests/circt/
 integration-tests/nextpnr/
+integration-tests/polygeist/
 integration-tests/prjtrellis/
 integration-tests/verilator/
 integration-tests/yosys/

@@ -1,5 +1,3 @@
-# This is a Docker image intended for artifact evaluation at PLDI.
-
 FROM ubuntu:24.04 AS build
 
 # Install toolchains and dependencies
@@ -19,15 +17,13 @@ RUN curl -fsSL https://astral.sh/uv/install.sh | sh -s
 ENV PATH="/root/.elan/bin:/root/.cargo/bin:${PATH}"
 
 # Build integration test dependencies
-# Make sure to run this command first:
-# ```
-# git submodule update --init --recursive --depth=1 --jobs=$(nproc)
-# ```
 WORKDIR /wavelet/integration-tests
 
-# Build CIRCT
-COPY integration-tests/circt circt
-RUN mkdir -p build/circt && \
+# Build CIRCT 894bd8c
+RUN git clone https://github.com/llvm/circt.git && \
+    git -C circt checkout 894bd8c && \
+    git -C circt submodule update --init --recursive --depth=1 --jobs=$(nproc) && \
+    mkdir -p build/circt && \
     cmake circt/llvm/llvm -G Ninja -B build/circt \
 		-DCMAKE_BUILD_TYPE=Release \
 		-DLLVM_ENABLE_ASSERTIONS=ON \
@@ -44,9 +40,11 @@ RUN mkdir -p build/circt && \
         -DMLIR_INCLUDE_TESTS=OFF && \
     cmake --build build/circt --target hlstool
 
-# Build Polygeist
-COPY integration-tests/polygeist polygeist
-RUN mkdir -p build/polygeist && \
+# Build Polygeist 77c04bb
+RUN git clone https://github.com/llvm/Polygeist.git && \
+    git -C circt checkout 77c04bb && \
+    git -C circt submodule update --init --recursive --depth=1 --jobs=$(nproc) && \
+    mkdir -p build/polygeist && \
     cmake polygeist/llvm-project/llvm -G Ninja -B build/polygeist \
 		-DCMAKE_BUILD_TYPE=Release \
 		-DLLVM_ENABLE_ASSERTIONS=ON \
