@@ -50,14 +50,14 @@ Please follow these steps to download and start our Docker image:
    [riptide] simple ... PASS
    [riptide-nostream] simple ... PASS
    ```
-   This step essentially runs all evaluations on a single test program.
+   This step runs all evaluations on a single test program.
 
 The rest of the guide assumes that you have started the Docker image following the steps above.
 
 ## Step-by-Step Instructions [1 hour]
 
 In this section, we first describe steps to reproduce Figures 11-14 in the paper,
-and then we show the correspondence between our Lean formalization and on-paper theorems.
+and then we show the correspondence between our Lean formalization and theorems in the paper.
 
 ### Evaluation Results (Section 6)
 
@@ -108,9 +108,9 @@ You can also find various compilation results and logs in each test folder
 with the pipeline identifier.
 
 For example,
-- `test.wavelet.json` is the output dataflow graph compiled using Wavelet
+- `test.wavelet.json` is the output dataflow graph compiled using Wavelet.
 - `test.wavelet.handshake.mlir` is the same graph but encoded in CIRCT's `handshake` MLIR dialect.
-- `test.wavelet.sv` is the SystemVerilog design lowered from the `handshake` source code
+- `test.wavelet.sv` is the SystemVerilog design lowered from the `handshake` source code.
 - `test.wavelet.log` is the Verilator simulation results on the design.
 - `test.wavelet.netlist.json.log` and `test.wavelet.nextpnr.json.log` are logs from
   Yosys and nextpnr for synthesis/placement/routing on the design.
@@ -141,10 +141,13 @@ lake build Thm
 This might take a while since it needs to fetch the right Lean toolchain and build caches for
 [mathlib](https://github.com/leanprover-community/mathlib4).
 
-Here are the pointers to all key definitions and theorems in Section 5:
+Below are the pointers to all key definitions and theorems in Section 5.
+If you started our image as a VS Code server, you can open these files
+in `wavelet-core/lean` using the in-browser editor.
+
 - Section 5.1
-  - Syntax and semantics of L_let: `Wavelet/Dataflow/Proc.lean`.
-  - Syntax and semantics of L_flow: `Wavelet/Seq/Fn.lean` and `Wavelet/Seq/Prog.lean`.
+  - Syntax and semantics of L_flow: `Wavelet/Dataflow/Proc.lean`.
+  - Syntax and semantics of L_let: `Wavelet/Seq/Fn.lean` and `Wavelet/Seq/Prog.lean`.
   - Common definitions of LTS and simulation: `Wavelet/Semantics/Defs.lean` and `Wavelet/Semantics/Lts.lean`.
 - Section 5.2
   - Control flow conversion implementation: `Wavelet/Compile/Fn.lean`.
@@ -168,12 +171,6 @@ The structure of the `Wavelet` directory:
 - `Wavelet/Semantics`: Common semantic utilities.
 - `Wavelet/Seq`: Syntax and semantics of L_let.
 - `Wavelet/Thm`: All proofs and specifications of Wavelet.
-
-**Quick Note:** If this is your first time viewing Lean code in VS Code, you will likely
-see a popup window in the bottom-right corner of the editor, indicating that it is installing
-the Lean toolchain. Once that's finished, you should see a Lean "InfoView" panel on the right
-side of the editor whenever you open a Lean file, and you sometimes need to click the "Restart File"
-button in the InfoView to load the file correctly.
 
 ## (Optional) Using Wavelet
 
