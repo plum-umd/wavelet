@@ -69,7 +69,7 @@ make eval-compile    # 3 min
 make eval -j<N>      # 7.5 min with -j10
 python3 sim/stats.py
 ```
-The reference time is recorded on our test machine with Apple M1 Pro CPU and 32 GiB of RAM.
+The reference time was recorded on our test machine with Apple M1 Pro CPU and 32 GiB of RAM.
 
 The last command will produce the following output:
 ```latex
@@ -121,15 +121,15 @@ This section describes the correspondence between our Lean formalization
 and various definitions and results in Section 5.
 
 For this step, it is recommended to start our image as a VS Code server
-and use the in-brower editor to view our source code (see Step 4 in the **Getting Started Guide**).
+and use the in-browser editor to view our source code (see Step 4 in the **Getting Started Guide**).
 
 Alternatively, you can also download our source code zip file (`wavelet-src.zip`)
 or clone our [GitHub repository](https://github.com/plum-umd/wavelet/tree/pldi-ae).
-Some instructions below assumes that you are using VS Code with the
+Some instructions below assume that you are using VS Code with the
 [Lean 4 extension](https://lean-lang.org/install/) installed (which is already the case
 if you are using the in-browser editor).
 
-All of our Lean formalization lies in `wavelet-core/lean`, and all paths in this section
+Our entire Lean formalization is in `wavelet-core/lean`, and all paths in this section
 are relative to it.
 
 To verify all the proofs, run
@@ -138,10 +138,10 @@ cd wavelet-core/lean
 lake exec cache get
 lake build Thm
 ```
-This might take a while since it needs to fetch right Lean toolchain and build cache for
+This might take a while since it needs to fetch the right Lean toolchain and build caches for
 [mathlib](https://github.com/leanprover-community/mathlib4).
 
-Here are the pointers to all key definitions and theorems in our Section 5:
+Here are the pointers to all key definitions and theorems in Section 5:
 - Section 5.1
   - Syntax and semantics of L_let: `Wavelet/Dataflow/Proc.lean`.
   - Syntax and semantics of L_flow: `Wavelet/Seq/Fn.lean` and `Wavelet/Seq/Prog.lean`.
@@ -169,10 +169,10 @@ The structure of the `Wavelet` directory:
 - `Wavelet/Seq`: Syntax and semantics of L_let.
 - `Wavelet/Thm`: All proofs and specifications of Wavelet.
 
-**Quick Note:** If this is the first time you view Lean code in VS Code, you will likely
-see a popup window on the bottom right corner of the editor, indicating that it is installing
+**Quick Note:** If this is your first time viewing Lean code in VS Code, you will likely
+see a popup window in the bottom-right corner of the editor, indicating that it is installing
 the Lean toolchain. Once that's finished, you should see a Lean "InfoView" panel on the right
-side of the editor whenever you open a Lean file, and you sometimes need to click "Restart File"
+side of the editor whenever you open a Lean file, and you sometimes need to click the "Restart File"
 button in the InfoView to load the file correctly.
 
 ## (Optional) Using Wavelet
@@ -187,11 +187,11 @@ Say you want to test Wavelet on the example program at
   ```sh
   target/release/wavelet compile integration-tests/tests/simple/test.rs > dfg.json
   ```
-- To generates a visualization of the compiled graph in Graphviz DOT format:
+- To generate a visualization of the compiled graph in Graphviz DOT format:
   ```sh
   target/release/wavelet plot dfg.json
   ```
-  You can copy and paste it in an online Graphviz renderer such as
+  You can copy and paste it into an online Graphviz renderer such as
   [this one](https://dreampuf.github.io/GraphvizOnline).
 - To convert the dataflow graph to [CIRCT's `handshake` dialect](https://circt.llvm.org/docs/Dialects/Handshake/):
   ```sh
@@ -209,5 +209,5 @@ in our paper) has limited functionality, and your input program must have correc
 capability and fence annotations, and satisfy the static control flow restrictions
 in Section 4.3 (e.g., only branching and tail recursion are allowed).
 
-You can look at other examples `integration-tests/tests/*/test.rs` for how to specify
+You can look at other examples in `integration-tests/tests/*/test.rs` for how to specify
 capability and fences, as well as to satisfy the control-flow constraints.
