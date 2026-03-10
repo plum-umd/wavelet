@@ -308,7 +308,7 @@ else
     green=
 fi
 
-if [ "\$1" == "ae-server" ]; then
+if [ "\$1" == "server" ]; then
     cat <<EOF
 
 Please visit \${underline}\${bold}http://localhost:8080\${reset} to access the in-browser editor.
@@ -330,7 +330,7 @@ To run some quick sanity checks:
 
 You can also exit and restart this image as a VS code server for a better experience:
 
-    \\\$ docker run -p 127.0.0.1:8080:8080 wavelet-artifact ae-server
+    \\\$ docker run -p 127.0.0.1:8080:8080 wavelet-artifact server
 
 Then visit \${underline}\${bold}http://localhost:8080\${reset} to access the in-browser editor.
 

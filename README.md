@@ -25,7 +25,7 @@ Please follow these steps to download and start our Docker image:
 4. To start the image, choose one of the following two options: 
    - (Recommended) If your machine has a browser, you can start the image as a VS Code server:
      ```sh
-     docker run -p 127.0.0.1:8080:8080 wavelet-artifact ae-server
+     docker run -p 127.0.0.1:8080:8080 wavelet-artifact server
      ```
      Then in your local browser, visit `localhost:8080` to view the artifact
      in an in-browser VS Code editor.
