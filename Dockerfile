@@ -26,8 +26,8 @@ WORKDIR /wavelet/integration-tests
 FROM build-base AS build-circt
 RUN git clone https://github.com/llvm/circt.git && \
     git -C circt checkout 894bd8c && \
-    git -C circt submodule update --init --recursive --depth=1 --jobs=$(nproc)
-RUN mkdir -p build/circt && \
+    git -C circt submodule update --init --recursive --depth=1 --jobs=$(nproc) && \
+    mkdir -p build/circt && \
     cmake circt/llvm/llvm -G Ninja -B build/circt \
 		-DCMAKE_BUILD_TYPE=Release \
 		-DLLVM_ENABLE_ASSERTIONS=ON \
@@ -42,8 +42,8 @@ RUN mkdir -p build/circt && \
         -DLLVM_INCLUDE_BENCHMARKS=OFF \
         -DLLVM_ENABLE_BINDINGS=OFF \
         -DMLIR_INCLUDE_TESTS=OFF && \
-    cmake --build build/circt --target hlstool
-RUN strip --strip-all build/circt/bin/hlstool && \
+    cmake --build build/circt --target hlstool && \
+    strip --strip-all build/circt/bin/hlstool && \
     rm -rf circt && \
     mv build build-old && \
     mkdir -p build/circt/bin && \
@@ -59,11 +59,11 @@ RUN strip --strip-all build/circt/bin/hlstool && \
 FROM build-base AS build-polygeist
 RUN git clone https://github.com/llvm/Polygeist.git polygeist && \
     git -C polygeist checkout 77c04bb && \
-    git -C polygeist submodule update --init --recursive --depth=1 --jobs=$(nproc)
-RUN mkdir -p build/polygeist && \
+    git -C polygeist submodule update --init --recursive --depth=1 --jobs=$(nproc) && \
+    mkdir -p build/polygeist && \
     cmake polygeist/llvm-project/llvm -G Ninja -B build/polygeist \
 		-DCMAKE_BUILD_TYPE=Release \
-		-DLLVM_ENABLE_ASSERTIONS=ON \
+		-DLLVM_ENABLE_ASSERTIONS=OFF \
 		-DLLVM_TARGETS_TO_BUILD=host \
 		-DLLVM_ENABLE_PROJECTS="mlir;clang" \
 		-DLLVM_EXTERNAL_PROJECTS=polygeist \
@@ -76,8 +76,8 @@ RUN mkdir -p build/polygeist && \
         -DLLVM_INCLUDE_BENCHMARKS=OFF \
         -DLLVM_ENABLE_BINDINGS=OFF \
         -DMLIR_INCLUDE_TESTS=OFF && \
-    cmake --build build/polygeist --target cgeist
-RUN strip --strip-all build/polygeist/bin/cgeist && \
+    cmake --build build/polygeist --target cgeist && \
+    strip --strip-all build/polygeist/bin/cgeist && \
     rm -rf polygeist && \
     mv build build-old && \
     mkdir -p build/polygeist/bin && \
@@ -96,17 +96,18 @@ RUN git clone https://github.com/YosysHQ/prjtrellis.git && \
     git -C prjtrellis submodule update --init --recursive --depth=1 --jobs=$(nproc) && \
     git clone https://github.com/YosysHQ/nextpnr.git && \
     git -C nextpnr checkout ab7aa9f && \
-    git -C nextpnr submodule update --init --recursive --depth=1 --jobs=$(nproc)
-RUN mkdir -p build/prjtrellis build/nextpnr && \
+    git -C nextpnr submodule update --init --recursive --depth=1 --jobs=$(nproc) && \
+    mkdir -p build/prjtrellis build/nextpnr && \
     cmake prjtrellis/libtrellis -G Ninja -B build/prjtrellis \
 		-DCMAKE_INSTALL_PREFIX=$(realpath build/prjtrellis/install) && \
     cmake --build build/prjtrellis && \
     cmake --install build/prjtrellis && \
     cmake nextpnr -G Ninja -B build/nextpnr \
 		-DARCH=ecp5 \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
 		-DTRELLIS_INSTALL_PREFIX=$(realpath build/prjtrellis/install) && \
-    cmake --build build/nextpnr --target nextpnr-ecp5
-RUN strip --strip-all build/nextpnr/nextpnr-ecp5 && \
+    cmake --build build/nextpnr --target nextpnr-ecp5 && \
+    strip --strip-all build/nextpnr/nextpnr-ecp5 && \
     rm -rf prjtrellis nextpnr && \
     mv build build-old && \
     mkdir -p build/nextpnr && \
@@ -124,8 +125,8 @@ RUN git clone https://github.com/zachjs/sv2v.git && \
     git -C sv2v checkout v0.0.13 && \
     make -C sv2v -j$(nproc) && \
     mkdir -p build/sv2v/bin && \
-    cp sv2v/bin/sv2v build/sv2v/bin/sv2v
-RUN rm -rf sv2v
+    cp sv2v/bin/sv2v build/sv2v/bin/sv2v && \
+    rm -rf sv2v
 
 # ██╗   ██╗ ██████╗ ███████╗██╗   ██╗███████╗
 # ╚██╗ ██╔╝██╔═══██╗██╔════╝╚██╗ ██╔╝██╔════╝
@@ -141,8 +142,9 @@ RUN git clone https://github.com/YosysHQ/yosys.git && \
     mkdir -p build/yosys && \
     cd yosys && \
     make -j$(nproc) && \
-    make install DESTDIR=$(realpath ../build/yosys) PREFIX=
-RUN rm -rf yosys
+    make install DESTDIR=$(realpath ../build/yosys) PREFIX= && \
+    cd - && \
+    rm -rf yosys
 
 # ██╗   ██╗███████╗██████╗ ██╗██╗      █████╗ ████████╗ ██████╗ ██████╗
 # ██║   ██║██╔════╝██╔══██╗██║██║     ██╔══██╗╚══██╔══╝██╔═══██╗██╔══██╗
@@ -159,8 +161,9 @@ RUN git clone https://github.com/verilator/verilator.git && \
     autoconf && \
     ./configure --prefix=$(realpath ../build/verilator) && \
     make -j$(nproc) && \
-    make install
-RUN rm -rf verilator build/verilator/bin/verilator_bin_dbg
+    make install && \
+    cd - && \
+    rm -rf verilator build/verilator/bin/verilator_bin_dbg build/verilator/bin/verilator_coverage_bin_dbg
 
 # ██╗    ██╗ █████╗ ██╗   ██╗███████╗██╗     ███████╗████████╗
 # ██║    ██║██╔══██╗██║   ██║██╔════╝██║     ██╔════╝╚══██╔══╝
@@ -170,15 +173,14 @@ RUN rm -rf verilator build/verilator/bin/verilator_bin_dbg
 #  ╚══╝╚══╝ ╚═╝  ╚═╝  ╚═══╝  ╚══════╝╚══════╝╚══════╝   ╚═╝
 FROM build-base AS build-wavelet
 WORKDIR /wavelet
-COPY .cargo .cargo
 COPY wavelet wavelet
 COPY wavelet-core wavelet-core
 COPY wavelet-elab wavelet-elab
 COPY Cargo.toml Cargo.toml
 COPY Cargo.lock Cargo.lock
 COPY rust-toolchain.toml rust-toolchain.toml
-RUN cargo build --release
-RUN rm -rf wavelet-core/lean/.lake && \
+RUN cargo build --release && \
+    rm -rf wavelet-core/lean/.lake && \
     mv target/release/wavelet wavelet-bin && \
     rm -rf target && \
     mkdir -p target/release && \
@@ -196,11 +198,11 @@ FROM ubuntu:24.04 AS runtime
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        git curl lld unzip make build-essential libtcl \
+        git curl unzip make build-essential libtcl \
         python3 python3-pip python3-dev \
         libboost-program-options1.83.0 \
         libboost-thread1.83.0 && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man
 
 COPY integration-tests/requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt && \
@@ -223,8 +225,19 @@ RUN code-server --install-extension leanprover.lean4 && \
     code-server --install-extension rust-lang.rust-analyzer
 
 # Clean up code-server install
-RUN rm -rf /root/.cache && \
-    find /usr/lib/code-server -name '*.js.map' -delete
+RUN rm -rf /root/.cache \
+    /root/.local/share/code-server/CachedExtensionVSIXs && \
+    find /usr/lib/code-server -name '*.js.map' -delete && \
+    cd /usr/lib/code-server/lib/vscode/extensions && \
+    rm -rf bat clojure coffeescript csharp css css-language-features dart \
+        docker-compose-language-features docker-language-features emmet \
+        fsharp go groovy grunt gulp handlebars hlsl html html-language-features \
+        ini ipynb jade jake java javascript julia latex less log lua \
+        mermaid-chat-features microsoft-authentication ms-vscode.js-debug \
+        ms-vscode.js-debug-companion ms-vscode.vscode-js-profile-table npm \
+        objective-c perl php powershell pug r razor ruby rust scss shaderlab \
+        sql swift typescript-basics typescript-language-features vb \
+        vscode-api-tests vscode-colorize-tests vscode-test-resolver
 
 # Pull builds from previous stages
 COPY --from=build-circt /wavelet/ /wavelet/
@@ -321,7 +334,7 @@ If you can't access it, make sure that you have started the container with \${bo
 
 EOF
     exec code-server --bind-addr 0.0.0.0:8080 --auth none "\${@:2}" /wavelet
-else
+elif [ \$# -eq 0 ]; then
     cat <<EOF
 
 Welcome to the artifact accompanying the paper:
@@ -339,7 +352,9 @@ You can also exit and restart this image as a VS code server for a better experi
 Then visit \${underline}\${bold}http://localhost:8080\${reset} to access the in-browser editor.
 
 EOF
-    exec "\${@:-/bin/bash}"
+    exec /bin/bash
+else
+    exec "\$@"
 fi
 EOF2
 RUN chmod +x /usr/local/bin/entry.sh
