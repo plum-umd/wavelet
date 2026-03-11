@@ -213,7 +213,7 @@ dependencies = [
 [[package]]
 name = "lean-sys"
 version = "0.0.9"
-source = "git+https://github.com/zhengyao-lin/lean-sys.git#604149dcb7d1085dd4cbfbb58b6baf7508f34d8d"
+source = "git+https://github.com/zhengyao-lin/lean-sys.git#7bf8abb2018137e27c1d74d097a5cc8b4a688e3e"
 dependencies = [
  "libc",
  "libmimalloc-sys",
