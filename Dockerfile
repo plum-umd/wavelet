@@ -222,6 +222,10 @@ RUN if [ "$(uname -m)" = "aarch64" ]; then arch=arm64; \
 RUN code-server --install-extension leanprover.lean4 && \
     code-server --install-extension rust-lang.rust-analyzer
 
+# Clean up code-server install
+RUN rm -rf /root/.cache && \
+    find /usr/lib/code-server -name '*.js.map' -delete
+
 # Pull builds from previous stages
 COPY --from=build-circt /wavelet/ /wavelet/
 COPY --from=build-polygeist /wavelet/ /wavelet/
