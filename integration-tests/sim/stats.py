@@ -485,15 +485,18 @@ TYPE_CHECKER_CODE = [
     "logic/mod.rs", "logic/cap.rs", "logic/region.rs",
     "logic/semantic/mod.rs", "logic/semantic/solver.rs", "logic/semantic/region_set.rs",
     "logic/syntactic/mod.rs", "logic/syntactic/solver.rs",
-    "ghost/mod.rs", "ghost/ir.rs", "ghost/affine.rs", "ghost/fracperms.rs",
+    "ghost/mod.rs", "ghost/ir.rs", "ghost/affine.rs",
+    "ghost/fracperms/mod.rs", "ghost/fracperms/expr.rs",
+    "ghost/fracperms/normalize.rs", "ghost/fracperms/solver.rs",
     "ghost/json.rs", "ghost/lower.rs",
 ]
 
 PERM_VALIDATOR_CODE = [
     "ghost/checker/mod.rs", "ghost/checker/context.rs", "ghost/checker/perm_env.rs",
     "ghost/checker/permission.rs", "ghost/checker/pretty_print.rs",
-    "ghost/checker/expr_checker.rs", "ghost/checker/stmt_checker.rs",
-    "ghost/checker/program_checker.rs", "ghost/checker/tail_checker.rs",
+    "ghost/checker/contract.rs", "ghost/checker/synthesis.rs",
+    "ghost/checker/program_checker.rs", "ghost/checker/trace.rs",
+    "ghost/checker/utils.rs", "ghost/checker/validation.rs",
     "ghost/checker/tests.rs",
 ]
 
@@ -554,8 +557,7 @@ def count_files(base_dir: Path, files: list[str]) -> int:
     for f in files:
         n = count_lines(base_dir / f)
         if n is None:
-            print(f"  WARNING: missing file {base_dir / f}")
-            continue
+            raise RuntimeError(f"missing file {base_dir / f}")
         total += n
     return total
 
