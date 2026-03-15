@@ -7,5 +7,5 @@ license.workspace = true
 
 [dependencies]
 thiserror.workspace = true
-lean-sys = { git = "https://github.com/zhengyao-lin/lean-sys.git" }
+lean-sys = { git = "https://github.com/zhengyao-lin/lean-sys.git", branch = "wavelet" }
 libc = "0.2.180"
