@@ -386,10 +386,10 @@ endef
 
 wavelet-compile-%: WAVELET_COMPILE_FLAGS := --ghost-check
 wavelet-compile-%:
-	$(call run-eval,wavelet,$*,tests/$*/test.wavelet.json)
+	$(call run-eval,wavelet-compile,$*,tests/$*/test.wavelet.json)
 
 wavelet-noopt-compile-%:
-	$(call run-eval,wavelet-noopt,$*,tests/$*/test.wavelet-noopt.json)
+	$(call run-eval,wavelet-noopt-compile,$*,tests/$*/test.wavelet-noopt.json)
 
 wavelet-eval-%: WAVELET_COMPILE_FLAGS := --ghost-check
 wavelet-eval-%:
@@ -418,10 +418,9 @@ eval: $(foreach name,$(EVAL_NAMES), \
 
 # Only run relevant Wavelet compilation targets
 # Used for better performance estimates.
-eval-compile: $(foreach name,$(EVAL_NAMES), \
-	wavelet-compile-$(name) \
-	wavelet-noopt-compile-$(name) \
-)
+eval-compile: \
+	$(foreach name,$(EVAL_NAMES),wavelet-compile-$(name)) \
+	$(foreach name,$(EVAL_NAMES),wavelet-noopt-compile-$(name))
 
 sanity-check: \
 	wavelet-eval-simple \
