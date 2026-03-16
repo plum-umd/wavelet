@@ -56,13 +56,13 @@ The rest of the guide assumes that you have started the Docker image following t
 
 ## Step-by-Step Instructions [1 hour]
 
-In this section, we first describe steps to reproduce Figures 11-14 in the paper,
+In this section, we first describe steps to reproduce figures in Section 6,
 and then we show the correspondence between our Lean formalization and theorems in the paper.
 
 ### Evaluation Results (Section 6)
 
 The following commands will run all the benchmarks mentioned in Section 6,
-and then produce Figures 11-14 in LaTeX:
+and then produce all figures of Section 6 in LaTeX:
 ```sh
 cd integration-tests
 make eval-compile    # 3 min
@@ -74,17 +74,37 @@ The reference time was recorded on our test machine with Apple M1 Pro CPU and 32
 The last command will produce the following output:
 ```latex
 %%%%%%%% CGRA Table %%%%%%%%
-<Figure 11>
+<Table 1>
 
 %%%%%%%% HLS Table %%%%%%%%
-<Figure 12>
+<Table 2>
 
 %%%%%%%% Compiler Perf Table %%%%%%%%
-<Figure 13>
+<Table 3>
 
 %%%%%%%% LoC Table %%%%%%%%
-<Figure 14>
+<Table 4>
 ```
+
+Note that this output is intended for a revised version of the paper with more evaluation data.
+Since we are only allowed to upload the original submitted version at this time,
+here is how to relate figures in the original version to the script output:
+1. Figure 11:
+   - Column `Src #Loc` corresponds to Table 3, column `Source Loc`, where
+     LoC for capability annotations and fences are summed up into the new `Ann` sub-column, and the total LoC sub-column (`T`) corresponds to the new `DSL`
+     sub-column.
+   - Column `#Ops`/`W` corresponds to Table 1, column `Graph Sizes`/`Wv`.
+   - Column `#Ops`/`R` corresponds to Table 1, column `Graph Sizes`/`Rp*`.
+   - Columns `#CF` and `Overhead` are condensed into Table 1, column `%CF Ops`, which now counts the percentage of control-flow operators in all operators.
+2. Figure 12 is roughly the same as Table 4, except that we are splitting `Code` into `Code` and `Spec`.
+
+We have made refactors to the code base and minor changes to the benchmarks
+since the paper submission, so the line numbers and graph size counts might
+differ slightly from the original version.
+
+Other new evaluation results, including comparison with CIRCT (Table 2) and
+compiler performance (part of Table 3), will be included in the revised paper.
+If time permits, we will also upload the revised draft to HotCRP as comments.
 
 **Understanding the Results.**
 The commands above will compile/test/synthesize 10 test cases in `integration-tests/tests`,
