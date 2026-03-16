@@ -152,12 +152,13 @@ in `wavelet-core/lean` using the in-browser editor.
 - Section 5.2
   - Control flow conversion implementation: `Wavelet/Compile/Fn.lean`.
   - Control flow conversion forward simulation (Theorem 5.2): `sim_compile_fn` in `Wavelet/Thm/Compile/Fn/Simulation.lean`.
+- Section 5.3
   - Linking implementation: `Wavelet/Compile/Prog.lean` and `Wavelet/Compile/MapChans.lean`.
   - Linking forward simulation (Theorem 5.5): `sim_compile_prog` in `Wavelet/Thm/Compile/Prog/Simulation.lean`.
-- Section 5.3
+- Section 5.4
   - Theorem 5.7: `proc_interp_guarded_hetero_terminal_confl` in `Wavelet/Thm/Determinacy/Hetero.lean`.
   - Theorem 5.9: `compile_strong_norm` in `Wavelet/Thm/HighLevel.lean`.
-- Section 5.4
+- Section 5.5
   - Most rewrite rules are implemented in `Wavelet/Compile/Rewrite.lean`,
     and they are currently unverified.
 
