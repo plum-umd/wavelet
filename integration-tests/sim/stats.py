@@ -264,7 +264,8 @@ def to_cell(val, decimals: int = 2) -> str:
     return str(val)
 
 def tt_name(name: str) -> str:
-    return f"\\texttt{{{name.replace('_', chr(92) + 'textunderscore{}')}}}"
+    short = name.removeprefix("nn_")
+    return f"\\texttt{{{short.replace('_', chr(92) + 'textunderscore{}')}}}"
 
 def emit_table(
     all_stats: dict[str, dict],
@@ -651,7 +652,7 @@ def make_bar_plot(ax, all_stats, metric_key, compiler_keys, baseline_key, title,
     """Plot values relative to baseline_key. Only compiler_keys are drawn (baseline excluded)."""
     if bench_names is None:
         bench_names = BENCH_NAMES
-    bench_labels = [rf"\texttt{{{n.replace('_', r'\_')}}}" for n in bench_names]
+    bench_labels = [rf"\texttt{{{n.removeprefix('nn_').replace('_', r'\_')}}}" for n in bench_names]
     x = np.arange(len(bench_names))
     n_bars = len(compiler_keys)
     width = 0.9 / n_bars
@@ -670,25 +671,37 @@ def make_bar_plot(ax, all_stats, metric_key, compiler_keys, baseline_key, title,
                color=PLOT_COLORS[key], edgecolor="none")
 
     ax.axhline(1.0, color="black", linewidth=1, linestyle="--")
-    ax.yaxis.set_major_locator(plt.MaxNLocator(nbins=6))
     ax.tick_params(axis="y", labelsize=14)
     ax.set_xticks(x)
     ax.set_xticklabels(bench_labels, rotation=45, ha="right", fontsize=14)
     ax.margins(x=0.02)
     ax.set_title(title)
 
-def share_ylims(axes):
+def share_ylims(axes, include_one=True):
     """Unify y range and hide y ticks on all but the first axis."""
     lo = min(ax.get_ylim()[0] for ax in axes)
     hi = max(ax.get_ylim()[1] for ax in axes)
+    # Choose a step with at most ~8 ticks
+    span = hi - lo
+    for step in [0.25, 0.5, 1.0, 2.0, 5.0]:
+        if span / step <= 8:
+            break
+    tick_lo = np.floor(lo / step) * step
+    ticks = np.arange(tick_lo, hi + step / 2, step)
+    if include_one and 1.0 not in ticks:
+        ticks = np.sort(np.append(ticks, 1.0))
+    elif not include_one:
+        ticks = ticks[~np.isclose(ticks, 1.0)]
     for i, ax in enumerate(axes):
         ax.set_ylim(lo, hi)
+        ax.set_yticks(ticks)
         if i > 0:
             ax.set_yticklabels([])
             ax.tick_params(left=False)
 
 def show_plots(cgra, hls):
-    fig = plt.figure(figsize=(12, 5), layout="constrained")
+    fig = plt.figure(figsize=(12, 4.5), layout="constrained")
+    fig.get_layout_engine().set(w_pad=0, h_pad=0, hspace=0, wspace=0)
     # Use subfigures for each row so constrained_layout works correctly
     (top, bot) = fig.subfigures(2, 1, hspace=0.0)
 
@@ -700,7 +713,7 @@ def show_plots(cgra, hls):
     make_bar_plot(ax1, cgra, "steps", cgra_keys, "rp", "Relative Simulation Steps (vs. RipTide)")
     make_bar_plot(ax2, cgra, "graph_size", cgra_keys, "rp", "Relative Operators (vs. RipTide)")
     ax2.legend(fontsize=12, loc="upper right", ncol=3, columnspacing=0.5, handletextpad=0.5)
-    share_ylims([ax1, ax2])
+    share_ylims([ax1, ax2], include_one=False)
 
     # Row 2: three HLS plots (relative to CIRCT), excluding "sort"
     (ax3, ax4, ax5) = bot.subplots(1, 3, gridspec_kw={"wspace": 0.02})
@@ -752,7 +765,7 @@ def main():
 
     if args.plot:
         fig = show_plots(cgra, hls)
-        fig.savefig(args.plot, format="pdf", bbox_inches="tight")
+        fig.savefig(args.plot, format="pdf", bbox_inches="tight", pad_inches=0.03)
         print(f"% Plot saved to {args.plot}", file=__import__("sys").stderr)
 
 if __name__ == "__main__":
