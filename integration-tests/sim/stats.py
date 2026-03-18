@@ -698,7 +698,7 @@ def show_plots(cgra, hls):
     # Row 1: two CGRA plots (relative to RipTide)
     (ax1, ax2) = top.subplots(1, 2, gridspec_kw={"wspace": 0.02})
     make_bar_plot(ax1, cgra, "steps", cgra_keys, "rp", "Relative Simulation Steps (vs. RipTide)")
-    make_bar_plot(ax2, cgra, "graph_size", cgra_keys, "rp", "Relative Graph Size (vs. RipTide)")
+    make_bar_plot(ax2, cgra, "graph_size", cgra_keys, "rp", "Relative Operators (vs. RipTide)")
     ax2.legend(fontsize=12, loc="upper right", ncol=3, columnspacing=0.5, handletextpad=0.5)
     share_ylims([ax1, ax2])
 
