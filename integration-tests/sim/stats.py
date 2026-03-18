@@ -11,6 +11,17 @@ import json
 
 from pathlib import Path
 
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import numpy as np
+
+mpl.rcParams.update({
+    "text.usetex": True,
+    "text.latex.preamble": r"\usepackage{libertine}\usepackage[libertine]{newtxmath}\usepackage{inconsolata}",
+    "font.family": "serif",
+    "font.size": 14,
+})
+
 BENCH_NAMES = [
     "nn_vadd", "nn_norm", "nn_relu", "nn_pool",
     "nn_fc", "nn_conv", "dmv", "dmm", "dither", "sort",
@@ -478,6 +489,17 @@ def emit_stats(cgra: dict, hls: dict, perf: dict) -> str:
     if sim_code_spec > 0:
         val = round(sim_proof / sim_code_spec, 1)
         lines.append(rf"\newcommand{{\simProofRatio}}{{{val}}}")
+    # Geometric mean of %CF for each compiler
+    for var, key in [("WvCFPct", "wv"), ("WvNooptCFPct", "wv_noopt"),
+                     ("RPCFPct", "rp"), ("RPNooptCFPct", "rp_noopt")]:
+        pcts = []
+        for name in BENCH_NAMES:
+            v = cgra[name]["cf_pct"].get(key)
+            if v is not None:
+                pcts.append(float(v))
+        if pcts:
+            val = round(geomean(pcts))
+            lines.append(rf"\newcommand{{\{var}}}{{{val}}}")
     return "\n".join(lines)
 
 TYPE_CHECKER_CODE = [
@@ -613,7 +635,91 @@ def generate_loc_table() -> str:
     lines.append(r"\end{tabular}")
     return "\n".join(lines)
 
+PLOT_COLORS = {
+    "wv":       "#88CCEECF",
+    "wv_noopt": "#44AA99CF",
+    "rp_noopt": "#DDCC77CF",
+}
+
+PLOT_LABELS = {
+    "wv": "Wavelet", "wv_noopt": "Wavelet -O0", "rp_noopt": "RipTide -O0",
+}
+
+HLS_BENCH_NAMES = [n for n in BENCH_NAMES if n != "sort"]
+
+def make_bar_plot(ax, all_stats, metric_key, compiler_keys, baseline_key, title, bench_names=None):
+    """Plot values relative to baseline_key. Only compiler_keys are drawn (baseline excluded)."""
+    if bench_names is None:
+        bench_names = BENCH_NAMES
+    bench_labels = [rf"\texttt{{{n.replace('_', r'\_')}}}" for n in bench_names]
+    x = np.arange(len(bench_names))
+    n_bars = len(compiler_keys)
+    width = 0.9 / n_bars
+
+    for i, key in enumerate(compiler_keys):
+        vals = []
+        for name in bench_names:
+            v = all_stats[name][metric_key].get(key)
+            base = all_stats[name][metric_key].get(baseline_key)
+            if v is not None and base:
+                vals.append(v / base)
+            else:
+                vals.append(0)
+        offset = (i - (n_bars - 1) / 2) * width
+        ax.bar(x + offset, vals, width, label=PLOT_LABELS[key],
+               color=PLOT_COLORS[key], edgecolor="none")
+
+    ax.axhline(1.0, color="black", linewidth=1, linestyle="--")
+    ax.yaxis.set_major_locator(plt.MaxNLocator(nbins=6))
+    ax.tick_params(axis="y", labelsize=14)
+    ax.set_xticks(x)
+    ax.set_xticklabels(bench_labels, rotation=45, ha="right", fontsize=14)
+    ax.margins(x=0.02)
+    ax.set_title(title)
+
+def share_ylims(axes):
+    """Unify y range and hide y ticks on all but the first axis."""
+    lo = min(ax.get_ylim()[0] for ax in axes)
+    hi = max(ax.get_ylim()[1] for ax in axes)
+    for i, ax in enumerate(axes):
+        ax.set_ylim(lo, hi)
+        if i > 0:
+            ax.set_yticklabels([])
+            ax.tick_params(left=False)
+
+def show_plots(cgra, hls):
+    fig = plt.figure(figsize=(12, 5), layout="constrained")
+    # Use subfigures for each row so constrained_layout works correctly
+    (top, bot) = fig.subfigures(2, 1, hspace=0.0)
+
+    cgra_keys = ["wv", "wv_noopt", "rp_noopt"]
+    hls_keys = ["wv", "wv_noopt"]
+
+    # Row 1: two CGRA plots (relative to RipTide)
+    (ax1, ax2) = top.subplots(1, 2, gridspec_kw={"wspace": 0.02})
+    make_bar_plot(ax1, cgra, "steps", cgra_keys, "rp", "Relative Simulation Steps (vs. RipTide)")
+    make_bar_plot(ax2, cgra, "graph_size", cgra_keys, "rp", "Relative Graph Size (vs. RipTide)")
+    ax2.legend(fontsize=12, loc="upper right", ncol=3, columnspacing=0.5, handletextpad=0.5)
+    share_ylims([ax1, ax2])
+
+    # Row 2: three HLS plots (relative to CIRCT), excluding "sort"
+    (ax3, ax4, ax5) = bot.subplots(1, 3, gridspec_kw={"wspace": 0.02})
+    make_bar_plot(ax3, hls, "exec_time", hls_keys, "crt",
+                  "Relative Exec. Time (vs. CIRCT)", bench_names=HLS_BENCH_NAMES)
+    make_bar_plot(ax4, hls, "luts", hls_keys, "crt",
+                  "Relative LUTs (vs. CIRCT)", bench_names=HLS_BENCH_NAMES)
+    make_bar_plot(ax5, hls, "ffs", hls_keys, "crt",
+                  "Relative FFs (vs. CIRCT)", bench_names=HLS_BENCH_NAMES)
+    share_ylims([ax3, ax4, ax5])
+
+    return fig
+
 def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--plot", metavar="PDF_FILE", help="Generate bar plots and save to PDF")
+    args = parser.parse_args()
+
     cgra = {name: collect_cgra(name) for name in BENCH_NAMES}
     hls = {name: collect_hls(name) for name in BENCH_NAMES}
     perf = {name: collect_compiler_perf(name) for name in BENCH_NAMES}
@@ -643,6 +749,11 @@ def main():
     print()
     print("%%%%%%%% Other Stats %%%%%%%%")
     print(emit_stats(cgra, hls, perf))
+
+    if args.plot:
+        fig = show_plots(cgra, hls)
+        fig.savefig(args.plot, format="pdf", bbox_inches="tight")
+        print(f"% Plot saved to {args.plot}", file=__import__("sys").stderr)
 
 if __name__ == "__main__":
     main()
