@@ -637,19 +637,20 @@ def generate_loc_table() -> str:
     return "\n".join(lines)
 
 PLOT_COLORS = {
-    "wv":       "#88CCEECF",
-    "wv_noopt": "#44AA99CF",
-    "rp_noopt": "#DDCC77CF",
+    "wv":       "#88CCEE",
+    "rp":       "#A3A3A3",
+    "rp_noopt": "#DDCC77",
+    "crt":      "#A3A3A3",
 }
 
 PLOT_LABELS = {
-    "wv": "Wavelet", "wv_noopt": "Wavelet -O0", "rp_noopt": "RipTide -O0",
+    "wv": "Wavelet", "rp": "RipTide", "rp_noopt": "RipTide w/o Stream", "crt": "CIRCT",
 }
 
 HLS_BENCH_NAMES = [n for n in BENCH_NAMES if n != "sort"]
 
-def make_bar_plot(ax, all_stats, metric_key, compiler_keys, baseline_key, title, bench_names=None):
-    """Plot values relative to baseline_key. Only compiler_keys are drawn (baseline excluded)."""
+def make_bar_plot(ax, all_stats, metric_key, compiler_keys, baseline_key, title, bench_names=None, x_rotation=0):
+    """Plot values relative to baseline_key. All compiler_keys (including baseline) are drawn as bars."""
     if bench_names is None:
         bench_names = BENCH_NAMES
     bench_labels = [rf"\texttt{{{n.removeprefix('nn_').replace('_', r'\_')}}}" for n in bench_names]
@@ -670,28 +671,21 @@ def make_bar_plot(ax, all_stats, metric_key, compiler_keys, baseline_key, title,
         ax.bar(x + offset, vals, width, label=PLOT_LABELS[key],
                color=PLOT_COLORS[key], edgecolor="none")
 
-    ax.axhline(1.0, color="black", linewidth=1, linestyle="--")
     ax.tick_params(axis="y", labelsize=14)
     ax.set_xticks(x)
-    ax.set_xticklabels(bench_labels, rotation=45, ha="right", fontsize=14)
+    ax.set_xticklabels(bench_labels, rotation=x_rotation,
+                       ha="right" if x_rotation else "center", fontsize=14)
     ax.margins(x=0.02)
     ax.set_title(title)
 
-def share_ylims(axes, include_one=True):
+def share_ylims(axes, step=None):
     """Unify y range and hide y ticks on all but the first axis."""
     lo = min(ax.get_ylim()[0] for ax in axes)
     hi = max(ax.get_ylim()[1] for ax in axes)
-    # Choose a step with at most ~8 ticks
-    span = hi - lo
-    for step in [0.25, 0.5, 1.0, 2.0, 5.0]:
-        if span / step <= 8:
-            break
-    tick_lo = np.floor(lo / step) * step
-    ticks = np.arange(tick_lo, hi + step / 2, step)
-    if include_one and 1.0 not in ticks:
-        ticks = np.sort(np.append(ticks, 1.0))
-    elif not include_one:
-        ticks = ticks[~np.isclose(ticks, 1.0)]
+    if step is None:
+        span = hi - lo
+        step = next(s for s in [0.25, 0.5, 1.0, 2.0, 5.0] if span / s <= 8)
+    ticks = np.arange(np.floor(lo / step) * step, hi + step / 2, step)
     for i, ax in enumerate(axes):
         ax.set_ylim(lo, hi)
         ax.set_yticks(ticks)
@@ -703,27 +697,30 @@ def show_plots(cgra, hls):
     fig = plt.figure(figsize=(12, 4.5), layout="constrained")
     fig.get_layout_engine().set(w_pad=0, h_pad=0, hspace=0, wspace=0)
     # Use subfigures for each row so constrained_layout works correctly
-    (top, bot) = fig.subfigures(2, 1, hspace=0.0)
+    (top, bot) = fig.subfigures(2, 1, hspace=0.05)
 
-    cgra_keys = ["wv", "wv_noopt", "rp_noopt"]
-    hls_keys = ["wv", "wv_noopt"]
+    cgra_keys = ["wv", "rp_noopt", "rp"]
+    hls_keys = ["wv", "crt"]
 
     # Row 1: two CGRA plots (relative to RipTide)
     (ax1, ax2) = top.subplots(1, 2, gridspec_kw={"wspace": 0.02})
-    make_bar_plot(ax1, cgra, "steps", cgra_keys, "rp", "Relative Simulation Steps (vs. RipTide)")
-    make_bar_plot(ax2, cgra, "graph_size", cgra_keys, "rp", "Relative Operators (vs. RipTide)")
-    ax2.legend(fontsize=12, loc="upper right", ncol=3, columnspacing=0.5, handletextpad=0.5)
-    share_ylims([ax1, ax2], include_one=False)
+    make_bar_plot(ax1, cgra, "steps", cgra_keys, "rp", "Relative Simulation Steps vs. RipTide")
+    make_bar_plot(ax2, cgra, "graph_size", cgra_keys, "rp", "Relative \\#Operators vs. RipTide")
+    ax2.legend(fontsize=14, loc="upper right", ncol=3, columnspacing=1, handletextpad=0.3, frameon=False,
+               bbox_to_anchor=(1.0, 1.03))
+    share_ylims([ax1, ax2])
 
     # Row 2: three HLS plots (relative to CIRCT), excluding "sort"
-    (ax3, ax4, ax5) = bot.subplots(1, 3, gridspec_kw={"wspace": 0.02})
+    (ax3, ax4, ax5) = bot.subplots(1, 3, gridspec_kw={"wspace": 0})
     make_bar_plot(ax3, hls, "exec_time", hls_keys, "crt",
-                  "Relative Exec. Time (vs. CIRCT)", bench_names=HLS_BENCH_NAMES)
+                  "Relative Exec. Time vs. CIRCT", bench_names=HLS_BENCH_NAMES, x_rotation=45)
     make_bar_plot(ax4, hls, "luts", hls_keys, "crt",
-                  "Relative LUTs (vs. CIRCT)", bench_names=HLS_BENCH_NAMES)
+                  "Relative \\#LUTs vs. CIRCT", bench_names=HLS_BENCH_NAMES, x_rotation=45)
     make_bar_plot(ax5, hls, "ffs", hls_keys, "crt",
-                  "Relative FFs (vs. CIRCT)", bench_names=HLS_BENCH_NAMES)
-    share_ylims([ax3, ax4, ax5])
+                  "Relative \\#FFs vs. CIRCT", bench_names=HLS_BENCH_NAMES, x_rotation=45)
+    ax5.legend(fontsize=14, loc="upper right", ncol=2, columnspacing=1, handletextpad=0.3, frameon=False,
+               bbox_to_anchor=(1.0, 1.03))
+    share_ylims([ax3, ax4, ax5], step=0.5)
 
     return fig
 
