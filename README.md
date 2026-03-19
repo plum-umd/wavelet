@@ -1,4 +1,4 @@
-Wavelet is a compiler from an imperative Rust-based DSL to asynchronous dataflow circuits,
+Wavelet is a compiler from a Rust-based DSL to asynchronous dataflow circuits,
 with its core passes formally verified in the Lean theorem prover.
 
 Currently supported backends include the [`handshake` dialect](https://circt.llvm.org/docs/Dialects/Handshake) from [LLVM CIRCT](https://circt.llvm.org/)
