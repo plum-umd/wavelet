@@ -647,8 +647,6 @@ PLOT_LABELS = {
     "wv": "Wavelet", "rp": "RipTide", "rp_noopt": "RipTide w/o Stream", "crt": "CIRCT",
 }
 
-HLS_BENCH_NAMES = [n for n in BENCH_NAMES if n != "sort"]
-
 def make_bar_plot(ax, all_stats, metric_key, compiler_keys, baseline_key, title, bench_names=None, x_rotation=0):
     """Plot values relative to baseline_key. All compiler_keys (including baseline) are drawn as bars."""
     if bench_names is None:
@@ -707,19 +705,19 @@ def show_plots(cgra, hls):
     make_bar_plot(ax1, cgra, "steps", cgra_keys, "rp", "Relative Simulation Steps vs. RipTide")
     make_bar_plot(ax2, cgra, "graph_size", cgra_keys, "rp", "Relative \\#Operators vs. RipTide")
     ax2.legend(fontsize=14, loc="upper right", ncol=3, columnspacing=1, handletextpad=0.3, frameon=False,
-               bbox_to_anchor=(1.0, 1.03))
+               bbox_to_anchor=(1.02, 1.05))
     share_ylims([ax1, ax2])
 
     # Row 2: three HLS plots (relative to CIRCT), excluding "sort"
     (ax3, ax4, ax5) = bot.subplots(1, 3, gridspec_kw={"wspace": 0})
     make_bar_plot(ax3, hls, "exec_time", hls_keys, "crt",
-                  "Relative Exec. Time vs. CIRCT", bench_names=HLS_BENCH_NAMES, x_rotation=45)
+                  "Relative Exec. Time vs. CIRCT", bench_names=BENCH_NAMES, x_rotation=45)
     make_bar_plot(ax4, hls, "luts", hls_keys, "crt",
-                  "Relative \\#LUTs vs. CIRCT", bench_names=HLS_BENCH_NAMES, x_rotation=45)
+                  "Relative \\#LUTs vs. CIRCT", bench_names=BENCH_NAMES, x_rotation=45)
     make_bar_plot(ax5, hls, "ffs", hls_keys, "crt",
-                  "Relative \\#FFs vs. CIRCT", bench_names=HLS_BENCH_NAMES, x_rotation=45)
+                  "Relative \\#FFs vs. CIRCT", bench_names=BENCH_NAMES, x_rotation=45)
     ax5.legend(fontsize=14, loc="upper right", ncol=2, columnspacing=1, handletextpad=0.3, frameon=False,
-               bbox_to_anchor=(1.0, 1.03))
+               bbox_to_anchor=(1.02, 1.05))
     share_ylims([ax3, ax4, ax5], step=0.5)
 
     return fig

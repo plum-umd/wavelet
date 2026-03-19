@@ -345,7 +345,7 @@ EVAL_NAMES := \
 	sort
 
 # Skip some targets that are expected to fail
-SKIP_TARGETS := circt-eval-sort
+SKIP_TARGETS :=
 
 # Routing takes too long for these designs,
 # so we use placement-only timing estimates.
