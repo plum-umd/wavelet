@@ -24,9 +24,7 @@ WORKDIR /wavelet/integration-tests
 # ╚██████╗██║██║  ██║╚██████╗   ██║
 #  ╚═════╝╚═╝╚═╝  ╚═╝ ╚═════╝   ╚═╝
 FROM build-base AS build-circt
-RUN git clone https://github.com/llvm/circt.git && \
-    git -C circt checkout 894bd8c && \
-    git -C circt submodule update --init --recursive --depth=1 --jobs=$(nproc) && \
+RUN git clone -b wavelet --recursive --depth=1 --jobs=$(nproc) https://github.com/zhengyao-lin/circt.git && \
     mkdir -p build/circt && \
     cmake circt/llvm/llvm -G Ninja -B build/circt \
 		-DCMAKE_BUILD_TYPE=Release \
