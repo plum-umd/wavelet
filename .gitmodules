@@ -1,6 +1,7 @@
 [submodule "integration-tests/circt"]
 	path = integration-tests/circt
-	url = https://github.com/llvm/circt.git
+	url = https://github.com/zhengyao-lin/circt.git
+	branch = wavelet
 [submodule "integration-tests/polygeist"]
 	path = integration-tests/polygeist
 	url = https://github.com/llvm/Polygeist.git
