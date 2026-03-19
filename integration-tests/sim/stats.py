@@ -637,10 +637,10 @@ def generate_loc_table() -> str:
     return "\n".join(lines)
 
 PLOT_COLORS = {
-    "wv":       "#88CCEE",
-    "rp":       "#A3A3A3",
-    "rp_noopt": "#DDCC77",
-    "crt":      "#A3A3A3",
+    "wv":       "#4C72B0",
+    "rp":       "#D1D1D1",
+    "rp_noopt": "#CCB974",
+    "crt":      "#D1D1D1",
 }
 
 PLOT_LABELS = {
