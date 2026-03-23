@@ -490,6 +490,23 @@ def emit_stats(cgra: dict, hls: dict, perf: dict) -> str:
     if sim_code_spec > 0:
         val = round(sim_proof / sim_code_spec, 1)
         lines.append(rf"\newcommand{{\simProofRatio}}{{{val}}}")
+    # Total Lean LoC by category (code, spec, proof) across all components
+    all_lean_code_files = [
+        (CF_CONVERSION_CODE, lean_base),
+        (LINKING_CODE,       lean_base),
+    ]
+    all_lean_spec_files = CF_CONVERSION_SPEC + LINKING_SPEC + DETERMINACY_SPEC
+    all_lean_proof_files = CF_CONVERSION_PROOF + LINKING_PROOF + DETERMINACY_PROOF
+    lean_code_loc = sum(count_files(base, files) for files, base in all_lean_code_files)
+    lean_spec_loc = count_files(lean_base, all_lean_spec_files)
+    lean_proof_loc = count_files(lean_base, all_lean_proof_files)
+    lines.append(rf"\newcommand{{\leanCodeLoc}}{{{fmt_loc(lean_code_loc)}}}")
+    lines.append(rf"\newcommand{{\leanSpecLoc}}{{{fmt_loc(lean_spec_loc)}}}")
+    lines.append(rf"\newcommand{{\leanProofLoc}}{{{fmt_loc(lean_proof_loc)}}}")
+    lean_code_spec = lean_code_loc + lean_spec_loc
+    if lean_code_spec > 0:
+        val = round(lean_proof_loc / lean_code_spec, 1)
+        lines.append(rf"\newcommand{{\leanProofRatio}}{{{val}}}")
     # Geometric mean of %CF for each compiler
     for var, key in [("WvCFPct", "wv"), ("WvNooptCFPct", "wv_noopt"),
                      ("RPCFPct", "rp"), ("RPNooptCFPct", "rp_noopt")]:
