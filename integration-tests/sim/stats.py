@@ -490,6 +490,10 @@ def emit_stats(cgra: dict, hls: dict, perf: dict) -> str:
     if sim_code_spec > 0:
         val = round(sim_proof / sim_code_spec, 1)
         lines.append(rf"\newcommand{{\simProofRatio}}{{{val}}}")
+    # Total Rust LoC
+    rust_base = project_root / "wavelet-elab" / "src"
+    rust_loc = count_files(rust_base, TYPE_CHECKER_CODE + PERM_VALIDATOR_CODE)
+    lines.append(rf"\newcommand{{\rustLoc}}{{{fmt_loc(rust_loc)}}}")
     # Total Lean LoC by category (code, spec, proof) across all components
     all_lean_code_files = [
         (CF_CONVERSION_CODE, lean_base),
