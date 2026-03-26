@@ -493,7 +493,7 @@ def emit_stats(cgra: dict, hls: dict, perf: dict) -> str:
     # Total Rust LoC
     rust_base = project_root / "wavelet-elab" / "src"
     rust_loc = count_files(rust_base, TYPE_CHECKER_CODE + PERM_VALIDATOR_CODE)
-    lines.append(rf"\newcommand{{\rustLoc}}{{{fmt_loc(rust_loc)}}}")
+    lines.append(rf"\newcommand{{\rustLoc}}{{{fmt_loc(rust_loc)}\xspace}}")
     # Total Lean LoC by category (code, spec, proof) across all components
     all_lean_code_files = [
         (CF_CONVERSION_CODE, lean_base),
@@ -504,9 +504,13 @@ def emit_stats(cgra: dict, hls: dict, perf: dict) -> str:
     lean_code_loc = sum(count_files(base, files) for files, base in all_lean_code_files)
     lean_spec_loc = count_files(lean_base, all_lean_spec_files)
     lean_proof_loc = count_files(lean_base, all_lean_proof_files)
-    lines.append(rf"\newcommand{{\leanCodeLoc}}{{{fmt_loc(lean_code_loc)}}}")
-    lines.append(rf"\newcommand{{\leanSpecLoc}}{{{fmt_loc(lean_spec_loc)}}}")
-    lines.append(rf"\newcommand{{\leanProofLoc}}{{{fmt_loc(lean_proof_loc)}}}")
+    lines.append(rf"\newcommand{{\leanCodeLoc}}{{{fmt_loc(lean_code_loc)}\xspace}}")
+    lines.append(rf"\newcommand{{\leanSpecLoc}}{{{fmt_loc(lean_spec_loc)}\xspace}}")
+    lines.append(rf"\newcommand{{\leanProofLoc}}{{{fmt_loc(lean_proof_loc)}\xspace}}")
+    cfc_proof_loc = count_files(lean_base, CF_CONVERSION_PROOF)
+    det_proof_loc = count_files(lean_base, DETERMINACY_PROOF)
+    lines.append(rf"\newcommand{{\cfcProofLoc}}{{{fmt_loc(cfc_proof_loc)}\xspace}}")
+    lines.append(rf"\newcommand{{\detProofLoc}}{{{fmt_loc(det_proof_loc)}\xspace}}")
     lean_code_spec = lean_code_loc + lean_spec_loc
     if lean_code_spec > 0:
         val = round(lean_proof_loc / lean_code_spec, 1)
