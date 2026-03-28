@@ -717,10 +717,10 @@ def share_ylims(axes, step=None):
             ax.tick_params(left=False)
 
 def show_plots(cgra, hls):
-    fig = plt.figure(figsize=(12, 4.5), layout="constrained")
+    fig = plt.figure(figsize=(12, 5), layout="constrained")
     fig.get_layout_engine().set(w_pad=0, h_pad=0, hspace=0, wspace=0)
     # Use subfigures for each row so constrained_layout works correctly
-    (top, bot) = fig.subfigures(2, 1, hspace=0.05)
+    (top, bot) = fig.subfigures(2, 1, hspace=0.05, height_ratios=[1, 1])
 
     cgra_keys = ["wv", "rp_noopt", "rp"]
     hls_keys = ["wv", "crt"]
