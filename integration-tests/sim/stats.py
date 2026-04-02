@@ -15,12 +15,19 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
 
-mpl.rcParams.update({
-    "text.usetex": True,
-    "text.latex.preamble": r"\usepackage{libertine}\usepackage[libertine]{newtxmath}\usepackage{inconsolata}",
-    "font.family": "serif",
-    "font.size": 14,
-})
+def configure_mpl(use_tex: bool = True):
+    if use_tex:
+        mpl.rcParams.update({
+            "text.usetex": True,
+            "text.latex.preamble": r"\usepackage{libertine}\usepackage[libertine]{newtxmath}\usepackage{inconsolata}",
+            "font.family": "serif",
+            "font.size": 14,
+        })
+    else:
+        mpl.rcParams.update({
+            "text.usetex": False,
+            "font.size": 14,
+        })
 
 BENCH_NAMES = [
     "nn_vadd", "nn_norm", "nn_relu", "nn_pool",
@@ -676,7 +683,10 @@ def make_bar_plot(ax, all_stats, metric_key, compiler_keys, baseline_key, title,
     """Plot values relative to baseline_key. All compiler_keys (including baseline) are drawn as bars."""
     if bench_names is None:
         bench_names = BENCH_NAMES
-    bench_labels = [rf"\texttt{{{n.removeprefix('nn_').replace('_', r'\_')}}}" for n in bench_names]
+    if mpl.rcParams.get("text.usetex"):
+        bench_labels = [rf"\texttt{{{n.removeprefix('nn_').replace('_', r'\_')}}}" for n in bench_names]
+    else:
+        bench_labels = [n.removeprefix("nn_") for n in bench_names]
     x = np.arange(len(bench_names))
     n_bars = len(compiler_keys)
     width = 0.9 / n_bars
@@ -728,7 +738,7 @@ def show_plots(cgra, hls):
     # Row 1: two CGRA plots (relative to RipTide)
     (ax1, ax2) = top.subplots(1, 2, gridspec_kw={"wspace": 0.02})
     make_bar_plot(ax1, cgra, "steps", cgra_keys, "rp", "Relative Simulation Steps vs. RipTide")
-    make_bar_plot(ax2, cgra, "graph_size", cgra_keys, "rp", "Relative \\#Operators vs. RipTide")
+    make_bar_plot(ax2, cgra, "graph_size", cgra_keys, "rp", "Relative #Operators vs. RipTide" if not mpl.rcParams.get("text.usetex") else "Relative \\#Operators vs. RipTide")
     ax2.legend(fontsize=14, loc="upper right", ncol=3, columnspacing=1, handletextpad=0.3, frameon=False,
                bbox_to_anchor=(1.02, 1.05))
     share_ylims([ax1, ax2])
@@ -738,9 +748,9 @@ def show_plots(cgra, hls):
     make_bar_plot(ax3, hls, "exec_time", hls_keys, "crt",
                   "Relative Exec. Time vs. CIRCT", bench_names=BENCH_NAMES, x_rotation=45)
     make_bar_plot(ax4, hls, "luts", hls_keys, "crt",
-                  "Relative \\#LUTs vs. CIRCT", bench_names=BENCH_NAMES, x_rotation=45)
+                  "Relative #LUTs vs. CIRCT" if not mpl.rcParams.get("text.usetex") else "Relative \\#LUTs vs. CIRCT", bench_names=BENCH_NAMES, x_rotation=45)
     make_bar_plot(ax5, hls, "ffs", hls_keys, "crt",
-                  "Relative \\#FFs vs. CIRCT", bench_names=BENCH_NAMES, x_rotation=45)
+                  "Relative #FFs vs. CIRCT" if not mpl.rcParams.get("text.usetex") else "Relative \\#FFs vs. CIRCT", bench_names=BENCH_NAMES, x_rotation=45)
     ax5.legend(fontsize=14, loc="upper right", ncol=2, columnspacing=1, handletextpad=0.3, frameon=False,
                bbox_to_anchor=(1.02, 1.05))
     share_ylims([ax3, ax4, ax5], step=0.5)
@@ -751,7 +761,10 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--plot", metavar="PDF_FILE", help="Generate bar plots and save to PDF")
+    parser.add_argument("--no-tex", action="store_true", default=False, help="Disable LaTeX rendering in matplotlib")
     args = parser.parse_args()
+
+    configure_mpl(use_tex=not args.no_tex)
 
     cgra = {name: collect_cgra(name) for name in BENCH_NAMES}
     hls = {name: collect_hls(name) for name in BENCH_NAMES}

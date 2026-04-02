@@ -65,13 +65,13 @@ The following commands will run all the benchmarks mentioned in Section 6,
 and then produce all figures of Section 6 in LaTeX:
 ```sh
 cd integration-tests
-make eval-compile    # 3 min
-make eval -j<N>      # 7.5 min with -j10
-python3 sim/stats.py --plot plot.pdf
+make eval-compile    # 30 sec
+make eval -j<N>      # 10 min with -j10
+python3 sim/stats.py --plot plot.pdf --no-tex
 ```
 The reference time was recorded on our test machine with Apple M1 Pro CPU and 32 GiB of RAM.
 
-Compared with our latest revision, the last command will produce the following output:
+Compared with our latest revision, the last Python script will produce the following output:
 ```latex
 %%%%%%%% CGRA Table %%%%%%%%
 <Consistent with Figure 11>
