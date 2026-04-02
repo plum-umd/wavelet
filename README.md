@@ -67,44 +67,25 @@ and then produce all figures of Section 6 in LaTeX:
 cd integration-tests
 make eval-compile    # 3 min
 make eval -j<N>      # 7.5 min with -j10
-python3 sim/stats.py
+python3 sim/stats.py --plot plot.pdf
 ```
 The reference time was recorded on our test machine with Apple M1 Pro CPU and 32 GiB of RAM.
 
-The last command will produce the following output:
+Compared with our latest revision, the last command will produce the following output:
 ```latex
 %%%%%%%% CGRA Table %%%%%%%%
-<Table 1>
+<Consistent with Figure 11>
 
 %%%%%%%% HLS Table %%%%%%%%
-<Table 2>
+<Consistent with Figure 11>
 
 %%%%%%%% Compiler Perf Table %%%%%%%%
-<Table 3>
+<Figure 12>
 
 %%%%%%%% LoC Table %%%%%%%%
-<Table 4>
+<Consistent with Section 6.3>
 ```
-
-Note that this output is intended for a revised version of the paper with more evaluation data.
-Since we are only allowed to upload the original submitted version at this time,
-here is how to relate figures in the original version to the script output:
-1. Figure 11:
-   - Column `Src #Loc` corresponds to Table 3, column `Source Loc`, where
-     LoC for capability annotations and fences are summed up into the new `Ann` sub-column, and the total LoC sub-column (`T`) corresponds to the new `DSL`
-     sub-column.
-   - Column `#Ops`/`W` corresponds to Table 1, column `Graph Sizes`/`Wv`.
-   - Column `#Ops`/`R` corresponds to Table 1, column `Graph Sizes`/`Rp*`.
-   - Columns `#CF` and `Overhead` are condensed into Table 1, column `%CF Ops`, which now counts the percentage of control-flow operators in all operators.
-2. Figure 12 is roughly the same as Table 4, except that we are splitting `Code` into `Code` and `Spec`.
-
-We have made refactors to the code base and minor changes to the benchmarks
-since the paper submission, so the line numbers and graph size counts might
-differ slightly from the original version.
-
-Other new evaluation results, including comparison with CIRCT (Table 2) and
-compiler performance (part of Table 3), will be included in the revised paper.
-If time permits, we will also upload the revised draft to HotCRP as comments.
+The output PDF `plot.pdf` should be similar to Figure 11.
 
 **Understanding the Results.**
 The commands above will compile/test/synthesize 10 test cases in `integration-tests/tests`,
