@@ -675,11 +675,21 @@ PLOT_COLORS = {
     "crt":      "#D1D1D1",
 }
 
+def rgba(r: int, g: int, b: int, a: float) -> tuple[float, float, float, float]:
+    return (min(255, r) / 255, min(255, g) / 255, min(255, b) / 255, a)
+
+PLOT_COLORS_DARK = {
+    "wv":       rgba(79, 173, 234, 1),
+    "rp":       rgba(255, 255, 255, 0.4),
+    "rp_noopt": rgba(218, 120, 66, 1),
+    "crt":      rgba(255, 255, 255, 0.4),
+}
+
 PLOT_LABELS = {
     "wv": "Wavelet", "rp": "RipTide", "rp_noopt": "RipTide w/o Stream", "crt": "CIRCT",
 }
 
-def make_bar_plot(ax, all_stats, metric_key, compiler_keys, baseline_key, title, bench_names=None, x_rotation=0):
+def make_bar_plot(ax, all_stats, metric_key, compiler_keys, baseline_key, title, bench_names=None, x_rotation=0, dark=False, empty=False):
     """Plot values relative to baseline_key. All compiler_keys (including baseline) are drawn as bars."""
     if bench_names is None:
         bench_names = BENCH_NAMES
@@ -701,15 +711,27 @@ def make_bar_plot(ax, all_stats, metric_key, compiler_keys, baseline_key, title,
             else:
                 vals.append(0)
         offset = (i - (n_bars - 1) / 2) * width
+        colors = PLOT_COLORS_DARK if dark else PLOT_COLORS
+        edge = "white" if dark else "none"
+        face = "none" if empty else colors[key]
+        bar_edge = "none" if empty else edge
         ax.bar(x + offset, vals, width, label=PLOT_LABELS[key],
-               color=PLOT_COLORS[key], edgecolor="none")
+               color=face, edgecolor=bar_edge, linewidth=0 if empty else (0.8 if dark else 0))
 
-    ax.tick_params(axis="y", labelsize=14)
+    fg = "white" if dark else "black"
+    ax.tick_params(axis="y", labelsize=14, colors=fg)
+    ax.tick_params(axis="x", colors=fg)
     ax.set_xticks(x)
     ax.set_xticklabels(bench_labels, rotation=x_rotation,
-                       ha="right" if x_rotation else "center", fontsize=14)
+                       ha="right" if x_rotation else "center", fontsize=14, color=fg)
+    if dark:
+        for lbl in ax.get_yticklabels():
+            lbl.set_family("sans-serif")
+    for spine in ax.spines.values():
+        spine.set_color(fg)
     ax.margins(x=0.02)
-    ax.set_title(title)
+    if title:
+        ax.set_title(title, color=fg)
 
 def share_ylims(axes, step=None):
     """Unify y range and hide y ticks on all but the first axis."""
@@ -757,10 +779,59 @@ def show_plots(cgra, hls):
 
     return fig
 
+def show_slides(cgra, hls, out_dir: Path):
+    """Generate figures (for dark-background slides) into out_dir."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    cgra_keys = ["wv", "rp_noopt", "rp"]
+    hls_keys = ["wv", "crt"]
+    h = r"\#" if mpl.rcParams.get("text.usetex") else "#"
+
+    def save(fig, name):
+        fig.patch.set_facecolor("black")
+        out_path = out_dir / f"{name}.pdf"
+        fig.savefig(out_path, format="pdf", bbox_inches="tight", pad_inches=0.03, facecolor="black")
+        plt.close(fig)
+        print(f"% Slide saved to {out_path}", file=__import__("sys").stderr)
+
+    # Combined CGRA figure: steps on top, graph size on bottom, aligned x-axis
+    cgra_rows = [
+        ("steps",      "Relative Simulation Steps"),
+        ("graph_size", f"Relative {h}Operators"),
+    ]
+    for empty in (False, True):
+        fig, axes = plt.subplots(
+            len(cgra_rows), 1, figsize=(9, 6), layout="constrained", sharex=True,
+        )
+        for ax, (mk, title) in zip(axes, cgra_rows):
+            make_bar_plot(ax, cgra, mk, cgra_keys, "rp", title=title, dark=True, empty=empty)
+            ax.set_facecolor("black")
+        for ax in axes[:-1]:
+            ax.tick_params(axis="x", labelbottom=False, bottom=False)
+        save(fig, "cgra-empty" if empty else "cgra")
+
+    # Combined HLS figure: exec_time, luts, ffs stacked, aligned x-axis
+    hls_rows = [
+        ("exec_time", "Relative Exec. Time"),
+        ("luts",      f"Relative {h}LUTs"),
+        ("ffs",       f"Relative {h}FFs"),
+    ]
+    for empty in (False, True):
+        fig, axes = plt.subplots(
+            len(hls_rows), 1, figsize=(9, 6), layout="constrained", sharex=True,
+        )
+        for ax, (mk, title) in zip(axes, hls_rows):
+            make_bar_plot(ax, hls, mk, hls_keys, "crt", title=title, dark=True, empty=empty)
+            ax.set_facecolor("black")
+        for ax in axes[:-1]:
+            ax.tick_params(axis="x", labelbottom=False, bottom=False)
+        save(fig, "hls-empty" if empty else "hls")
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--plot", metavar="PDF_FILE", help="Generate bar plots and save to PDF")
+    parser.add_argument("--slides", metavar="DIR", help="Generate 5 separate figures (dark-slide colors) into DIR")
     parser.add_argument("--no-tex", action="store_true", default=False, help="Disable LaTeX rendering in matplotlib")
     args = parser.parse_args()
 
@@ -800,6 +871,9 @@ def main():
         fig = show_plots(cgra, hls)
         fig.savefig(args.plot, format="pdf", bbox_inches="tight", pad_inches=0.03)
         print(f"% Plot saved to {args.plot}", file=__import__("sys").stderr)
+
+    if args.slides:
+        show_slides(cgra, hls, Path(args.slides))
 
 if __name__ == "__main__":
     main()
