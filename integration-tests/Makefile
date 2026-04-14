@@ -156,8 +156,9 @@ build/yosys/yosys: yosys
 		> $@.tmp || (rm -f $@.tmp && exit 1)
 	mv $@.tmp $@
 
-# Compile MLIR/scf to SystemVerilog
-%.circt.sv: %.circt.scf.mlir
+# Compile MLIR/scf to SystemVerilog,
+# and also produce the intermediate Handshake IR.
+%.circt.sv: %.circt.scf.mlir %.circt.handshake.mlir
 	$(HLSTOOL) $< \
 		--verilog \
 		--dynamic-hw \

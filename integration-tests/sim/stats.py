@@ -38,8 +38,10 @@ TRIVIAL_OPS = { "fork", "forward", "const", "sink", "inact" }
 CF_OPS = { "switch", "steer", "merge", "carry", "order", "forwardc", "inv" }
 MEM_OPS = { "load", "store" }
 
+TESTS_DIR: Path = Path(__file__).parent.parent / "tests"
+
 def test_path(name: str, suffix: str) -> Path:
-    return Path(__file__).parent.parent / "tests" / name.replace("_", "-") / f"test.{suffix}"
+    return TESTS_DIR / name.replace("_", "-") / f"test.{suffix}"
 
 def read_file(path: Path) -> str | None:
     try:
@@ -833,7 +835,12 @@ def main():
     parser.add_argument("--plot", metavar="PDF_FILE", help="Generate bar plots and save to PDF")
     parser.add_argument("--slides", metavar="DIR", help="Generate 5 separate figures (dark-slide colors) into DIR")
     parser.add_argument("--no-tex", action="store_true", default=False, help="Disable LaTeX rendering in matplotlib")
+    parser.add_argument("--tests", metavar="DIR", help="Directory containing per-benchmark log subdirs (default: ../tests)")
     args = parser.parse_args()
+
+    if args.tests:
+        global TESTS_DIR
+        TESTS_DIR = Path(args.tests)
 
     configure_mpl(use_tex=not args.no_tex)
 
