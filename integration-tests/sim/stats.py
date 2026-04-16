@@ -671,9 +671,9 @@ def generate_loc_table() -> str:
     return "\n".join(lines)
 
 PLOT_COLORS = {
-    "wv":       "#4C72B0",
+    "wv":       (0.145, 0.612, 0.824, 0.7),
     "rp":       "#D1D1D1",
-    "rp_noopt": "#CCB974",
+    "rp_noopt": (0.906, 0.463, 0.247, 0.7),
     "crt":      "#D1D1D1",
 }
 
@@ -714,11 +714,11 @@ def make_bar_plot(ax, all_stats, metric_key, compiler_keys, baseline_key, title,
                 vals.append(0)
         offset = (i - (n_bars - 1) / 2) * width
         colors = PLOT_COLORS_DARK if dark else PLOT_COLORS
-        edge = "white" if dark else "none"
+        edge = "white" if dark else "black"
         face = "none" if empty else colors[key]
         bar_edge = "none" if empty else edge
         ax.bar(x + offset, vals, width, label=PLOT_LABELS[key],
-               color=face, edgecolor=bar_edge, linewidth=0 if empty else (0.8 if dark else 0))
+               color=face, edgecolor=bar_edge, linewidth=0 if empty else 0.2)
 
     fg = "white" if dark else "black"
     ax.tick_params(axis="y", labelsize=14, colors=fg)
@@ -764,7 +764,7 @@ def show_plots(cgra, hls):
     make_bar_plot(ax1, cgra, "steps", cgra_keys, "rp", "Relative Simulation Steps vs. RipTide")
     make_bar_plot(ax2, cgra, "graph_size", cgra_keys, "rp", "Relative #Operators vs. RipTide" if not mpl.rcParams.get("text.usetex") else "Relative \\#Operators vs. RipTide")
     ax2.legend(fontsize=14, loc="upper right", ncol=3, columnspacing=1, handletextpad=0.3, frameon=False,
-               bbox_to_anchor=(1.02, 1.05))
+               bbox_to_anchor=(1.02, 1.04))
     share_ylims([ax1, ax2])
 
     # Row 2: three HLS plots (relative to CIRCT), excluding "sort"
