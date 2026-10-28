@@ -1,3 +1,5 @@
+import Wavelet.Compile.Rewrite
+
 import Wavelet.Thm.Seq
 import Wavelet.Thm.Dataflow
 import Wavelet.Thm.Compile
@@ -290,5 +292,69 @@ theorem compile_strong_norm
       simp [hfinal_init, Semantics.guard, Semantics.interpret, Proc.semantics]
       apply IsRefl.refl
   ⟩
+
+/-- One application of `naryLowering` is a forward simulation. -/
+theorem nary_lowering_forward_sim
+  [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V]
+  {proc : Proc Op χ V m n}
+  {proc' : Proc Op (RewriteName χ) V m n}
+  {disabledRules : List String}
+  {rwName : String}
+  (haff : proc.AffineChan)
+  (hclone : ∀ v : V, InterpConsts.isClonable v)
+  (hrw : naryLowering.apply (proc.mapChans .base) disabledRules = some (rwName, proc')) :
+    (proc.semantics ≲ᵣ[PreservesInit] proc'.semantics) ∧ proc'.AffineChan
+  := sorry
+
+/-- One application of `deadCodeElim` is a forward simulation, with some exceptions. -/
+theorem dead_code_elim_forward_sim
+  [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] [DecidableEq V]
+  {proc : Proc Op χ V m n}
+  {proc' : Proc Op (RewriteName χ) V m n}
+  {disabledRules : List String}
+  {rwName : String}
+  (haff : proc.AffineChan)
+  (hrw : deadCodeElim.apply (proc.mapChans .base) disabledRules = some (rwName, proc'))
+  (hrule : rwName ∉ [
+    -- Deciders can get out of sync
+    "steer-steer",
+    -- Deciders can get out of sync
+    "steer-order-steer",
+    -- Deciders can get out of sync
+    "steer-fork-steer",
+    -- See `dead_code_elim_forward_sim_n_ary_sink`
+    "carry-steer-cycle-to-sink",
+    -- See `dead_code_elim_forward_sim_n_ary_sink`
+    "carry-order-steer-cycle-to-sink",
+    -- See `dead_code_elim_forward_sim_n_ary_sink`
+    "merge-steer-true",
+    -- See `dead_code_elim_forward_sim_n_ary_sink`
+    "merge-steer-false",
+    -- See `dead_code_elim_forward_sim_n_ary_sink`
+    "merge-dedup",
+  ]) :
+    (proc.semantics ≲ᵣ[PreservesInit] proc'.semantics) ∧ proc'.AffineChan
+  := DeadCodeElim.dead_code_elim_sim_preserves_init haff hrw
+    (by simp [DeadCodeElim.excludedRules] at hrule ⊢; tauto)
+    (by simp [DeadCodeElim.naryRules] at hrule ⊢; tauto)
+
+/-- `deadCodeElim` rules that produce n-ary sinks are forward simulations, but without `PreservesInit`. -/
+theorem dead_code_elim_forward_sim_n_ary_sink
+  [Arity Op] [DecidableEq χ] [Hashable χ] [InterpConsts V] [DecidableEq V]
+  {proc : Proc Op χ V m n}
+  {proc' : Proc Op (RewriteName χ) V m n}
+  {disabledRules : List String}
+  {rwName : String}
+  (haff : proc.AffineChan)
+  (hrw : deadCodeElim.apply (proc.mapChans .base) disabledRules = some (rwName, proc'))
+  (hrule : rwName ∈ [
+    "carry-steer-cycle-to-sink",
+    "carry-order-steer-cycle-to-sink",
+    "merge-steer-true",
+    "merge-steer-false",
+    "merge-dedup",
+  ]) :
+    (proc.semantics ≲ᵣ proc'.semantics) ∧ proc'.AffineChan
+  := DeadCodeElim.dead_code_elim_sim_nary haff hrw (by simpa [DeadCodeElim.naryRules] using hrule)
 
 end Wavelet

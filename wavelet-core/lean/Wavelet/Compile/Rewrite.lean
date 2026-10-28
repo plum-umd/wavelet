@@ -271,14 +271,18 @@ def RewriteM.checkFromConst
 /-- Checks if the given name has a "synchronous path"
 to the other set of output names, where a synchronous path
 means a path going through only synchronous operators, forks,
-orders, consts. -/
-partial def RewriteM.checkSyncPathTo
+orders, consts. `fuel` bounds the path length
+(number of atoms + 1 is enough). -/
+def RewriteM.checkSyncPathTo
   [Arity Op] [DecidableEq χ] [Hashable χ]
   (chan : RewriteName χ)
   (outputs : List (RewriteName χ))
+  (fuel : Nat)
   (hist : List Nat := []) :
     RewriteM Op χ V Unit
-  := do
+  := match fuel with
+  | 0 => failure
+  | fuel + 1 => do
   if chan ∈ outputs then
     return ()
   else
@@ -290,14 +294,14 @@ partial def RewriteM.checkSyncPathTo
       | .op _ inputs' outputs' =>
         if chan ∈ outputs' then
           inputs'.firstM λ input' =>
-            RewriteM.checkSyncPathTo input' outputs (i :: hist)
+            RewriteM.checkSyncPathTo input' outputs fuel (i :: hist)
         else failure
       | .async (AsyncOp.fork _) inputs' outputs'
       | .async (AsyncOp.order _) inputs' outputs'
       | .async (AsyncOp.const _ _) inputs' outputs' =>
         if chan ∈ outputs' then
           inputs'.firstM λ input' =>
-            RewriteM.checkSyncPathTo input' outputs (i :: hist)
+            RewriteM.checkSyncPathTo input' outputs fuel (i :: hist)
         else failure
       | _ => failure
 
@@ -393,16 +397,14 @@ def deadCodeElim
           .assume (m > 0 ∧ inputs₂.length = m ∧ outputs₂.length = 1) λ h => do
           let output₂ := outputs₂[0]'(by omega)
           if output₂ ∈ inputs then
-            let : NeZero (inputs₁.tail ++ inputs₂).length := by
+            let : NeZero (inputs₂ ++ inputs₁.tail).length := by
               constructor
-              simp
-              intros h₃ h₄
-              subst h₄
-              simp at h
+              simp only [List.length_append]
               omega
+            -- `inputs₂` first so that the order still outputs `inputs₂[0]`
             .apply "sync-order-order" [
               .op _ (inputs.replace output₁ input₁) outputs,
-              .order (inputs₁.tail ++ inputs₂).toVector output₂,
+              .order (inputs₂ ++ inputs₁.tail).toVector output₂,
             ]
           else failure
         | _ => failure
@@ -621,7 +623,7 @@ def deadCodeElim
         if input₁ ∈ outputs' then
           inputs.firstM λ input₂ => do
             if input₁ ≠ input₂ then
-              .checkSyncPathTo input₂ outputs'
+              .checkSyncPathTo input₂ outputs' ((← get).aps.length + 1)
               let newInputs := inputs.erase input₁
               let newOutputs' := outputs'.erase input₁
               .assume (newInputs.length ≠ 0) λ h' => do
